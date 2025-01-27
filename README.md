@@ -1,4 +1,4 @@
-# SourceAnt 🚀
+# SourceAnt 🐜 
 
 **SourceAnt** is an open-source tool that automates code reviews by integrating GitHub webhooks with the AI-model APIs. It listens for pull request events, analyzes code changes and posts review feedback as comments on GitHub pull requests.
 
