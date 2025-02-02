@@ -1,4 +1,4 @@
-# SourceAnt 🐜 
+#  🐜 SourceAnt 🐜 
 
 **SourceAnt** is an open-source tool that automates code reviews by integrating GitHub webhooks with the AI-model APIs. It listens for pull request events, analyzes code changes and posts review feedback as comments on GitHub pull requests.
 
@@ -179,9 +179,9 @@ Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
 ---
 
 ## Roadmap 🗺️
-- [x] Set up Flask server and GitHub webhook integration.
+- [x] Set up FastAPI server and GitHub webhook integration.
 - [x] Implement API/Interface to integrate various AI models
-- [x] Integrate DeepSeek API for code analysis.
+- [ ] Integrate DeepSeek API for code analysis.
 - [ ] Add support for multiple programming languages.
 - [ ] Implement a dashboard for review history and metrics.
 - [ ] Add CI/CD pipeline for automated testing and deployment.
