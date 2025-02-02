@@ -27,29 +27,110 @@
    cd sourceant
    ```
 
-2. **Set Up a Virtual Environment**:
+2. **Initial project setup (docker-compose)**:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   docker compose up -d # To start container
    ```
 
 3. **Install Dependencies**:
    ```bash
-   pip install -r requirements.txt
+   docker compose exec app pip install -r requirements.txt
    ```
 
 4. **Set Environment Variables**:
-   Create a `.env` file in the root directory and add the following:
+   Copy `.env.example` into `.env` file in the root directory and update the credentials accordingly:
+   ```bash
+   docker compose exec app cp .env.exmple .env
+   ```
+   #### `.env` file
    ```env
    GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
    DEEPSEEK_API_KEY=your_deepseek_api_key
    GITHUB_TOKEN=your_github_personal_access_token
    ```
+SourceAnt API should be live at http://localhost:8000
 
-5. **Run the Flask Server**:
+
+Got it! Here's the revised **Installation** section with a concise **SourceAnt Commands** section that only documents the available commands (e.g., `sourceant db`):
+
+---
+
+### Installation
+
+1. **Clone the Repository**:
    ```bash
-   python app.py
+   git clone https://github.com/sourceant/sourceant.git
+   cd sourceant
    ```
+
+2. **Start the Docker Containers**:
+   ```bash
+   docker compose up -d
+   ```
+
+3. **Install Dependencies**:
+   ```bash
+   docker compose exec app pip install -r requirements.txt
+   ```
+
+4. **Set Environment Variables**:
+   - Copy `.env.example` to `.env`:
+     ```bash
+     docker compose exec app cp .env.example .env
+     ```
+   - Update the `.env` file with your credentials:
+     ```env
+     GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
+     DEEPSEEK_API_KEY=your_deepseek_api_key
+     GITHUB_TOKEN=your_github_personal_access_token
+     ```
+
+5. **Access the API**:
+   - The SourceAnt API will be live at: [http://localhost:8000](http://localhost:8000).
+
+---
+
+## SourceAnt Commands
+
+The `sourceant` command provides the following subcommands for managing the application:
+
+| Command               | Description                                      |
+|-----------------------|--------------------------------------------------|
+| `docker compose exec app sourceant db upgrade head`        | Set up database tables |
+| `docker compose exec app sourceant db --help`                                 | See more database commands |
+
+
+
+
+
+
+---
+
+### Example Usage
+
+- **Start the database**:
+  ```bash
+  sourceant db
+  ```
+
+- **Start the API server**:
+  ```bash
+  sourceant start
+  ```
+
+- **View logs**:
+  ```bash
+  sourceant logs
+  ```
+
+- **Open a shell in the container**:
+  ```bash
+  sourceant shell
+  ```
+
+---
+
+This version keeps the **SourceAnt Commands** section focused on documenting the available commands without including setup instructions. Let me know if you need further adjustments! 🚀
 
 ---
 
