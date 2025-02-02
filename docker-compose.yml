@@ -1,0 +1,37 @@
+services:
+  app:
+    build: .
+    container_name: sourceant
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=review_db
+      - DB_USER=admin
+      - DB_PASSWORD=admin
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+    networks:
+      - sourceant-network
+
+  db:
+    image: postgres:13
+    container_name: sourceant-db
+    environment:
+      POSTGRES_DB: sourceant
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - sourceant-network
+
+networks:
+  sourceant-network:
+    driver: bridge
+
+volumes:
+  db-data:

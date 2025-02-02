@@ -1,0 +1,9 @@
+alembic
+click
+fastapi
+Mako
+pytest
+python-dotenv
+sqlmodel
+psycopg2
+uvicorn
