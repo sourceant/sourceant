@@ -29,12 +29,12 @@ class GitHubWebhookPayload(BaseModel):
             "example": {
                 "action": "opened",
                 "pull_request": {
-                    "url": "https://api.github.com/repos/example/repo/pulls/1",
+                    "url": "https://api.github.com/sourceant/sourceant/repo/pulls/1",
                     "title": "Example PR Title",
                     "number": 1,
                 },
-                "repository": {"full_name": "example/repo"},
-                "sender": {"login": "octocat"},
+                "repository": {"full_name": "sourceant/soureant"},
+                "sender": {"login": "nfebe"},
             }
         }
 

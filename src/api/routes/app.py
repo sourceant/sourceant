@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.get("/")
 async def welcome():
-    return {"message": "The sourceant API is live!"}
+    return {"message": "The 🐜 SourceAnt 🐜  API is live!"}
 
 
 @router.get("/repository-events", response_model=List[RepositoryEvent])
