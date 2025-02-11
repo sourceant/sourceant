@@ -1,3 +1,6 @@
-flake8
 autopep8
 black
+flake8
+httpx # Required by TestClient from fastapi.testclient
+pytest
+pytest-mock

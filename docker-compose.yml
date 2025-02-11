@@ -4,18 +4,13 @@ services:
     container_name: sourceant
     ports:
       - "8000:8000"
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=review_db
-      - DB_USER=admin
-      - DB_PASSWORD=admin
     volumes:
       - .:/app
     depends_on:
       - db
     networks:
       - sourceant-network
+
 
   db:
     image: postgres:13

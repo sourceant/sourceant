@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:admin@db:5432/sourceant")
 
 engine = create_engine(DATABASE_URL)
 
@@ -18,7 +18,7 @@ class BaseModel(SQLModel):
 
     # Override dict method to handle datetime fields
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        data = super().dict(*args, **kwargs)
+        data = super().model_dump(*args, **kwargs)
 
         # Convert datetime fields to ISO format
         for key, value in data.items():

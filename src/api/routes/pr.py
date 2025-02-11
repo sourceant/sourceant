@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Header, Depends
+from fastapi import APIRouter, HTTPException, Request, Header, Depends, Body
 from src.controllers.repository_event_controller import RepositoryEventController
 from typing import Optional
 from pydantic import BaseModel
@@ -24,8 +24,8 @@ class GitHubWebhookPayload(BaseModel):
     repository: dict
     sender: dict
 
-    class Config:
-        schema_extra = {
+    class ConfigDict:
+        json_schema_extra = {
             "example": {
                 "action": "opened",
                 "pull_request": {
@@ -56,7 +56,7 @@ async def github_webhook(
     request: Request,
     signature: str = Header(None, alias="X-Hub-Signature-256"),
     event: str = Depends(get_event),
-    payload: GitHubWebhookPayload = Depends(),
+    payload: GitHubWebhookPayload = Body(...),
 ):
     payload_data = await request.body()
     if not verify_signature(payload_data.decode(), signature, GITHUB_SECRET):
@@ -74,10 +74,14 @@ async def github_webhook(
         else payload.issue["title"] if payload.issue else None
     )
 
+    number = payload.pull_request["number"] if payload.pull_request else None
+
     return RepositoryEventController.create(
         action=payload.action,
         type=event,
         url=url,
         title=title,
         repository=payload.repository["full_name"],
+        number=number,
+        payload=payload.model_dump(),
     )
