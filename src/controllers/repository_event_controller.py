@@ -35,10 +35,25 @@ class RepositoryEventController(BaseController):
             )
 
     @classmethod
-    def create(cls, action: str, type: str, url: str, title: str, repository: str):
+    def create(
+        cls,
+        action: str,
+        type: str,
+        url: str,
+        number: int,
+        title: str,
+        repository: str,
+        payload: dict,
+    ):
         try:
             event = RepositoryEvent(
-                action=action, type=type, url=url, title=title, repository=repository
+                action=action,
+                type=type,
+                url=url,
+                number=number,
+                title=title,
+                repository=repository,
+                payload=payload,
             )
             event = event.save().dict()
             return cls().success(event, "Repository event recorded.", status_code=201)

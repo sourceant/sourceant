@@ -1,4 +1,4 @@
-name: Lint 🐜 SourceAnt 🐜
+name: "🐜 SourceAnt 🐜: Unit tests and linting"
 
 on:
   push:
@@ -9,12 +9,25 @@ on:
       - main
 
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: sourceant
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: sourceant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - name: Check out code
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -26,6 +39,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+
+      - name: Set up environment variables
+        run: |
+          echo "APP_ENV=test" >> .env
+          echo "DATABASE_URL=postgresql://sourceant:secret@127.0.0.1:5432/sourceant" >> .env # Updated connection string
+          echo "GITHUB_SECRET=YOUR_GITHUB_SECRET" >> .env # Or use GitHub secrets
+
+      - name: Run migrations
+        run: |
+          export DATABASE_URL=postgresql://sourceant:secret@127.0.0.1:5432/sourceant # Updated connection string
+          ./sourceant db upgrade head
+
+      - name: Run tests
+        run: |
+          export DATABASE_URL=postgresql://sourceant:secret@127.0.0.1:5432/sourceant # Updated connection string
+          pytest
 
       - name: Run sourceant lint
         run: |
