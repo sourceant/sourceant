@@ -45,6 +45,7 @@
    #### `.env` file
    ```env
    GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
+   GEMINI_API_KEY=your_gemini_api_key
    DEEPSEEK_API_KEY=your_deepseek_api_key
    GITHUB_TOKEN=your_github_personal_access_token
    ```
@@ -81,6 +82,7 @@ Got it! Here's the revised **Installation** section with a concise **SourceAnt C
    - Update the `.env` file with your credentials:
      ```env
      GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
+     GEMINI_API_KEY=your_gemini_api_key
      DEEPSEEK_API_KEY=your_deepseek_api_key
      GITHUB_TOKEN=your_github_personal_access_token
      ```
@@ -181,6 +183,7 @@ Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
 ## Roadmap 🗺️
 - [x] Set up FastAPI server and GitHub webhook integration.
 - [x] Implement API/Interface to integrate various AI models
+- [ ] Integrate Gemini API for code analysis.
 - [ ] Integrate DeepSeek API for code analysis.
 - [ ] Add support for multiple programming languages.
 - [ ] Implement a dashboard for review history and metrics.
