@@ -18,7 +18,7 @@ if GITHUB_SECRET is None:
 
 
 class GitHubWebhookPayload(BaseModel):
-    action: str
+    action: Optional[str] = None
     pull_request: Optional[dict] = None
     issue: Optional[dict] = None
     repository: dict
