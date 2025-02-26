@@ -2,6 +2,7 @@ import redis
 from rq import Queue
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
+from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 from src.utils.diff import get_diff
 from src.utils.logger import logger
 import os
@@ -26,9 +27,15 @@ class EventDispatcher:
     def _process_event(self, event: Event):
         if isinstance(event, RepositoryEvent):
             logger.info(f"Processing repository event: {event}")
+            repository_event: RepositoryEventModel = event.data
+            if not repository_event or not isinstance(
+                repository_event, RepositoryEventModel
+            ):
+                logger.error("Invalid event data. Cannot process event.")
+                return
             try:
-                if event.type == "push":
-                    diff = get_diff(event.data)
+                if repository_event.type == "push":
+                    diff = get_diff(repository_event)
                     if diff:
                         logger.info(f"Diff computed: {diff}")
                     else:
