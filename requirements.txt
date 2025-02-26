@@ -1,8 +1,12 @@
 alembic
 click
 fastapi
+httpx
 Mako
-python-dotenv
-sqlmodel
 psycopg2
+python-dotenv
+redis
+requests
+rq
+sqlmodel
 uvicorn

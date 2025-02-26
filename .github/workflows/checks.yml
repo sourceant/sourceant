@@ -25,6 +25,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v2
@@ -43,17 +52,17 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "APP_ENV=test" >> .env
-          echo "DATABASE_URL=postgresql://sourceant:secret@127.0.0.1:5432/sourceant" >> .env # Updated connection string
-          echo "GITHUB_SECRET=YOUR_GITHUB_SECRET" >> .env # Or use GitHub secrets
+          echo "DATABASE_URL=postgresql://sourceant:secret@127.0.0.1:5432/sourceant" >> .env
+          echo "REDIS_HOST=127.0.0.1" >> .env
+          echo "REDIS_PORT=6379" >> .env
+          echo "GITHUB_SECRET=YOUR_GITHUB_SECRET" >> .env
 
       - name: Run migrations
         run: |
-          export DATABASE_URL=postgresql://sourceant:secret@127.0.0.1:5432/sourceant # Updated connection string
           ./sourceant db upgrade head
 
       - name: Run tests
         run: |
-          export DATABASE_URL=postgresql://sourceant:secret@127.0.0.1:5432/sourceant # Updated connection string
           pytest
 
       - name: Run sourceant lint

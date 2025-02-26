@@ -1,6 +1,12 @@
-from src.models.repository_event import RepositoryEvent
+from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 from src.controllers.base_controller import BaseController
 import traceback
+
+from src.events.dispatcher import EventDispatcher
+from src.events.repository_event import RepositoryEvent
+from src.utils.logger import logger
+
+dispatcher = EventDispatcher()
 
 
 class RepositoryEventController(BaseController):
@@ -8,7 +14,7 @@ class RepositoryEventController(BaseController):
     @classmethod
     def index(cls):
         try:
-            events = RepositoryEvent.get_all()
+            events = RepositoryEventModel.get_all()
             if not events:
                 return cls().success([])
             events = [event.dict() for event in events]
@@ -23,7 +29,7 @@ class RepositoryEventController(BaseController):
     @classmethod
     def show(cls, event_id: int):
         try:
-            event = RepositoryEvent.get_by_id(event_id)
+            event = RepositoryEventModel.get_by_id(event_id)
             if not event:
                 return cls().failure("Event not found", status_code=404)
             return cls().success(event)
@@ -46,7 +52,7 @@ class RepositoryEventController(BaseController):
         payload: dict,
     ):
         try:
-            event = RepositoryEvent(
+            event = RepositoryEventModel(
                 action=action,
                 type=type,
                 url=url,
@@ -54,10 +60,14 @@ class RepositoryEventController(BaseController):
                 title=title,
                 repository=repository,
                 payload=payload,
+            ).save()
+            logger.info(f"Repository event created: {RepositoryEvent(event)}")
+            dispatcher.dispatch(RepositoryEvent(event))
+            return cls().success(
+                event.dict(), "Repository event recorded.", status_code=201
             )
-            event = event.save().dict()
-            return cls().success(event, "Repository event recorded.", status_code=201)
         except Exception:
+            logger.error(traceback.format_exc())
             return cls().failure(
                 message="An error occurred while creating a repository event",
                 status_code=500,
@@ -67,7 +77,7 @@ class RepositoryEventController(BaseController):
     @classmethod
     def destroy(cls, event_id: int):
         try:
-            event = RepositoryEvent.get_by_id(event_id)
+            event = RepositoryEventModel.get_by_id(event_id)
             if not event:
                 return cls().failure("Event not found", status_code=404)
             event.delete()
