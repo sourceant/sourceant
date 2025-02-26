@@ -7,7 +7,6 @@ class TestRepositoryEvents(BaseTestCase):
     def test_github_webhook(self):
         payload = {
             "action": "opened",
-            "type": "pull_request",
             "pull_request": {
                 "url": "https://api.github.com/repos/sourceant/sourceant/pulls/1",
                 "title": "Fix bug",

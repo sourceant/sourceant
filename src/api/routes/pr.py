@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request, Header, Depends, Body
 from src.controllers.repository_event_controller import RepositoryEventController
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import os
 import hmac
 import hashlib
@@ -18,11 +18,13 @@ if GITHUB_SECRET is None:
 
 
 class GitHubWebhookPayload(BaseModel):
-    action: str
+    action: Optional[str] = None
     pull_request: Optional[dict] = None
     issue: Optional[dict] = None
     repository: dict
     sender: dict
+
+    model_config = ConfigDict(extra="allow")
 
     class ConfigDict:
         json_schema_extra = {

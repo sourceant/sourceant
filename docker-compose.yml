@@ -1,3 +1,4 @@
+version: "3.9"
 services:
   app:
     build: .
@@ -8,9 +9,11 @@ services:
       - .:/app
     depends_on:
       - db
+      - redis
     networks:
       - sourceant-network
-
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
 
   db:
     image: postgres:13
@@ -24,9 +27,20 @@ services:
     networks:
       - sourceant-network
 
+  redis:
+    image: "redis:latest"
+    container_name: sourceant-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - sourceant-network
+    volumes:
+      - redis-data:/data
+
 networks:
   sourceant-network:
     driver: bridge
 
 volumes:
   db-data:
+  redis-data:

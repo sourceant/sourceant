@@ -6,7 +6,7 @@ __pycache__/
 # Environment variables
 .env
 
-# Docker files
+# Log files
 *.log
 
 # VSCode settings
@@ -17,3 +17,4 @@ __pycache__/
 
 # Ignore test db
 test.db
+sourceant.db
