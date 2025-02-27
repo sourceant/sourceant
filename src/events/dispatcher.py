@@ -5,6 +5,7 @@ from src.events.repository_event import RepositoryEvent
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 from src.utils.diff import get_diff
 from src.utils.logger import logger
+from src.llms.llm_factory import llm
 import os
 from dotenv import load_dotenv
 
@@ -34,10 +35,10 @@ class EventDispatcher:
                 logger.error("Invalid event data. Cannot process event.")
                 return
             try:
-                if repository_event.type == "push":
+                if repository_event.type in ("pull_request"):
                     diff = get_diff(repository_event)
                     if diff:
-                        logger.info(f"Diff computed: {diff}")
+                        llm().generate_code_review(diff=diff)
                     else:
                         logger.info("No diff computed.")
             except Exception as e:

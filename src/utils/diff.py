@@ -87,7 +87,7 @@ def get_diff(event: RepositoryEvent) -> Optional[str]:
         return None
 
     payload = event.payload
-    repository = payload.get("repo", {})
+    repository = payload.get("repository", {})
     repository_full_name = repository.get("full_name")
     if not repository_full_name or not isinstance(repository_full_name, str):
         logger.error("Repository full name not found in payload.")

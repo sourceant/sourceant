@@ -26,7 +26,7 @@ def test_get_diff_no_payload(mocker):
 
 def test_get_diff_no_diff_to_compute(mocker):
     mock_logger = mocker.patch("src.utils.diff.logger")
-    event = RepositoryEvent(payload={"repo": {"full_name": TEST_REPO}})
+    event = RepositoryEvent(payload={"repository": {"full_name": TEST_REPO}})
     assert get_diff(event) is None
     mock_logger.info.assert_called_once_with("No diff to compute for this event.")
 
@@ -34,7 +34,11 @@ def test_get_diff_no_diff_to_compute(mocker):
 def test_get_diff_pr_event(mocker):
     mock_get_diff_from_pr = mocker.patch("src.utils.diff.get_diff_from_pr")
     mock_get = mocker.patch("requests.get")
-    payload = {"action": "opened", "number": 123, "repo": {"full_name": TEST_REPO}}
+    payload = {
+        "action": "opened",
+        "number": 123,
+        "repository": {"full_name": TEST_REPO},
+    }
     event = RepositoryEvent(payload=payload)
     get_diff(event)
     mock_get_diff_from_pr.assert_called_once_with(TEST_REPO, 123, {})
@@ -47,7 +51,7 @@ def test_get_diff_push_event(mocker):
     payload = {
         "after": "sha1",
         "base_ref": "refs/heads/main",
-        "repo": {"full_name": TEST_REPO},
+        "repository": {"full_name": TEST_REPO},
     }
     event = RepositoryEvent(payload=payload)
     get_diff(event)
@@ -64,7 +68,7 @@ def test_get_diff_private_repo(mocker):
     payload = {
         "action": "opened",
         "number": 123,
-        "repo": {"private": True, "full_name": TEST_REPO},
+        "repository": {"private": True, "full_name": TEST_REPO},
     }
     event = RepositoryEvent(payload=payload)
     get_diff(event)
@@ -80,7 +84,7 @@ def test_get_diff_private_repo_no_token(mocker):
     payload = {
         "action": "opened",
         "number": 123,
-        "repo": {"full_name": TEST_REPO, "private": True},
+        "repository": {"full_name": TEST_REPO, "private": True},
     }
     event = RepositoryEvent(payload=payload)
     assert get_diff(event) is None
