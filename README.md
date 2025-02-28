@@ -104,8 +104,6 @@ The `sourceant` command provides the following subcommands for managing the appl
 
 
 
-
-
 ---
 
 ### Example Usage
@@ -176,8 +174,6 @@ We welcome contributions! Here’s how you can help:
 4. Push to the branch: `git push origin feature/your-feature`.
 5. Submit a pull request.
 
-Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
-
 ---
 
 ## Roadmap 🗺️
@@ -191,14 +187,14 @@ Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
 ---
 
 ## License 📜
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE.md) file for details.
 
 ---
 
 ## Contact 📧
 Have questions or suggestions? Reach out to us:
 - **Email**: opensource@nfebe.com
-- **GitHub Issues**: [Open an Issue](https://github.com/sourceant/sourceant/issues)
+- **GitHub Issues**: [Open an issue](https://github.com/sourceant/sourceant/issues)
 
 ---
 
