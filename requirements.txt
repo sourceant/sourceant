@@ -1,6 +1,7 @@
 alembic
 click
 fastapi
+google-genai
 httpx
 Mako
 psycopg2
@@ -10,3 +11,4 @@ requests
 rq
 sqlmodel
 uvicorn
+
