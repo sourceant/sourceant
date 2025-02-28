@@ -150,7 +150,7 @@ This version keeps the **SourceAnt Commands** section focused on documenting the
 ## How It Works 🧠
 1. When a pull request is opened or updated, GitHub sends a webhook payload to SourceAnt.
 2. SourceAnt fetches the diff of the pull request using the GitHub API.
-3. The diff is sent to the DeepSeek API for analysis.
+3. The diff is sent to an LLM for analysis and review.
 4. SourceAnt posts the feedback as a comment on the pull request.
 
 ---
