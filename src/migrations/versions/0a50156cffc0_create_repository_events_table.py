@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column("type", sa.String),
         sa.Column("action", sa.String),
         sa.Column("number", sa.Integer),
-        sa.Column("repository", sa.String),
+        sa.Column("repository_full_name", sa.String),
         sa.Column("url", sa.String),
         sa.Column("title", sa.String),
         sa.Column("payload", postgresql.JSON),

@@ -53,6 +53,16 @@ def get_event(event: str = Header(None, alias="X-GitHub-Event")):
     return event
 
 
+def get_provider_from_headers(headers: dict) -> Optional[str]:
+    """
+    Determines the provider based on the request headers (case-insensitive).
+    """
+    for header_name in headers:
+        if header_name.lower().startswith("x-github-"):
+            return "GitHub"
+    return None
+
+
 @router.post("/github-webhook")
 async def github_webhook(
     request: Request,
@@ -78,12 +88,15 @@ async def github_webhook(
 
     number = payload.pull_request["number"] if payload.pull_request else None
 
+    provider = get_provider_from_headers(request.headers)
+
     return RepositoryEventController.create(
         action=payload.action,
         type=event,
         url=url,
         title=title,
-        repository=payload.repository["full_name"],
+        repository_full_name=payload.repository["full_name"],
         number=number,
         payload=payload.model_dump(),
+        provider=provider,
     )

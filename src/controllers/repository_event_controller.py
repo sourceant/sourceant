@@ -48,8 +48,9 @@ class RepositoryEventController(BaseController):
         url: str,
         number: int,
         title: str,
-        repository: str,
+        repository_full_name: str,
         payload: dict,
+        provider: str,
     ):
         try:
             event = RepositoryEventModel(
@@ -58,8 +59,9 @@ class RepositoryEventController(BaseController):
                 url=url,
                 number=number,
                 title=title,
-                repository=repository,
+                repository_full_name=repository_full_name,
                 payload=payload,
+                provider=provider,
             ).save()
             logger.info(f"Repository event created: {RepositoryEvent(event)}")
             dispatcher.dispatch(RepositoryEvent(event))
