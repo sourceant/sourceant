@@ -183,9 +183,8 @@ Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
 ## Roadmap 🗺️
 - [x] Set up FastAPI server and GitHub webhook integration.
 - [x] Implement API/Interface to integrate various AI models
-- [ ] Integrate Gemini API for code analysis.
+- [x] Integrate Gemini API for code analysis.
 - [ ] Integrate DeepSeek API for code analysis.
-- [ ] Add support for multiple programming languages.
 - [ ] Implement a dashboard for review history and metrics.
 - [ ] Add CI/CD pipeline for automated testing and deployment.
 
