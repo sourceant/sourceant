@@ -12,7 +12,7 @@ class RepositoryEvent(BaseModel, table=True):
     type: str
     action: str
     number: Optional[int] = None
-    repository: str
+    repository_full_name: str
     url: Optional[str] = None
     title: Optional[str] = None
     payload: dict = Field(default={}, sa_column=Column(JSON))

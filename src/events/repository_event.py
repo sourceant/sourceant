@@ -9,4 +9,4 @@ class RepositoryEvent(Event):
         super().__init__(repository_event_object)
 
     def __str__(self):
-        return f"RepositoryEvent: {self.data.type} on {self.data.repository}"
+        return f"RepositoryEvent: {self.data.type} on {self.data.repository_full_name}"

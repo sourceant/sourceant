@@ -3,25 +3,70 @@ class Prompts:
     A class to hold predefined prompt templates for LLM interactions.
     """
 
-    REVIEW_PROMPT = """
-    You are an expert code reviewer. Please review the following code diff and provide feedback on:
-    - Code quality and style
-    - Potential bugs or errors
-    - Performance considerations
-    - Security vulnerabilities
-    - Readability and maintainability
-    - Code suggestions covering all of the above
-    - Code suggestions must be actionable and specific and include file name and line number in a structured format (json)
+    """
+    A class to hold predefined prompt templates for LLM interactions.
+    """
 
-    Code Diff:
+    REVIEW_PROMPT = """
+    # 📌 **Comprehensive Code Review Request**  
+
+    You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.  
+    Your task is to **analyze the code diff** and provide **precise, structured, and actionable feedback**.  
+
+    ## 🔍 **Review Criteria**  
+     - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.  
+     - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.  
+     - **Performance** → Inefficiencies, better algorithms, unnecessary computations.  
+     - **Security** → Injection risks, authentication flaws, unsafe operations.  
+     - **Readability & Maintainability** → Clarity, modularity, inline documentation.  
+     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.  
+
+    ---
+
+    ## 📝 **Feedback Format (GitHub-Compatible JSON)**  
+    Your response for suggested_code fields **must** follow the JSON schema below, ensuring precise issue tracking:  
+
+    ```json
+    [
+        {
+            "file": "<file_path>",
+            "line": <line_number>,  // For single-line comments  
+            "start_line": <start_line_number>,  // For multi-line comments  
+            "position": <position_in_diff>,  
+            "side": "<left|right>",  
+            "comment": "<detailed_review_comment>",  
+            "suggested_code": "<corrected_or_improved_code>"  
+        }
+    ]
+    ```
+
+    - **`file`** → The exact file where the issue exists.  
+    - **`line`** → The **single** affected line number (if applicable).  
+    - **`start_line`** → The **starting line number** for multi-line comments (if applicable).  
+    - **`position`** → The index of the change in the diff.  
+    - **`side`** → Whether the comment applies to the **left (before)** or **right (after)** side of the diff.  
+    - **`comment`** → A **clear, constructive** explanation of the issue.  
+    - **`suggested_code`** → A **corrected version** of the problematic code.  
+
+    ---
+
+    ## 🎯 **Code Diff for Review**  
     ```diff
     {diff}
     ```
 
-    Context (if any):
+    ## 📝 **Additional Context:**  
     {context}
 
-    Please provide a detailed review in a clear and concise manner.
+    ---
+
+    📢 **Final Notes:**  
+    - **Ensure precision** → Always specify `file`, `line`, `position`, and `side`.  
+    - **Structured & Clear** → Use JSON format for easy automation and integration.  
+    - **Be Constructive & Actionable** → Don't just point out problems—suggest improvements.  
+    - **Follow Best Practices** → Use **proper coding standards, security guidelines, and optimization techniques**.  
+
+    🚀 **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**  
     """
 
     SUMMARIZE_PROMPT = """
