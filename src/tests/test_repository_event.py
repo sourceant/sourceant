@@ -26,12 +26,15 @@ class TestRepositoryEvents(BaseTestCase):
         data = response.json()
 
         assert data["status"] == "success"
-        assert data["data"]["repository"] == "sourceant/sourceant"
+        assert data["data"]["repository_full_name"] == "sourceant/sourceant"
         assert data["data"]["action"] == "opened"
 
         repo_events_from_db = RepositoryEvent.get_all()
         for event in repo_events_from_db:
-            if event.number == 1 and event.repository == "sourceant/sourceant":
+            if (
+                event.number == 1
+                and event.repository_full_name == "sourceant/sourceant"
+            ):
                 assert event.action == "opened"
                 assert event.type == "pull_request"
                 break
@@ -41,7 +44,7 @@ class TestRepositoryEvents(BaseTestCase):
         RepositoryEvent.create(
             type="pull_request",
             action="opened",
-            repository="sourceant/sourceant",
+            repository_full_name="sourceant/sourceant",
             title="Add new feature",
             url="https://api.github.com/repos/sourceant/sourceant/pulls/1",
             number=1,
@@ -54,5 +57,6 @@ class TestRepositoryEvents(BaseTestCase):
         assert data["status"] == "success"
         assert isinstance(data["data"], list)
         assert any(
-            event["repository"] == "sourceant/sourceant" for event in data["data"]
+            event["repository_full_name"] == "sourceant/sourceant"
+            for event in data["data"]
         )
