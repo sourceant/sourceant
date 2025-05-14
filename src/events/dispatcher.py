@@ -46,7 +46,7 @@ class EventDispatcher:
                 number=repository_event.number, title=repository_event.title
             )
             try:
-                if repository_event.type in ("pull_request"):
+                if repository_event.type in ("pull_request", "push"):
                     diff = get_diff(repository_event)
                     if diff:
                         logger.debug(f"Diff computed: {diff}")

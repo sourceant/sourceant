@@ -8,65 +8,69 @@ class Prompts:
     """
 
     REVIEW_PROMPT = """
-    # 📌 **Comprehensive Code Review Request**  
+    # 📌 **Comprehensive Code Review Request**
 
-    You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.  
-    Your task is to **analyze the code diff** and provide **precise, structured, and actionable feedback**.  
+    You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.
+    Your task is to **analyze the code diff** and provide **precise, structured, and actionable feedback**.
 
-    ## 🔍 **Review Criteria**  
-     - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.  
-     - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.  
-     - **Performance** → Inefficiencies, better algorithms, unnecessary computations.  
-     - **Security** → Injection risks, authentication flaws, unsafe operations.  
-     - **Readability & Maintainability** → Clarity, modularity, inline documentation.  
-     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.  
+    ## 🔍 **Review Criteria**
+     - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
+     - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.
+     - **Performance** → Inefficiencies, better algorithms, unnecessary computations.
+     - **Security** → Injection risks, authentication flaws, unsafe operations.
+     - **Readability & Maintainability** → Clarity, modularity, inline documentation.
+     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.
 
     ---
 
-    ## 📝 **Feedback Format (GitHub-Compatible JSON)**  
-    Your response for suggested_code fields **must** follow the JSON schema below, ensuring precise issue tracking:  
+    ## 📝 **Feedback Format (JSON)**
+    Your response **must** be a single JSON object that conforms to the schema below.
+    **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
 
     ```json
-    [
-        {
-            "file": "<file_path>",
-            "line": <line_number>,  // For single-line comments  
-            "start_line": <start_line_number>,  // For multi-line comments  
-            "position": <position_in_diff>,  
-            "side": "<left|right>",  
-            "comment": "<detailed_review_comment>",  
-            "suggested_code": "<corrected_or_improved_code>"  
-        }
-    ]
+    {{
+        "code_quality": "<Markdown-formatted feedback on code quality and style.>",
+        "code_suggestions": [
+            {{
+                "file_name": "<path/to/file>",
+                "line": <line_number>,
+                "start_line": <start_line_number>,
+                "position": <position_in_diff>,
+                "side": "<LEFT|RIGHT>",
+                "comment": "<Detailed review comment.>",
+                "suggested_code": "<Corrected or improved code.>"
+            }}
+        ],
+        "documentation_suggestions": "<Markdown-formatted documentation suggestions.>",
+        "potential_bugs": "<Markdown-formatted list of potential bugs.>",
+        "performance": "<Markdown-formatted performance considerations.>",
+        "readability": "<Markdown-formatted feedback on readability.>",
+        "refactoring_suggestions": "<Markdown-formatted refactoring suggestions.>",
+        "security": "<Markdown-formatted security vulnerability analysis.>",
+        "summary": "<**Overall summary in Markdown.** Use headings, lists, and bold text for clarity.>",
+        "verdict": "<APPROVE|REQUEST_CHANGES|COMMENT>"
+    }}
     ```
-
-    - **`file`** → The exact file where the issue exists.  
-    - **`line`** → The **single** affected line number (if applicable).  
-    - **`start_line`** → The **starting line number** for multi-line comments (if applicable).  
-    - **`position`** → The index of the change in the diff.  
-    - **`side`** → Whether the comment applies to the **left (before)** or **right (after)** side of the diff.  
-    - **`comment`** → A **clear, constructive** explanation of the issue.  
-    - **`suggested_code`** → A **corrected version** of the problematic code.  
 
     ---
 
-    ## 🎯 **Code Diff for Review**  
+    ## 🎯 **Code Diff for Review**
     ```diff
     {diff}
     ```
 
-    ## 📝 **Additional Context:**  
+    ## 📝 **Additional Context:**
     {context}
 
     ---
 
-    📢 **Final Notes:**  
-    - **Ensure precision** → Always specify `file`, `line`, `position`, and `side`.  
-    - **Structured & Clear** → Use JSON format for easy automation and integration.  
-    - **Be Constructive & Actionable** → Don't just point out problems—suggest improvements.  
-    - **Follow Best Practices** → Use **proper coding standards, security guidelines, and optimization techniques**.  
+    📢 **Final Notes:**
+    - **Ensure precision** → Always specify `file`, `line`, `position`, and `side`.
+    - **Structured & Clear** → Use JSON format for easy automation and integration.
+    - **Be Constructive & Actionable** → Don't just point out problems—suggest improvements.
+    - **Follow Best Practices** → Use **proper coding standards, security guidelines, and optimization techniques**.
 
-    🚀 **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**  
+    🚀 **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**
     """
 
     SUMMARIZE_PROMPT = """
