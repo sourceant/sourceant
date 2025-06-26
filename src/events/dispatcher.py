@@ -3,7 +3,14 @@ from rq import Queue
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
+from src.models.code_review import CodeReview
+from src.models.repository import Repository
+from src.models.pull_request import PullRequest
+from typing import List
+from src.integrations.github.github import GitHub
 from src.utils.diff import get_diff
+from src.utils.diff_parser import parse_diff, ParsedDiff
+from src.models.code_review import CodeSuggestion, Verdict
 from src.utils.logger import logger
 from src.llms.llm_factory import llm
 import os
@@ -34,15 +41,122 @@ class EventDispatcher:
             ):
                 logger.error("Invalid event data. Cannot process event.")
                 return
+            repository: Repository = Repository(
+                name=repository_event.repository_full_name.split("/")[1],
+                owner=repository_event.repository_full_name.split("/")[0],
+            )
+            pull_request: PullRequest = PullRequest(
+                number=repository_event.number, title=repository_event.title
+            )
             try:
-                if repository_event.type in ("pull_request"):
-                    diff = get_diff(repository_event)
-                    if diff:
-                        llm().generate_code_review(diff=diff)
-                    else:
+                if repository_event.type in ("pull_request", "push"):
+                    raw_diff = get_diff(repository_event)
+                    if not raw_diff:
                         logger.info("No diff computed.")
+                        return
+
+                    # Dynamic Review Logic
+                    total_tokens = llm().count_tokens(raw_diff)
+                    logger.info(f"Total tokens in diff: {total_tokens}")
+
+                    parsed_files: List[ParsedDiff] = parse_diff(raw_diff)
+                    all_suggestions: List[CodeSuggestion] = []
+
+                    if total_tokens < llm().token_limit:
+                        logger.info("Diff is small enough for a single-pass review.")
+                        # Send the full diff for a holistic review
+                        full_review = llm().generate_code_review(diff=raw_diff)
+                        if full_review and full_review.code_suggestions:
+                            # Validate and enrich suggestions
+                            for suggestion in full_review.code_suggestions:
+                                for parsed_file in parsed_files:
+                                    if suggestion.file_name == parsed_file.file_path:
+                                        line = suggestion.line
+                                        side = (
+                                            suggestion.side.value
+                                            if suggestion.side
+                                            else "RIGHT"
+                                        )
+                                        if (
+                                            line,
+                                            side,
+                                        ) in parsed_file.commentable_lines:
+                                            position = parsed_file.line_to_position[
+                                                (line, side)
+                                            ]
+                                            suggestion.position = position
+                                            all_suggestions.append(suggestion)
+                                        else:
+                                            logger.warning(
+                                                f"LLM hallucinated a suggestion for an un-changed line: {suggestion.file_name}:{line}"
+                                            )
+                                        break  # Move to the next suggestion
+                        summary = full_review.summary if full_review else ""
+                    else:
+                        logger.info(
+                            "Diff is too large. Performing file-by-file review."
+                        )
+                        # Generate a global summary to use as context for each file
+                        global_summary_prompt = f"Provide a brief, one-paragraph summary of the following code changes:\n\n{raw_diff}"
+                        global_context = llm().generate_text(global_summary_prompt)
+
+                        for parsed_file in parsed_files:
+                            logger.info(f"Reviewing file: {parsed_file.file_path}")
+                            context = f"**Overall PR Context:**\n{global_context}\n\n**Current File:** `{parsed_file.file_path}`\nFocus only on the changes in this file."
+                            review_for_file = llm().generate_code_review(
+                                diff=parsed_file.diff_text, context=context
+                            )
+
+                            if (
+                                not review_for_file
+                                or not review_for_file.code_suggestions
+                            ):
+                                continue
+
+                            for suggestion in review_for_file.code_suggestions:
+                                line = suggestion.line
+                                side = (
+                                    suggestion.side.value
+                                    if suggestion.side
+                                    else "RIGHT"
+                                )
+                                if (line, side) in parsed_file.commentable_lines:
+                                    position = parsed_file.line_to_position[
+                                        (line, side)
+                                    ]
+                                    suggestion.position = position
+                                    suggestion.file_name = parsed_file.file_path
+                                    all_suggestions.append(suggestion)
+                                else:
+                                    logger.warning(
+                                        f"LLM hallucinated a suggestion for an un-changed line: {parsed_file.file_path}:{line}"
+                                    )
+                        summary = llm().generate_summary(all_suggestions)
+
+                    # Determine final verdict and create the review object
+                    verdict = (
+                        Verdict.REQUEST_CHANGES if all_suggestions else Verdict.APPROVE
+                    )
+
+                    final_review = CodeReview(
+                        summary=summary,
+                        verdict=verdict,
+                        code_suggestions=all_suggestions,
+                    )
+
+                    logger.info("Scheduling review posting.")
+                    q.enqueue(self._post_review, repository, pull_request, final_review)
+
             except Exception as e:
                 logger.exception(f"An error occurred while processing event: {e}")
 
         else:
             logger.error(f"Unhandled event type: {event}")
+
+    def _post_review(
+        self, repository: Repository, pull_request: PullRequest, review: CodeReview
+    ):
+        """Posts the review to the repository."""
+        GitHub().post_review(
+            repository=repository, pull_request=pull_request, code_review=review
+        )

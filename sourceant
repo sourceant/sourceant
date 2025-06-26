@@ -27,9 +27,6 @@ def code_group():
 @click.command(name="lint")
 def lint_command():
     try:
-        # --check flag for linting
-        # Ignoring line length violations (E501) handled by black
-        subprocess.run(["flake8", ".", "--ignore=E501"], check=True)
         subprocess.run(["black", "--check", "."], check=True)
     except subprocess.CalledProcessError as e:
         print("\nLinting failed! Run 'sourceant code lint:fix' to automatically fix linting issues.")

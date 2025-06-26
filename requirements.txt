@@ -5,10 +5,11 @@ google-genai
 httpx
 Mako
 psycopg2
+pyjwt
 python-dotenv
 redis
 requests
 rq
 sqlmodel
+unidiff
 uvicorn
-
