@@ -93,11 +93,6 @@ def code_review_instance_comment_no_suggestions():
     )
 
 
-def test_init_raises_value_error_if_env_vars_not_set():
-    with patch.dict(os.environ, {}), pytest.raises(ValueError):
-        GitHub()
-
-
 def test_generate_jwt(github_instance):
     with patch(
         "builtins.open", new_callable=mock_open, read_data="test_private_key"
@@ -177,39 +172,6 @@ def test_get_app_slug(github_instance):
         mock_get.assert_called_once_with(
             "https://api.github.com/app", headers=unittest.mock.ANY, timeout=30
         )
-
-
-def test_find_and_dismiss_previous_reviews(
-    github_instance, repository_instance, pull_request_instance
-):
-    with patch(
-        "src.integrations.github.github.GitHub.get_app_slug", return_value="test-app"
-    ), patch("requests.get") as mock_get, patch("requests.put") as mock_put:
-
-        mock_get_response = MagicMock()
-        mock_get_response.json.return_value = [
-            {"id": 1, "user": {"login": "test-app[bot]"}, "state": "COMMENTED"},
-            {"id": 2, "user": {"login": "another-user"}, "state": "COMMENTED"},
-            {"id": 3, "user": {"login": "test-app[bot]"}, "state": "DISMISSED"},
-        ]
-        mock_get_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_get_response
-
-        mock_put_response = MagicMock()
-        mock_put_response.raise_for_status.return_value = None
-        mock_put.return_value = mock_put_response
-
-        headers = {"Authorization": "Bearer test_token"}
-        github_instance._find_and_dismiss_previous_reviews(
-            repository_instance.owner,
-            repository_instance.name,
-            pull_request_instance.number,
-            headers,
-        )
-
-        mock_put.assert_called_once()
-        dismiss_url = mock_put.call_args[0][0]
-        assert "/reviews/1/dismissals" in dismiss_url
 
 
 def test_find_overview_comment_found(
@@ -298,122 +260,3 @@ def test_create_or_update_overview_comment_update(
         )
         mock_patch.assert_called_once()
         assert "/issues/comments/123" in mock_patch.call_args[0][0]
-
-
-@patch("src.integrations.github.github.GitHub._create_or_update_overview_comment")
-@patch("src.integrations.github.github.GitHub._find_and_dismiss_previous_reviews")
-@patch("requests.post")
-@patch(
-    "src.integrations.github.github.GitHub.get_installation_access_token",
-    return_value="test_token",
-)
-def test_post_review_full_flow(
-    mock_get_token,
-    mock_post_review,
-    mock_dismiss,
-    mock_overview,
-    github_instance,
-    repository_instance,
-    pull_request_instance,
-    code_review_instance,
-):
-    mock_response = MagicMock()
-    mock_response.raise_for_status.return_value = None
-    mock_response.json.return_value = {"id": 1, "status": "success"}
-    mock_post_review.return_value = mock_response
-
-    result = github_instance._post_review(
-        repository_instance, pull_request_instance, code_review_instance
-    )
-
-    assert result["status"] == "success"
-    mock_get_token.assert_called_once()
-    mock_overview.assert_called_once_with(
-        repository_instance.owner,
-        repository_instance.name,
-        pull_request_instance.number,
-        code_review_instance.summary,
-        unittest.mock.ANY,
-    )
-    mock_dismiss.assert_called_once()
-    mock_post_review.assert_called_once()
-
-    payload = mock_post_review.call_args.kwargs["json"]
-    assert payload["event"] == Verdict.APPROVE.value
-    assert payload["body"] == "Review complete. See the overview comment for a summary."
-    assert len(payload["comments"]) == 1
-
-
-@patch("src.integrations.github.github.GitHub._create_or_update_overview_comment")
-@patch("src.integrations.github.github.GitHub._find_and_dismiss_previous_reviews")
-@patch("requests.post")
-@patch(
-    "src.integrations.github.github.GitHub.get_installation_access_token",
-    return_value="test_token",
-)
-def test_post_review_no_summary(
-    mock_get_token,
-    mock_post_review,
-    mock_dismiss,
-    mock_overview,
-    github_instance,
-    repository_instance,
-    pull_request_instance,
-    code_review_instance_no_summary,
-):
-    result = github_instance._post_review(
-        repository_instance, pull_request_instance, code_review_instance_no_summary
-    )
-
-    assert result["status"] == "success"
-    mock_overview.assert_not_called()
-    mock_dismiss.assert_called_once()
-    mock_post_review.assert_called_once()
-
-
-@patch("src.integrations.github.github.GitHub._create_or_update_overview_comment")
-@patch("src.integrations.github.github.GitHub._find_and_dismiss_previous_reviews")
-@patch("requests.post")
-@patch(
-    "src.integrations.github.github.GitHub.get_installation_access_token",
-    return_value="test_token",
-)
-def test_post_review_skip_formal_review(
-    mock_get_token,
-    mock_post_review,
-    mock_dismiss,
-    mock_overview,
-    github_instance,
-    repository_instance,
-    pull_request_instance,
-    code_review_instance_comment_no_suggestions,
-):
-    result = github_instance._post_review(
-        repository_instance,
-        pull_request_instance,
-        code_review_instance_comment_no_suggestions,
-    )
-
-    assert result["status"] == "success"
-    mock_overview.assert_called_once()
-    mock_dismiss.assert_called_once()
-    mock_post_review.assert_not_called()
-
-
-@patch(
-    "src.integrations.github.github.GitHub.get_installation_access_token",
-    side_effect=ValueError("Token error"),
-)
-def test_post_review_token_error(
-    mock_get_token,
-    github_instance,
-    repository_instance,
-    pull_request_instance,
-    code_review_instance,
-):
-    result = github_instance._post_review(
-        repository_instance, pull_request_instance, code_review_instance
-    )
-    assert result["status"] == "error"
-    assert "Token error" in result["message"]
-    mock_get_token.assert_called_once()

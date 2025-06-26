@@ -93,6 +93,25 @@ class Prompts:
     Please provide specific refactoring suggestions with code examples where applicable.
     """
 
+    SUMMARIZE_REVIEW_PROMPT = """
+    # 📝 **Code Review Summary**
+
+    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **GitHub-flavored Markdown**.
+
+    The summary should:
+    - Start with a general overview of the changes.
+    - Group related suggestions under appropriate headings (e.g., "Bug Fixes", "Style Improvements", "Security Concerns").
+    - Be easy to read and understand for the pull request author.
+    - Do NOT include the code snippets themselves, only the comments.
+
+    Here is the list of suggestions:
+    ```
+    {suggestions}
+    ```
+
+    **Please provide only the markdown summary.**
+    """
+
     DOCUMENTATION_GENERATION_PROMPT = """
     You are a technical writer. Please generate documentation for the following code diff.
 

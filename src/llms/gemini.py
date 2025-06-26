@@ -1,12 +1,11 @@
 import os
-import json
-from typing import Optional
+from typing import Optional, List
 
 from google import genai
 from src.llms.llm_interface import LLMInterface
 from src.prompts.prompts import Prompts
 from src.utils.logger import logger
-from src.models.code_review import CodeReview
+from src.models.code_review import CodeReview, CodeSuggestion
 
 
 class Gemini(LLMInterface):
@@ -18,7 +17,12 @@ class Gemini(LLMInterface):
             raise ValueError("GEMINI_API_KEY environment variable not set.")
 
         self.client = genai.Client(api_key=api_key)
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self._token_limit = int(os.getenv("GEMINI_TOKEN_LIMIT", 1000000))
+
+    @property
+    def token_limit(self) -> int:
+        return self._token_limit
 
     def generate_code_review(
         self, diff: str, context: Optional[str] = None
@@ -53,19 +57,47 @@ class Gemini(LLMInterface):
             logger.info("Code review generated successfully.")
 
             if os.getenv("APP_ENV") in ["dev", "development", "debug"]:
-                logger.debug(f"Raw response from Gemini: {response.text}")
+                # The response is now a CodeReview object, not a response with .text
+                logger.debug(f"Raw response from Gemini: {response}")
 
-            # The response text needs to be parsed into the CodeReview model.
-            review_data = json.loads(response.text)
-            return CodeReview(**review_data)
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON response from Gemini: {e}")
-            if "response" in locals():
-                logger.debug(f"Invalid response text: {response.text}")
-            return None
+            # The response is already a CodeReview object thanks to response_schema.
+            return response.parsed
         except Exception as e:
             logger.error(
                 f"An unexpected error occurred while generating code review from Gemini: {e}"
             )
             return None
+
+    def generate_summary(self, suggestions: List[CodeSuggestion]) -> str:
+        if not suggestions:
+            return "Great work! I have no suggestions for improvement."
+
+        suggestions_text = ""
+        for s in suggestions:
+            suggestions_text += f"- **File:** `{s.file_name}` (Line: {s.line})\n"
+            suggestions_text += f"  - **Comment:** {s.comment}\n"
+
+        prompt = Prompts.SUMMARIZE_REVIEW_PROMPT.format(suggestions=suggestions_text)
+
+        response = self.client.models.generate_content(
+            model=f"models/{self.model_name}", contents=[prompt]
+        )
+        return response.text
+
+    def generate_text(self, prompt: str) -> str:
+        """Generates a simple text response for a given prompt."""
+        try:
+            response = self.client.models.generate_content(
+                model=f"models/{self.model_name}", contents=[prompt]
+            )
+            return response.text
+        except Exception as e:
+            logger.error(f"An error occurred during text generation: {e}")
+            return ""
+
+    def count_tokens(self, text: str) -> int:
+        """Counts the number of tokens in a given text string."""
+        response = self.client.models.count_tokens(
+            model=f"models/{self.model_name}", contents=[text]
+        )
+        return response.total_tokens
