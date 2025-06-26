@@ -3,7 +3,12 @@ import os
 from unittest.mock import patch, MagicMock
 
 from src.llms.gemini import Gemini
-from src.models.code_review import CodeReview, Verdict, CodeReviewScores
+from src.models.code_review import (
+    CodeReview,
+    Verdict,
+    CodeReviewScores,
+    CodeReviewSummary,
+)
 
 
 @pytest.fixture
@@ -42,10 +47,16 @@ def test_generate_code_review_success(mocked_gemini_client):
     """Test successful code review generation."""
     gemini_instance, mock_generate_content = mocked_gemini_client
 
+    summary = CodeReviewSummary(
+        overview="Great job!",
+        key_improvements=[],
+        minor_suggestions=[],
+        critical_issues=[],
+    )
     # Create a mock response object that mimics the real Gemini response
     mock_response = MagicMock()
     mock_response.parsed = CodeReview(
-        summary="Great job!",
+        summary=summary,
         verdict=Verdict.APPROVE,
         code_suggestions=[],
         scores=CodeReviewScores(
@@ -62,7 +73,7 @@ def test_generate_code_review_success(mocked_gemini_client):
     review = gemini_instance.generate_code_review(diff)
 
     assert isinstance(review, CodeReview)
-    assert review.summary == "Great job!"
+    assert review.summary == summary
     # The verdict should be overridden to APPROVE based on the high scores
     assert review.verdict == Verdict.APPROVE
     mock_generate_content.assert_called_once()
@@ -72,9 +83,15 @@ def test_generate_code_review_verdict_approve_on_high_score(mocked_gemini_client
     """Test that a high average score results in an APPROVE verdict."""
     gemini_instance, mock_generate_content = mocked_gemini_client
 
+    summary = CodeReviewSummary(
+        overview="Decent code, but could be better.",
+        key_improvements=[],
+        minor_suggestions=[],
+        critical_issues=[],
+    )
     mock_response = MagicMock()
     mock_response.parsed = CodeReview(
-        summary="Decent code, but could be better.",
+        summary=summary,
         verdict=Verdict.REQUEST_CHANGES,  # Initial verdict from LLM
         code_suggestions=[],
         scores=CodeReviewScores(
@@ -99,9 +116,15 @@ def test_generate_code_review_verdict_request_changes_on_low_score(
     """Test that a low average score results in a REQUEST_CHANGES verdict."""
     gemini_instance, mock_generate_content = mocked_gemini_client
 
+    summary = CodeReviewSummary(
+        overview="This looks good to me!",
+        key_improvements=[],
+        minor_suggestions=[],
+        critical_issues=[],
+    )
     mock_response = MagicMock()
     mock_response.parsed = CodeReview(
-        summary="This looks good to me!",
+        summary=summary,
         verdict=Verdict.APPROVE,  # Initial verdict from LLM
         code_suggestions=[],
         scores=CodeReviewScores(

@@ -4,7 +4,7 @@ import requests
 import os
 from typing import Dict, Any, Optional
 from ..provider_adapter import ProviderAdapter
-from src.models.code_review import CodeReview, Verdict
+from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
 from src.models.repository import Repository
 from src.models.pull_request import PullRequest
 from src.utils.logger import logger
@@ -265,6 +265,32 @@ class GitHub(ProviderAdapter):
                 logger.error(f"Response: {e.response.text}")
             # Don't raise, as this is not a fatal error for the whole review process
 
+    def _format_summary(self, summary: CodeReviewSummary) -> str:
+        """Formats the structured summary into a markdown string."""
+        parts = ["# Code Review Summary\n\n"]
+        if summary.overview:
+            parts.append(f"{summary.overview}\n\n")
+
+        if summary.key_improvements:
+            parts.append("### 🚀 Key Improvements\n")
+            for item in summary.key_improvements:
+                parts.append(f"- {item}\n")
+            parts.append("\n")
+
+        if summary.minor_suggestions:
+            parts.append("### 💡 Minor Suggestions\n")
+            for item in summary.minor_suggestions:
+                parts.append(f"- {item}\n")
+            parts.append("\n")
+
+        if summary.critical_issues:
+            parts.append("### 🚨 Critical Issues\n")
+            for item in summary.critical_issues:
+                parts.append(f"- {item}\n")
+            parts.append("\n")
+
+        return "".join(parts)
+
     def post_review(
         self, repository: Repository, pull_request: PullRequest, code_review: CodeReview
     ) -> Dict[str, Any]:
@@ -281,11 +307,12 @@ class GitHub(ProviderAdapter):
 
             # 1. Create or update the persistent overview comment
             if code_review.summary:
+                formatted_summary = self._format_summary(code_review.summary)
                 self._create_or_update_overview_comment(
                     repository.owner,
                     repository.name,
                     pull_request.number,
-                    code_review.summary,
+                    formatted_summary,
                     headers,
                 )
 
