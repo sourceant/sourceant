@@ -69,6 +69,27 @@ class CodeReviewScores(BaseModel):
     )
 
 
+class CodeReviewSummary(BaseModel):
+    """Represents a structured summary of the code review."""
+
+    overview: str = Field(
+        ...,
+        description="A high-level overview of the code changes and the review.",
+    )
+    key_improvements: List[str] = Field(
+        ...,
+        description="A list of key improvements, which may contain references to paths.",
+    )
+    minor_suggestions: List[str] = Field(
+        ...,
+        description="A list of minor suggestions and potential enhancements (nice to haves).",
+    )
+    critical_issues: List[str] = Field(
+        ...,
+        description="A list of critical issues that should be changed. Leave empty if none.",
+    )
+
+
 class CodeReview(BaseModel):
     """Represents a comprehensive code review with various feedback categories."""
 
@@ -96,7 +117,9 @@ class CodeReview(BaseModel):
     security: Optional[str] = Field(
         None, description="Security vulnerabilities and recommendations."
     )
-    summary: Optional[str] = Field(None, description="A summary of the code review.")
+    summary: Optional[CodeReviewSummary] = Field(
+        None, description="A structured summary of the code review."
+    )
     verdict: Verdict = Field(..., description="The overall verdict of the code review.")
     scores: Optional[CodeReviewScores] = Field(
         None, description="A set of scores for different aspects of the code review."

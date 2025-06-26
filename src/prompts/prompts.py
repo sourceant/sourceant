@@ -47,7 +47,18 @@ class Prompts:
         "readability": "<Markdown-formatted feedback on readability.>",
         "refactoring_suggestions": "<Markdown-formatted refactoring suggestions.>",
         "security": "<Markdown-formatted security vulnerability analysis.>",
-        "summary": "<**Overall summary in Markdown.** Use headings, lists, and bold text for clarity.>",
+        "summary": {{
+            "overview": "✨ <A high-level overview of the code changes and the review. Must be Markdown-formatted.>",
+            "key_improvements": [
+                "🚀 <An improvement, can reference a file path. Must be Markdown-formatted.>"
+            ],
+            "minor_suggestions": [
+                "💡 <A minor suggestion or potential enhancement. Must be Markdown-formatted.>"
+            ],
+            "critical_issues": [
+                "🚨 <A critical issue that must be addressed. Must be Markdown-formatted.>"
+            ]
+        }},
         "verdict": "<APPROVE|REQUEST_CHANGES|COMMENT>",
         "scores": {{
             "correctness": "<Integer score from 1 to 10.>",
