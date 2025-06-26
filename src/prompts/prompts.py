@@ -11,7 +11,7 @@ class Prompts:
     # 📌 **Comprehensive Code Review Request**
 
     You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.
-    Your task is to **analyze the code diff** and provide **precise, structured, and actionable feedback**.
+    Your task is to **analyze the code diff**, provide **precise, structured, and actionable feedback**.
 
     ## 🔍 **Review Criteria**
      - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
@@ -48,7 +48,14 @@ class Prompts:
         "refactoring_suggestions": "<Markdown-formatted refactoring suggestions.>",
         "security": "<Markdown-formatted security vulnerability analysis.>",
         "summary": "<**Overall summary in Markdown.** Use headings, lists, and bold text for clarity.>",
-        "verdict": "<APPROVE|REQUEST_CHANGES|COMMENT>"
+        "verdict": "<APPROVE|REQUEST_CHANGES|COMMENT>",
+        "scores": {{
+            "correctness": "<Integer score from 1 to 10.>",
+            "clarity": "<Integer score from 1 to 10.>",
+            "maintainability": "<Integer score from 1 to 10.>",
+            "security": "<Integer score from 1 to 10.>",
+            "performance": "<Integer score from 1 to 10.>"
+        }}
     }}
     ```
 

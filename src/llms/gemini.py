@@ -5,7 +5,7 @@ from google import genai
 from src.llms.llm_interface import LLMInterface
 from src.prompts.prompts import Prompts
 from src.utils.logger import logger
-from src.models.code_review import CodeReview, CodeSuggestion
+from src.models.code_review import CodeReview, Verdict, CodeSuggestion
 
 
 class Gemini(LLMInterface):
@@ -60,8 +60,26 @@ class Gemini(LLMInterface):
                 # The response is now a CodeReview object, not a response with .text
                 logger.debug(f"Raw response from Gemini: {response}")
 
-            # The response is already a CodeReview object thanks to response_schema.
-            return response.parsed
+            review = response.parsed
+
+            # Override verdict based on scores
+            if review and review.scores:
+                total_score = (
+                    review.scores.correctness
+                    + review.scores.clarity
+                    + review.scores.maintainability
+                    + review.scores.security
+                    + review.scores.performance
+                )
+                average_score = total_score / 5.0
+
+                # If the average score is less than 5 (50%), request changes.
+                if average_score < 5:
+                    review.verdict = Verdict.REQUEST_CHANGES
+                else:
+                    review.verdict = Verdict.APPROVE
+
+            return review
         except Exception as e:
             logger.error(
                 f"An unexpected error occurred while generating code review from Gemini: {e}"

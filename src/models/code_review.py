@@ -43,6 +43,32 @@ class CodeSuggestion(BaseModel):
     )
 
 
+class CodeReviewScores(BaseModel):
+    """Represents the scores for different aspects of the code review."""
+
+    correctness: int = Field(
+        ...,
+        description="Score for correctness, logic, and common mistakes (1-10).",
+        ge=1,
+        le=10,
+    )
+    clarity: int = Field(
+        ..., description="Score for clarity and readability (1-10).", ge=1, le=10
+    )
+    maintainability: int = Field(
+        ...,
+        description="Score for maintainability and scalability (1-10).",
+        ge=1,
+        le=10,
+    )
+    security: int = Field(
+        ..., description="Score for security aspects (1-10).", ge=1, le=10
+    )
+    performance: int = Field(
+        ..., description="Score for performance (1-10).", ge=1, le=10
+    )
+
+
 class CodeReview(BaseModel):
     """Represents a comprehensive code review with various feedback categories."""
 
@@ -72,3 +98,6 @@ class CodeReview(BaseModel):
     )
     summary: Optional[str] = Field(None, description="A summary of the code review.")
     verdict: Verdict = Field(..., description="The overall verdict of the code review.")
+    scores: Optional[CodeReviewScores] = Field(
+        None, description="A set of scores for different aspects of the code review."
+    )
