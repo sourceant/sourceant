@@ -5,14 +5,16 @@ import traceback
 from src.events.dispatcher import EventDispatcher
 from src.events.repository_event import RepositoryEvent
 from src.utils.logger import logger
+from src.config.settings import STATELESS_MODE
 
 dispatcher = EventDispatcher()
 
 
 class RepositoryEventController(BaseController):
-
     @classmethod
     def index(cls):
+        if STATELESS_MODE:
+            return cls().success([])
         try:
             events = RepositoryEventModel.get_all()
             if not events:
@@ -28,6 +30,8 @@ class RepositoryEventController(BaseController):
 
     @classmethod
     def show(cls, event_id: int):
+        if STATELESS_MODE:
+            return cls().failure("Application is in STATELESS_MODE", status_code=404)
         try:
             event = RepositoryEventModel.get_by_id(event_id)
             if not event:
@@ -53,7 +57,7 @@ class RepositoryEventController(BaseController):
         provider: str,
     ):
         try:
-            event = RepositoryEventModel(
+            event_model = RepositoryEventModel(
                 action=action,
                 type=type,
                 url=url,
@@ -62,11 +66,20 @@ class RepositoryEventController(BaseController):
                 repository_full_name=repository_full_name,
                 payload=payload,
                 provider=provider,
-            ).save()
-            logger.info(f"Repository event created: {RepositoryEvent(event)}")
-            dispatcher.dispatch(RepositoryEvent(event))
+            )
+
+            if not STATELESS_MODE:
+                event_model.save()
+                logger.info(f"Repository event created and persisted: {event_model}")
+            else:
+                logger.info(
+                    f"Repository event processed (not persisted): {event_model}"
+                )
+
+            dispatcher.dispatch(RepositoryEvent(event_model))
+
             return cls().success(
-                event.dict(), "Repository event recorded.", status_code=201
+                event_model.dict(), "Repository event processed.", status_code=201
             )
         except Exception:
             logger.error(traceback.format_exc())
@@ -78,6 +91,8 @@ class RepositoryEventController(BaseController):
 
     @classmethod
     def destroy(cls, event_id: int):
+        if STATELESS_MODE:
+            return cls().failure("Application is in STATELESS_MODE", status_code=404)
         try:
             event = RepositoryEventModel.get_by_id(event_id)
             if not event:
