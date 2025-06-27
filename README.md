@@ -82,6 +82,17 @@ The `sourceant` command provides the following subcommands for managing the appl
   docker compose logs
   ```
 
+## Configuration
+The application can be configured using environment variables. Key variables are documented in the `.env.example` file.
+
+### Stateless Mode
+For development, testing, or specific use cases where you want to process events without writing them to the database, you can enable stateless mode. In this mode, the application will not attempt to connect to or interact with any database, making it lighter and preventing data accumulation.
+
+To enable stateless mode, set the following environment variable:
+```bash
+STATELESS_MODE=true
+```
+
 ## Setting Up GitHub Webhook
 1. Go to your GitHub repository.
 2. Navigate to **Settings > Webhooks > Add Webhook**.
