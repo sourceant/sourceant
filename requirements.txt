@@ -7,7 +7,8 @@ Mako
 psycopg2
 pyjwt
 python-dotenv
-redis
+redis==5.0.4
+redislite
 requests
 rq
 sqlmodel
