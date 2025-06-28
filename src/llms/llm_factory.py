@@ -1,22 +1,22 @@
 from src.llms.gemini import Gemini
 from src.llms.deepseek import DeepSeek
 from src.llms.llm_interface import LLMInterface
+from functools import lru_cache
+from src.config.settings import LLM
 from src.utils.logger import logger
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
+@lru_cache(maxsize=None)
 def llm() -> LLMInterface:
-    """Creates an LLM instance based on the LLME environment variable."""
-    llm_type = os.getenv("LLM", "gemini")
-    if llm_type == "gemini":
+    """
+    Factory function to get the language model instance.
+    Uses lru_cache to ensure a single instance is created (singleton pattern).
+    """
+    if LLM == "gemini":
         logger.info("Using Gemini LLM.")
         return Gemini()
-    elif llm_type == "deepseek":
+    elif LLM == "deepseek":
         logger.info("Using DeepSeek LLM.")
         return DeepSeek()
     else:
-        logger.error(f"Unknown LLM type: {llm_type}")
-        raise ValueError(f"Unknown LLM type: {llm_type}")
+        raise NotImplementedError(f"LLM '{LLM}' not implemented.")

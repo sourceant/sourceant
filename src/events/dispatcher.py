@@ -1,36 +1,64 @@
+from contextvars import ContextVar
+from typing import List, Optional
+
 import redis
+
+from fastapi import BackgroundTasks
 from rq import Queue
+
+from src.config.settings import QUEUE_MODE, REDIS_HOST, REDIS_PORT
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
-from src.models.repository_event import RepositoryEvent as RepositoryEventModel
-from src.models.code_review import CodeReview
-from src.models.repository import Repository
-from src.models.pull_request import PullRequest
-from typing import List
 from src.integrations.github.github import GitHub
+from src.llms.llm_factory import llm
+from src.models.code_review import CodeReview, CodeSuggestion, Verdict
+from src.models.pull_request import PullRequest
+from src.models.repository import Repository
+from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 from src.utils.diff import get_diff
 from src.utils.diff_parser import parse_diff, ParsedDiff
-from src.models.code_review import CodeSuggestion, Verdict
 from src.utils.logger import logger
-from src.llms.llm_factory import llm
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-redis_conn = redis.Redis(
-    host=os.getenv("REDIS_HOST"), port=os.getenv("REDIS_PORT"), db=0
+# Context variable to hold the BackgroundTasks object for the current request
+bg_tasks_cv: ContextVar[Optional[BackgroundTasks]] = ContextVar(
+    "bg_tasks", default=None
 )
-q = Queue(connection=redis_conn)
+
+q = None
+if QUEUE_MODE == "redis":
+    logger.info("Using Redis for event queue.")
+    redis_conn = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
+    q = Queue(connection=redis_conn)
+elif QUEUE_MODE == "request":
+    logger.info("Using request-scoped background tasks for event processing.")
+else:
+    # This case should ideally not be reached if QUEUE_MODE is validated on startup,
+    # but as a safeguard:
+    logger.info("No queue mode configured. Events will not be dispatched.")
 
 
 class EventDispatcher:
     """Dispatches events to the queue."""
 
     def dispatch(self, event: Event):
-        """Dispatches an event to the queue."""
-        logger.info(f"Dispatching event: {event}")
-        q.enqueue(self._process_event, event)
+        """Dispatches an event to the configured queue or background task runner."""
+        logger.info(f"Dispatching event: {event} (mode: {QUEUE_MODE})")
+        if QUEUE_MODE == "redis":
+            if not q:
+                raise RuntimeError("Redis queue not initialized.")
+            q.enqueue(self._process_event, event)
+
+        elif QUEUE_MODE == "request":
+            background_tasks = bg_tasks_cv.get()
+            if not background_tasks:
+                raise RuntimeError(
+                    "FastAPI BackgroundTasks not found in context. Is the endpoint setting it?"
+                )
+            background_tasks.add_task(self._process_event, event)
+        else:
+            raise ValueError(
+                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be 'redis' or 'request'."
+            )
 
     def _process_event(self, event: Event):
         if isinstance(event, RepositoryEvent):
@@ -145,7 +173,14 @@ class EventDispatcher:
                     )
 
                     logger.info("Scheduling review posting.")
-                    q.enqueue(self._post_review, repository, pull_request, final_review)
+                    if QUEUE_MODE == "redis":
+                        if not q:
+                            raise RuntimeError("Redis queue not initialized.")
+                        q.enqueue(
+                            self._post_review, repository, pull_request, final_review
+                        )
+                    else:  # In fastapi mode, this runs in the same background task.
+                        self._post_review(repository, pull_request, final_review)
 
             except Exception as e:
                 logger.exception(f"An error occurred while processing event: {e}")

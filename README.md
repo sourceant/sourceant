@@ -93,6 +93,18 @@ To enable stateless mode, set the following environment variable:
 STATELESS_MODE=true
 ```
 
+### Queue Mode
+
+The application supports different backend modes for processing background jobs, controlled by the `QUEUE_MODE` environment variable.
+
+-   **`redis` (Default)**: This is the recommended mode for production. It uses a persistent Redis queue (`rq`) to handle background tasks. This requires a separate `rq` worker process to be running.
+    ```bash
+    # Run the worker for redis mode
+    docker compose exec app rq worker --url redis://redis:6379
+    ```
+
+-   **`request`**: This mode is suitable for development, testing, or lightweight deployments where setting up Redis is not desired. It uses FastAPI's built-in `BackgroundTasks` feature. Tasks are tied to the lifecycle of the HTTP request that triggers them and are executed by the web server process after the response has been sent. No separate worker is needed.
+
 ## Setting Up GitHub Webhook
 1. Go to your GitHub repository.
 2. Navigate to **Settings > Webhooks > Add Webhook**.
