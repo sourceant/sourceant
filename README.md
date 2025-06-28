@@ -9,6 +9,31 @@
 - **Open Source**: Fully open-source and community-driven.
 
 
+## Security 🔐
+
+SourceAnt uses two primary secrets to secure your application: a webhook secret to verify incoming requests from providers like GitHub, and an API key to protect internal API endpoints.
+
+### Webhook Secret
+
+The webhook secret ensures that the POST requests sent to your webhook endpoint are genuinely from the configured provider (e.g., GitHub) and not from a malicious third party.
+
+-   `WEBHOOK_SECRET`: A long, random string that you create and share between your SourceAnt instance and your Git provider's webhook configuration.
+-   `REQUIRE_WEBHOOK_SECRET`: A flag that controls whether the webhook signature is enforced. Set to `false` (default) for development environments. Set to `true` for production to ensure security.
+
+**To generate a secure webhook secret, run the following command:**
+```bash
+openssl rand -hex 32
+```
+
+### API Key
+
+The API key (`SA_API_KEY`) is used to protect certain API endpoints, preventing unauthorized access. Any client calling these endpoints must include the key in the `X-SourceAnt-API-KEY` header.
+
+**To generate a secure API key, run the following command:**
+```bash
+openssl rand -hex 32
+```
+
 ## Getting Started 🛠️
 
 ### Prerequisites
@@ -41,7 +66,15 @@
    ```
    #### `.env` file
    ```env
-   GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
+   # Webhook secret to verify payloads from GitHub/GitLab
+   WEBHOOK_SECRET=your_webhook_secret
+   # Set to 'true' to enforce webhook signature verification, 'false' to disable (default)
+   REQUIRE_WEBHOOK_SECRET=false
+
+   # API Key to protect internal endpoints
+   SA_API_KEY=your_sourceant_api_key
+
+   # LLM and GitHub configuration
    GEMINI_API_KEY=your_gemini_api_key
    GITHUB_TOKEN=your_github_personal_access_token
    GEMINI_MODEL=gemini-2.5-flash
@@ -93,6 +126,14 @@ To enable stateless mode, set the following environment variable:
 STATELESS_MODE=true
 ```
 
+### Log Driver
+
+The `LOG_DRIVER` environment variable controls where the application logs are sent. This is particularly useful in serverless environments where file-based logging is not practical.
+
+-   **`console` (Default)**: Logs are sent to the console, intelligently routing to `stdout` for informational messages (`INFO`, `DEBUG`) and `stderr` for warnings and errors (`WARNING`, `ERROR`, `CRITICAL`). This is the recommended setting for serverless and containerized environments like Cloud Run and Docker.
+-   **`file`**: Logs are written to `sourceant.log` in the root directory. This is useful for traditional deployments where you have access to the file system.
+-   **`syslog`**: Logs are sent to the system's syslog daemon. This is suitable for environments where you want to centralize logs from multiple services into a single, system-level logging solution.
+
 ### Queue Mode
 
 The application supports different backend modes for processing background jobs, controlled by the `QUEUE_MODE` environment variable.
@@ -114,7 +155,7 @@ The application supports different backend modes for processing background jobs,
 2. Navigate to **Settings > Webhooks > Add Webhook**.
 3. Set the **Payload URL** to your server's `/webhook` endpoint (e.g., `https://your-server.com/webhook`).
 4. Set the **Content type** to `application/json`.
-5. Add the `GITHUB_WEBHOOK_SECRET` to the **Secret** field.
+5. Add the `WEBHOOK_SECRET` to the **Secret** field.
 6. Select **Let me select individual events** and choose **Pull requests**.
 7. Save the webhook.
 

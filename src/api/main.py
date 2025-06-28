@@ -4,6 +4,9 @@ from src.api.routes import pr as pr_endpoints
 from src.api.routes import app as app_endpoints
 
 from src.llms.llm_factory import llm
+from src.utils.logger import setup_logger
+
+setup_logger()
 
 
 @asynccontextmanager
