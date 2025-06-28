@@ -1,6 +1,6 @@
 from sqlmodel import Field
 from typing import Optional
-from src.models.base_model import BaseModel
+from src.models.base_model import BaseModel, get_session, select
 
 
 class Repository(BaseModel, table=True):
@@ -24,3 +24,12 @@ class Repository(BaseModel, table=True):
 
     def __repr__(self):
         return f"<Repository(provider={self.provider}, name={self.name}, full_name={self.full_name})>"
+
+    @classmethod
+    def get_by_full_name(cls, full_name: str):
+        """Fetch a single record by full_name."""
+        with next(get_session()) as session:
+            result = session.exec(
+                select(cls).where(cls.full_name == full_name)
+            ).first()
+        return result

@@ -14,7 +14,13 @@ if QUEUE_MODE not in VALID_QUEUE_MODES:
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 LLM = os.getenv("LLM", "gemini")
-GITHUB_SECRET = os.getenv("GITHUB_SECRET")
+LOG_DRIVER: str = os.getenv("LOG_DRIVER", "console")
+LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 
-if GITHUB_SECRET is None:
-    raise ValueError("GITHUB_SECRET environment variable is not set.")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+REQUIRE_WEBHOOK_SECRET = os.getenv("REQUIRE_WEBHOOK_SECRET", "false").lower() == "true"
+
+if REQUIRE_WEBHOOK_SECRET and not WEBHOOK_SECRET:
+    raise ValueError(
+        "WEBHOOK_SECRET environment variable must be set when REQUIRE_WEBHOOK_SECRET is true."
+    )
