@@ -7,7 +7,7 @@ from src.tests.base_test import BaseTestCase
 class TestRepositoryEvents(BaseTestCase):
     @pytest.mark.parametrize("stateless_mode", [True, False])
     def test_github_webhook(self, stateless_mode):
-        with patch(
+        with patch("src.config.db.STATELESS_MODE", stateless_mode), patch(
             "src.controllers.repository_event_controller.STATELESS_MODE", stateless_mode
         ):
             payload = {
@@ -56,7 +56,7 @@ class TestRepositoryEvents(BaseTestCase):
 
     @pytest.mark.parametrize("stateless_mode", [True, False])
     def test_get_repository_events(self, stateless_mode):
-        with patch(
+        with patch("src.config.db.STATELESS_MODE", stateless_mode), patch(
             "src.controllers.repository_event_controller.STATELESS_MODE", stateless_mode
         ):
             if not stateless_mode:

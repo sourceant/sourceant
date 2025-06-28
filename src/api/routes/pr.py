@@ -1,20 +1,22 @@
-from fastapi import APIRouter, HTTPException, Request, Header, Depends, Body
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Request,
+    Header,
+    Depends,
+    Body,
+    BackgroundTasks,
+)
 from src.controllers.repository_event_controller import RepositoryEventController
+from src.events.dispatcher import bg_tasks_cv
+from src.config.settings import GITHUB_SECRET
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
-import os
 import hmac
 import hashlib
-from dotenv import load_dotenv
 
-load_dotenv()
 
 router = APIRouter()
-
-GITHUB_SECRET = os.getenv("GITHUB_SECRET")
-
-if GITHUB_SECRET is None:
-    raise ValueError("GITHUB_SECRET environment variable is not set.")
 
 
 class GitHubWebhookPayload(BaseModel):
@@ -66,6 +68,7 @@ def get_provider_from_headers(headers: dict) -> Optional[str]:
 @router.post("/github-webhook")
 async def github_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     signature: str = Header(None, alias="X-Hub-Signature-256"),
     event: str = Depends(get_event),
     payload: GitHubWebhookPayload = Body(...),
@@ -89,6 +92,9 @@ async def github_webhook(
     number = payload.pull_request["number"] if payload.pull_request else None
 
     provider = get_provider_from_headers(request.headers)
+
+    # Set the background tasks in the context for the dispatcher to use
+    bg_tasks_cv.set(background_tasks)
 
     return RepositoryEventController.create(
         action=payload.action,
