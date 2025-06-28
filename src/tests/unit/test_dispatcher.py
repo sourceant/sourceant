@@ -48,3 +48,21 @@ class TestDispatcher:
             mock_q.enqueue.assert_called_once_with(
                 dispatcher._process_event, dummy_event
             )
+
+    def test_dispatch_uses_redislite_when_mode_is_redislite(self, monkeypatch):
+        """
+        Tests that the dispatcher uses the Redis queue (rq)
+        when QUEUE_MODE is 'redislite'.
+        """
+        monkeypatch.setattr("src.events.dispatcher.QUEUE_MODE", "redislite")
+
+        # Mock the redis queue object 'q' in the dispatcher's module
+        with patch("src.events.dispatcher.q") as mock_q:
+            dispatcher = EventDispatcher()
+            dummy_event = RepositoryEvent(MagicMock())
+
+            dispatcher.dispatch(dummy_event)
+
+            mock_q.enqueue.assert_called_once_with(
+                dispatcher._process_event, dummy_event
+            )

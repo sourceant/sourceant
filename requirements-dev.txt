@@ -4,3 +4,4 @@ flake8
 httpx # Required by TestClient from fastapi.testclient
 pytest
 pytest-mock
+pytest-asyncio==0.23.6

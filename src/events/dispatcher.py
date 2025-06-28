@@ -2,6 +2,7 @@ from contextvars import ContextVar
 from typing import List, Optional
 
 import redis
+from redislite import Redis as RedisLite
 
 from fastapi import BackgroundTasks
 from rq import Queue
@@ -29,6 +30,11 @@ if QUEUE_MODE == "redis":
     logger.info("Using Redis for event queue.")
     redis_conn = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
     q = Queue(connection=redis_conn)
+elif QUEUE_MODE == "redislite":
+    logger.info("Using RedisLite for event queue.")
+    # RedisLite uses a file-based Redis instance, no host/port needed.
+    redis_conn = RedisLite()
+    q = Queue(connection=redis_conn)
 elif QUEUE_MODE == "request":
     logger.info("Using request-scoped background tasks for event processing.")
 else:
@@ -43,9 +49,9 @@ class EventDispatcher:
     def dispatch(self, event: Event):
         """Dispatches an event to the configured queue or background task runner."""
         logger.info(f"Dispatching event: {event} (mode: {QUEUE_MODE})")
-        if QUEUE_MODE == "redis":
+        if QUEUE_MODE in ["redis", "redislite"]:
             if not q:
-                raise RuntimeError("Redis queue not initialized.")
+                raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
             q.enqueue(self._process_event, event)
 
         elif QUEUE_MODE == "request":
@@ -57,7 +63,7 @@ class EventDispatcher:
             background_tasks.add_task(self._process_event, event)
         else:
             raise ValueError(
-                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be 'redis' or 'request'."
+                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be 'redis', 'redislite', or 'request'."
             )
 
     def _process_event(self, event: Event):

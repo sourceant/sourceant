@@ -98,6 +98,10 @@ STATELESS_MODE=true
 The application supports different backend modes for processing background jobs, controlled by the `QUEUE_MODE` environment variable.
 
 -   **`redis` (Default)**: This is the recommended mode for production. It uses a persistent Redis queue (`rq`) to handle background tasks. This requires a separate `rq` worker process to be running.
+
+-   **`redislite`**: A self-contained, file-based Redis queue. This mode is ideal for local development or testing as it provides the full functionality of a Redis queue without needing to run a separate Redis server. The Redis database file (`redislite.db`) will be created in the project root.
+
+-   **`request`**: This mode uses FastAPI's `BackgroundTasks` to process jobs in the same process as the web request. It's the simplest mode for development as it requires no external worker or database, but it is not suitable for production as jobs will be lost if the server restarts.
     ```bash
     # Run the worker for redis mode
     docker compose exec app rq worker --url redis://redis:6379
