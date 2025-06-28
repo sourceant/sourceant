@@ -93,6 +93,14 @@ To enable stateless mode, set the following environment variable:
 STATELESS_MODE=true
 ```
 
+### Log Driver
+
+The `LOG_DRIVER` environment variable controls where the application logs are sent. This is particularly useful in serverless environments where file-based logging is not practical.
+
+-   **`console` (Default)**: Logs are sent to the console, intelligently routing to `stdout` for informational messages (`INFO`, `DEBUG`) and `stderr` for warnings and errors (`WARNING`, `ERROR`, `CRITICAL`). This is the recommended setting for serverless and containerized environments like Cloud Run and Docker.
+-   **`file`**: Logs are written to `sourceant.log` in the root directory. This is useful for traditional deployments where you have access to the file system.
+-   **`syslog`**: Logs are sent to the system's syslog daemon. This is suitable for environments where you want to centralize logs from multiple services into a single, system-level logging solution.
+
 ### Queue Mode
 
 The application supports different backend modes for processing background jobs, controlled by the `QUEUE_MODE` environment variable.

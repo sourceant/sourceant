@@ -14,6 +14,8 @@ if QUEUE_MODE not in VALID_QUEUE_MODES:
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 LLM = os.getenv("LLM", "gemini")
+LOG_DRIVER: str = os.getenv("LOG_DRIVER", "console")
+LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 
 if GITHUB_SECRET is None:
