@@ -85,6 +85,24 @@ The `sourceant` command provides the following subcommands for managing the appl
 ## Configuration
 The application can be configured using environment variables. Key variables are documented in the `.env.example` file.
 
+### GitHub Token
+
+To access private repositories and to avoid API rate limits with public repositories, the application requires a GitHub Personal Access Token.
+
+1.  **Generate a Token**:
+    *   Navigate to [**GitHub Developer settings**](https://github.com/settings/tokens?type=beta).
+    *   Click **Generate new token**.
+    *   Give the token a descriptive name (e.g., `sourceant-dev`).
+    *   Under **Repository access**, select the repositories you want to grant access to.
+    *   Under **Permissions**, select the `repo` scope to grant read/write access to your repositories.
+    *   Click **Generate token** and copy the generated token.
+
+2.  **Set the Environment Variable**:
+    Add the token to your `.env` file:
+    ```env
+    GITHUB_TOKEN=your_github_personal_access_token
+    ```
+
 ### Stateless Mode
 For development, testing, or specific use cases where you want to process events without writing them to the database, you can enable stateless mode. In this mode, the application will not attempt to connect to or interact with any database, making it lighter and preventing data accumulation.
 

@@ -33,6 +33,7 @@ def test_get_diff_no_diff_to_compute(mocker):
 
 def test_get_diff_pr_event(mocker):
     mock_get_diff_from_pr = mocker.patch("src.utils.diff.get_diff_from_pr")
+    mocker.patch("src.utils.diff.GITHUB_TOKEN", None)
     mock_get = mocker.patch("requests.get")
     payload = {
         "action": "opened",
@@ -47,6 +48,7 @@ def test_get_diff_pr_event(mocker):
 
 def test_get_diff_push_event(mocker):
     mock_get_diff_from_push = mocker.patch("src.utils.diff.get_diff_from_push")
+    mocker.patch("src.utils.diff.GITHUB_TOKEN", None)
     mock_get = mocker.patch("requests.get")
     payload = {
         "after": "sha1",
@@ -61,14 +63,17 @@ def test_get_diff_push_event(mocker):
     mock_get.assert_not_called()
 
 
-def test_get_diff_private_repo(mocker):
+def test_get_diff_with_token(mocker):
+    """
+    Test that get_diff includes the Authorization header when GITHUB_TOKEN is set.
+    """
     mock_get_diff_from_pr = mocker.patch("src.utils.diff.get_diff_from_pr")
     mock_get = mocker.patch("requests.get")  # mock requests.get
-    mocker.patch("src.utils.diff.os.environ.get", return_value="test_token")
+    mocker.patch("src.utils.diff.GITHUB_TOKEN", "test_token")
     payload = {
         "action": "opened",
         "number": 123,
-        "repository": {"private": True, "full_name": TEST_REPO},
+        "repository": {"full_name": TEST_REPO},
     }
     event = RepositoryEvent(payload=payload)
     get_diff(event)
@@ -76,21 +81,6 @@ def test_get_diff_private_repo(mocker):
         TEST_REPO, 123, {"Authorization": "token test_token"}
     )
     mock_get.assert_not_called()
-
-
-def test_get_diff_private_repo_no_token(mocker):
-    mock_logger = mocker.patch("src.utils.diff.logger")
-    mocker.patch("src.utils.diff.os.environ.get", return_value=None)
-    payload = {
-        "action": "opened",
-        "number": 123,
-        "repository": {"full_name": TEST_REPO, "private": True},
-    }
-    event = RepositoryEvent(payload=payload)
-    assert get_diff(event) is None
-    mock_logger.error.assert_called_once_with(
-        "GITHUB_TOKEN environment variable not set for private repo."
-    )
 
 
 def test_get_diff_from_pr_success(mocker):

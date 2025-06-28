@@ -1,5 +1,5 @@
 import requests
-import os
+from src.config.settings import GITHUB_TOKEN
 from src.models.repository_event import RepositoryEvent
 from src.utils.logger import logger
 from typing import Optional
@@ -92,15 +92,10 @@ def get_diff(event: RepositoryEvent) -> Optional[str]:
     if not repository_full_name or not isinstance(repository_full_name, str):
         logger.error("Repository full name not found in payload.")
         return None
-    repo_private = repository.get("private", False)
-    headers = {}
 
-    if repo_private:
-        github_token = os.environ.get("GITHUB_TOKEN")
-        if not github_token:
-            logger.error("GITHUB_TOKEN environment variable not set for private repo.")
-            return None
-        headers["Authorization"] = f"token {github_token}"
+    headers = {}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
 
     action = payload.get("action")
     if action in ("opened", "synchronize", "reopened"):
