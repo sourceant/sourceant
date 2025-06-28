@@ -1,5 +1,6 @@
 alembic
 click
+cryptography # Required by pyjwt
 fastapi
 google-genai
 httpx
