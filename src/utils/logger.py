@@ -15,15 +15,23 @@ class LevelFilter(logging.Filter):
         return self.min_level <= record.levelno <= self.max_level
 
 
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+def setup_logger():
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger()
 
-if not logger.handlers:
+    # Clear existing handlers to prevent duplicate logs
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    logger.setLevel(logging.DEBUG)
+
     log_driver = settings.LOG_DRIVER
+
     if log_driver == "file":
         handler = RotatingFileHandler(
-            "sourceant.log", maxBytes=10 * 1024 * 1024, backupCount=5
+            settings.LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -32,7 +40,7 @@ if not logger.handlers:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     elif log_driver == "console":
-        # Handler for stdout (INFO and below)
+        # Handler for stdout (INFO and DEBUG)
         stdout_handler = logging.StreamHandler(stream=sys.stdout)
         stdout_handler.setFormatter(formatter)
         stdout_handler.addFilter(LevelFilter(logging.DEBUG, logging.INFO))
@@ -47,3 +55,7 @@ if not logger.handlers:
         raise ValueError(
             f"Invalid LOG_DRIVER: {log_driver}. Must be one of ['console', 'file', 'syslog']"
         )
+
+
+# Define the logger at the module level so it can be imported
+logger = logging.getLogger()
