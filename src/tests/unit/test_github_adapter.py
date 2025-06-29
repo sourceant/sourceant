@@ -128,7 +128,10 @@ def test_get_installation_access_token_caching(github_instance, repository_insta
 
         mock_response = MagicMock()
         # Corrected to match the new implementation that uses time.time()
-        mock_response.json.return_value = {"token": "test_access_token"}
+        mock_response.json.return_value = {
+            "token": "test_access_token",
+            "expires_at": "2099-01-01T00:00:00Z",
+        }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
@@ -260,3 +263,23 @@ def test_create_or_update_overview_comment_update(
         )
         mock_patch.assert_called_once()
         assert "/issues/comments/123" in mock_patch.call_args[0][0]
+
+
+def test_get_diff(github_instance, repository_instance, pull_request_instance):
+    with patch(
+        "src.integrations.github.github.GitHub.get_installation_access_token",
+        return_value="test_access_token",
+    ), patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.text = "diff --git a/file.py b/file.py\n--- a/file.py\n+++ b/file.py\n@@ -1,1 +1,1 @@\n-hello\n+world"
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        diff = github_instance.get_diff(
+            repository_instance.owner,
+            repository_instance.name,
+            pull_request_instance.number,
+        )
+
+        assert diff == mock_response.text
+        mock_get.assert_called_once()
