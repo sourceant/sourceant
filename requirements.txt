@@ -6,11 +6,12 @@ google-genai
 httpx
 Mako
 psycopg2
-pyjwt
+PyJWT==2.8.0
+python-dateutil==2.8.2
 python-dotenv
 redis==5.0.4
 redislite
-requests
+requests==2.31.0
 rq
 sqlmodel
 unidiff

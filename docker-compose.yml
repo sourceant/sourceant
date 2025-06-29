@@ -14,6 +14,8 @@ services:
       - sourceant-network
     environment:
       - PYTHONDONTWRITEBYTECODE=1
+    env_file:
+      - .env
 
   db:
     image: postgres:13

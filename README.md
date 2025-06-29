@@ -15,7 +15,6 @@
 - Python 3.8+
 - GitHub account with a repository for testing.
 - LLM API key (Currently supports Gemini).
-- GitHub personal access token with `repo` scope.
 
 ### Installation
 1. **Clone the Repository**:
@@ -43,7 +42,6 @@
    ```env
    GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
    GEMINI_API_KEY=your_gemini_api_key
-   GITHUB_TOKEN=your_github_personal_access_token
    GEMINI_MODEL=gemini-2.5-flash
    GEMINI_TOKEN_LIMIT=100000
    ```
@@ -85,23 +83,41 @@ The `sourceant` command provides the following subcommands for managing the appl
 ## Configuration
 The application can be configured using environment variables. Key variables are documented in the `.env.example` file.
 
-### GitHub Token
+### GitHub App Setup
 
-To access private repositories and to avoid API rate limits with public repositories, the application requires a GitHub Personal Access Token.
+Authentication is handled via a GitHub App, which provides secure, repository-level access. Your setup path depends on whether you are using the official cloud service or self-hosting the backend.
 
-1.  **Generate a Token**:
-    *   Navigate to [**GitHub Developer settings**](https://github.com/settings/tokens?type=beta).
-    *   Click **Generate new token**.
-    *   Give the token a descriptive name (e.g., `sourceant-dev`).
-    *   Under **Repository access**, select the repositories you want to grant access to.
-    *   Under **Permissions**, select the `repo` scope to grant read/write access to your repositories.
-    *   Click **Generate token** and copy the generated token.
+#### For Cloud Users
 
-2.  **Set the Environment Variable**:
-    Add the token to your `.env` file:
-    ```env
-    GITHUB_TOKEN=your_github_personal_access_token
-    ```
+If you are using the official SourceAnt cloud service, simply install our official GitHub App:
+
+- **[Install the SourceAnt GitHub App](https://github.com/apps/sourceant)**
+
+The app will request the necessary permissions, and once installed on your repositories, it will automatically send events to our hosted backend. No further configuration is needed.
+
+#### For Self-Hosted Users
+
+If you are running your own instance of SourceAnt (e.g., from this repository), you **must create your own GitHub App**. This is because the webhook URL must point to your own server.
+
+1.  **Create a New GitHub App**:
+    *   Navigate to your GitHub settings: **Developer settings** > **GitHub Apps** > **New GitHub App**.
+    *   **Webhook URL**: Set this to the public URL of your backend, pointing to the webhook endpoint (e.g., `https://your-domain.com/api/github/webhooks`).
+    *   **Webhook Secret**: Generate a secure secret and save it. You will need this for the `GITHUB_SECRET` environment variable.
+
+2.  **Set Permissions**:
+    Under the "Permissions" tab for your app, grant the following access:
+    *   **Repository permissions** > **Contents**: `Read-only`
+    *   **Repository permissions** > **Pull requests**: `Read & write`
+
+3.  **Generate a Private Key**:
+    *   At the bottom of your app's settings page, generate a new private key (`.pem` file).
+    *   Save this file securely and note its path.
+
+4.  **Configure Environment Variables**:
+    Update your `.env` file with the credentials from the app you just created:
+    *   `GITHUB_APP_ID`: The "App ID" from your app's settings page.
+    *   `GITHUB_APP_PRIVATE_KEY_PATH`: The file path to the `.pem` private key you downloaded.
+    *   `GITHUB_SECRET`: The webhook secret you created.
 
 ### Stateless Mode
 For development, testing, or specific use cases where you want to process events without writing them to the database, you can enable stateless mode. In this mode, the application will not attempt to connect to or interact with any database, making it lighter and preventing data accumulation.

@@ -16,7 +16,7 @@ from src.models.code_review import CodeReview, CodeSuggestion, Verdict
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
-from src.utils.diff import get_diff
+
 from src.utils.diff_parser import parse_diff, ParsedDiff
 from src.utils.logger import logger
 
@@ -84,7 +84,24 @@ class EventDispatcher:
             )
             try:
                 if repository_event.type in ("pull_request", "push"):
-                    raw_diff = get_diff(repository_event)
+                    github = GitHub()
+                    owner = repository.owner
+                    repo_name = repository.name
+                    raw_diff = None
+
+                    if repository_event.type == "pull_request":
+                        pr_number = repository_event.number
+                        if pr_number:
+                            raw_diff = github.get_diff(owner, repo_name, pr_number)
+
+                    elif repository_event.type == "push":
+                        # Use the before and after SHAs to construct the API compare URL
+                        base_sha = repository_event.payload.get("before")
+                        head_sha = repository_event.payload.get("after")
+                        if base_sha and head_sha:
+                            raw_diff = github.get_diff_between_shas(
+                                owner, repo_name, base_sha, head_sha
+                            )
                     if not raw_diff:
                         logger.info("No diff computed.")
                         return

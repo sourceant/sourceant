@@ -3,6 +3,7 @@ import time
 import requests
 import os
 from typing import Dict, Any, Optional
+from dateutil.parser import isoparse
 from ..provider_adapter import ProviderAdapter
 from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
 from src.models.repository import Repository
@@ -118,51 +119,65 @@ class GitHub(ProviderAdapter):
         Raises:
             ValueError: If the token cannot be retrieved
         """
-        repo_full_name = f"{owner}/{repo}"
-        now = time.time()
+        repo_key = f"{owner}/{repo}"
+        logger.info(f"Attempting to get installation access token for {repo_key}")
 
-        # Check cache for a valid token
-        if repo_full_name in self._access_tokens:
-            token_data = self._access_tokens[repo_full_name]
-            if now < token_data.get("expires_at", 0):
+        # Check cache first
+        if repo_key in self._access_tokens:
+            token_data = self._access_tokens[repo_key]
+            # Check if the token is still valid (with a 5-minute buffer)
+            if time.time() < token_data["expires_at"] - 300:
+                logger.info(
+                    f"Using cached token for {repo_key}. Expires at: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(token_data['expires_at']))}"
+                )
                 return token_data["token"]
+            else:
+                logger.info(
+                    f"Cached token for {repo_key} has expired. Fetching a new one."
+                )
+        else:
+            logger.info(f"No cached token found for {repo_key}. Fetching a new one.")
 
-        # If no valid token, generate a new one
         try:
             installation_id = self.get_installation_id(owner, repo)
             jwt_token = self.generate_jwt()
-
             headers = {
                 "Authorization": f"Bearer {jwt_token}",
                 "Accept": "application/vnd.github.v3+json",
                 "X-GitHub-Api-Version": "2022-11-28",
             }
 
+            logger.info(f"Requesting new installation access token for {repo_key}")
             response = requests.post(
                 f"https://api.github.com/app/installations/{installation_id}/access_tokens",
                 headers=headers,
-                timeout=30,
             )
             response.raise_for_status()
 
-            token_data = response.json()
-            access_token = token_data.get("token")
-            if not access_token:
-                raise ValueError("No access token found in response")
+            response_data = response.json()
+            new_token = response_data.get("token")
+            expires_at_str = response_data.get("expires_at")
 
-            # Cache the new token with its expiration time (GitHub tokens last 1 hour)
-            self._access_tokens[repo_full_name] = {
-                "token": access_token,
-                "expires_at": now + 3540,  # 59 minutes
+            if not new_token or not expires_at_str:
+                raise ValueError("Token or expiration not found in response")
+
+            # Parse the expiration time
+            new_expires_at = isoparse(expires_at_str).timestamp()
+
+            logger.info(f"Successfully fetched new token for {repo_key}. Caching it.")
+            # Cache the new token with its expiration time
+            self._access_tokens[repo_key] = {
+                "token": new_token,
+                "expires_at": new_expires_at,
             }
 
-            return access_token
+            return new_token
 
         except requests.exceptions.RequestException as e:
             error_msg = (
-                f"Failed to get installation access token for {owner}/{repo}: {e}"
+                f"Failed to get installation access token for {owner}/{repo}: {str(e)}"
             )
-            if e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 error_msg += f" - Response: {e.response.text}"
             logger.error(error_msg)
             raise ValueError(error_msg)
@@ -400,3 +415,53 @@ class GitHub(ProviderAdapter):
                 "message": error_msg,
                 "error_type": "unexpected_error",
             }
+
+    def get_diff(self, owner: str, repo: str, pr_number: int) -> str:
+        """Get the diff for a pull request by its number."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3.diff",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+            logger.info(f"Requesting diff from API URL: {api_url}")
+            response = requests.get(
+                api_url,
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.RequestException as e:
+            error_msg = (
+                f"Failed to get diff for PR #{pr_number} from {owner}/{repo}: {e}"
+            )
+            if hasattr(e, "response") and e.response is not None:
+                error_msg += f" - Response: {e.response.text}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def get_diff_between_shas(
+        self, owner: str, repo: str, base_sha: str, head_sha: str
+    ) -> str:
+        """Get the diff between two SHAs by calling the compare API endpoint."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3.diff",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            # Construct the correct API URL for comparing commits
+            api_compare_url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"
+            response = requests.get(api_compare_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to get diff for {owner}/{repo} between {base_sha} and {head_sha}: {e}"
+            if hasattr(e, "response") and e.response is not None:
+                error_msg += f" - Response: {e.response.text}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
