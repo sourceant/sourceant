@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.9-slim-bookworm
 
 WORKDIR /app
 
@@ -10,7 +10,15 @@ COPY . /app/
 RUN python -m pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN ln -s /app/sourceant /usr/local/bin/sourceant
+RUN useradd --create-home appuser
+
+COPY --chown=appuser:appuser sourceant /home/appuser/.local/bin/sourceant
+RUN chmod +x /home/appuser/.local/bin/sourceant
+
+USER appuser
+
+ENV PATH="/home/appuser/.local/bin:${PATH}"
+ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
