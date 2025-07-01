@@ -11,6 +11,12 @@ if QUEUE_MODE not in VALID_QUEUE_MODES:
         f"Invalid QUEUE_MODE: {QUEUE_MODE}. Must be one of {VALID_QUEUE_MODES}"
     )
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not STATELESS_MODE and DATABASE_URL is None:
+    raise ValueError(
+        "DATABASE_URL environment variable must be set when not in STATELESS_MODE."
+    )
+
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 LLM = os.getenv("LLM", "gemini")

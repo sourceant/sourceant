@@ -3,6 +3,8 @@
 import click
 import sys
 import subprocess
+from src.config.settings import DATABASE_URL, STATELESS_MODE
+from src.utils.logger import logger
 from alembic.config import CommandLine
 
 
@@ -15,6 +17,15 @@ def cli():
                context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 @click.pass_context
 def db_command(ctx):
+    if STATELESS_MODE:
+        print("Application is in STATELESS_MODE. Skipping database command.")
+        logger.warning("Application is in STATELESS_MODE. Skipping database command.")
+        sys.exit(0)
+    if not DATABASE_URL:
+        print("DATABASE_URL not set, skipping database command.")
+        logger.warning("DATABASE_URL not set, skipping database command.")
+        sys.exit(0)
+
     sys.argv = ["alembic"] + ctx.args
     sys.exit(CommandLine().main())
 
