@@ -9,6 +9,7 @@ from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
 from src.models.repository import Repository
 from src.models.pull_request import PullRequest
 from src.utils.logger import logger
+from src.llms.llm_factory import llm
 
 
 COMMENT_MARKER = "<!-- SOURCEANT_REVIEW_SUMMARY -->"
@@ -31,20 +32,12 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # Cache for installation access tokens
         # Cache for installation access tokens with expiration
         self._access_tokens: Dict[str, Dict[str, Any]] = {}
         self._app_slug: Optional[str] = None
 
     def generate_jwt(self) -> str:
-        """Generate a JWT token for GitHub App authentication.
-
-        Returns:
-            str: JWT token for GitHub API authentication
-
-        Raises:
-            ValueError: If there's an issue generating the JWT token
-        """
+        """Generate a JWT token for GitHub App authentication."""
         try:
             with open(self.app_private_key_path, "r") as f:
                 private_key = f.read()
@@ -67,18 +60,7 @@ class GitHub(ProviderAdapter):
             raise ValueError(error_msg)
 
     def get_installation_id(self, owner: str, repo: str) -> int:
-        """Get the installation ID for a GitHub repository.
-
-        Args:
-            owner: Repository owner/organization
-            repo: Repository name
-
-        Returns:
-            int: Installation ID for the repository
-
-        Raises:
-            ValueError: If the installation ID cannot be retrieved
-        """
+        """Get the installation ID for a GitHub repository."""
         try:
             jwt_token = self.generate_jwt()
             headers = {
@@ -90,6 +72,7 @@ class GitHub(ProviderAdapter):
             response = requests.get(
                 f"https://api.github.com/repos/{owner}/{repo}/installation",
                 headers=headers,
+                timeout=30,
             )
             response.raise_for_status()
 
@@ -107,25 +90,13 @@ class GitHub(ProviderAdapter):
             raise ValueError(error_msg)
 
     def get_installation_access_token(self, owner: str, repo: str) -> str:
-        """Get an installation access token for a repository, with caching.
-
-        Args:
-            owner: Repository owner/organization
-            repo: Repository name
-
-        Returns:
-            str: Installation access token
-
-        Raises:
-            ValueError: If the token cannot be retrieved
-        """
+        """Get an installation access token for a repository, with caching."""
         repo_key = f"{owner}/{repo}"
         logger.info(f"Attempting to get installation access token for {repo_key}")
 
         # Check cache first
         if repo_key in self._access_tokens:
             token_data = self._access_tokens[repo_key]
-            # Check if the token is still valid (with a 5-minute buffer)
             if time.time() < token_data["expires_at"] - 300:
                 logger.info(
                     f"Using cached token for {repo_key}. Expires at: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(token_data['expires_at']))}"
@@ -151,6 +122,7 @@ class GitHub(ProviderAdapter):
             response = requests.post(
                 f"https://api.github.com/app/installations/{installation_id}/access_tokens",
                 headers=headers,
+                timeout=30,
             )
             response.raise_for_status()
 
@@ -161,11 +133,9 @@ class GitHub(ProviderAdapter):
             if not new_token or not expires_at_str:
                 raise ValueError("Token or expiration not found in response")
 
-            # Parse the expiration time
             new_expires_at = isoparse(expires_at_str).timestamp()
 
             logger.info(f"Successfully fetched new token for {repo_key}. Caching it.")
-            # Cache the new token with its expiration time
             self._access_tokens[repo_key] = {
                 "token": new_token,
                 "expires_at": new_expires_at,
@@ -216,10 +186,9 @@ class GitHub(ProviderAdapter):
 
     def _find_overview_comment(
         self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]
-    ) -> Optional[int]:
+    ) -> Optional[Dict[str, Any]]:
         """Find the bot's overview comment on a PR."""
         try:
-            # We use the issues endpoint as PRs are issues
             response = requests.get(
                 f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
                 headers=headers,
@@ -233,7 +202,7 @@ class GitHub(ProviderAdapter):
                     logger.info(
                         f"Found previous overview comment with ID: {comment['id']}"
                     )
-                    return comment["id"]
+                    return comment
 
             logger.info("No previous overview comment found.")
             return None
@@ -251,20 +220,19 @@ class GitHub(ProviderAdapter):
         headers: Dict[str, str],
     ) -> None:
         """Create or update the main summary comment on a PR."""
-        comment_id = self._find_overview_comment(owner, repo, pr_number, headers)
+        existing_comment = self._find_overview_comment(owner, repo, pr_number, headers)
 
         body = f"{summary}\n\n{COMMENT_MARKER}"
 
         try:
-            if comment_id:
-                # Update existing comment
+            if existing_comment:
+                comment_id = existing_comment["id"]
                 logger.info(f"Updating overview comment {comment_id}...")
                 url = f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{comment_id}"
                 response = requests.patch(
                     url, headers=headers, json={"body": body}, timeout=30
                 )
             else:
-                # Create new comment
                 logger.info("Creating new overview comment...")
                 url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
                 response = requests.post(
@@ -278,7 +246,6 @@ class GitHub(ProviderAdapter):
             logger.error(f"Failed to create or update overview comment: {e}")
             if hasattr(e, "response") and e.response is not None:
                 logger.error(f"Response: {e.response.text}")
-            # Don't raise, as this is not a fatal error for the whole review process
 
     def _format_summary(self, summary: CodeReviewSummary) -> str:
         """Formats the structured summary into a markdown string."""
@@ -320,18 +287,28 @@ class GitHub(ProviderAdapter):
                 "X-GitHub-Api-Version": "2022-11-28",
             }
 
-            # 1. Create or update the persistent overview comment
             if code_review.summary:
                 formatted_summary = self._format_summary(code_review.summary)
-                self._create_or_update_overview_comment(
-                    repository.owner,
-                    repository.name,
-                    pull_request.number,
-                    formatted_summary,
-                    headers,
-                )
 
-            # 3. Post the new formal review with suggestions and verdict
+                existing_comment = self._find_overview_comment(
+                    repository.owner, repository.name, pull_request.number, headers
+                )
+                if existing_comment and not llm().is_summary_different(
+                    summary_a=existing_comment["body"],
+                    summary_b=formatted_summary,
+                ):
+                    logger.info(
+                        f"PR #{pull_request.number} summary is semantically unchanged. Skipping update."
+                    )
+                else:
+                    self._create_or_update_overview_comment(
+                        repository.owner,
+                        repository.name,
+                        pull_request.number,
+                        formatted_summary,
+                        headers,
+                    )
+
             comments = []
             if code_review.code_suggestions:
                 for suggestion in code_review.code_suggestions:
