@@ -7,7 +7,7 @@ from redislite import Redis as RedisLite
 from fastapi import BackgroundTasks
 from rq import Queue
 
-from src.config.settings import QUEUE_MODE, REDIS_HOST, REDIS_PORT
+from src.config.settings import QUEUE_MODE, REDIS_HOST, REDIS_PORT, REVIEW_DRAFT_PRS
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github import GitHub
@@ -79,9 +79,28 @@ class EventDispatcher:
                 name=repository_event.repository_full_name.split("/")[1],
                 owner=repository_event.repository_full_name.split("/")[0],
             )
-            pull_request: PullRequest = PullRequest(
-                number=repository_event.number, title=repository_event.title
+            is_draft = repository_event.payload.get("pull_request", {}).get(
+                "draft", False
             )
+            is_merged = repository_event.payload.get("pull_request", {}).get(
+                "merged", False
+            )
+
+            pull_request: PullRequest = PullRequest(
+                number=repository_event.number,
+                title=repository_event.title,
+                draft=is_draft,
+                merged=is_merged,
+            )
+
+            if pull_request.merged:
+                logger.info(f"Skipping review for merged PR #{pull_request.number}")
+                return
+
+            if pull_request.draft and not REVIEW_DRAFT_PRS:
+                logger.info(f"Skipping review for draft PR #{pull_request.number}")
+                return
+
             try:
                 if repository_event.type in ("pull_request", "push"):
                     github = GitHub()
