@@ -10,6 +10,8 @@ class PullRequest(BaseModel, table=True):
     provider: str = Field(..., index=True)
     number: int
     title: str
+    draft: bool = False
+    merged: bool = False
     body: Optional[str] = None
     url: str = Field(..., unique=True)
     state: str

@@ -23,6 +23,7 @@ LLM = os.getenv("LLM", "gemini")
 LOG_DRIVER: str = os.getenv("LOG_DRIVER", "console")
 LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
+REVIEW_DRAFT_PRS = os.getenv("REVIEW_DRAFT_PRS", "false").lower() == "true"
 
 
 if GITHUB_SECRET is None:
