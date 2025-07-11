@@ -7,7 +7,14 @@ from redislite import Redis as RedisLite
 from fastapi import BackgroundTasks
 from rq import Queue
 
-from src.config.settings import QUEUE_MODE, REDIS_HOST, REDIS_PORT, REVIEW_DRAFT_PRS
+from src.config.settings import (
+    QUEUE_MODE,
+    REDIS_HOST,
+    REDIS_PORT,
+    REVIEW_DRAFT_PRS,
+    DEBUG_MODE,
+    APP_ENV,
+)
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github import GitHub
@@ -18,6 +25,7 @@ from src.models.repository import Repository
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 
 from src.utils.diff_parser import parse_diff, ParsedDiff
+from src.utils.line_mapper import LineMapper
 from src.utils.logger import logger
 
 # Context variable to hold the BackgroundTasks object for the current request
@@ -102,105 +110,121 @@ class EventDispatcher:
                 return
 
             try:
-                if repository_event.type in ("pull_request", "push"):
-                    github = GitHub()
-                    owner = repository.owner
-                    repo_name = repository.name
-                    raw_diff = None
+                if repository_event.type not in ["pull_request", "push"]:
+                    logger.info(
+                        f"Skipping event of type '{repository_event.type}' because it is not a pull request or push."
+                    )
+                    return
 
-                    if repository_event.type == "pull_request":
-                        pr_number = repository_event.number
-                        if pr_number:
-                            raw_diff = github.get_diff(owner, repo_name, pr_number)
+                github = GitHub()
+                owner = repository.owner
+                repo_name = repository.name
+                raw_diff = ""
 
-                    elif repository_event.type == "push":
-                        # Use the before and after SHAs to construct the API compare URL
-                        base_sha = repository_event.payload.get("before")
-                        head_sha = repository_event.payload.get("after")
-                        if base_sha and head_sha:
-                            raw_diff = github.get_diff_between_shas(
-                                owner, repo_name, base_sha, head_sha
-                            )
-                    if not raw_diff:
-                        logger.info("No diff computed.")
+                if repository_event.type == "push":
+                    base_sha = repository_event.payload.get("before")
+                    head_sha = repository_event.payload.get("after")
+                    if not base_sha or not head_sha:
+                        logger.error("Missing 'before' or 'after' SHA for push event.")
                         return
+                    raw_diff = github.get_diff_between_shas(
+                        owner, repo_name, base_sha, head_sha
+                    )
+                elif repository_event.type == "pull_request":
+                    raw_diff = github.get_diff(
+                        owner=owner, repo=repo_name, pr_number=pull_request.number
+                    )
 
-                    # Dynamic Review Logic
-                    total_tokens = llm().count_tokens(raw_diff)
-                    logger.info(f"Total tokens in diff: {total_tokens}")
+                if not raw_diff:
+                    logger.info("No diff could be computed.")
+                    return
 
-                    parsed_files: List[ParsedDiff] = parse_diff(raw_diff)
-                    all_suggestions: List[CodeSuggestion] = []
+                # Dynamic Review Logic
+                total_tokens = llm().count_tokens(raw_diff)
+                logger.info(f"Total tokens in diff: {total_tokens}")
 
-                    if total_tokens < llm().token_limit:
-                        logger.info("Diff is small enough for a single-pass review.")
-                        # Send the full diff for a holistic review
-                        full_review = llm().generate_code_review(diff=raw_diff)
-                        if full_review and full_review.code_suggestions:
-                            # Validate and enrich suggestions
-                            for suggestion in full_review.code_suggestions:
-                                for parsed_file in parsed_files:
-                                    if suggestion.file_name == parsed_file.file_path:
-                                        line = suggestion.line
-                                        side = (
-                                            suggestion.side.value
-                                            if suggestion.side
-                                            else "RIGHT"
-                                        )
-                                        if (
-                                            line,
-                                            side,
-                                        ) in parsed_file.commentable_lines:
-                                            position = parsed_file.line_to_position[
-                                                (line, side)
-                                            ]
-                                            suggestion.position = position
-                                            all_suggestions.append(suggestion)
-                                        else:
-                                            logger.warning(
-                                                f"LLM hallucinated a suggestion for an un-changed line: {suggestion.file_name}:{line}"
-                                            )
-                                        break  # Move to the next suggestion
-                        summary = full_review.summary if full_review else ""
-                    else:
-                        logger.info(
-                            "Diff is too large. Performing file-by-file review."
-                        )
-                        # Generate a global summary to use as context for each file
-                        global_summary_prompt = f"Provide a brief, one-paragraph summary of the following code changes:\n\n{raw_diff}"
-                        global_context = llm().generate_text(global_summary_prompt)
+                parsed_files: List[ParsedDiff] = parse_diff(raw_diff)
+                all_suggestions: List[CodeSuggestion] = []
 
-                        for parsed_file in parsed_files:
-                            logger.info(f"Reviewing file: {parsed_file.file_path}")
-                            context = f"**Overall PR Context:**\n{global_context}\n\n**Current File:** `{parsed_file.file_path}`\nFocus only on the changes in this file."
-                            review_for_file = llm().generate_code_review(
-                                diff=parsed_file.diff_text, context=context
+                # Create line mapper for better line number handling
+                line_mapper = LineMapper(parsed_files)
+
+                # Log diff structure for debugging
+                if DEBUG_MODE:
+                    logger.debug(
+                        f"Diff structure:\n{line_mapper.generate_line_mapping_report()}"
+                    )
+
+                if total_tokens < llm().token_limit:
+                    logger.info("Diff is small enough for a single-pass review.")
+
+                    # Add enhanced context to the diff
+                    enhanced_context = line_mapper.get_enhanced_diff_context()
+
+                    # Send the full diff for a holistic review
+                    full_review = llm().generate_code_review(
+                        diff=raw_diff, context=enhanced_context
+                    )
+                    if full_review and full_review.code_suggestions:
+                        # Validate and enrich suggestions with the LineMapper utility
+                        for suggestion in full_review.code_suggestions:
+                            mapped_result = line_mapper.validate_and_map_suggestion(
+                                suggestion, strict_mode=(APP_ENV == "production")
                             )
+                            if mapped_result:
+                                position, _ = mapped_result
+                                suggestion.position = position
+                                all_suggestions.append(suggestion)
+                    summary = full_review.summary if full_review else ""
 
-                            if (
-                                not review_for_file
-                                or not review_for_file.code_suggestions
-                            ):
-                                continue
+                    # Determine final verdict and create the review object
+                    verdict = (
+                        Verdict.REQUEST_CHANGES if all_suggestions else Verdict.APPROVE
+                    )
 
-                            for suggestion in review_for_file.code_suggestions:
-                                line = suggestion.line
-                                side = (
-                                    suggestion.side.value
-                                    if suggestion.side
-                                    else "RIGHT"
-                                )
-                                if (line, side) in parsed_file.commentable_lines:
-                                    position = parsed_file.line_to_position[
-                                        (line, side)
-                                    ]
-                                    suggestion.position = position
-                                    suggestion.file_name = parsed_file.file_path
-                                    all_suggestions.append(suggestion)
-                                else:
-                                    logger.warning(
-                                        f"LLM hallucinated a suggestion for an un-changed line: {parsed_file.file_path}:{line}"
-                                    )
+                    final_review = CodeReview(
+                        summary=summary,
+                        verdict=verdict,
+                        code_suggestions=all_suggestions,
+                    )
+
+                    logger.info("Scheduling review posting.")
+                    if QUEUE_MODE in ["redis", "redislite"]:
+                        if not q:
+                            raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
+                        q.enqueue(
+                            self._post_review, repository, pull_request, final_review
+                        )
+                    else:  # In fastapi mode, this runs in the same background task.
+                        self._post_review(repository, pull_request, final_review)
+                else:
+                    logger.info("Diff is too large. Performing file-by-file review.")
+                    # Generate a global summary to use as context for each file
+                    global_summary_prompt = f"Provide a brief, one-paragraph summary of the following code changes:\n\n{raw_diff}"
+                    global_context = llm().generate_text(global_summary_prompt)
+
+                    for parsed_file in parsed_files:
+                        logger.info(f"Reviewing file: {parsed_file.file_path}")
+                        context = f"**Overall PR Context:**\n{global_context}\n\n**Current File:** `{parsed_file.file_path}`\nFocus only on the changes in this file."
+                        review_for_file = llm().generate_code_review(
+                            diff=parsed_file.diff_text, context=context
+                        )
+
+                        if not review_for_file or not review_for_file.code_suggestions:
+                            continue
+
+                        for suggestion in review_for_file.code_suggestions:
+                            # The file_name might be missing from the LLM response in file-by-file mode
+                            if not suggestion.file_name:
+                                suggestion.file_name = parsed_file.file_path
+
+                            mapped_result = line_mapper.validate_and_map_suggestion(
+                                suggestion, strict_mode=(APP_ENV == "production")
+                            )
+                            if mapped_result:
+                                position, _ = mapped_result
+                                suggestion.position = position
+                                all_suggestions.append(suggestion)
                         summary = llm().generate_summary(all_suggestions)
 
                     # Determine final verdict and create the review object
