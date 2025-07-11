@@ -119,3 +119,23 @@ class Gemini(LLMInterface):
             model=f"models/{self.model_name}", contents=[text]
         )
         return response.total_tokens
+
+    def is_summary_different(self, summary_a: str, summary_b: str) -> bool:
+        """Compares two summaries to see if they are semantically different."""
+        prompt = Prompts.COMPARE_SUMMARIES_PROMPT.format(
+            summary_a=summary_a, summary_b=summary_b
+        )
+        try:
+            logger.info("Comparing summaries for semantic differences...")
+            response = self.client.models.generate_content(
+                model=f"models/{self.model_name}", contents=[prompt]
+            )
+
+            verdict = response.text.strip().upper()
+            logger.info(f"Summary comparison verdict: {verdict}")
+
+            return verdict == "DIFFERENT"
+        except Exception as e:
+            logger.error(f"An error occurred during summary comparison: {e}")
+            # Default to assuming they are different to be safe and force an update.
+            return True

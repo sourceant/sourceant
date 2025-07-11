@@ -189,13 +189,13 @@ def test_find_overview_comment_found(
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
-        comment_id = github_instance._find_overview_comment(
+        comment = github_instance._find_overview_comment(
             repository_instance.owner,
             repository_instance.name,
             pull_request_instance.number,
             {},
         )
-        assert comment_id == 456
+        assert comment["id"] == 456
         mock_get.assert_called_once()
 
 
@@ -247,7 +247,8 @@ def test_create_or_update_overview_comment_update(
     github_instance, repository_instance, pull_request_instance
 ):
     with patch(
-        "src.integrations.github.github.GitHub._find_overview_comment", return_value=123
+        "src.integrations.github.github.GitHub._find_overview_comment",
+        return_value={"id": 123, "body": "old summary"},
     ), patch("requests.patch") as mock_patch:
 
         mock_response = MagicMock()

@@ -18,3 +18,8 @@ class LLMInterface(ABC):
     def generate_code_review(self, diff: str, context: str = "None") -> CodeReview:
         """Generates a code review based on the given diff."""
         pass
+
+    @abstractmethod
+    def is_summary_different(self, summary_a: str, summary_b: str) -> bool:
+        """Compares two summaries to see if they are semantically different."""
+        pass

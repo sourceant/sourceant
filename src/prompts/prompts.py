@@ -140,3 +140,34 @@ class Prompts:
 
     Please provide clear and concise documentation that explains the purpose and functionality of the code changes.
     """
+
+    COMPARE_SUMMARIES_PROMPT = """
+    # Task: Compare two pull request summaries for semantic equivalence.
+
+    You will be given two summaries of a pull request, an "Old Summary" and a "New Summary".
+    Your task is to determine if the **meaning and core information** of the New Summary are substantively different from the Old Summary.
+
+    ## Criteria for "DIFFERENT":
+    - The New Summary introduces new information, suggestions, or warnings not present in the old one.
+    - The New Summary removes critical information that was in the old one.
+    - The tone or conclusion of the review has significantly changed (e.g., from approval to requesting changes).
+
+    ## Criteria for "SAME":
+    - The New Summary is just a rephrasing of the Old Summary without changing the core message.
+    - Minor stylistic or formatting changes.
+    - The order of points is different, but the substance is identical.
+
+    ## Input:
+    ### Old Summary:
+    ```markdown
+    {summary_a}
+    ```
+
+    ### New Summary:
+    ```markdown
+    {summary_b}
+    ```
+
+    ## Output:
+    Respond with a single word: **SAME** or **DIFFERENT**. Do not provide any other text or explanation.
+    """
