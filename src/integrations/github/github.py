@@ -324,20 +324,16 @@ class GitHub(ProviderAdapter):
                     comment = {
                         "path": suggestion.file_name,
                         "body": comment_body,
-                        "line": suggestion.line or 1,
-                        "side": (
-                            suggestion.side.value
-                            if hasattr(suggestion, "side") and suggestion.side
-                            else "RIGHT"
-                        ),
+                        "side": suggestion.side.value if suggestion.side else "RIGHT",
                     }
-                    if (
-                        suggestion.start_line
-                        and suggestion.line
-                        and suggestion.start_line < suggestion.line
-                    ):
+
+                    # For multi-line comments, 'start_line' and 'line' (end_line) are used.
+                    # For single-line comments, only 'line' is used.
+                    if suggestion.start_line < suggestion.end_line:
                         comment["start_line"] = suggestion.start_line
-                        comment["line"] = suggestion.line
+                        comment["line"] = suggestion.end_line
+                    else:
+                        comment["line"] = suggestion.end_line
 
                     comments.append(comment)
 

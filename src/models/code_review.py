@@ -23,10 +23,15 @@ class CodeSuggestion(BaseModel):
     """Represents a single code suggestion with file and line number."""
 
     file_name: str = Field(..., description="The name of the file.")
-    position: Optional[int] = Field(..., description="The position of the suggestion.")
-    line: Optional[int] = Field(..., description="The line number of the suggestion.")
-    start_line: Optional[int] = Field(
-        ..., description="The start line number of the suggestion."
+    position: Optional[int] = Field(
+        None, description="The position of the suggestion in the diff."
+    )
+    start_line: int = Field(
+        ..., description="The first line of the code block to be replaced."
+    )
+    end_line: int = Field(
+        ...,
+        description="The last line of the code block to be replaced. For single-line comments, this is the same as start_line.",
     )
     side: Optional[Side] = Field(
         ...,
@@ -40,6 +45,10 @@ class CodeSuggestion(BaseModel):
     suggested_code: Optional[str] = Field(
         ...,
         description="The actual suggestion block of code. HIGHLY RECOMMENDED to include.",
+    )
+    existing_code: Optional[str] = Field(
+        None,
+        description="The original code to be replaced. If provided, this is used to anchor the suggestion instead of line numbers.",
     )
 
 

@@ -21,6 +21,16 @@ class Prompts:
      - **Readability & Maintainability** → Clarity, modularity, inline documentation.
      - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.
 
+    ## 📍 **CRITICAL: Line Number Guidelines**
+
+    **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
+    - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
+    - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
+    - **Line Number Source**: Use the line number from the **RIGHT** side of the diff for new/modified code (+ lines) and the **LEFT** side for deleted code (- lines).
+    - **Hunk Headers**: Use `@@ -start,count +start,count @@` headers to find the correct line numbers.
+    - **`existing_code`**: For each suggestion, provide the **exact block of original code** that your `suggested_code` is meant to replace. This is crucial for accurately placing the comment if line numbers have shifted. For new code additions, this field should be `null`.
+    - **Precision is Key**: Incorrect line numbers will cause the review to fail.
+
     ---
 
     ## 📝 **Feedback Format (JSON)**
@@ -33,12 +43,14 @@ class Prompts:
         "code_suggestions": [
             {{
                 "file_name": "<path/to/file>",
-                "line": <line_number>,
-                "start_line": <start_line_number>,
+                "start_line": <The first line of the code block to be replaced>,
+                "end_line": <The last line of the code block to be replaced. For single-line comments, this is the same as start_line>,
                 "position": <position_in_diff>,
                 "side": "<LEFT|RIGHT>",
-                "comment": "<Detailed review comment.>",
-                "suggested_code": "<Corrected or improved code.>"
+                "comment": "<Detailed review comment explaining the issue and why it matters.>",
+                "category": "<bug|security|performance|style|maintainability>",
+                "suggested_code": "<Corrected or improved code snippet.>",
+                "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>"
             }}
         ],
         "documentation_suggestions": "<Markdown-formatted documentation suggestions.>",
@@ -83,7 +95,9 @@ class Prompts:
     ---
 
     📢 **Final Notes:**
-    - **Ensure precision** → Always specify `file`, `line`, `position`, and `side`.
+    - **Ensure precision** → Always specify exact `line` numbers from the diff, `position`, and `side`.
+    - **Line Number Accuracy** → Count line numbers from hunk headers (@@ -start,count +start,count @@).
+    - **Only target changed lines** → Suggest comments only on lines with + or - prefixes.
     - **Structured & Clear** → Use JSON format for easy automation and integration.
     - **Be Constructive & Actionable** → Don't just point out problems—suggest improvements.
     - **Follow Best Practices** → Use **proper coding standards, security guidelines, and optimization techniques**.
