@@ -1,9 +1,13 @@
 # src/utils/line_mapper.py
+import re
+from difflib import SequenceMatcher
 from typing import List, Optional, Tuple
+
+from src.models.code_review import CodeSuggestion
 from src.utils.diff_parser import ParsedDiff
 from src.utils.logger import logger
-from src.config.settings import DEBUG_MODE
-from src.models.code_review import CodeSuggestion
+
+DEBUG_MODE = True  # Set to True for verbose logging
 
 
 class LineMapper:
@@ -41,42 +45,61 @@ class LineMapper:
         line = suggestion.end_line
         side = suggestion.side.value if suggestion.side else "RIGHT"
 
-        # New: Try to anchor the suggestion using existing_code if available
+        # 1. Trust but verify: Check if the LLM's given line is valid and the code matches.
+        if (line, side) in parsed_file.commentable_lines:
+            position = parsed_file.line_to_position[(line, side)]
+
+            # If existing_code is not provided, we cannot verify content. Skip to next strategy.
+            if not suggestion.existing_code:
+                logger.debug(
+                    f"No existing_code provided for {suggestion.file_name}:{line}. Skipping content check."
+                )
+            # Boundary check to prevent KeyError
+            elif position > len(parsed_file.all_lines):
+                logger.warning(
+                    f"⚠️ Position {position} is out of bounds for {suggestion.file_name}."
+                )
+            else:
+                diff_line_content = parsed_file.all_lines[position - 1][1:].strip()
+                suggestion_line_content = suggestion.existing_code.strip().split("\n")[
+                    0
+                ]
+
+                if diff_line_content == suggestion_line_content:
+                    logger.info(
+                        f"✅ Confirmed exact match for {suggestion.file_name}:{line} via line number and content."
+                    )
+                    return position, "exact_match_with_content_check"
+
+        # 2. If the initial check fails, use the best-effort search for correction.
         if suggestion.existing_code and suggestion.existing_code.strip():
             try:
-                # Find the line number by searching for the existing code in the parsed diff
                 corrected_line_info = self._find_line_by_code_content(
                     parsed_file, suggestion.existing_code
                 )
-
                 if corrected_line_info:
                     actual_line, actual_side = corrected_line_info
-                    if actual_line != line or actual_side != side:
-                        logger.info(
-                            f"🔄 Corrected line number for {suggestion.file_name}. "
-                            f"LLM said: {line} ({side}), Actual: {actual_line} ({actual_side})"
-                        )
-                        line = actual_line
-                        side = actual_side
-                    else:
-                        logger.info(
-                            f"✅ Confirmed suggestion placement via existing_code for {suggestion.file_name}:{line}"
-                        )
+                    logger.info(
+                        f"🔄 Corrected line number for {suggestion.file_name}. "
+                        f"LLM said: {line}, Actual: {actual_line}"
+                    )
+                    line = actual_line
+                    side = actual_side
                 else:
                     logger.warning(
-                        f"⚠️ Could not find existing_code in diff for {suggestion.file_name}. Falling back to line numbers."
+                        f"⚠️ Could not find existing_code for {suggestion.file_name} via search. Falling back to heuristics."
                     )
             except Exception as e:
                 logger.error(f"Error searching for existing_code: {e}")
 
-        # Try exact match first
+        # 3. Use the (potentially corrected) line number to find a commentable position.
         if (line, side) in parsed_file.commentable_lines:
             position = parsed_file.line_to_position[(line, side)]
             if DEBUG_MODE:
                 logger.info(
-                    f"✅ Exact match: {suggestion.file_name}:{line} -> position {position}"
+                    f"✅ Found match for {suggestion.file_name}:{line} -> position {position}"
                 )
-            return position, "exact_match"
+            return position, "found_match"
 
         if strict_mode:
             if DEBUG_MODE:
@@ -105,104 +128,81 @@ class LineMapper:
             )
         return None
 
+    def _normalize_code(self, code: str) -> str:
+        """Normalizes a code snippet for fuzzy matching."""
+        # Remove ellipses and other common artifacts
+        code = re.sub(r"\.\.\.", "", code)
+        # Collapse whitespace and remove leading/trailing whitespace from each line
+        lines = [line.strip() for line in code.split("\n")]
+        # Filter out empty lines that might result from normalization
+        non_empty_lines = [line for line in lines if line]
+        return " ".join(non_empty_lines)
+
     def _find_line_by_code_content(
         self, parsed_file: ParsedDiff, code_content: str
     ) -> Optional[Tuple[int, str]]:
-        """Finds the first commentable line number that contains the given code content."""
-        search_lines = [line.strip() for line in code_content.strip().split("\n")]
-        if not search_lines:
+        """Finds the best-matching commentable line for a given code snippet using fuzzy matching."""
+        if not code_content.strip():
             return None
 
-        # Get the raw diff lines to search within
-        diff_lines = parsed_file.diff_text.split("\n")
+        # Normalize the search query from the LLM
+        normalized_search_text = self._normalize_code(code_content)
+        search_lines_count = len(code_content.strip().split("\n"))
 
-        for i, diff_line in enumerate(diff_lines):
-            # We only care about added or removed lines
-            if not (diff_line.startswith("+") or diff_line.startswith("-")):
+        diff_lines_with_marker = parsed_file.diff_text.split("\n")
+        # We need the original content with just the +/- marker stripped for normalization
+        diff_lines_for_search = [
+            line[1:] if line and line[0] in ("+", "-", " ") else line
+            for line in diff_lines_with_marker
+        ]
+
+        best_match_ratio = 0.6  # Set a minimum threshold
+        best_match_index = -1
+
+        # Use a sliding window to find the best match in the diff
+        for i in range(len(diff_lines_for_search) - search_lines_count + 1):
+            window_lines = diff_lines_for_search[i : i + search_lines_count]
+            window_text = "\n".join(window_lines)
+            normalized_window_text = self._normalize_code(window_text)
+
+            if not normalized_window_text:
                 continue
 
-            # Strip the diff prefix (+, -) and compare for an exact match
-            stripped_diff_line = diff_line[1:].strip()
-            if search_lines[0] == stripped_diff_line:
-                # If it's a multi-line block, check subsequent lines for an exact match too
-                is_match = True
-                for j, search_line in enumerate(search_lines[1:]):
-                    next_diff_line_index = i + 1 + j
-                    if next_diff_line_index >= len(diff_lines):
-                        is_match = False
-                        break
-
-                    next_diff_line = diff_lines[next_diff_line_index]
-                    # Ensure the subsequent line is also a diff line and its content matches exactly
-                    if not (
-                        next_diff_line.startswith(("+", "-"))
-                        and next_diff_line[1:].strip() == search_line
-                    ):
-                        is_match = False
-                        break
-
-                if is_match:
-                    # The `i` is 0-based index in `diff_lines`, so `i+1` is the 1-based global position in the diff.
-                    matched_global_position = i + 1
-                    line_info = parsed_file.position_to_line.get(
-                        matched_global_position
-                    )
-
-                    if line_info and line_info in parsed_file.commentable_lines:
-                        # Return the exact matched line if it's commentable
-                        return line_info
-                    else:
-                        logger.warning(
-                            f"Matched code block for '{code_content[:20]}...' at position {matched_global_position}, "
-                            f"but it's not a direct commentable line or could not be mapped. "
-                            f"Falling back to original line number heuristic in validate_and_map_suggestion."
-                        )
-                        return None  # Indicate it couldn't find a direct commentable line for this text match
-
-        return None
-
-    def get_enhanced_diff_context(self, max_files: int = 5) -> str:
-        """
-        Generate enhanced context about the diff structure for the LLM.
-        Includes line number mappings and hunk information.
-        """
-        context_parts = ["## 📊 **Diff Structure Information**\n"]
-
-        files_processed = 0
-        for parsed_file in self.parsed_files:
-            if files_processed >= max_files:
-                context_parts.append(
-                    f"... and {len(self.parsed_files) - max_files} more files"
-                )
-                break
-
-            context_parts.append(f"### File: `{parsed_file.file_path}`")
-            context_parts.append(f"- **Hunks**: {len(parsed_file.hunk_ranges)}")
-            context_parts.append(
-                f"- **Commentable lines**: {len(parsed_file.commentable_lines)}"
+            matcher = SequenceMatcher(
+                None, normalized_search_text, normalized_window_text
             )
+            ratio = matcher.ratio()
 
-            if parsed_file.hunk_ranges:
-                context_parts.append("- **Hunk ranges**:")
-                for i, (ss, se, ts, te) in enumerate(parsed_file.hunk_ranges):
-                    context_parts.append(
-                        f"  - Hunk {i+1}: Lines {ss}-{se} (OLD) → {ts}-{te} (NEW)"
-                    )
+            if ratio > best_match_ratio:
+                best_match_ratio = ratio
+                best_match_index = i
 
-            # Show some example commentable lines
-            commentable_sample = list(parsed_file.commentable_lines)[:3]
-            if commentable_sample:
-                context_parts.append("- **Example commentable lines**:")
-                for line_num, side in commentable_sample:
-                    context_parts.append(f"  - Line {line_num} ({side})")
+        # If a good match is found, find a commentable line within that matched block
+        if best_match_index != -1:
+            last_commentable_line_info = None
+            # Iterate through the matched block
+            for i in range(best_match_index, best_match_index + search_lines_count):
+                # Ensure we don't go out of bounds
+                if i >= len(diff_lines_with_marker):
+                    break
 
-            context_parts.append("")
-            files_processed += 1
+                diff_line_marker = (
+                    diff_lines_with_marker[i][0] if diff_lines_with_marker[i] else " "
+                )
+                if diff_line_marker in ("+", "-"):
+                    position = i + 1
+                    line_info = parsed_file.position_to_line.get(position)
+                    if line_info and line_info in parsed_file.commentable_lines:
+                        last_commentable_line_info = line_info
 
-        context_parts.append(
-            "**⚠️ IMPORTANT**: Only suggest comments on the commentable lines shown above!"
+            if last_commentable_line_info:
+                logger.info(f"Fuzzy match found with ratio {best_match_ratio:.2f}.")
+                return last_commentable_line_info
+
+        logger.debug(
+            f"Could not find a suitable anchor point for code: '{code_content[:30]}...'"
         )
-        return "\n".join(context_parts)
+        return None
 
     def generate_line_mapping_report(self) -> str:
         """Generate a detailed report of line mappings for debugging."""

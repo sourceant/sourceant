@@ -17,7 +17,7 @@ class ParsedDiff:
         # set of (line_in_file, side) - lines that can receive comments
         self.commentable_lines: Set[Tuple[int, str]] = set()
         # All lines in the diff including context (for better LLM understanding)
-        self.all_lines: Dict[Tuple[int, str], int] = {}
+        self.all_lines: List[str] = []
         # Line ranges for each hunk (for debugging)
         self.hunk_ranges: List[Tuple[int, int, int, int]] = []
 
@@ -47,30 +47,36 @@ class ParsedDiff:
                     self.commentable_lines.add((line_num, side))
                     self.line_to_position[(line_num, side)] = global_position
                     self.position_to_line[global_position] = (line_num, side)
-                    self.all_lines[(line_num, side)] = global_position
+                    self.all_lines.append(line.value)
                 elif line.is_removed:
                     line_num = line.source_line_no
                     side = "LEFT"
                     self.commentable_lines.add((line_num, side))
                     self.line_to_position[(line_num, side)] = global_position
                     self.position_to_line[global_position] = (line_num, side)
-                    self.all_lines[(line_num, side)] = global_position
+                    self.all_lines.append(line.value)
                 elif line.is_context:
                     # Context lines exist on both sides
                     source_line_num = line.source_line_no
                     target_line_num = line.target_line_no
 
-                    # Add context lines to all_lines but not to commentable_lines
-                    # GitHub doesn't allow comments on pure context lines
+                    self.all_lines.append(line.value)
+
+                    # For context lines, we map the position to both sides for completeness,
+                    # even though they are not directly commentable.
                     if source_line_num:
-                        self.all_lines[(source_line_num, "LEFT")] = global_position
+                        self.line_to_position[(source_line_num, "LEFT")] = (
+                            global_position
+                        )
                         self.position_to_line[global_position] = (
                             source_line_num,
                             "LEFT",
                         )
                     if target_line_num:
-                        self.all_lines[(target_line_num, "RIGHT")] = global_position
-                        # For context lines, RIGHT side takes precedence if both exist
+                        self.line_to_position[(target_line_num, "RIGHT")] = (
+                            global_position
+                        )
+                        # If both source and target lines exist, RIGHT side takes precedence for position_to_line
                         self.position_to_line[global_position] = (
                             target_line_num,
                             "RIGHT",
@@ -104,9 +110,12 @@ class ParsedDiff:
         if (line_num, side) in self.commentable_lines:
             position = self.line_to_position.get((line_num, side))
             return f"Line {line_num} ({side}) - Position: {position} - COMMENTABLE"
-        elif (line_num, side) in self.all_lines:
-            position = self.all_lines.get((line_num, side))
+        # This check is tricky now since all_lines doesn't store line numbers directly.
+        # We can find the position and check if it's not in commentable_lines.
+        position = self.line_to_position.get((line_num, side))
+        if position:
             return f"Line {line_num} ({side}) - Position: {position} - CONTEXT"
+
         else:
             return f"Line {line_num} ({side}) - NOT FOUND IN DIFF"
 

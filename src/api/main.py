@@ -6,8 +6,6 @@ from src.api.routes import app as app_endpoints
 from src.llms.llm_factory import llm
 from src.utils.logger import setup_logger
 
-setup_logger()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,6 +16,7 @@ async def lifespan(app: FastAPI):
     On startup, it primes the LLM singleton cache and sets up the database.
     """
     print("Starting up...")
+    setup_logger()
     # Prime the LLM singleton cache on startup in the main thread.
     # This ensures the client is created with a running asyncio event loop.
     # Subsequent calls to llm() from background tasks will hit the cache

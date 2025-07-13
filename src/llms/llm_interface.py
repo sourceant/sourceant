@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+from typing import List, Optional
 from src.models.code_review import CodeReview
+from src.utils.diff_parser import ParsedDiff
 
 
 class LLMInterface(ABC):
@@ -15,7 +17,12 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod
-    def generate_code_review(self, diff: str, context: str = "None") -> CodeReview:
+    def generate_code_review(
+        self,
+        diff: str,
+        parsed_files: Optional[List[ParsedDiff]] = None,
+        file_paths: Optional[List[str]] = None,
+    ) -> Optional[CodeReview]:
         """Generates a code review based on the given diff."""
         pass
 

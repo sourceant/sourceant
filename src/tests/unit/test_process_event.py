@@ -31,7 +31,9 @@ class TestProcessEvent:
 
         dispatcher._process_event(event)
 
-        mock_logger.info.assert_any_call("Skipping review for merged PR #1")
+        mock_logger.info.assert_any_call(
+            f"Pull request #{event.data.number} is already merged. Skipping."
+        )
         mock_github.assert_not_called()
 
     @patch("src.events.dispatcher.logger")
@@ -54,7 +56,9 @@ class TestProcessEvent:
 
         dispatcher._process_event(event)
 
-        mock_logger.info.assert_any_call("Skipping review for draft PR #2")
+        mock_logger.info.assert_any_call(
+            f"Pull request #{event.data.number} is a draft. Skipping review."
+        )
         mock_github.assert_not_called()
 
     @patch("src.events.dispatcher.logger")

@@ -1,11 +1,20 @@
 import os
-from typing import Optional, List
+from pathlib import Path
+from typing import Optional, List, Union
+import mimetypes
 
 from google import genai
 from src.llms.llm_interface import LLMInterface
 from src.prompts.prompts import Prompts
+from src.utils.diff_parser import ParsedDiff
 from src.utils.logger import logger
-from src.models.code_review import CodeReview, Verdict, CodeSuggestion
+from src.config.settings import LLM_UPLOADS_ENABLED
+from src.models.code_review import (
+    CodeReview,
+    Verdict,
+    CodeSuggestion,
+    CodeReviewSummary,
+)
 
 
 class Gemini(LLMInterface):
@@ -18,6 +27,7 @@ class Gemini(LLMInterface):
 
         self.client = genai.Client(api_key=api_key)
         self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.uploads_enabled = LLM_UPLOADS_ENABLED
         self._token_limit = int(os.getenv("GEMINI_TOKEN_LIMIT", 1000000))
 
     @property
@@ -25,21 +35,91 @@ class Gemini(LLMInterface):
         return self._token_limit
 
     def generate_code_review(
-        self, diff: str, context: Optional[str] = None
+        self,
+        diff: str,
+        parsed_files: Optional[List[ParsedDiff]] = None,
+        file_paths: Optional[List[str]] = None,
     ) -> Optional[CodeReview]:
         """
         Generates a code review for a given diff using the Gemini model.
+        This version uploads the full content of changed files for better context.
 
         Args:
             diff: The code diff to be reviewed.
-            context: Optional additional context for the review.
+            file_paths: A list of local file paths to be uploaded for context.
 
         Returns:
             A CodeReview object if successful, None otherwise.
         """
-        prompt = Prompts.REVIEW_PROMPT.format(
-            diff=diff, context=context or "No context provided."
-        )
+        prompt_parts: List[Union[str, genai.types.File]] = []
+        uploaded_files: List[genai.types.File] = []
+
+        upload_successful = False
+        if self.uploads_enabled and file_paths:
+            logger.info(f"Attempting to upload {len(file_paths)} files for context...")
+            all_files_uploaded = True
+            for file_path_str in file_paths:
+                file_path = Path(file_path_str)
+                if not file_path.exists():
+                    logger.warning(f"File not found, aborting upload: {file_path}")
+                    all_files_uploaded = False
+                    break
+                try:
+                    logger.info(f"Uploading file: {file_path}")
+                    # Infer mime type and default to text/plain if unknown
+                    mime_type, _ = mimetypes.guess_type(file_path)
+                    if mime_type is None:
+                        mime_type = "text/plain"
+                        logger.info(
+                            f"Could not determine mime type for {file_path}. Defaulting to {mime_type}."
+                        )
+
+                    uploaded_file = self.client.files.upload(
+                        file=file_path_str, mime_type=mime_type
+                    )
+                    uploaded_files.append(uploaded_file)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to upload file {file_path}: {e}. Aborting upload."
+                    )
+                    all_files_uploaded = False
+                    break
+
+            if all_files_uploaded:
+                upload_successful = True
+
+        if upload_successful:
+            logger.info(f"Successfully uploaded {len(uploaded_files)} files.")
+            prompt_text = Prompts.REVIEW_PROMPT_WITH_FILES.format(diff=diff, context="")
+            prompt_parts.append(prompt_text)
+            prompt_parts.extend(uploaded_files)
+        else:
+            if self.uploads_enabled and file_paths:
+                logger.warning(
+                    "File uploads enabled, but no files were successfully uploaded. Falling back to in-prompt context."
+                )
+
+            context = ""
+            if file_paths and parsed_files:
+                logger.info("Building file context for prompt...")
+                context_parts = []
+                temp_path_map = {Path(p).name: p for p in file_paths}
+
+                for pf in parsed_files:
+                    temp_path_str = temp_path_map.get(Path(pf.file_path).name)
+                    if temp_path_str:
+                        lined_content = self._get_line_numbered_content(temp_path_str)
+                        if lined_content:
+                            context_parts.append(
+                                f"--- FILE: {pf.file_path} ---\n{lined_content}\n--- END FILE: {pf.file_path} ---"
+                            )
+                context = "\n".join(context_parts)
+
+            # The updated prompt handles both diff and context, so we can pass the diff
+            # to provide nuance and developer intent.
+            prompt_text = Prompts.REVIEW_PROMPT.format(diff=diff, context=context)
+            prompt_parts.append(prompt_text)
+
         try:
             logger.info(
                 f"Generating code review from Gemini model: {self.model_name}..."
@@ -50,7 +130,7 @@ class Gemini(LLMInterface):
             )
             response = self.client.models.generate_content(
                 model=f"models/{self.model_name}",
-                contents=[prompt],
+                contents=prompt_parts,
                 config=config,
             )
 
@@ -86,21 +166,56 @@ class Gemini(LLMInterface):
             )
             return None
 
-    def generate_summary(self, suggestions: List[CodeSuggestion]) -> str:
+    def _get_line_numbered_content(self, file_path: str) -> Optional[str]:
+        """Reads a file and returns its content with prepended line numbers."""
+        try:
+            with open(file_path, "r") as f:
+                content = f.read()
+            return "\n".join(
+                f"{i+1}: {line}" for i, line in enumerate(content.splitlines())
+            )
+        except FileNotFoundError:
+            logger.warning(f"Could not find temp file for context: {file_path}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to read and number file {file_path}: {e}")
+            return None
+
+    def generate_summary(
+        self, suggestions: List[CodeSuggestion], as_text: bool = False
+    ) -> Union[CodeReviewSummary, str]:
         if not suggestions:
-            return "Great work! I have no suggestions for improvement."
+            summary = CodeReviewSummary(
+                overview="Great work! I have no suggestions for improvement.",
+                key_improvements=[],
+                minor_suggestions=[],
+                critical_issues=[],
+            )
+            return summary.overview if as_text else summary
 
         suggestions_text = ""
         for s in suggestions:
-            suggestions_text += f"- **File:** `{s.file_name}` (Line: {s.line})\n"
+            suggestions_text += f"- **File:** `{s.file_name}` (Line: {s.start_line})\n"
             suggestions_text += f"  - **Comment:** {s.comment}\n"
 
         prompt = Prompts.SUMMARIZE_REVIEW_PROMPT.format(suggestions=suggestions_text)
 
-        response = self.client.models.generate_content(
-            model=f"models/{self.model_name}", contents=[prompt]
+        if as_text:
+            response = self.client.models.generate_content(
+                model=f"models/{self.model_name}", contents=[prompt]
+            )
+            return response.text
+
+        config = genai.types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=CodeReviewSummary,
         )
-        return response.text
+        response = self.client.models.generate_content(
+            model=f"models/{self.model_name}",
+            contents=[prompt],
+            config=config,
+        )
+        return response.parsed
 
     def generate_text(self, prompt: str) -> str:
         """Generates a simple text response for a given prompt."""
