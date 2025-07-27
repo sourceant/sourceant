@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 from typing import Optional, List, Union
-import mimetypes
 
 from google import genai
 from src.llms.llm_interface import LLMInterface
@@ -66,17 +65,7 @@ class Gemini(LLMInterface):
                     break
                 try:
                     logger.info(f"Uploading file: {file_path}")
-                    # Infer mime type and default to text/plain if unknown
-                    mime_type, _ = mimetypes.guess_type(file_path)
-                    if mime_type is None:
-                        mime_type = "text/plain"
-                        logger.info(
-                            f"Could not determine mime type for {file_path}. Defaulting to {mime_type}."
-                        )
-
-                    uploaded_file = self.client.files.upload(
-                        file=file_path_str, mime_type=mime_type
-                    )
+                    uploaded_file = self.client.files.upload(file=file_path_str)
                     uploaded_files.append(uploaded_file)
                 except Exception as e:
                     logger.warning(

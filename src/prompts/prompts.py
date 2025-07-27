@@ -41,6 +41,7 @@ class Prompts:
     ## 📝 **Feedback Format (JSON)**
     Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
 
+    **IMPORTANT**: The `code_suggestions` array is **strictly for actionable suggestions** that propose a specific code change. Do **not** use it for positive affirmations or general praise. General feedback belongs in the summary fields (e.g., `code_quality`, `readability`). Any item in `code_suggestions` MUST recommend a change.
     ```json
     {{
         "code_quality": "<Markdown-formatted feedback on code quality and style.>",
@@ -236,6 +237,7 @@ class Prompts:
     ## 📝 **Feedback Format (JSON)**
     Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
 
+    **IMPORTANT**: The `code_suggestions` array is **strictly for actionable suggestions** that propose a specific code change. Do **not** use it for positive affirmations or general praise. General feedback belongs in the summary fields (e.g., `code_quality`, `readability`). Any item in `code_suggestions` MUST recommend a change.
     --- 
 
     ## 🎯 **Code Diff for Review**

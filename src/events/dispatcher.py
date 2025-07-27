@@ -89,9 +89,20 @@ class EventDispatcher:
             f"Processing repository event: {event.data.type} on {event.data.repository_full_name}"
         )
 
-        if event.data.type != "pull_request":
+        # Define specific events that should trigger PR reviews
+        reviewable_events = {
+            "pull_request": {"opened", "synchronize", "reopened", "ready_for_review"}
+        }
+
+        if event.data.type not in reviewable_events:
             logger.info(
-                f"Skipping event of type '{event.data.type}'. Only 'pull_request' events are processed."
+                f"Skipping event of type '{event.data.type}'. Not a reviewable event type."
+            )
+            return
+
+        if event.data.action not in reviewable_events[event.data.type]:
+            logger.info(
+                f"Skipping '{event.data.type}.{event.data.action}' action. Only actions {reviewable_events[event.data.type]} trigger reviews."
             )
             return
 

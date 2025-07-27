@@ -63,6 +63,10 @@ class CodeSuggestion(BaseModel):
         description="The original code to be replaced. If provided, this is used to anchor the suggestion instead of line numbers.",
     )
 
+    def is_multiline(self) -> bool:
+        """Checks if the suggestion spans multiple lines."""
+        return self.start_line != self.end_line
+
 
 class CodeReviewScores(BaseModel):
     """Represents the scores for different aspects of the code review."""
