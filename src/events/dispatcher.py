@@ -1,4 +1,6 @@
+import tempfile
 from contextvars import ContextVar
+from pathlib import Path
 from typing import List, Optional
 
 import redis
@@ -7,17 +9,25 @@ from redislite import Redis as RedisLite
 from fastapi import BackgroundTasks
 from rq import Queue
 
-from src.config.settings import QUEUE_MODE, REDIS_HOST, REDIS_PORT, REVIEW_DRAFT_PRS
+from src.config.settings import (
+    QUEUE_MODE,
+    REDIS_HOST,
+    REDIS_PORT,
+    REVIEW_DRAFT_PRS,
+    APP_ENV,
+)
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github import GitHub
 from src.llms.llm_factory import llm
-from src.models.code_review import CodeReview, CodeSuggestion, Verdict
+from src.models.code_review import CodeReview, Verdict
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 
 from src.utils.diff_parser import parse_diff, ParsedDiff
+from src.utils.line_mapper import LineMapper
+
 from src.utils.logger import logger
 
 # Context variable to hold the BackgroundTasks object for the current request
@@ -48,6 +58,10 @@ class EventDispatcher:
 
     def dispatch(self, event: Event):
         """Dispatches an event to the configured queue or background task runner."""
+        if not isinstance(event, RepositoryEvent):
+            logger.info(f"Skipping non-repository event: {event}")
+            return
+
         logger.info(f"Dispatching event: {event} (mode: {QUEUE_MODE})")
         if QUEUE_MODE in ["redis", "redislite"]:
             if not q:
@@ -67,173 +81,237 @@ class EventDispatcher:
             )
 
     def _process_event(self, event: Event):
-        if isinstance(event, RepositoryEvent):
-            logger.info(f"Processing repository event: {event}")
-            repository_event: RepositoryEventModel = event.data
-            if not repository_event or not isinstance(
-                repository_event, RepositoryEventModel
-            ):
-                logger.error("Invalid event data. Cannot process event.")
-                return
-            repository: Repository = Repository(
-                name=repository_event.repository_full_name.split("/")[1],
-                owner=repository_event.repository_full_name.split("/")[0],
-            )
-            is_draft = repository_event.payload.get("pull_request", {}).get(
-                "draft", False
-            )
-            is_merged = repository_event.payload.get("pull_request", {}).get(
-                "merged", False
-            )
-
-            pull_request: PullRequest = PullRequest(
-                number=repository_event.number,
-                title=repository_event.title,
-                draft=is_draft,
-                merged=is_merged,
-            )
-
-            if pull_request.merged:
-                logger.info(f"Skipping review for merged PR #{pull_request.number}")
-                return
-
-            if pull_request.draft and not REVIEW_DRAFT_PRS:
-                logger.info(f"Skipping review for draft PR #{pull_request.number}")
-                return
-
-            try:
-                if repository_event.type in ("pull_request", "push"):
-                    github = GitHub()
-                    owner = repository.owner
-                    repo_name = repository.name
-                    raw_diff = None
-
-                    if repository_event.type == "pull_request":
-                        pr_number = repository_event.number
-                        if pr_number:
-                            raw_diff = github.get_diff(owner, repo_name, pr_number)
-
-                    elif repository_event.type == "push":
-                        # Use the before and after SHAs to construct the API compare URL
-                        base_sha = repository_event.payload.get("before")
-                        head_sha = repository_event.payload.get("after")
-                        if base_sha and head_sha:
-                            raw_diff = github.get_diff_between_shas(
-                                owner, repo_name, base_sha, head_sha
-                            )
-                    if not raw_diff:
-                        logger.info("No diff computed.")
-                        return
-
-                    # Dynamic Review Logic
-                    total_tokens = llm().count_tokens(raw_diff)
-                    logger.info(f"Total tokens in diff: {total_tokens}")
-
-                    parsed_files: List[ParsedDiff] = parse_diff(raw_diff)
-                    all_suggestions: List[CodeSuggestion] = []
-
-                    if total_tokens < llm().token_limit:
-                        logger.info("Diff is small enough for a single-pass review.")
-                        # Send the full diff for a holistic review
-                        full_review = llm().generate_code_review(diff=raw_diff)
-                        if full_review and full_review.code_suggestions:
-                            # Validate and enrich suggestions
-                            for suggestion in full_review.code_suggestions:
-                                for parsed_file in parsed_files:
-                                    if suggestion.file_name == parsed_file.file_path:
-                                        line = suggestion.line
-                                        side = (
-                                            suggestion.side.value
-                                            if suggestion.side
-                                            else "RIGHT"
-                                        )
-                                        if (
-                                            line,
-                                            side,
-                                        ) in parsed_file.commentable_lines:
-                                            position = parsed_file.line_to_position[
-                                                (line, side)
-                                            ]
-                                            suggestion.position = position
-                                            all_suggestions.append(suggestion)
-                                        else:
-                                            logger.warning(
-                                                f"LLM hallucinated a suggestion for an un-changed line: {suggestion.file_name}:{line}"
-                                            )
-                                        break  # Move to the next suggestion
-                        summary = full_review.summary if full_review else ""
-                    else:
-                        logger.info(
-                            "Diff is too large. Performing file-by-file review."
-                        )
-                        # Generate a global summary to use as context for each file
-                        global_summary_prompt = f"Provide a brief, one-paragraph summary of the following code changes:\n\n{raw_diff}"
-                        global_context = llm().generate_text(global_summary_prompt)
-
-                        for parsed_file in parsed_files:
-                            logger.info(f"Reviewing file: {parsed_file.file_path}")
-                            context = f"**Overall PR Context:**\n{global_context}\n\n**Current File:** `{parsed_file.file_path}`\nFocus only on the changes in this file."
-                            review_for_file = llm().generate_code_review(
-                                diff=parsed_file.diff_text, context=context
-                            )
-
-                            if (
-                                not review_for_file
-                                or not review_for_file.code_suggestions
-                            ):
-                                continue
-
-                            for suggestion in review_for_file.code_suggestions:
-                                line = suggestion.line
-                                side = (
-                                    suggestion.side.value
-                                    if suggestion.side
-                                    else "RIGHT"
-                                )
-                                if (line, side) in parsed_file.commentable_lines:
-                                    position = parsed_file.line_to_position[
-                                        (line, side)
-                                    ]
-                                    suggestion.position = position
-                                    suggestion.file_name = parsed_file.file_path
-                                    all_suggestions.append(suggestion)
-                                else:
-                                    logger.warning(
-                                        f"LLM hallucinated a suggestion for an un-changed line: {parsed_file.file_path}:{line}"
-                                    )
-                        summary = llm().generate_summary(all_suggestions)
-
-                    # Determine final verdict and create the review object
-                    verdict = (
-                        Verdict.REQUEST_CHANGES if all_suggestions else Verdict.APPROVE
-                    )
-
-                    final_review = CodeReview(
-                        summary=summary,
-                        verdict=verdict,
-                        code_suggestions=all_suggestions,
-                    )
-
-                    logger.info("Scheduling review posting.")
-                    if QUEUE_MODE == "redis":
-                        if not q:
-                            raise RuntimeError("Redis queue not initialized.")
-                        q.enqueue(
-                            self._post_review, repository, pull_request, final_review
-                        )
-                    else:  # In fastapi mode, this runs in the same background task.
-                        self._post_review(repository, pull_request, final_review)
-
-            except Exception as e:
-                logger.exception(f"An error occurred while processing event: {e}")
-
-        else:
+        if not isinstance(event, RepositoryEvent):
             logger.error(f"Unhandled event type: {event}")
+            return
+
+        logger.info(
+            f"Processing repository event: {event.data.type} on {event.data.repository_full_name}"
+        )
+
+        # Define specific events that should trigger PR reviews
+        reviewable_events = {
+            "pull_request": {"opened", "synchronize", "reopened", "ready_for_review"}
+        }
+
+        if event.data.type not in reviewable_events:
+            logger.info(
+                f"Skipping event of type '{event.data.type}'. Not a reviewable event type."
+            )
+            return
+
+        if event.data.action not in reviewable_events[event.data.type]:
+            logger.info(
+                f"Skipping '{event.data.type}.{event.data.action}' action. Only actions {reviewable_events[event.data.type]} trigger reviews."
+            )
+            return
+
+        repository_event: RepositoryEventModel = event.data
+        if not repository_event or not isinstance(
+            repository_event, RepositoryEventModel
+        ):
+            logger.error("Invalid event data. Cannot process event.")
+            return
+
+        repository = Repository(
+            name=repository_event.repository_full_name.split("/")[1],
+            owner=repository_event.repository_full_name.split("/")[0],
+        )
+        pull_request_payload = repository_event.payload.get("pull_request") or {}
+
+        # For 'synchronize' events, the 'after' SHA is the most reliable head SHA.
+        # For other events, it's in the 'pull_request' payload.
+        if repository_event.action == "synchronize":
+            head_sha = repository_event.payload.get("after")
+            base_sha = repository_event.payload.get("before")
+        else:
+            head_sha = pull_request_payload.get("head", {}).get("sha")
+            base_sha = pull_request_payload.get("base", {}).get("sha")
+
+        pull_request = PullRequest(
+            number=repository_event.number,
+            title=repository_event.title,
+            draft=pull_request_payload.get("draft", False),
+            merged=pull_request_payload.get("merged", False),
+            base_sha=base_sha,
+            head_sha=head_sha,
+        )
+
+        if pull_request.merged:
+            logger.info(
+                f"Pull request #{pull_request.number} is already merged. Skipping."
+            )
+            return
+
+        if pull_request.draft and not REVIEW_DRAFT_PRS:
+            logger.info(
+                f"Pull request #{pull_request.number} is a draft. Skipping review."
+            )
+            return
+
+        owner, repo_name = repository.owner, repository.name
+        github = GitHub()
+
+        try:
+            raw_diff = github.get_diff(
+                owner=owner,
+                repo=repo_name,
+                pr_number=pull_request.number,
+                base_sha=pull_request.base_sha,
+                head_sha=pull_request.head_sha,
+            )
+            if not raw_diff:
+                logger.info("No diff could be computed. Skipping.")
+                return
+
+            parsed_files = parse_diff(raw_diff)
+            line_mapper = LineMapper(parsed_files)
+            # Initial token count from the diff itself, using the LLM's tokenizer for accuracy.
+            total_tokens = sum(llm().count_tokens(pf.diff_text) for pf in parsed_files)
+
+            # If uploads are disabled, account for the full file content that will be added to the prompt
+            if not llm().uploads_enabled:
+                logger.info(
+                    "File uploads disabled. Calculating tokens from full file content."
+                )
+                for pf in parsed_files:
+                    content = github.get_file_content(
+                        owner=owner,
+                        repo=repo_name,
+                        file_path=pf.file_path,
+                        sha=pull_request.head_sha,
+                    )
+                    if content:
+                        # Use the LLM's own tokenizer for accuracy if available
+                        total_tokens += llm().count_tokens(content)
+            logger.info(f"Total tokens in diff: {total_tokens}")
+
+            if total_tokens < llm().token_limit:
+                logger.info("Diff is small enough for a single-pass review.")
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_file_paths = self._prepare_llm_file_context(
+                        github, owner, repo_name, pull_request, parsed_files, temp_dir
+                    )
+                    full_review = llm().generate_code_review(
+                        diff=raw_diff,
+                        parsed_files=parsed_files,
+                        file_paths=temp_file_paths,
+                    )
+
+                all_suggestions = []
+                if full_review and full_review.code_suggestions:
+                    for suggestion in full_review.code_suggestions:
+                        mapped_result = line_mapper.validate_and_map_suggestion(
+                            suggestion, strict_mode=(APP_ENV == "production")
+                        )
+                        if mapped_result:
+                            suggestion.position = mapped_result[0]
+                            all_suggestions.append(suggestion)
+
+                final_review = CodeReview(
+                    summary=full_review.summary,
+                    verdict=full_review.verdict,
+                    code_suggestions=all_suggestions,
+                    scores=full_review.scores,
+                )
+            else:
+                logger.info("Diff is too large. Performing file-by-file review.")
+                all_suggestions = []
+                for parsed_file in parsed_files:
+                    logger.info(f"Reviewing file: {parsed_file.file_path}")
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_file_paths = self._prepare_llm_file_context(
+                            github,
+                            owner,
+                            repo_name,
+                            pull_request,
+                            [parsed_file],
+                            temp_dir,
+                        )
+                        review_for_file = llm().generate_code_review(
+                            diff=parsed_file.diff_text,
+                            parsed_files=[parsed_file],
+                            file_paths=temp_file_paths,
+                        )
+
+                    if review_for_file and review_for_file.code_suggestions:
+                        for suggestion in review_for_file.code_suggestions:
+                            mapped_result = line_mapper.validate_and_map_suggestion(
+                                suggestion, strict_mode=(APP_ENV == "production")
+                            )
+                            if mapped_result:
+                                suggestion.position = mapped_result[0]
+                                all_suggestions.append(suggestion)
+
+                summary_obj = llm().generate_summary(all_suggestions)
+                verdict = (
+                    Verdict.REQUEST_CHANGES if all_suggestions else Verdict.APPROVE
+                )
+                final_review = CodeReview(
+                    summary=summary_obj,
+                    verdict=verdict,
+                    code_suggestions=all_suggestions,
+                )
+
+            self._schedule_review_posting(
+                repository, pull_request, final_review, line_mapper
+            )
+
+        except Exception as e:
+            logger.exception(f"An error occurred while processing event: {e}")
 
     def _post_review(
-        self, repository: Repository, pull_request: PullRequest, review: CodeReview
+        self,
+        repository: Repository,
+        pull_request: PullRequest,
+        review: CodeReview,
+        line_mapper: LineMapper,
     ):
         """Posts the review to the repository."""
         GitHub().post_review(
-            repository=repository, pull_request=pull_request, code_review=review
+            repository=repository,
+            pull_request=pull_request,
+            code_review=review,
+            line_mapper=line_mapper,
         )
+
+    def _schedule_review_posting(
+        self,
+        repository: Repository,
+        pull_request: PullRequest,
+        review: CodeReview,
+        line_mapper: LineMapper,
+    ):
+        """Schedules the review posting."""
+        if QUEUE_MODE in ["redis", "redislite"]:
+            if not q:
+                raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
+            q.enqueue(self._post_review, repository, pull_request, review, line_mapper)
+        else:  # In fastapi mode, this runs in the same background task.
+            self._post_review(repository, pull_request, review, line_mapper)
+
+    def _prepare_llm_file_context(
+        self,
+        github: GitHub,
+        owner: str,
+        repo_name: str,
+        pull_request: PullRequest,
+        parsed_files: List[ParsedDiff],
+        temp_dir: str,
+    ) -> List[str]:
+        """Prepares file context for the LLM by creating temporary files."""
+        temp_file_paths = []
+        if pull_request.head_sha:
+            for pf in parsed_files:
+                content = github.get_file_content(
+                    owner=owner,
+                    repo=repo_name,
+                    file_path=pf.file_path,
+                    sha=pull_request.head_sha,
+                )
+                if content:
+                    temp_file_path = Path(temp_dir) / pf.file_path
+                    temp_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    temp_file_path.write_text(content)
+                    temp_file_paths.append(str(temp_file_path))
+        return temp_file_paths

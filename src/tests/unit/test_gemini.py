@@ -70,7 +70,7 @@ def test_generate_code_review_success(mocked_gemini_client):
     mock_generate_content.return_value = mock_response
 
     diff = "- old code\n+ new code"
-    review = gemini_instance.generate_code_review(diff)
+    review = gemini_instance.generate_code_review(diff, file_paths=None)
 
     assert isinstance(review, CodeReview)
     assert review.summary == summary
@@ -105,7 +105,7 @@ def test_generate_code_review_verdict_approve_on_high_score(mocked_gemini_client
     mock_generate_content.return_value = mock_response
 
     diff = "- old code\n+ new code"
-    review = gemini_instance.generate_code_review(diff)
+    review = gemini_instance.generate_code_review(diff, file_paths=None)
 
     assert review.verdict == Verdict.APPROVE
 
@@ -138,7 +138,7 @@ def test_generate_code_review_verdict_request_changes_on_low_score(
     mock_generate_content.return_value = mock_response
 
     diff = "- old code\n+ new code"
-    review = gemini_instance.generate_code_review(diff)
+    review = gemini_instance.generate_code_review(diff, file_paths=None)
 
     assert review.verdict == Verdict.REQUEST_CHANGES
 
@@ -149,7 +149,7 @@ def test_generate_code_review_api_error(mocked_gemini_client):
     mock_generate_content.side_effect = Exception("API is down")
 
     diff = "- old code\n+ new code"
-    review = gemini_instance.generate_code_review(diff)
+    review = gemini_instance.generate_code_review(diff, file_paths=None)
 
     assert review is None
 

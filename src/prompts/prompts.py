@@ -3,15 +3,21 @@ class Prompts:
     A class to hold predefined prompt templates for LLM interactions.
     """
 
-    """
-    A class to hold predefined prompt templates for LLM interactions.
-    """
-
     REVIEW_PROMPT = """
     # 📌 **Comprehensive Code Review Request**
 
     You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.
     Your task is to **analyze the code diff**, provide **precise, structured, and actionable feedback**.
+
+    ## 💬 **How to Use Provided Context**
+    You have been given two pieces of information:
+    1.  **The Diff**: To show you the specific lines that were changed.
+    2.  **Full File Content**: Provided below under "Additional Context".
+
+    **Use the diff to understand the developer's intent and focus your review, but use the full file content as the absolute source of truth for code structure, line numbers, and surrounding logic.** This will prevent any confusion about duplicated code.
+
+    ## 📚 **Additional Context (Full File Content)**
+    {context}
 
     ## 🔍 **Review Criteria**
      - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
@@ -21,24 +27,35 @@ class Prompts:
      - **Readability & Maintainability** → Clarity, modularity, inline documentation.
      - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.
 
-    ---
+    ## 📍 **CRITICAL: Line Number Guidelines**
+
+    **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
+    - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
+    - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
+    - **Line Number Source**: Use the line number from the **RIGHT** side of the diff for new/modified code (+ lines) and the **LEFT** side for deleted code (- lines).
+    - **`existing_code`**: For each suggestion, provide the **exact block of original code** that your `suggested_code` is meant to replace. This is crucial for accurately placing the comment if line numbers have shifted. For new code additions, this field should be `null`.
+    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
+
+    --- 
 
     ## 📝 **Feedback Format (JSON)**
-    Your response **must** be a single JSON object that conforms to the schema below.
-    **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
+    Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
 
+    **IMPORTANT**: The `code_suggestions` array is **strictly for actionable suggestions** that propose a specific code change. Do **not** use it for positive affirmations or general praise. General feedback belongs in the summary fields (e.g., `code_quality`, `readability`). Any item in `code_suggestions` MUST recommend a change.
     ```json
     {{
         "code_quality": "<Markdown-formatted feedback on code quality and style.>",
         "code_suggestions": [
             {{
                 "file_name": "<path/to/file>",
-                "line": <line_number>,
-                "start_line": <start_line_number>,
+                "start_line": <The first line of the code block to be replaced>,
+                "end_line": <The last line of the code block to be replaced. For single-line comments, this is the same as start_line>,
                 "position": <position_in_diff>,
                 "side": "<LEFT|RIGHT>",
-                "comment": "<Detailed review comment.>",
-                "suggested_code": "<Corrected or improved code.>"
+                "comment": "<Detailed review comment explaining the issue and why it matters.>",
+                "category": "<bug|security|performance|style|maintainability>",
+                "suggested_code": "<Corrected or improved code snippet.>",
+                "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>"
             }}
         ],
         "documentation_suggestions": "<Markdown-formatted documentation suggestions.>",
@@ -73,20 +90,18 @@ class Prompts:
     ---
 
     ## 🎯 **Code Diff for Review**
+    This diff shows the specific changes to review.
     ```diff
     {diff}
     ```
 
-    ## 📝 **Additional Context:**
-    {context}
-
     ---
 
     📢 **Final Notes:**
-    - **Ensure precision** → Always specify `file`, `line`, `position`, and `side`.
-    - **Structured & Clear** → Use JSON format for easy automation and integration.
-    - **Be Constructive & Actionable** → Don't just point out problems—suggest improvements.
-    - **Follow Best Practices** → Use **proper coding standards, security guidelines, and optimization techniques**.
+    - **Ensure precision** → Always specify exact `line` numbers from the diff, `position`, and `side`.
+    - **Line Number Accuracy** → Count line numbers from hunk headers (@@ -start,count +start,count @@).
+    - **Be specific** → Your suggestions should be easy to understand and implement.
+    - **Stay on topic** → Focus only on the provided code diff.
 
     🚀 **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**
     """
@@ -112,22 +127,34 @@ class Prompts:
     """
 
     SUMMARIZE_REVIEW_PROMPT = """
-    # 📝 **Code Review Summary**
+    # 
 
-    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **GitHub-flavored Markdown**.
+    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **JSON format**, conforming to the `CodeReviewSummary` schema.
 
-    The summary should:
-    - Start with a general overview of the changes.
-    - Group related suggestions under appropriate headings (e.g., "Bug Fixes", "Style Improvements", "Security Concerns").
-    - Be easy to read and understand for the pull request author.
-    - Do NOT include the code snippets themselves, only the comments.
+    The JSON object should have the following structure:
+    ```json
+    {{
+        "overview": "✨ <A high-level overview of the code changes and the review.>",
+        "key_improvements": [
+            "<An improvement, can reference a file path.>"
+        ],
+        "minor_suggestions": [
+            "<A minor suggestion or potential enhancement.>"
+        ],
+        "critical_issues": [
+            "<A critical issue that must be addressed. Leave empty if none.>"
+        ]
+    }}
+    ```
+
+    The content within the `overview`, `key_improvements`, `minor_suggestions`, and `critical_issues` fields should be formatted using **GitHub-flavored Markdown**.
 
     Here is the list of suggestions:
     ```
     {suggestions}
     ```
 
-    **Please provide only the markdown summary.**
+    **Please provide only the JSON object.**
     """
 
     DOCUMENTATION_GENERATION_PROMPT = """
@@ -170,4 +197,56 @@ class Prompts:
 
     ## Output:
     Respond with a single word: **SAME** or **DIFFERENT**. Do not provide any other text or explanation.
+    """
+
+    REVIEW_PROMPT_WITH_FILES = """
+    # 📌 **Comprehensive Code Review Request (with Full File Context)**
+
+    You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.
+    Your task is to **analyze the code diff**, using the **full file contents provided** to understand the complete context. Your review should be **precise, structured, and actionable**.
+
+    ## 🎯 **Primary Goal: Focus on the Diff**
+    Your primary goal is to review **only the changes** presented in the diff below. This is your most important instruction. Your feedback, comments, and suggestions **must relate *exclusively* to the added (`+`) or removed (`-`) lines** in the diff. **Under no circumstances should you review or comment on any code that was not changed.** Reviewing unchanged code is a critical failure and will render your entire review invalid.
+
+    ## 📚 **IMPORTANT: Full File Context Provided**
+    The complete content for all changed files has been uploaded and is available to you. **You MUST use these files as the primary source of truth** for understanding the code, its structure, and for generating accurate line numbers.
+
+    ## 💬 **Additional Context**
+    {context}
+
+    ## 🔍 **Review Criteria**
+     - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
+     - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.
+     - **Performance** → Inefficiencies, better algorithms, unnecessary computations.
+     - **Security** → Injection risks, authentication flaws, unsafe operations.
+     - **Readability & Maintainability** → Clarity, modularity, inline documentation.
+     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.
+
+    ## 📍 **CRITICAL: Line Number Guidelines**
+
+    **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
+    - **Source of Truth**: Your primary reference for line numbers is the **full file content** provided, not just the diff.
+    - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
+    - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
+    - **Line Number Source**: Use the line number from the **RIGHT** side of the diff for new/modified code (+ lines) and the **LEFT** side for deleted code (- lines).
+    - **`existing_code`**: For each suggestion, provide the **exact block of original code** that your `suggested_code` is meant to replace. This is crucial for accurately placing the comment. For new code additions, this field should be `null`.
+    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
+
+    --- 
+
+    ## 📝 **Feedback Format (JSON)**
+    Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
+
+    **IMPORTANT**: The `code_suggestions` array is **strictly for actionable suggestions** that propose a specific code change. Do **not** use it for positive affirmations or general praise. General feedback belongs in the summary fields (e.g., `code_quality`, `readability`). Any item in `code_suggestions` MUST recommend a change.
+    --- 
+
+    ## 🎯 **Code Diff for Review**
+    This diff shows the specific changes to review. **REMINDER: Your review MUST focus *only* on the lines prefixed with `+` or `-` below.** Use the full files provided for the surrounding context, but do not comment on unchanged code.
+    ```diff
+    {diff}
+    ```
+
+    --- 
+
+    🚀 **Deliver a high-quality review that is structured, developer-friendly, and leverages the full context of the provided files.**
     """

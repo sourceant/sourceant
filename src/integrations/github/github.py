@@ -2,11 +2,14 @@ import jwt
 import time
 import requests
 import os
+import base64
 from typing import Dict, Any, Optional
 from dateutil.parser import isoparse
 from ..provider_adapter import ProviderAdapter
 from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
 from src.models.repository import Repository
+
+from src.utils.line_mapper import LineMapper
 from src.models.pull_request import PullRequest
 from src.utils.logger import logger
 from src.llms.llm_factory import llm
@@ -274,9 +277,22 @@ class GitHub(ProviderAdapter):
         return "".join(parts)
 
     def post_review(
-        self, repository: Repository, pull_request: PullRequest, code_review: CodeReview
+        self,
+        repository: Repository,
+        pull_request: PullRequest,
+        code_review: CodeReview,
+        line_mapper: LineMapper,
     ) -> Dict[str, Any]:
         """Orchestrates posting a complete code review to a GitHub pull request."""
+        if pull_request.number is None:
+            error_msg = "Cannot post review without a valid pull request number."
+            logger.error(error_msg)
+            return {
+                "status": "error",
+                "message": error_msg,
+                "error_type": "missing_pr_number",
+            }
+
         try:
             access_token = self.get_installation_access_token(
                 repository.owner, repository.name
@@ -315,6 +331,16 @@ class GitHub(ProviderAdapter):
                     if not suggestion or not suggestion.file_name:
                         continue
 
+                    # Use the line_mapper to get a valid position
+                    mapped_result = line_mapper.validate_and_map_suggestion(suggestion)
+                    if not mapped_result:
+                        logger.warning(
+                            f"Could not map suggestion to a valid line: {suggestion}"
+                        )
+                        continue
+
+                    position, _ = mapped_result
+
                     comment_body = suggestion.comment or ""
                     if suggestion.suggested_code:
                         comment_body += (
@@ -324,20 +350,25 @@ class GitHub(ProviderAdapter):
                     comment = {
                         "path": suggestion.file_name,
                         "body": comment_body,
-                        "line": suggestion.line or 1,
-                        "side": (
-                            suggestion.side.value
-                            if hasattr(suggestion, "side") and suggestion.side
-                            else "RIGHT"
-                        ),
                     }
+
+                    # For multi-line suggestions, use start_line and line.
+                    # Otherwise, use the diff-based position.
                     if (
                         suggestion.start_line
-                        and suggestion.line
-                        and suggestion.start_line < suggestion.line
+                        and suggestion.end_line
+                        and suggestion.start_line < suggestion.end_line
                     ):
                         comment["start_line"] = suggestion.start_line
-                        comment["line"] = suggestion.line
+                        comment["line"] = suggestion.end_line
+                        comment["side"] = (
+                            suggestion.side.value if suggestion.side else "RIGHT"
+                        )
+                        comment["start_side"] = (
+                            suggestion.side.value if suggestion.side else "RIGHT"
+                        )
+                    else:
+                        comment["position"] = position
 
                     comments.append(comment)
 
@@ -393,8 +424,26 @@ class GitHub(ProviderAdapter):
                 "error_type": "unexpected_error",
             }
 
-    def get_diff(self, owner: str, repo: str, pr_number: int) -> str:
-        """Get the diff for a pull request by its number."""
+    def get_diff(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        base_sha: Optional[str] = None,
+        head_sha: Optional[str] = None,
+    ) -> str:
+        """Get the diff for a pull request.
+
+        If base_sha and head_sha are provided, it fetches the diff by comparing them.
+        Otherwise, it falls back to fetching the diff by the pull request number.
+        """
+        if base_sha and head_sha:
+            logger.info(
+                f"Fetching diff for {owner}/{repo} between {base_sha} and {head_sha}"
+            )
+            return self.get_diff_between_shas(owner, repo, base_sha, head_sha)
+
+        logger.info(f"Fetching diff for PR #{pr_number} from {owner}/{repo}")
         try:
             access_token = self.get_installation_access_token(owner, repo)
             headers = {
@@ -440,5 +489,56 @@ class GitHub(ProviderAdapter):
             error_msg = f"Failed to get diff for {owner}/{repo} between {base_sha} and {head_sha}: {e}"
             if hasattr(e, "response") and e.response is not None:
                 error_msg += f" - Response: {e.response.text}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def get_file_content(
+        self, owner: str, repo: str, file_path: str, sha: str
+    ) -> Optional[str]:
+        """Get the raw content of a file from a repository at a specific commit SHA."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            api_url = (
+                f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
+            )
+            params = {"ref": sha}
+
+            logger.info(f"Requesting file content from {api_url} at ref {sha}")
+
+            response = requests.get(
+                api_url,
+                headers=headers,
+                params=params,
+                timeout=30,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            if "content" not in data:
+                logger.error(f"No 'content' field in response for {file_path}")
+                return None
+
+            # Content is Base64 encoded
+            encoded_content = data["content"]
+            decoded_content = base64.b64decode(encoded_content).decode("utf-8")
+
+            return decoded_content
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                logger.warning(f"File not found: {file_path} at SHA {sha}.")
+                return None
+            error_msg = (
+                f"Failed to get file content for {file_path}: {e} - {e.response.text}"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        except (base64.B64DecodeError, UnicodeDecodeError) as e:
+            error_msg = f"Failed to decode file content for {file_path}: {e}"
             logger.error(error_msg)
             raise ValueError(error_msg)
