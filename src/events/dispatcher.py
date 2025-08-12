@@ -119,14 +119,8 @@ class EventDispatcher:
         )
         pull_request_payload = repository_event.payload.get("pull_request") or {}
 
-        # For 'synchronize' events, the 'after' SHA is the most reliable head SHA.
-        # For other events, it's in the 'pull_request' payload.
-        if repository_event.action == "synchronize":
-            head_sha = repository_event.payload.get("after")
-            base_sha = repository_event.payload.get("before")
-        else:
-            head_sha = pull_request_payload.get("head", {}).get("sha")
-            base_sha = pull_request_payload.get("base", {}).get("sha")
+        head_sha = pull_request_payload.get("head", {}).get("sha")
+        base_sha = pull_request_payload.get("base", {}).get("sha")
 
         pull_request = PullRequest(
             number=repository_event.number,
