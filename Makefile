@@ -1,4 +1,4 @@
-.PHONY: help up down build test lint format logs shell db-upgrade worker
+.PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker
 
 help:
 	@echo "Usage: make [target]"
@@ -12,7 +12,8 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  test         Run tests"
-	@echo "  lint         Run flake8 linter"
+	@echo "  lint         Check code formatting with black"
+	@echo "  lint-fix     Fix code formatting with black"
 	@echo "  format       Format code with black"
 	@echo ""
 	@echo "Database:"
@@ -41,6 +42,9 @@ test:
 
 lint:
 	docker compose exec app black --check .
+
+lint-fix:
+	docker compose exec app black .
 
 format:
 	docker compose exec app black .

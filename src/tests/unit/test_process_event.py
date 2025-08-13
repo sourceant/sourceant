@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from src.events.dispatcher import EventDispatcher
 from src.events.repository_event import RepositoryEvent
@@ -9,109 +9,122 @@ from src.models.repository_event import (
 
 
 class TestProcessEvent:
+
     @pytest.fixture
     def dispatcher(self):
-        """Fixture to create an EventDispatcher instance."""
         return EventDispatcher()
 
-    @patch("src.events.dispatcher.logger")
-    @patch("src.events.dispatcher.GitHub")
-    def test_skips_merged_pr(self, mock_github, mock_logger, dispatcher):
-        """Test that merged pull requests are skipped."""
-        event_data = RepositoryEventModel(
+    @pytest.fixture
+    def mock_event_data(self):
+        return RepositoryEventModel(
             provider="github",
             type="pull_request",
             action="opened",
             repository_full_name="test/repo",
             number=1,
             title="Test PR",
-            payload={"pull_request": {"merged": True, "draft": False}},
+            payload={
+                "pull_request": {"merged": False, "draft": False},
+                "sender": {"id": 123, "login": "testuser"},
+                "repository": {
+                    "id": 456,
+                    "full_name": "test/repo",
+                    "name": "repo",
+                    "owner": {"login": "test"},
+                },
+            },
         )
-        event = RepositoryEvent(event_data)
 
-        dispatcher._process_event(event)
-
-        mock_logger.info.assert_any_call(
-            f"Pull request #{event.data.number} is already merged. Skipping."
-        )
-        mock_github.assert_not_called()
-
+    @pytest.mark.asyncio
+    @patch("src.events.dispatcher.event_hooks")
     @patch("src.events.dispatcher.logger")
-    @patch("src.events.dispatcher.GitHub")
-    def test_skips_draft_pr_when_disabled(
-        self, mock_github, mock_logger, dispatcher, monkeypatch
+    async def test_broadcasts_event_to_subscribers(
+        self, mock_logger, mock_event_hooks, dispatcher, mock_event_data
     ):
-        """Test that draft PRs are skipped when REVIEW_DRAFT_PRS is False."""
-        monkeypatch.setattr("src.events.dispatcher.REVIEW_DRAFT_PRS", False)
-        event_data = RepositoryEventModel(
-            provider="github",
-            type="pull_request",
-            action="opened",
-            repository_full_name="test/repo",
-            number=2,
-            title="Draft PR",
-            payload={"pull_request": {"merged": False, "draft": True}},
-        )
-        event = RepositoryEvent(event_data)
+        mock_event_hooks.broadcast_event = AsyncMock(return_value={})
+        event = RepositoryEvent(mock_event_data)
 
-        dispatcher._process_event(event)
+        await dispatcher._process_event(event)
 
-        mock_logger.info.assert_any_call(
-            f"Pull request #{event.data.number} is a draft. Skipping review."
-        )
-        mock_github.assert_not_called()
+        mock_event_hooks.broadcast_event.assert_called_once()
+        call_kwargs = mock_event_hooks.broadcast_event.call_args[1]
+        assert call_kwargs["event_type"] == "pull_request.opened"
+        assert call_kwargs["source_plugin"] == "sourceant_core"
 
+    @pytest.mark.asyncio
+    @patch("src.events.dispatcher.event_hooks")
     @patch("src.events.dispatcher.logger")
-    @patch("src.events.dispatcher.GitHub")
-    def test_processes_draft_pr_when_enabled(
-        self, mock_github, mock_logger, dispatcher, monkeypatch
+    async def test_extracts_user_context_from_payload(
+        self, mock_logger, mock_event_hooks, dispatcher, mock_event_data
     ):
-        """Test that draft PRs are processed when REVIEW_DRAFT_PRS is True."""
-        monkeypatch.setattr("src.events.dispatcher.REVIEW_DRAFT_PRS", True)
-        mock_github_instance = MagicMock()
-        mock_github.return_value = mock_github_instance
+        mock_event_hooks.broadcast_event = AsyncMock(return_value={})
+        event = RepositoryEvent(mock_event_data)
 
-        event_data = RepositoryEventModel(
-            provider="github",
-            type="pull_request",
-            action="opened",
-            repository_full_name="test/repo",
-            number=3,
-            title="Draft PR",
-            payload={"pull_request": {"merged": False, "draft": True}},
-        )
-        event = RepositoryEvent(event_data)
+        await dispatcher._process_event(event)
 
-        dispatcher._process_event(event)
+        call_kwargs = mock_event_hooks.broadcast_event.call_args[1]
+        event_data = call_kwargs["event_data"]
+        assert event_data["user_context"]["github_id"] == 123
+        assert event_data["user_context"]["username"] == "testuser"
 
-        assert not any(
-            "Skipping review" in call.args[0]
-            for call in mock_logger.info.call_args_list
-        )
-        mock_github_instance.get_diff.assert_called_once()
-
+    @pytest.mark.asyncio
+    @patch("src.events.dispatcher.event_hooks")
     @patch("src.events.dispatcher.logger")
-    @patch("src.events.dispatcher.GitHub")
-    def test_processes_normal_pr(self, mock_github, mock_logger, dispatcher):
-        """Test that normal (non-draft, non-merged) PRs are processed."""
-        mock_github_instance = MagicMock()
-        mock_github.return_value = mock_github_instance
+    async def test_extracts_repository_context_from_payload(
+        self, mock_logger, mock_event_hooks, dispatcher, mock_event_data
+    ):
+        mock_event_hooks.broadcast_event = AsyncMock(return_value={})
+        event = RepositoryEvent(mock_event_data)
 
+        await dispatcher._process_event(event)
+
+        call_kwargs = mock_event_hooks.broadcast_event.call_args[1]
+        event_data = call_kwargs["event_data"]
+        assert event_data["repository_context"]["github_repo_id"] == 456
+        assert event_data["repository_context"]["full_name"] == "test/repo"
+
+    @pytest.mark.asyncio
+    @patch("src.events.dispatcher.event_hooks")
+    @patch("src.events.dispatcher.logger")
+    async def test_handles_event_without_action(
+        self, mock_logger, mock_event_hooks, dispatcher
+    ):
+        mock_event_hooks.broadcast_event = AsyncMock(return_value={})
         event_data = RepositoryEventModel(
             provider="github",
-            type="pull_request",
-            action="opened",
+            type="push",
+            action=None,
             repository_full_name="test/repo",
-            number=4,
-            title="Normal PR",
-            payload={"pull_request": {"merged": False, "draft": False}},
+            number=None,
+            title=None,
+            payload={
+                "sender": {"id": 123, "login": "testuser"},
+                "repository": {
+                    "id": 456,
+                    "full_name": "test/repo",
+                    "name": "repo",
+                    "owner": {"login": "test"},
+                },
+            },
         )
         event = RepositoryEvent(event_data)
 
-        dispatcher._process_event(event)
+        await dispatcher._process_event(event)
 
-        assert not any(
-            "Skipping review" in call.args[0]
-            for call in mock_logger.info.call_args_list
+        call_kwargs = mock_event_hooks.broadcast_event.call_args[1]
+        assert call_kwargs["event_type"] == "push"
+
+    @pytest.mark.asyncio
+    @patch("src.events.dispatcher.event_hooks")
+    @patch("src.events.dispatcher.logger")
+    async def test_logs_broadcast_error(
+        self, mock_logger, mock_event_hooks, dispatcher, mock_event_data
+    ):
+        mock_event_hooks.broadcast_event = AsyncMock(
+            side_effect=Exception("Broadcast failed")
         )
-        mock_github_instance.get_diff.assert_called_once()
+        event = RepositoryEvent(mock_event_data)
+
+        await dispatcher._process_event(event)
+
+        mock_logger.error.assert_called()

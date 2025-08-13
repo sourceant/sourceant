@@ -129,7 +129,7 @@ class TestRepositoryEvents(BaseTestCase):
             ("pull_request", "review_requested"),
         ],
     )
-    def test_non_reviewable_events_return_skipped(self, event_type, action):
+    def test_all_events_are_created_and_broadcast(self, event_type, action):
         payload = {
             "action": action,
             "pull_request": {
@@ -146,9 +146,10 @@ class TestRepositoryEvents(BaseTestCase):
             headers={"X-GitHub-Event": event_type},
             json=payload,
         )
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
-        assert data["status"] == "skipped"
+        assert data["status"] == "success"
+        assert data["data"]["type"] == event_type
 
     def test_get_multiple_repository_events(self):
         with patch("src.config.db.STATELESS_MODE", False), patch(
