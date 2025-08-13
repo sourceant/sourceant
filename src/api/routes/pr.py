@@ -9,7 +9,7 @@ from fastapi import (
 )
 from src.controllers.repository_event_controller import RepositoryEventController
 from src.events.dispatcher import bg_tasks_cv
-from src.config.settings import GITHUB_SECRET
+from src.config.settings import GITHUB_SECRET, GITHUB_OAUTH_SECRET
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 import hmac
@@ -65,18 +65,21 @@ def get_provider_from_headers(headers: dict) -> Optional[str]:
     return None
 
 
-@router.post("/github-webhook")
-async def github_webhook(
+def process_github_webhook(
+    payload: GitHubWebhookPayload,
+    event: str,
     request: Request,
-    background_tasks: BackgroundTasks,
-    signature: str = Header(None, alias="X-Hub-Signature-256"),
-    event: str = Depends(get_event),
-    payload: GitHubWebhookPayload = Body(...),
+    auth_type: str = "github_app"
 ):
-    payload_data = await request.body()
-    if not verify_signature(payload_data.decode(), signature, GITHUB_SECRET):
-        raise HTTPException(status_code=400, detail="Invalid GitHub signature")
-
+    """
+    Common webhook processing logic for both GitHub Apps and OAuth Apps.
+    
+    Args:
+        payload: Webhook payload
+        event: GitHub event type
+        request: FastAPI request object
+        auth_type: Authentication type ('github_app' or 'oauth')
+    """
     # Handle both pull request and issue events
     url = (
         payload.pull_request["url"]
@@ -93,8 +96,9 @@ async def github_webhook(
 
     provider = get_provider_from_headers(request.headers)
 
-    # Set the background tasks in the context for the dispatcher to use
-    bg_tasks_cv.set(background_tasks)
+    # Add auth_type to payload for downstream processing
+    enhanced_payload = payload.model_dump()
+    enhanced_payload["sourceant_auth_type"] = auth_type
 
     return RepositoryEventController.create(
         action=payload.action,
@@ -103,6 +107,47 @@ async def github_webhook(
         title=title,
         repository_full_name=payload.repository["full_name"],
         number=number,
-        payload=payload.model_dump(),
+        payload=enhanced_payload,
         provider=provider,
     )
+
+
+@router.post("/github-webhook")
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    signature: str = Header(None, alias="X-Hub-Signature-256"),
+    event: str = Depends(get_event),
+    payload: GitHubWebhookPayload = Body(...),
+):
+    """GitHub App webhook endpoint."""
+    payload_data = await request.body()
+    if not verify_signature(payload_data.decode(), signature, GITHUB_SECRET):
+        raise HTTPException(status_code=400, detail="Invalid GitHub signature")
+
+    # Set the background tasks in the context for the dispatcher to use
+    bg_tasks_cv.set(background_tasks)
+
+    return process_github_webhook(payload, event, request, auth_type="github_app")
+
+
+@router.post("/github-webhook-oauth")
+async def github_oauth_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    signature: str = Header(None, alias="X-Hub-Signature-256"),
+    event: str = Depends(get_event),
+    payload: GitHubWebhookPayload = Body(...),
+):
+    """GitHub OAuth App webhook endpoint."""
+    if GITHUB_OAUTH_SECRET is None:
+        raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
+    
+    payload_data = await request.body()
+    if not verify_signature(payload_data.decode(), signature, GITHUB_OAUTH_SECRET):
+        raise HTTPException(status_code=400, detail="Invalid GitHub OAuth signature")
+
+    # Set the background tasks in the context for the dispatcher to use
+    bg_tasks_cv.set(background_tasks)
+
+    return process_github_webhook(payload, event, request, auth_type="oauth")

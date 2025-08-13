@@ -1,7 +1,7 @@
 import tempfile
 from contextvars import ContextVar
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import redis
 from redislite import Redis as RedisLite
@@ -19,6 +19,8 @@ from src.config.settings import (
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github import GitHub
+from src.integrations.github.github_oauth_client import GitHubOAuth
+from src.plugins.event_hooks import event_hooks
 from src.llms.llm_factory import llm
 from src.models.code_review import CodeReview, Verdict
 from src.models.pull_request import PullRequest
@@ -66,7 +68,7 @@ class EventDispatcher:
         if QUEUE_MODE in ["redis", "redislite"]:
             if not q:
                 raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
-            q.enqueue(self._process_event, event)
+            q.enqueue(self._process_event_sync, event)
 
         elif QUEUE_MODE == "request":
             background_tasks = bg_tasks_cv.get()
@@ -74,238 +76,146 @@ class EventDispatcher:
                 raise RuntimeError(
                     "FastAPI BackgroundTasks not found in context. Is the endpoint setting it?"
                 )
-            background_tasks.add_task(self._process_event, event)
+            background_tasks.add_task(self._process_event_sync, event)
         else:
             raise ValueError(
                 f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be 'redis', 'redislite', or 'request'."
             )
 
-    def _process_event(self, event: Event):
+    async def _process_event(self, event: Event):
+        """
+        Process and broadcast events to all subscribers.
+        
+        This is now a pure event broadcaster - no review logic here.
+        """
         if not isinstance(event, RepositoryEvent):
             logger.error(f"Unhandled event type: {event}")
             return
 
-        logger.info(
-            f"Processing repository event: {event.data.type} on {event.data.repository_full_name}"
-        )
-
-        # Define specific events that should trigger PR reviews
-        reviewable_events = {
-            "pull_request": {"opened", "synchronize", "reopened", "ready_for_review"}
-        }
-
-        if event.data.type not in reviewable_events:
-            logger.info(
-                f"Skipping event of type '{event.data.type}'. Not a reviewable event type."
-            )
-            return
-
-        if event.data.action not in reviewable_events[event.data.type]:
-            logger.info(
-                f"Skipping '{event.data.type}.{event.data.action}' action. Only actions {reviewable_events[event.data.type]} trigger reviews."
-            )
-            return
-
         repository_event: RepositoryEventModel = event.data
-        if not repository_event or not isinstance(
-            repository_event, RepositoryEventModel
-        ):
-            logger.error("Invalid event data. Cannot process event.")
-            return
-
-        repository = Repository(
-            name=repository_event.repository_full_name.split("/")[1],
-            owner=repository_event.repository_full_name.split("/")[0],
-        )
-        pull_request_payload = repository_event.payload.get("pull_request") or {}
-
-        head_sha = pull_request_payload.get("head", {}).get("sha")
-        base_sha = pull_request_payload.get("base", {}).get("sha")
-
-        pull_request = PullRequest(
-            number=repository_event.number,
-            title=repository_event.title,
-            draft=pull_request_payload.get("draft", False),
-            merged=pull_request_payload.get("merged", False),
-            base_sha=base_sha,
-            head_sha=head_sha,
+        logger.info(
+            f"Broadcasting repository event: {repository_event.type} on {repository_event.repository_full_name}"
         )
 
-        if pull_request.merged:
-            logger.info(
-                f"Pull request #{pull_request.number} is already merged. Skipping."
-            )
-            return
-
-        if pull_request.draft and not REVIEW_DRAFT_PRS:
-            logger.info(
-                f"Pull request #{pull_request.number} is a draft. Skipping review."
-            )
-            return
-
-        owner, repo_name = repository.owner, repository.name
-        github = GitHub()
-
+        # Broadcast the event to all subscribers (plugins, code reviewer, etc.)
+        await self._broadcast_event_to_subscribers(repository_event)
+    
+    async def _broadcast_event_to_subscribers(self, repository_event: RepositoryEventModel):
+        """
+        Broadcast repository event to all subscribers.
+        
+        Args:
+            repository_event: Repository event model instance
+        """
         try:
-            raw_diff = github.get_diff(
-                owner=owner,
-                repo=repo_name,
-                pr_number=pull_request.number,
-                base_sha=pull_request.base_sha,
-                head_sha=pull_request.head_sha,
-            )
-            if not raw_diff:
-                logger.info("No diff could be computed. Skipping.")
-                return
-
-            parsed_files = parse_diff(raw_diff)
-            line_mapper = LineMapper(parsed_files)
-            # Initial token count from the diff itself, using the LLM's tokenizer for accuracy.
-            total_tokens = sum(llm().count_tokens(pf.diff_text) for pf in parsed_files)
-
-            # If uploads are disabled, account for the full file content that will be added to the prompt
-            if not llm().uploads_enabled:
-                logger.info(
-                    "File uploads disabled. Calculating tokens from full file content."
-                )
-                for pf in parsed_files:
-                    content = github.get_file_content(
-                        owner=owner,
-                        repo=repo_name,
-                        file_path=pf.file_path,
-                        sha=pull_request.head_sha,
-                    )
-                    if content:
-                        # Use the LLM's own tokenizer for accuracy if available
-                        total_tokens += llm().count_tokens(content)
-            logger.info(f"Total tokens in diff: {total_tokens}")
-
-            if total_tokens < llm().token_limit:
-                logger.info("Diff is small enough for a single-pass review.")
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_file_paths = self._prepare_llm_file_context(
-                        github, owner, repo_name, pull_request, parsed_files, temp_dir
-                    )
-                    full_review = llm().generate_code_review(
-                        diff=raw_diff,
-                        parsed_files=parsed_files,
-                        file_paths=temp_file_paths,
-                    )
-
-                all_suggestions = []
-                if full_review and full_review.code_suggestions:
-                    for suggestion in full_review.code_suggestions:
-                        mapped_result = line_mapper.validate_and_map_suggestion(
-                            suggestion, strict_mode=(APP_ENV == "production")
-                        )
-                        if mapped_result:
-                            suggestion.position = mapped_result[0]
-                            all_suggestions.append(suggestion)
-
-                final_review = CodeReview(
-                    summary=full_review.summary,
-                    verdict=full_review.verdict,
-                    code_suggestions=all_suggestions,
-                    scores=full_review.scores,
-                )
+            # Determine event type for broadcasting
+            if repository_event.action:
+                event_type = f"{repository_event.type}.{repository_event.action}"
             else:
-                logger.info("Diff is too large. Performing file-by-file review.")
-                all_suggestions = []
-                for parsed_file in parsed_files:
-                    logger.info(f"Reviewing file: {parsed_file.file_path}")
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        temp_file_paths = self._prepare_llm_file_context(
-                            github,
-                            owner,
-                            repo_name,
-                            pull_request,
-                            [parsed_file],
-                            temp_dir,
-                        )
-                        review_for_file = llm().generate_code_review(
-                            diff=parsed_file.diff_text,
-                            parsed_files=[parsed_file],
-                            file_paths=temp_file_paths,
-                        )
-
-                    if review_for_file and review_for_file.code_suggestions:
-                        for suggestion in review_for_file.code_suggestions:
-                            mapped_result = line_mapper.validate_and_map_suggestion(
-                                suggestion, strict_mode=(APP_ENV == "production")
-                            )
-                            if mapped_result:
-                                suggestion.position = mapped_result[0]
-                                all_suggestions.append(suggestion)
-
-                summary_obj = llm().generate_summary(all_suggestions)
-                verdict = (
-                    Verdict.REQUEST_CHANGES if all_suggestions else Verdict.APPROVE
-                )
-                final_review = CodeReview(
-                    summary=summary_obj,
-                    verdict=verdict,
-                    code_suggestions=all_suggestions,
-                )
-
-            self._schedule_review_posting(
-                repository, pull_request, final_review, line_mapper
+                event_type = repository_event.type
+            
+            # Get auth type and create appropriate client for context extraction
+            auth_type = repository_event.payload.get("sourceant_auth_type", "github_app")
+            
+            if auth_type == "oauth":
+                oauth_client = GitHubOAuth()
+                user_context = oauth_client.get_user_info_from_webhook(repository_event.payload)
+                repository_context = oauth_client.get_repository_info_from_webhook(repository_event.payload)
+                activity_data = oauth_client.extract_activity_data(repository_event.payload, repository_event.type)
+            else:
+                # For GitHub App events, extract basic context
+                user_context = self._extract_user_context_github_app(repository_event.payload)
+                repository_context = self._extract_repository_context_github_app(repository_event.payload)
+                activity_data = None
+            
+            # Prepare event data for broadcasting
+            event_data = {
+                'event_type': event_type,
+                'auth_type': auth_type,
+                'user_context': user_context,
+                'repository_context': repository_context,
+                'repository_event': {
+                    'type': repository_event.type,
+                    'action': repository_event.action,
+                    'number': repository_event.number,
+                    'title': repository_event.title,
+                    'url': repository_event.url,
+                    'repository_full_name': repository_event.repository_full_name,
+                    'provider': repository_event.provider
+                },
+                'payload': repository_event.payload,
+                'activity_data': activity_data,  # OAuth-specific activity data
+                'timestamp': repository_event.created_at.isoformat() if repository_event.created_at else None
+            }
+            
+            # Broadcast to all subscribers
+            logger.info(f"Broadcasting {event_type} event from {auth_type} to all subscribers")
+            
+            broadcast_results = await event_hooks.broadcast_event(
+                event_type=event_type,
+                event_data=event_data,
+                source_plugin='sourceant_core'
             )
-
+            
+            logger.debug(f"Event broadcast results: {list(broadcast_results.keys())}")
+            
         except Exception as e:
-            logger.exception(f"An error occurred while processing event: {e}")
-
-    def _post_review(
-        self,
-        repository: Repository,
-        pull_request: PullRequest,
-        review: CodeReview,
-        line_mapper: LineMapper,
-    ):
-        """Posts the review to the repository."""
-        GitHub().post_review(
-            repository=repository,
-            pull_request=pull_request,
-            code_review=review,
-            line_mapper=line_mapper,
-        )
-
-    def _schedule_review_posting(
-        self,
-        repository: Repository,
-        pull_request: PullRequest,
-        review: CodeReview,
-        line_mapper: LineMapper,
-    ):
-        """Schedules the review posting."""
-        if QUEUE_MODE in ["redis", "redislite"]:
-            if not q:
-                raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
-            q.enqueue(self._post_review, repository, pull_request, review, line_mapper)
-        else:  # In fastapi mode, this runs in the same background task.
-            self._post_review(repository, pull_request, review, line_mapper)
-
-    def _prepare_llm_file_context(
-        self,
-        github: GitHub,
-        owner: str,
-        repo_name: str,
-        pull_request: PullRequest,
-        parsed_files: List[ParsedDiff],
-        temp_dir: str,
-    ) -> List[str]:
-        """Prepares file context for the LLM by creating temporary files."""
-        temp_file_paths = []
-        if pull_request.head_sha:
-            for pf in parsed_files:
-                content = github.get_file_content(
-                    owner=owner,
-                    repo=repo_name,
-                    file_path=pf.file_path,
-                    sha=pull_request.head_sha,
-                )
-                if content:
-                    temp_file_path = Path(temp_dir) / pf.file_path
-                    temp_file_path.parent.mkdir(parents=True, exist_ok=True)
-                    temp_file_path.write_text(content)
-                    temp_file_paths.append(str(temp_file_path))
-        return temp_file_paths
+            logger.error(f"Error broadcasting event to subscribers: {e}", exc_info=True)
+    
+    def _extract_user_context_github_app(self, payload: Dict) -> Optional[Dict[str, Any]]:
+        """Extract user context from GitHub App webhook payload."""
+        try:
+            user_info = None
+            
+            if 'sender' in payload:
+                user_info = payload['sender']
+            elif 'pull_request' in payload and 'user' in payload['pull_request']:
+                user_info = payload['pull_request']['user']
+            
+            if user_info:
+                return {
+                    'github_id': user_info.get('id'),
+                    'username': user_info.get('login'),
+                    'avatar_url': user_info.get('avatar_url'),
+                    'type': user_info.get('type')
+                }
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting user context from GitHub App payload: {e}")
+            return None
+    
+    def _extract_repository_context_github_app(self, payload: Dict) -> Optional[Dict[str, Any]]:
+        """Extract repository context from GitHub App webhook payload."""
+        try:
+            repo_info = payload.get('repository')
+            if not repo_info:
+                return None
+            
+            return {
+                'github_repo_id': repo_info.get('id'),
+                'full_name': repo_info.get('full_name'),
+                'name': repo_info.get('name'),
+                'owner': repo_info.get('owner', {}).get('login'),
+                'private': repo_info.get('private', False)
+            }
+        except Exception as e:
+            logger.error(f"Error extracting repository context from GitHub App payload: {e}")
+            return None
+    
+    def _process_event_sync(self, event: Event):
+        """Synchronous wrapper for async event processing."""
+        import asyncio
+        try:
+            # Create new event loop if none exists
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        if loop.is_running():
+            # If loop is already running, schedule the coroutine
+            asyncio.create_task(self._process_event(event))
+        else:
+            # Run the coroutine in the loop
+            loop.run_until_complete(self._process_event(event))
