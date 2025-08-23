@@ -276,6 +276,86 @@ class GitHub(ProviderAdapter):
 
         return "".join(parts)
 
+    def _post_review_as_fallback_comment(
+        self,
+        repository: Repository,
+        pull_request: PullRequest,
+        code_review: CodeReview,
+        headers: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Posts code suggestions as a regular PR comment."""
+        try:
+            # Format code suggestions as markdown for a comment with collapsible sections
+            comment_body = "## 📝 Code Suggestions\n\n"
+
+            # Add code suggestions as collapsible text since we can't use line comments
+            if code_review.code_suggestions:
+                for i, suggestion in enumerate(code_review.code_suggestions, 1):
+                    if not suggestion.file_name:
+                        continue
+
+                    comment_body += f"**{i}. {suggestion.file_name}**"
+                    if suggestion.start_line:
+                        if suggestion.start_line == suggestion.end_line:
+                            comment_body += f" (Line {suggestion.start_line})"
+                        else:
+                            comment_body += f" (Lines {suggestion.start_line}-{suggestion.end_line})"
+                    comment_body += "\n\n"
+
+                    if suggestion.comment:
+                        comment_body += f"{suggestion.comment}\n\n"
+
+                    if suggestion.suggested_code:
+                        comment_body += (
+                            f"```suggestion\n{suggestion.suggested_code}\n```\n"
+                        )
+
+            # Add other review sections as collapsible if present
+            sections = [
+                ("🐛 Potential Bugs", code_review.potential_bugs),
+                ("⚡ Performance", code_review.performance),
+                ("🛡️ Security", code_review.security),
+                ("📖 Readability", code_review.readability),
+                ("🔧 Refactoring Suggestions", code_review.refactoring_suggestions),
+                ("📚 Documentation", code_review.documentation_suggestions),
+            ]
+
+            for title, content in sections:
+                if content and content.strip():
+                    comment_body += f"<details>\n<summary>{title}</summary>\n\n{content}\n\n</details>\n\n"
+
+            comment_body += f"**Verdict:** {code_review.verdict.value}\n\n"
+            comment_body += "*Posted as a comment because posting a review failed.*"
+
+            # Post as regular PR comment
+            url = f"https://api.github.com/repos/{repository.owner}/{repository.name}/issues/{pull_request.number}/comments"
+            response = requests.post(
+                url, headers=headers, json={"body": comment_body}, timeout=30
+            )
+            response.raise_for_status()
+
+            comment_data = response.json()
+            logger.info(
+                f"Successfully posted fallback comment with ID: {comment_data.get('id')}"
+            )
+
+            return {
+                "status": "success",
+                "comment_id": comment_data.get("id"),
+                "message": "Review posted as fallback comment",
+            }
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to post fallback comment: {e}"
+            if hasattr(e, "response") and e.response is not None:
+                error_msg += f" - Response: {e.response.text}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+        except Exception as e:
+            error_msg = f"Unexpected error in fallback comment: {e}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+
     def post_review(
         self,
         repository: Repository,
@@ -410,14 +490,68 @@ class GitHub(ProviderAdapter):
             if hasattr(e, "response") and e.response is not None:
                 error_msg += f" - Response: {e.response.text}"
             logger.error(error_msg)
-            return {
-                "status": "error",
-                "message": error_msg,
-                "error_type": "github_api_error",
-            }
+
+            # Fallback: Post review content as a comment when API review posting fails
+            logger.info(
+                "Attempting fallback: posting review as comment instead of formal review"
+            )
+
+            # Always update the overview comment even when fallback is used
+            if code_review.summary:
+                formatted_summary = self._format_summary(code_review.summary)
+                existing_comment = self._find_overview_comment(
+                    repository.owner, repository.name, pull_request.number, headers
+                )
+                if not existing_comment or llm().is_summary_different(
+                    summary_a=existing_comment["body"],
+                    summary_b=formatted_summary,
+                ):
+                    self._create_or_update_overview_comment(
+                        repository.owner,
+                        repository.name,
+                        pull_request.number,
+                        formatted_summary,
+                        headers,
+                    )
+
+            fallback_result = self._post_review_as_fallback_comment(
+                repository, pull_request, code_review, headers
+            )
+            if fallback_result["status"] == "success":
+                return {
+                    "status": "partial_success",
+                    "message": f"Review API failed, but posted as comment: {error_msg}",
+                    "error_type": "github_api_error_with_fallback",
+                    "fallback_comment_id": fallback_result.get("comment_id"),
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"{error_msg}. Fallback comment also failed: {fallback_result['message']}",
+                    "error_type": "github_api_error",
+                }
         except Exception as e:
             error_msg = f"An unexpected error occurred: {e}"
             logger.exception(error_msg)
+
+            # Fallback for unexpected errors too
+            try:
+                logger.info(
+                    "Attempting fallback after unexpected error: posting review as comment"
+                )
+                fallback_result = self._post_review_as_fallback_comment(
+                    repository, pull_request, code_review, headers
+                )
+                if fallback_result["status"] == "success":
+                    return {
+                        "status": "partial_success",
+                        "message": f"Unexpected error occurred, but posted as comment: {error_msg}",
+                        "error_type": "unexpected_error_with_fallback",
+                        "fallback_comment_id": fallback_result.get("comment_id"),
+                    }
+            except Exception as fallback_e:
+                logger.error(f"Fallback comment posting also failed: {fallback_e}")
+
             return {
                 "status": "error",
                 "message": error_msg,

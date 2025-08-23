@@ -1,48 +1,44 @@
 class Prompts:
     """
     A class to hold predefined prompt templates for LLM interactions.
+    Uses reusable components to avoid duplication.
     """
 
-    REVIEW_PROMPT = """
-    # 📌 **Comprehensive Code Review Request**
+    # Reusable prompt components
+    _EXPERT_REVIEWER_INTRO = """You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**."""
 
-    You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.
-    Your task is to **analyze the code diff**, provide **precise, structured, and actionable feedback**.
-
-    ## 💬 **How to Use Provided Context**
-    You have been given two pieces of information:
-    1.  **The Diff**: To show you the specific lines that were changed.
-    2.  **Full File Content**: Provided below under "Additional Context".
-
-    **Use the diff to understand the developer's intent and focus your review, but use the full file content as the absolute source of truth for code structure, line numbers, and surrounding logic.** This will prevent any confusion about duplicated code.
-
-    ## 📚 **Additional Context (Full File Content)**
-    {context}
-
-    ## 🔍 **Review Criteria**
+    _REVIEW_CRITERIA = """## 🔍 **Review Criteria**
      - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
      - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.
      - **Performance** → Inefficiencies, better algorithms, unnecessary computations.
      - **Security** → Injection risks, authentication flaws, unsafe operations.
      - **Readability & Maintainability** → Clarity, modularity, inline documentation.
-     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.
+     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible."""
 
-    ## 📍 **CRITICAL: Line Number Guidelines**
+    _LINE_NUMBER_GUIDELINES = """## 📍 **CRITICAL: Line Number Guidelines**
 
     **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
     - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
     - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
     - **Line Number Source**: Use the line number from the **RIGHT** side of the diff for new/modified code (+ lines) and the **LEFT** side for deleted code (- lines).
     - **`existing_code`**: For each suggestion, provide the **exact block of original code** that your `suggested_code` is meant to replace. This is crucial for accurately placing the comment if line numbers have shifted. For new code additions, this field should be `null`.
-    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
+    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**."""
 
-    --- 
+    _CODE_SUGGESTIONS_RULES = """**CRITICAL**: The `code_suggestions` array is **ONLY for actionable suggestions that propose specific code changes**. 
+    - ❌ **NEVER** include positive affirmations, praise, or "good job" comments
+    - ❌ **NEVER** highlight existing good code without suggesting an improvement
+    - ❌ **NEVER** comment on code just to acknowledge it exists
+    - ❌ **NEVER** suggest code that is identical or substantially similar to existing code
+    - ✅ **ONLY** include suggestions that identify actual issues and propose fixes
+    - ✅ Each suggestion MUST include `suggested_code` that is meaningfully different and better than existing code
+    - ✅ If existing code is good enough, make NO comment about it at all
+    
+    **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
 
-    ## 📝 **Feedback Format (JSON)**
-    Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
+    _JSON_FORMAT_HEADER = """## 📝 **Feedback Format (JSON)**
+    Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**"""
 
-    **IMPORTANT**: The `code_suggestions` array is **strictly for actionable suggestions** that propose a specific code change. Do **not** use it for positive affirmations or general praise. General feedback belongs in the summary fields (e.g., `code_quality`, `readability`). Any item in `code_suggestions` MUST recommend a change.
-    ```json
+    _JSON_SCHEMA_EXAMPLE = """```json
     {{
         "code_quality": "<Markdown-formatted feedback on code quality and style.>",
         "code_suggestions": [
@@ -85,25 +81,54 @@ class Prompts:
             "performance": "<Integer score from 1 to 10.>"
         }}
     }}
-    ```
+    ```"""
+
+    _FINAL_NOTES = """📢 **Final Notes:**
+    - **Ensure precision** → Always specify exact `line` numbers from the diff, `position`, and `side`.
+    - **Line Number Accuracy** → Count line numbers from hunk headers (@@ -start,count +start,count @@).
+    - **Be specific** → Your suggestions should be easy to understand and implement.
+    - **Stay on topic** → Focus only on the provided code diff.
+
+    🚀 **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**"""
+
+    REVIEW_PROMPT = f"""
+    # 📌 **Comprehensive Code Review Request**
+
+    {_EXPERT_REVIEWER_INTRO}
+    Your task is to **analyze the code diff**, provide **precise, structured, and actionable feedback**.
+
+    ## 💬 **How to Use Provided Context**
+    You have been given two pieces of information:
+    1.  **The Diff**: To show you the specific lines that were changed.
+    2.  **Full File Content**: Provided below under "Additional Context".
+
+    **Use the diff to understand the developer's intent and focus your review, but use the full file content as the absolute source of truth for code structure, line numbers, and surrounding logic.** This will prevent any confusion about duplicated code.
+
+    ## 📚 **Additional Context (Full File Content)**
+    {{context}}
+
+    {_REVIEW_CRITERIA}
+
+    {_LINE_NUMBER_GUIDELINES}
+
+    --- 
+
+    {_JSON_FORMAT_HEADER}
+
+    {_CODE_SUGGESTIONS_RULES}
+    {_JSON_SCHEMA_EXAMPLE}
 
     ---
 
     ## 🎯 **Code Diff for Review**
     This diff shows the specific changes to review.
     ```diff
-    {diff}
+    {{diff}}
     ```
 
     ---
 
-    📢 **Final Notes:**
-    - **Ensure precision** → Always specify exact `line` numbers from the diff, `position`, and `side`.
-    - **Line Number Accuracy** → Count line numbers from hunk headers (@@ -start,count +start,count @@).
-    - **Be specific** → Your suggestions should be easy to understand and implement.
-    - **Stay on topic** → Focus only on the provided code diff.
-
-    🚀 **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**
+    {_FINAL_NOTES}
     """
 
     SUMMARIZE_PROMPT = """
@@ -199,10 +224,10 @@ class Prompts:
     Respond with a single word: **SAME** or **DIFFERENT**. Do not provide any other text or explanation.
     """
 
-    REVIEW_PROMPT_WITH_FILES = """
+    REVIEW_PROMPT_WITH_FILES = f"""
     # 📌 **Comprehensive Code Review Request (with Full File Context)**
 
-    You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.
+    {_EXPERT_REVIEWER_INTRO}
     Your task is to **analyze the code diff**, using the **full file contents provided** to understand the complete context. Your review should be **precise, structured, and actionable**.
 
     ## 🎯 **Primary Goal: Focus on the Diff**
@@ -212,15 +237,9 @@ class Prompts:
     The complete content for all changed files has been uploaded and is available to you. **You MUST use these files as the primary source of truth** for understanding the code, its structure, and for generating accurate line numbers.
 
     ## 💬 **Additional Context**
-    {context}
+    {{context}}
 
-    ## 🔍 **Review Criteria**
-     - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
-     - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.
-     - **Performance** → Inefficiencies, better algorithms, unnecessary computations.
-     - **Security** → Injection risks, authentication flaws, unsafe operations.
-     - **Readability & Maintainability** → Clarity, modularity, inline documentation.
-     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.
+    {_REVIEW_CRITERIA}
 
     ## 📍 **CRITICAL: Line Number Guidelines**
 
@@ -234,16 +253,15 @@ class Prompts:
 
     --- 
 
-    ## 📝 **Feedback Format (JSON)**
-    Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
+    {_JSON_FORMAT_HEADER}
 
-    **IMPORTANT**: The `code_suggestions` array is **strictly for actionable suggestions** that propose a specific code change. Do **not** use it for positive affirmations or general praise. General feedback belongs in the summary fields (e.g., `code_quality`, `readability`). Any item in `code_suggestions` MUST recommend a change.
+    {_CODE_SUGGESTIONS_RULES}
     --- 
 
     ## 🎯 **Code Diff for Review**
     This diff shows the specific changes to review. **REMINDER: Your review MUST focus *only* on the lines prefixed with `+` or `-` below.** Use the full files provided for the surrounding context, but do not comment on unchanged code.
     ```diff
-    {diff}
+    {{diff}}
     ```
 
     --- 
