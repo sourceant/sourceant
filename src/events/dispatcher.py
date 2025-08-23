@@ -20,7 +20,7 @@ from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github import GitHub
 from src.llms.llm_factory import llm
-from src.models.code_review import CodeReview, Verdict
+from src.models.code_review import CodeReview, Verdict, SuggestionCategory
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
@@ -202,12 +202,21 @@ class EventDispatcher:
                             suggestion.position = mapped_result[0]
                             all_suggestions.append(suggestion)
 
-                final_review = CodeReview(
-                    summary=full_review.summary,
-                    verdict=full_review.verdict,
-                    code_suggestions=all_suggestions,
-                    scores=full_review.scores,
-                )
+                if full_review:
+                    final_review = CodeReview(
+                        summary=full_review.summary,
+                        verdict=full_review.verdict,
+                        code_suggestions=all_suggestions,
+                        scores=full_review.scores,
+                    )
+                else:
+                    # Fallback when full_review is None
+                    verdict = self._determine_verdict_from_suggestions(all_suggestions)
+                    final_review = CodeReview(
+                        summary=None,
+                        verdict=verdict,
+                        code_suggestions=all_suggestions,
+                    )
             else:
                 logger.info("Diff is too large. Performing file-by-file review.")
                 all_suggestions = []
@@ -238,9 +247,7 @@ class EventDispatcher:
                                 all_suggestions.append(suggestion)
 
                 summary_obj = llm().generate_summary(all_suggestions)
-                verdict = (
-                    Verdict.REQUEST_CHANGES if all_suggestions else Verdict.APPROVE
-                )
+                verdict = self._determine_verdict_from_suggestions(all_suggestions)
                 final_review = CodeReview(
                     summary=summary_obj,
                     verdict=verdict,
@@ -268,6 +275,31 @@ class EventDispatcher:
             code_review=review,
             line_mapper=line_mapper,
         )
+
+    def _determine_verdict_from_suggestions(self, suggestions: List) -> Verdict:
+        """Determines the appropriate verdict based on suggestions analysis."""
+        if not suggestions:
+            return Verdict.APPROVE
+
+        critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
+        security_keywords = ["vulnerability", "exploit", "injection"]
+
+        critical_count = 0
+        for suggestion in suggestions:
+            if not suggestion or not suggestion.comment:
+                continue
+
+            comment_lower = suggestion.comment.lower()
+
+            if suggestion.category in critical_categories or any(
+                keyword in comment_lower for keyword in security_keywords
+            ):
+                critical_count += 1
+
+        if critical_count > 0:
+            return Verdict.REQUEST_CHANGES
+        else:
+            return Verdict.COMMENT
 
     def _schedule_review_posting(
         self,
