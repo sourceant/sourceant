@@ -49,7 +49,7 @@ class Prompts:
                 "position": <position_in_diff>,
                 "side": "<LEFT|RIGHT>",
                 "comment": "<Detailed review comment explaining the issue and why it matters.>",
-                "category": "<bug|security|performance|style|maintainability>",
+                "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
                 "suggested_code": "<Corrected or improved code snippet.>",
                 "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>"
             }}
