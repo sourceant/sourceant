@@ -16,6 +16,7 @@ from src.llms.llm_factory import llm
 
 
 COMMENT_MARKER = "<!-- SOURCEANT_REVIEW_SUMMARY -->"
+FALLBACK_COMMENT_MARKER = "<!-- SOURCEANT_FALLBACK_REVIEW -->"
 
 
 class GitHub(ProviderAdapter):
@@ -214,6 +215,33 @@ class GitHub(ProviderAdapter):
             logger.warning(f"Could not search for previous overview comment: {e}")
             return None
 
+    def _find_fallback_comment(
+        self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]
+    ) -> Optional[Dict[str, Any]]:
+        """Find the bot's fallback review comment on a PR."""
+        try:
+            response = requests.get(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            comments = response.json()
+
+            for comment in comments:
+                if FALLBACK_COMMENT_MARKER in comment.get("body", ""):
+                    logger.info(
+                        f"Found previous fallback comment with ID: {comment['id']}"
+                    )
+                    return comment
+
+            logger.info("No previous fallback comment found.")
+            return None
+
+        except (requests.exceptions.RequestException, ValueError) as e:
+            logger.warning(f"Could not search for previous fallback comment: {e}")
+            return None
+
     def _create_or_update_overview_comment(
         self,
         owner: str,
@@ -283,40 +311,49 @@ class GitHub(ProviderAdapter):
         code_review: CodeReview,
         headers: Dict[str, str],
     ) -> Dict[str, Any]:
-        """Posts code suggestions as a regular PR comment."""
+        """Posts or updates actionable code review as a regular PR comment."""
         try:
-            # Format code suggestions as markdown for a comment with collapsible sections
-            comment_body = "## 📝 Code Suggestions\n\n"
+            comment_body = "## 🔍 Code Review\n\n"
 
-            # Add code suggestions as collapsible text since we can't use line comments
+            # Add code suggestions in expandable, collapsed sections
             if code_review.code_suggestions:
                 for i, suggestion in enumerate(code_review.code_suggestions, 1):
                     if not suggestion.file_name:
                         continue
 
-                    comment_body += f"**{i}. {suggestion.file_name}**"
-                    if suggestion.start_line:
-                        if suggestion.start_line == suggestion.end_line:
-                            comment_body += f" (Line {suggestion.start_line})"
-                        else:
-                            comment_body += f" (Lines {suggestion.start_line}-{suggestion.end_line})"
-                    comment_body += "\n\n"
+                    # Create expandable section for each suggestion
+                    file_location = f"**{suggestion.file_name}**"
+                    if suggestion.start_line == suggestion.end_line:
+                        file_location += f" (Line {suggestion.start_line})"
+                    else:
+                        file_location += (
+                            f" (Lines {suggestion.start_line}-{suggestion.end_line})"
+                        )
+
+                    # Collapsed by default with clear title
+                    comment_body += f"<details>\n<summary>💡 {i}. {file_location}"
+                    if hasattr(suggestion, "category") and suggestion.category:
+                        comment_body += f" - {suggestion.category.value}"
+                    comment_body += "</summary>\n\n"
 
                     if suggestion.comment:
                         comment_body += f"{suggestion.comment}\n\n"
 
                     if suggestion.suggested_code:
-                        comment_body += (
-                            f"```suggestion\n{suggestion.suggested_code}\n```\n"
-                        )
+                        comment_body += f"**Suggested Code:**\n```suggestion\n{suggestion.suggested_code}\n```\n\n"
 
-            # Add other review sections as collapsible if present
+                    if suggestion.existing_code:
+                        comment_body += f"**Current Code:**\n```python\n{suggestion.existing_code}\n```\n\n"
+
+                    comment_body += "</details>\n\n"
+
+            # Add other review sections as collapsed expandable sections if present
             sections = [
                 ("🐛 Potential Bugs", code_review.potential_bugs),
                 ("⚡ Performance", code_review.performance),
                 ("🛡️ Security", code_review.security),
                 ("📖 Readability", code_review.readability),
-                ("🔧 Refactoring Suggestions", code_review.refactoring_suggestions),
+                ("🔧 Refactoring", code_review.refactoring_suggestions),
                 ("📚 Documentation", code_review.documentation_suggestions),
             ]
 
@@ -325,18 +362,31 @@ class GitHub(ProviderAdapter):
                     comment_body += f"<details>\n<summary>{title}</summary>\n\n{content}\n\n</details>\n\n"
 
             comment_body += f"**Verdict:** {code_review.verdict.value}\n\n"
-            comment_body += "*Posted as a comment because posting a review failed.*"
+            comment_body += f"*Posted as a comment because posting a review failed.*\n\n{FALLBACK_COMMENT_MARKER}"
 
-            # Post as regular PR comment
-            url = f"https://api.github.com/repos/{repository.owner}/{repository.name}/issues/{pull_request.number}/comments"
-            response = requests.post(
-                url, headers=headers, json={"body": comment_body}, timeout=30
+            # Check for existing fallback comment to update
+            existing_comment = self._find_fallback_comment(
+                repository.owner, repository.name, pull_request.number, headers
             )
-            response.raise_for_status()
 
+            if existing_comment:
+                comment_id = existing_comment["id"]
+                logger.info(f"Updating existing fallback comment {comment_id}...")
+                url = f"https://api.github.com/repos/{repository.owner}/{repository.name}/issues/comments/{comment_id}"
+                response = requests.patch(
+                    url, headers=headers, json={"body": comment_body}, timeout=30
+                )
+            else:
+                logger.info("Creating new fallback comment...")
+                url = f"https://api.github.com/repos/{repository.owner}/{repository.name}/issues/{pull_request.number}/comments"
+                response = requests.post(
+                    url, headers=headers, json={"body": comment_body}, timeout=30
+                )
+
+            response.raise_for_status()
             comment_data = response.json()
             logger.info(
-                f"Successfully posted fallback comment with ID: {comment_data.get('id')}"
+                f"Successfully posted/updated fallback comment with ID: {comment_data.get('id')}"
             )
 
             return {
