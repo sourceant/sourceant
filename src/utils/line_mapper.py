@@ -121,17 +121,22 @@ class LineMapper:
             logger.debug("No existing_code in suggestion, skipping content match.")
             return None
 
-        # Strategy A: Exact content search across all diff content
+        # Strategy A: Multi-line block matching (new, more robust)
+        result = self._multiline_block_search(parsed_file, suggestion)
+        if result:
+            return result
+
+        # Strategy B: Exact content search across all diff content
         result = self._exact_content_search(parsed_file, suggestion)
         if result:
             return result
 
-        # Strategy B: Partial content match with similarity scoring
+        # Strategy C: Partial content match with similarity scoring
         result = self._partial_content_search(parsed_file, suggestion)
         if result:
             return result
 
-        # Strategy C: Proximity + content similarity hybrid
+        # Strategy D: Proximity + content similarity hybrid
         result = self._proximity_content_search(parsed_file, suggestion)
         if result:
             return result
@@ -140,31 +145,91 @@ class LineMapper:
         logger.debug("--- All content matching strategies failed. ---")
         return None
 
+    def _normalize_diff_line(self, line: str) -> str:
+        """Normalize a diff line by removing prefix (+/-/space) and stripping."""
+        if line and line[0] in ["+", "-", " "]:
+            return line[1:].strip()
+        return line.strip()
+
+    def _multiline_block_search(
+        self, parsed_file: ParsedDiff, suggestion: CodeSuggestion
+    ) -> Optional[Tuple[int, str]]:
+        """
+        Search for a multi-line block of existing_code within the diff.
+        This handles the case where existing_code spans multiple lines.
+        """
+        existing_lines = []
+        for line in suggestion.existing_code.splitlines():
+            normalized = self._normalize_diff_line(line)
+            if normalized:
+                existing_lines.append(normalized)
+
+        if not existing_lines:
+            return None
+
+        diff_lines = parsed_file.all_lines
+        num_diff_lines = len(diff_lines)
+        num_existing = len(existing_lines)
+
+        best_match_start = None
+        best_match_score = 0
+
+        for start_pos in range(num_diff_lines):
+            if start_pos + num_existing > num_diff_lines:
+                break
+
+            match_count = 0
+            for i, existing_line in enumerate(existing_lines):
+                diff_line = diff_lines[start_pos + i]
+                normalized_diff = self._normalize_diff_line(diff_line)
+
+                if normalized_diff == existing_line:
+                    match_count += 1
+                elif self._lines_similar(normalized_diff, existing_line, threshold=0.8):
+                    match_count += 0.8
+
+            score = match_count / num_existing
+            if score > best_match_score:
+                best_match_score = score
+                best_match_start = start_pos
+
+        if best_match_score >= 0.7 and best_match_start is not None:
+            position = best_match_start + 1
+            if position in parsed_file.position_to_line:
+                line_num, side = parsed_file.position_to_line[position]
+                logger.info(
+                    f"✅ Multi-line block match found (score: {best_match_score:.2f})! "
+                    f"Position {position} -> Line {line_num} ({side})"
+                )
+                return (line_num, side)
+
+        return None
+
     def _exact_content_search(
         self, parsed_file: ParsedDiff, suggestion: CodeSuggestion
     ) -> Optional[Tuple[int, str]]:
         """Search for exact content matches across all diff lines."""
         lines_to_match = [
-            line.strip() for line in suggestion.existing_code.splitlines()
+            self._normalize_diff_line(line)
+            for line in suggestion.existing_code.splitlines()
+            if self._normalize_diff_line(line)
         ]
 
-        # Search all diff content, not just specific hunks
+        if not lines_to_match:
+            return None
+
         for pos in range(1, len(parsed_file.all_lines) + 1):
             if pos in parsed_file.position_to_line:
                 line_num, side = parsed_file.position_to_line[pos]
                 line_content = parsed_file.all_lines[pos - 1]
+                clean_content = self._normalize_diff_line(line_content)
 
-                # Extract content from diff line (remove +/- prefix)
-                if line_content and line_content[0] in ["+", "-", " "]:
-                    clean_content = line_content[1:].strip()
-
-                    # Check if this line matches any of the suggestion lines
-                    for match_line in lines_to_match:
-                        if clean_content == match_line:
-                            logger.info(
-                                f"✅ Exact content match found! Line {line_num} ({side}): '{clean_content[:50]}...'"
-                            )
-                            return (line_num, side)
+                for match_line in lines_to_match:
+                    if clean_content == match_line:
+                        logger.info(
+                            f"✅ Exact content match found! Line {line_num} ({side}): '{clean_content[:50]}...'"
+                        )
+                        return (line_num, side)
         return None
 
     def _partial_content_search(
@@ -172,8 +237,14 @@ class LineMapper:
     ) -> Optional[Tuple[int, str]]:
         """Search for partial content matches with similarity scoring."""
         lines_to_match = [
-            line.strip() for line in suggestion.existing_code.splitlines()
+            self._normalize_diff_line(line)
+            for line in suggestion.existing_code.splitlines()
+            if self._normalize_diff_line(line)
         ]
+
+        if not lines_to_match:
+            return None
+
         best_score = 0
         best_match = None
 
@@ -181,25 +252,18 @@ class LineMapper:
             if pos in parsed_file.position_to_line:
                 line_num, side = parsed_file.position_to_line[pos]
                 line_content = parsed_file.all_lines[pos - 1]
+                clean_content = self._normalize_diff_line(line_content)
 
-                # Extract content from diff line
-                if line_content and line_content[0] in ["+", "-", " "]:
-                    clean_content = line_content[1:].strip()
+                for match_line in lines_to_match:
+                    if self._lines_similar(clean_content, match_line, threshold=0.6):
+                        proximity_bonus = self._calculate_proximity_score(
+                            line_num, suggestion.end_line
+                        )
+                        score = 0.8 + proximity_bonus * 0.2
 
-                    # Calculate similarity to any suggestion line
-                    for match_line in lines_to_match:
-                        if self._lines_similar(
-                            clean_content, match_line, threshold=0.6
-                        ):
-                            # Calculate proximity bonus if line numbers are close
-                            proximity_bonus = self._calculate_proximity_score(
-                                line_num, suggestion.end_line
-                            )
-                            score = 0.8 + proximity_bonus * 0.2
-
-                            if score > best_score:
-                                best_score = score
-                                best_match = (line_num, side)
+                        if score > best_score:
+                            best_score = score
+                            best_match = (line_num, side)
 
         if best_match and best_score >= 0.7:
             logger.info(
@@ -213,42 +277,39 @@ class LineMapper:
     ) -> Optional[Tuple[int, str]]:
         """Search using proximity to suggested line number + content similarity."""
         lines_to_match = [
-            line.strip() for line in suggestion.existing_code.splitlines()
+            self._normalize_diff_line(line)
+            for line in suggestion.existing_code.splitlines()
+            if self._normalize_diff_line(line)
         ]
 
-        # Search within reasonable proximity of suggested line
+        if not lines_to_match:
+            return None
+
         target_line = suggestion.end_line
-        search_range = 10  # Look within 10 lines of suggested location
+        search_range = 10
 
         candidates = []
         for pos in range(1, len(parsed_file.all_lines) + 1):
             if pos in parsed_file.position_to_line:
                 line_num, side = parsed_file.position_to_line[pos]
 
-                # Only consider lines within reasonable proximity
                 if abs(line_num - target_line) <= search_range:
                     line_content = parsed_file.all_lines[pos - 1]
+                    clean_content = self._normalize_diff_line(line_content)
 
-                    if line_content and line_content[0] in ["+", "-", " "]:
-                        clean_content = line_content[1:].strip()
+                    content_score = max(
+                        self._calculate_line_similarity(clean_content, match_line)
+                        for match_line in lines_to_match
+                    )
+                    proximity_score = self._calculate_proximity_score(
+                        line_num, target_line
+                    )
+                    total_score = content_score * 0.6 + proximity_score * 0.4
 
-                        # Score based on content similarity + proximity
-                        content_score = max(
-                            self._calculate_line_similarity(clean_content, match_line)
-                            for match_line in lines_to_match
-                        )
-                        proximity_score = self._calculate_proximity_score(
-                            line_num, target_line
-                        )
-                        total_score = content_score * 0.6 + proximity_score * 0.4
-
-                        if total_score > 0.4:  # Minimum threshold
-                            candidates.append(
-                                (total_score, line_num, side, clean_content)
-                            )
+                    if total_score > 0.4:
+                        candidates.append((total_score, line_num, side, clean_content))
 
         if candidates:
-            # Return best candidate
             best_score, best_line, best_side, content = max(candidates)
             logger.info(
                 f"✅ Proximity content match found (score: {best_score:.2f})! Line {best_line} ({best_side}): '{content[:50]}...'"

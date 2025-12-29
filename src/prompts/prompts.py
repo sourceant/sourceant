@@ -20,11 +20,12 @@ class Prompts:
     **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
     - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
     - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
-    - **Line Number Source**: Use the line number from the **RIGHT** side of the diff for new/modified code (+ lines) and the **LEFT** side for deleted code (- lines).
-    - **`existing_code`**: For each suggestion, provide the **exact block of original code** that your `suggested_code` is meant to replace. This is crucial for accurately placing the comment if line numbers have shifted. For new code additions, this field should be `null`.
-    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**."""
+    - **Line Number Source**: Use line numbers from the **diff hunk headers**. For new/modified code (`+` lines), use the **target line number** shown after the `+` in `@@ -X,Y +Z,W @@`. For removed code (`-` lines), use the **source line number**.
+    - **CRITICAL: `existing_code`**: You **MUST** provide the **exact code snippet** from the diff that your suggestion targets. Copy it character-for-character from the diff, including the `+` or `-` prefix. This is the primary anchor for placing your comment.
+    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
+    - **Only Comment on Changed Lines**: You can ONLY comment on lines that appear in the diff with `+` or `-` prefixes. Context lines (no prefix or space prefix) cannot receive comments."""
 
-    _CODE_SUGGESTIONS_RULES = """**CRITICAL**: The `code_suggestions` array is **ONLY for actionable suggestions that propose specific code changes**. 
+    _CODE_SUGGESTIONS_RULES = """**CRITICAL**: The `code_suggestions` array is **ONLY for actionable suggestions that propose specific code changes**.
     - ❌ **NEVER** include positive affirmations, praise, or "good job" comments
     - ❌ **NEVER** highlight existing good code without suggesting an improvement
     - ❌ **NEVER** comment on code just to acknowledge it exists
@@ -32,7 +33,7 @@ class Prompts:
     - ✅ **ONLY** include suggestions that identify actual issues and propose fixes
     - ✅ Each suggestion MUST include `suggested_code` that is meaningfully different and better than existing code
     - ✅ If existing code is good enough, make NO comment about it at all
-    
+
     **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
 
     _JSON_FORMAT_HEADER = """## 📝 **Feedback Format (JSON)**
@@ -111,7 +112,7 @@ class Prompts:
 
     {_LINE_NUMBER_GUIDELINES}
 
-    --- 
+    ---
 
     {_JSON_FORMAT_HEADER}
 
@@ -152,7 +153,7 @@ class Prompts:
     """
 
     SUMMARIZE_REVIEW_PROMPT = """
-    # 
+    #
 
     You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **JSON format**, conforming to the `CodeReviewSummary` schema.
 
@@ -244,19 +245,20 @@ class Prompts:
     ## 📍 **CRITICAL: Line Number Guidelines**
 
     **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
-    - **Source of Truth**: Your primary reference for line numbers is the **full file content** provided, not just the diff.
     - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
     - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
-    - **Line Number Source**: Use the line number from the **RIGHT** side of the diff for new/modified code (+ lines) and the **LEFT** side for deleted code (- lines).
-    - **`existing_code`**: For each suggestion, provide the **exact block of original code** that your `suggested_code` is meant to replace. This is crucial for accurately placing the comment. For new code additions, this field should be `null`.
+    - **Line Number Source**: Use line numbers from the **diff hunk headers**. For new/modified code (`+` lines), use the **target line number** shown after the `+` in `@@ -X,Y +Z,W @@`. For removed code (`-` lines), use the **source line number**.
+    - **CRITICAL: `existing_code`**: You **MUST** provide the **exact code snippet** from the diff that your suggestion targets. Copy it character-for-character from the diff. This is the primary anchor for placing your comment.
     - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
+    - **Only Comment on Changed Lines**: You can ONLY comment on lines that appear in the diff with `+` or `-` prefixes. Context lines cannot receive comments.
+    - **Use Full File for Understanding**: Use the full file content to understand context and surrounding code, but line numbers in your suggestions must correspond to the diff.
 
-    --- 
+    ---
 
     {_JSON_FORMAT_HEADER}
 
     {_CODE_SUGGESTIONS_RULES}
-    --- 
+    ---
 
     ## 🎯 **Code Diff for Review**
     This diff shows the specific changes to review. **REMINDER: Your review MUST focus *only* on the lines prefixed with `+` or `-` below.** Use the full files provided for the surrounding context, but do not comment on unchanged code.
@@ -264,7 +266,7 @@ class Prompts:
     {{diff}}
     ```
 
-    --- 
+    ---
 
     🚀 **Deliver a high-quality review that is structured, developer-friendly, and leverages the full context of the provided files.**
     """

@@ -27,6 +27,7 @@ from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 
 from src.utils.diff_parser import parse_diff, ParsedDiff
 from src.utils.line_mapper import LineMapper
+from src.utils.suggestion_filter import SuggestionFilter
 
 from src.utils.logger import logger
 
@@ -180,6 +181,8 @@ class EventDispatcher:
                         total_tokens += llm().count_tokens(content)
             logger.info(f"Total tokens in diff: {total_tokens}")
 
+            suggestion_filter = SuggestionFilter()
+
             if total_tokens < llm().token_limit:
                 logger.info("Diff is small enough for a single-pass review.")
                 with tempfile.TemporaryDirectory() as temp_dir:
@@ -194,13 +197,9 @@ class EventDispatcher:
 
                 all_suggestions = []
                 if full_review and full_review.code_suggestions:
-                    for suggestion in full_review.code_suggestions:
-                        mapped_result = line_mapper.validate_and_map_suggestion(
-                            suggestion, strict_mode=(APP_ENV == "production")
-                        )
-                        if mapped_result:
-                            suggestion.position = mapped_result[0]
-                            all_suggestions.append(suggestion)
+                    all_suggestions = self._process_suggestions(
+                        full_review.code_suggestions, suggestion_filter, line_mapper
+                    )
 
                 if full_review:
                     final_review = CodeReview(
@@ -210,7 +209,6 @@ class EventDispatcher:
                         scores=full_review.scores,
                     )
                 else:
-                    # Fallback when full_review is None
                     verdict = self._determine_verdict_from_suggestions(all_suggestions)
                     final_review = CodeReview(
                         summary=None,
@@ -238,13 +236,13 @@ class EventDispatcher:
                         )
 
                     if review_for_file and review_for_file.code_suggestions:
-                        for suggestion in review_for_file.code_suggestions:
-                            mapped_result = line_mapper.validate_and_map_suggestion(
-                                suggestion, strict_mode=(APP_ENV == "production")
+                        all_suggestions.extend(
+                            self._process_suggestions(
+                                review_for_file.code_suggestions,
+                                suggestion_filter,
+                                line_mapper,
                             )
-                            if mapped_result:
-                                suggestion.position = mapped_result[0]
-                                all_suggestions.append(suggestion)
+                        )
 
                 summary_obj = llm().generate_summary(all_suggestions)
                 verdict = self._determine_verdict_from_suggestions(all_suggestions)
@@ -260,6 +258,24 @@ class EventDispatcher:
 
         except Exception as e:
             logger.exception(f"An error occurred while processing event: {e}")
+
+    def _process_suggestions(
+        self,
+        suggestions: List,
+        suggestion_filter: SuggestionFilter,
+        line_mapper: LineMapper,
+    ) -> List:
+        """Filter and map suggestions to valid diff positions."""
+        result = []
+        filtered, _ = suggestion_filter.filter_suggestions(suggestions)
+        for suggestion in filtered:
+            mapped_result = line_mapper.validate_and_map_suggestion(
+                suggestion, strict_mode=(APP_ENV == "production")
+            )
+            if mapped_result:
+                suggestion.position = mapped_result[0]
+                result.append(suggestion)
+        return result
 
     def _post_review(
         self,
