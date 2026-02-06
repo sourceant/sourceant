@@ -88,11 +88,11 @@ def test_generate_code_review_success(provider, mock_completion):
 
     assert isinstance(result, CodeReview)
     assert result.summary == summary
-    assert result.verdict == Verdict.APPROVE
+    assert result.verdict == Verdict.COMMENT
     mock_completion.completion.assert_called_once()
 
 
-def test_generate_code_review_verdict_approve_on_high_score(provider, mock_completion):
+def test_generate_code_review_preserves_llm_verdict(provider, mock_completion):
     review = CodeReview(
         summary=CodeReviewSummary(
             overview="Decent code.",
@@ -115,12 +115,10 @@ def test_generate_code_review_verdict_approve_on_high_score(provider, mock_compl
     )
 
     result = provider.generate_code_review("- old\n+ new", file_paths=None)
-    assert result.verdict == Verdict.APPROVE
+    assert result.verdict == Verdict.REQUEST_CHANGES
 
 
-def test_generate_code_review_verdict_request_changes_on_low_score(
-    provider, mock_completion
-):
+def test_generate_code_review_preserves_llm_verdict_approve(provider, mock_completion):
     review = CodeReview(
         summary=CodeReviewSummary(
             overview="Needs work.",
@@ -143,7 +141,7 @@ def test_generate_code_review_verdict_request_changes_on_low_score(
     )
 
     result = provider.generate_code_review("- old\n+ new", file_paths=None)
-    assert result.verdict == Verdict.REQUEST_CHANGES
+    assert result.verdict == Verdict.APPROVE
 
 
 def test_generate_code_review_api_error(provider, mock_completion):

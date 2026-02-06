@@ -3,6 +3,10 @@
 import re
 from difflib import SequenceMatcher
 from typing import List, Optional, Tuple
+
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+from src.config.settings import POSITIVE_SENTIMENT_THRESHOLD
 from src.models.code_review import CodeSuggestion
 from src.utils.logger import logger
 
@@ -44,6 +48,7 @@ class SuggestionFilter:
         self._negative_regex = re.compile(
             "|".join(self.NEGATIVE_INDICATORS), re.IGNORECASE
         )
+        self._sentiment_analyzer = SentimentIntensityAnalyzer()
 
     def filter_suggestions(
         self, suggestions: List[CodeSuggestion]
@@ -96,7 +101,11 @@ class SuggestionFilter:
         if self._is_positive_only(suggestion.comment):
             return False, "positive-only comment without actionable feedback"
 
-        if not self._has_negative_indicators(suggestion.comment):
+        scores = self._sentiment_analyzer.polarity_scores(suggestion.comment)
+        has_negative_keywords = self._has_negative_indicators(suggestion.comment)
+        is_negative_sentiment = scores["compound"] <= -0.05
+
+        if not has_negative_keywords and not is_negative_sentiment:
             return False, "informational comment without actionable feedback"
 
         return True, ""
@@ -124,10 +133,19 @@ class SuggestionFilter:
         lines = code.strip().splitlines()
         normalized_lines = []
         for line in lines:
+            line = self._strip_diff_prefix(line)
             normalized = " ".join(line.split())
             if normalized:
                 normalized_lines.append(normalized)
         return "\n".join(normalized_lines)
+
+    def _strip_diff_prefix(self, line: str) -> str:
+        """Strip leading diff markers from a single line."""
+        if not line:
+            return line
+        if line[0] in {"+", "-"}:
+            return line[1:]
+        return line
 
     def _has_negative_indicators(self, comment: str) -> bool:
         """Check if a comment contains any negative/actionable indicators."""
@@ -138,10 +156,12 @@ class SuggestionFilter:
         Detect if a comment is purely positive without actionable feedback.
         Returns True if the comment is just praise without criticism.
         """
-        has_positive = bool(self._positive_regex.search(comment))
         has_negative = bool(self._negative_regex.search(comment))
+        if has_negative:
+            return False
 
-        if has_positive and not has_negative:
+        scores = self._sentiment_analyzer.polarity_scores(comment)
+        if scores["compound"] >= POSITIVE_SENTIMENT_THRESHOLD:
             return True
 
-        return False
+        return bool(self._positive_regex.search(comment))
