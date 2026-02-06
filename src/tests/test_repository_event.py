@@ -83,3 +83,94 @@ class TestRepositoryEvents(BaseTestCase):
                     event["repository_full_name"] == "sourceant/sourceant"
                     for event in data["data"]
                 )
+
+    def test_invalid_signature_returns_400(self):
+        with patch("src.api.routes.pr.GITHUB_SECRET", "real-secret"):
+            payload = {
+                "action": "opened",
+                "pull_request": {
+                    "url": "https://api.github.com/repos/sourceant/sourceant/pulls/1",
+                    "title": "Fix bug",
+                    "number": 1,
+                },
+                "repository": {"full_name": "sourceant/sourceant"},
+                "sender": {"login": "octocat"},
+            }
+
+            response = self.client.post(
+                "/api/prs/github-webhook",
+                headers={
+                    "X-GitHub-Event": "pull_request",
+                    "X-Hub-Signature-256": "sha256=invalidsignature",
+                },
+                json=payload,
+            )
+            assert response.status_code == 400
+            assert response.json()["detail"] == "Invalid GitHub signature"
+
+    def test_missing_required_fields_returns_422(self):
+        payload = {
+            "action": "opened",
+        }
+
+        response = self.client.post(
+            "/api/prs/github-webhook",
+            headers={"X-GitHub-Event": "pull_request"},
+            json=payload,
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        "event_type,action",
+        [
+            ("issues", "opened"),
+            ("push", None),
+            ("pull_request", "closed"),
+            ("pull_request", "review_requested"),
+        ],
+    )
+    def test_non_reviewable_events_return_skipped(self, event_type, action):
+        payload = {
+            "action": action,
+            "pull_request": {
+                "url": "https://api.github.com/repos/sourceant/sourceant/pulls/1",
+                "title": "Fix bug",
+                "number": 1,
+            },
+            "repository": {"full_name": "sourceant/sourceant"},
+            "sender": {"login": "octocat"},
+        }
+
+        response = self.client.post(
+            "/api/prs/github-webhook",
+            headers={"X-GitHub-Event": event_type},
+            json=payload,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "skipped"
+
+    def test_get_multiple_repository_events(self):
+        with patch("src.config.db.STATELESS_MODE", False), patch(
+            "src.controllers.repository_event_controller.STATELESS_MODE", False
+        ):
+            for i in range(1, 4):
+                RepositoryEvent.create(
+                    type="pull_request",
+                    action="opened",
+                    repository_full_name=f"sourceant/repo-{i}",
+                    title=f"PR #{i}",
+                    url=f"https://api.github.com/repos/sourceant/repo-{i}/pulls/{i}",
+                    number=i,
+                    payload={},
+                )
+
+            response = self.client.get("/repository-events")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "success"
+            assert len(data["data"]) >= 3
+
+            repo_names = {event["repository_full_name"] for event in data["data"]}
+            for i in range(1, 4):
+                assert f"sourceant/repo-{i}" in repo_names

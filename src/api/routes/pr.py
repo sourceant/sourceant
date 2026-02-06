@@ -44,7 +44,7 @@ class GitHubWebhookPayload(BaseModel):
 
 
 def verify_signature(payload: str, signature: str, secret: str) -> bool:
-    if signature is None:
+    if secret is None or signature is None:
         return True
     hash_payload = hmac.new(secret.encode(), payload.encode(), hashlib.sha256)
     expected_signature = f"sha256={hash_payload.hexdigest()}"
@@ -73,9 +73,14 @@ async def github_webhook(
     event: str = Depends(get_event),
     payload: GitHubWebhookPayload = Body(...),
 ):
+    REVIEWABLE_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}
+
     payload_data = await request.body()
     if not verify_signature(payload_data.decode(), signature, GITHUB_SECRET):
         raise HTTPException(status_code=400, detail="Invalid GitHub signature")
+
+    if event != "pull_request" or payload.action not in REVIEWABLE_ACTIONS:
+        return {"status": "skipped", "message": "Event skipped"}
 
     # Handle both pull request and issue events
     url = (
