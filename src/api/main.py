@@ -1,10 +1,19 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from src.api.routes import pr as pr_endpoints
 from src.api.routes import app as app_endpoints
 
 from src.llms.llm_factory import llm
 from src.utils.logger import setup_logger
+
+
+def _read_version() -> str:
+    version_file = Path(__file__).resolve().parents[2] / "VERSION"
+    try:
+        return version_file.read_text().strip()
+    except FileNotFoundError:
+        return "0.0.0-dev"
 
 
 @asynccontextmanager
@@ -31,7 +40,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="🐜 SourceAnt 🐜",
     description="Automated code review tool",
-    version="1.0.0",
+    version=_read_version(),
     lifespan=lifespan,
 )
 

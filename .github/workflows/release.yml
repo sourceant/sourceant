@@ -1,0 +1,29 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: whilesmart/workflows/python/release@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: sourceant
+          release_type: app
+          python_version: '3.9'
+          deploy_instructions: |
+            Pull the latest Docker image or build from source:
+
+            ```bash
+            docker compose up -d
+            ```
+
+            See the [README](README.md) for full setup instructions.
