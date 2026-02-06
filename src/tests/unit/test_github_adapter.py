@@ -266,6 +266,56 @@ def test_create_or_update_overview_comment_update(
         assert "/issues/comments/123" in mock_patch.call_args[0][0]
 
 
+def test_has_existing_bot_approval_true(github_instance):
+    with patch(
+        "src.integrations.github.github.GitHub.get_installation_access_token",
+        return_value="test_token",
+    ), patch(
+        "src.integrations.github.github.GitHub.get_app_slug",
+        return_value="sourceant",
+    ), patch(
+        "requests.get"
+    ) as mock_get:
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "user": {"login": "sourceant[bot]"},
+                "state": "APPROVED",
+            }
+        ]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        assert github_instance.has_existing_bot_approval("owner", "repo", 1) is True
+
+
+def test_has_existing_bot_approval_false(github_instance):
+    with patch(
+        "src.integrations.github.github.GitHub.get_installation_access_token",
+        return_value="test_token",
+    ), patch(
+        "src.integrations.github.github.GitHub.get_app_slug",
+        return_value="sourceant",
+    ), patch(
+        "requests.get"
+    ) as mock_get:
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "user": {"login": "other-user"},
+                "state": "APPROVED",
+            },
+            {
+                "user": {"login": "sourceant[bot]"},
+                "state": "COMMENTED",
+            },
+        ]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        assert github_instance.has_existing_bot_approval("owner", "repo", 1) is False
+
+
 def test_get_diff(github_instance, repository_instance, pull_request_instance):
     with patch(
         "src.integrations.github.github.GitHub.get_installation_access_token",

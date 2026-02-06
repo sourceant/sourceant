@@ -188,6 +188,31 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+    def has_existing_bot_approval(self, owner: str, repo: str, pr_number: int) -> bool:
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            app_slug = self.get_app_slug()
+            bot_login = f"{app_slug}[bot]"
+            response = requests.get(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            for review in response.json():
+                user = review.get("user", {})
+                if user.get("login") == bot_login and review.get("state") == "APPROVED":
+                    return True
+            return False
+        except Exception as e:
+            logger.warning(f"Could not check for existing approvals: {e}")
+            return False
+
     def _find_overview_comment(
         self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]
     ) -> Optional[Dict[str, Any]]:

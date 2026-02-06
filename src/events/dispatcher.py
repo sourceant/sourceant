@@ -29,6 +29,8 @@ from src.utils.diff_parser import parse_diff, ParsedDiff
 from src.utils.line_mapper import LineMapper
 from src.utils.suggestion_filter import SuggestionFilter
 
+from src.guards.base import GuardAction
+from src.guards.duplicate_approval import DuplicateApprovalGuard
 from src.utils.logger import logger
 
 # Context variable to hold the BackgroundTasks object for the current request
@@ -251,6 +253,16 @@ class EventDispatcher:
                     verdict=verdict,
                     code_suggestions=all_suggestions,
                 )
+
+            guards = [DuplicateApprovalGuard()]
+            for guard in guards:
+                result = guard.check(repository, pull_request, final_review, github)
+                if result.action == GuardAction.BLOCK:
+                    logger.info(f"Review blocked by guard: {result.reason}")
+                    return
+                if result.review:
+                    final_review = result.review
+                    logger.info(f"Review modified by guard: {result.reason}")
 
             self._schedule_review_posting(
                 repository, pull_request, final_review, line_mapper
