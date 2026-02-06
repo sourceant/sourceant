@@ -78,21 +78,6 @@ class LiteLLMProvider(LLMInterface):
 
             review = CodeReview.model_validate_json(response.choices[0].message.content)
 
-            if review and review.scores:
-                total_score = (
-                    review.scores.correctness
-                    + review.scores.clarity
-                    + review.scores.maintainability
-                    + review.scores.security
-                    + review.scores.performance
-                )
-                average_score = total_score / 5.0
-
-                if average_score < 5:
-                    review.verdict = Verdict.REQUEST_CHANGES
-                else:
-                    review.verdict = Verdict.APPROVE
-
             return review
         except Exception as e:
             logger.error(

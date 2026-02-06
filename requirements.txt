@@ -17,3 +17,4 @@ rq
 sqlmodel
 unidiff
 uvicorn
+vaderSentiment

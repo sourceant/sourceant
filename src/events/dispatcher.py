@@ -201,15 +201,15 @@ class EventDispatcher:
                         full_review.code_suggestions, suggestion_filter, line_mapper
                     )
 
+                verdict = self._determine_verdict_from_suggestions(all_suggestions)
                 if full_review:
                     final_review = CodeReview(
                         summary=full_review.summary,
-                        verdict=full_review.verdict,
+                        verdict=verdict,
                         code_suggestions=all_suggestions,
                         scores=full_review.scores,
                     )
                 else:
-                    verdict = self._determine_verdict_from_suggestions(all_suggestions)
                     final_review = CodeReview(
                         summary=None,
                         verdict=verdict,

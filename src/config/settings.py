@@ -31,3 +31,7 @@ LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 REVIEW_DRAFT_PRS = os.getenv("REVIEW_DRAFT_PRS", "false").lower() == "true"
 LLM_UPLOADS_ENABLED = os.getenv("LLM_UPLOADS_ENABLED", "true").lower() == "true"
+# VADER compound score: -1.0 (negative) to +1.0 (positive).
+# 0.3 is above VADER's default positive cutoff (0.05) to avoid
+# filtering mixed comments that contain actionable feedback.
+POSITIVE_SENTIMENT_THRESHOLD = float(os.getenv("POSITIVE_SENTIMENT_THRESHOLD", "0.3"))
