@@ -13,7 +13,6 @@ class BaseTestCase:
         try:
             os.environ["APP_ENV"] = "test"
             os.environ["DATABASE_URL"] = "sqlite:///./sourceant.db"
-            os.environ["GITHUB_SECRET"] = "SECRET"
 
             self.client = TestClient(app)
             self.run_migrations()

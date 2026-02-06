@@ -96,6 +96,9 @@ class SuggestionFilter:
         if self._is_positive_only(suggestion.comment):
             return False, "positive-only comment without actionable feedback"
 
+        if not self._has_negative_indicators(suggestion.comment):
+            return False, "informational comment without actionable feedback"
+
         return True, ""
 
     def _is_code_identical(
@@ -125,6 +128,10 @@ class SuggestionFilter:
             if normalized:
                 normalized_lines.append(normalized)
         return "\n".join(normalized_lines)
+
+    def _has_negative_indicators(self, comment: str) -> bool:
+        """Check if a comment contains any negative/actionable indicators."""
+        return bool(self._negative_regex.search(comment))
 
     def _is_positive_only(self, comment: str) -> bool:
         """

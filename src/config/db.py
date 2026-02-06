@@ -1,7 +1,7 @@
 import os
 from sqlmodel import create_engine, Session
 from src.utils.logger import logger
-from src.config.settings import STATELESS_MODE
+from src.config.settings import STATELESS_MODE, DEBUG_MODE
 
 engine = None
 
@@ -25,7 +25,7 @@ def get_engine():
         else:
             logger.info("Using a non-SQLite database (e.g., PostgreSQL).")
 
-        engine = create_engine(DATABASE_URL, echo=True, connect_args=connect_args)
+        engine = create_engine(DATABASE_URL, echo=DEBUG_MODE, connect_args=connect_args)
         logger.info("Database engine created successfully.")
     return engine
 

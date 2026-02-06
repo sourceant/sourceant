@@ -31,7 +31,3 @@ LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 REVIEW_DRAFT_PRS = os.getenv("REVIEW_DRAFT_PRS", "false").lower() == "true"
 LLM_UPLOADS_ENABLED = os.getenv("LLM_UPLOADS_ENABLED", "true").lower() == "true"
-
-
-if GITHUB_SECRET is None:
-    raise ValueError("GITHUB_SECRET environment variable is not set.")
