@@ -21,7 +21,11 @@ if not STATELESS_MODE and DATABASE_URL is None:
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-LLM = os.getenv("LLM", "gemini")
+# 128K tokens - a conservative default compatible with most LLM providers
+DEFAULT_TOKEN_LIMIT = 131072
+
+LLM_MODEL = os.getenv("LLM_MODEL", "gemini/gemini-2.5-flash")
+LLM_TOKEN_LIMIT = int(os.getenv("LLM_TOKEN_LIMIT", DEFAULT_TOKEN_LIMIT))
 LOG_DRIVER: str = os.getenv("LOG_DRIVER", "console")
 LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")

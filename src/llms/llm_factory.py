@@ -1,8 +1,7 @@
-from src.llms.gemini import Gemini
-from src.llms.deepseek import DeepSeek
+from src.llms.litellm_provider import LiteLLMProvider
 from src.llms.llm_interface import LLMInterface
 from functools import lru_cache
-from src.config.settings import LLM
+from src.config.settings import LLM_MODEL, LLM_TOKEN_LIMIT, LLM_UPLOADS_ENABLED
 from src.utils.logger import logger
 
 
@@ -12,11 +11,9 @@ def llm() -> LLMInterface:
     Factory function to get the language model instance.
     Uses lru_cache to ensure a single instance is created (singleton pattern).
     """
-    if LLM == "gemini":
-        logger.info("Using Gemini LLM.")
-        return Gemini()
-    elif LLM == "deepseek":
-        logger.info("Using DeepSeek LLM.")
-        return DeepSeek()
-    else:
-        raise NotImplementedError(f"LLM '{LLM}' not implemented.")
+    logger.info(f"Initializing LLM with model: {LLM_MODEL}")
+    return LiteLLMProvider(
+        model=LLM_MODEL,
+        token_limit=LLM_TOKEN_LIMIT,
+        uploads_enabled=LLM_UPLOADS_ENABLED,
+    )

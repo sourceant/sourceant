@@ -1,7 +1,8 @@
 # 🐜 SourceAnt 🐜
-**SourceAnt** is an open-source tool that automates code reviews by integrating GitHub webhooks with the AI-model APIs. It listens for pull request events, analyzes code changes and posts review feedback as comments on GitHub pull requests.
+**SourceAnt** is an open-source tool that automates code reviews by integrating GitHub webhooks with AI models. It listens for pull request events, analyzes code changes and posts review feedback as comments on GitHub pull requests.
 
 ## Features ✨
+- **Multi-Model Support**: Use any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers) — Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ more](https://docs.litellm.ai/docs/providers). Switch models with a single env var.
 - **Automated Code Reviews**: Analyze pull requests automatically using the configured LLM.
 - **Dynamic Review Process**: Intelligently handles large diffs by summarizing the entire PR and then reviewing file-by-file with global context.
 - **GitHub Integration**: Seamlessly integrates with GitHub webhooks.
@@ -14,7 +15,7 @@
 ### Prerequisites
 - Python 3.8+
 - GitHub account with a repository for testing.
-- LLM API key (Currently supports Gemini).
+- LLM API key (supports any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers): Gemini, Anthropic, DeepSeek, OpenAI, etc.).
 
 ### Installation
 1. **Clone the Repository**:
@@ -41,9 +42,9 @@
    #### `.env` file
    ```env
    GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
+   LLM_MODEL=gemini/gemini-2.5-flash
+   LLM_TOKEN_LIMIT=1000000
    GEMINI_API_KEY=your_gemini_api_key
-   GEMINI_MODEL=gemini-2.5-flash
-   GEMINI_TOKEN_LIMIT=100000
    ```
 SourceAnt API should be live at http://localhost:8000
 
@@ -82,6 +83,25 @@ The `sourceant` command provides the following subcommands for managing the appl
 
 ## Configuration
 The application can be configured using environment variables. Key variables are documented in the `.env.example` file.
+
+### LLM Model
+
+SourceAnt uses [LiteLLM](https://docs.litellm.ai/docs/providers) to support 100+ LLM providers through a unified interface. Set the `LLM_MODEL` env var using the `provider/model` format:
+
+| Provider | `LLM_MODEL` | API Key Env Var |
+|----------|-------------|-----------------|
+| Google Gemini | `gemini/gemini-2.5-flash` | `GEMINI_API_KEY` |
+| Anthropic | `anthropic/claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
+| DeepSeek | `deepseek/deepseek-chat` | `DEEPSEEK_API_KEY` |
+
+```bash
+# Example: switch from Gemini to Anthropic
+LLM_MODEL=anthropic/claude-sonnet-4-5-20250929
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+See the full list of supported providers in the [LiteLLM docs](https://docs.litellm.ai/docs/providers).
 
 ### GitHub App Setup
 
@@ -172,9 +192,9 @@ We welcome contributions! Here’s how you can help:
 - [x] Set up FastAPI server and GitHub webhook integration.
 - [x] Implement API/Interface to integrate various AI models
 - [x] Integrate Gemini API for code analysis.
-- [ ] Integrate DeepSeek API for code analysis.
+- [x] Multi-provider support via LiteLLM (Gemini, Anthropic, DeepSeek, OpenAI, etc.).
 - [ ] Implement a dashboard for review history and metrics.
-- [ ] Add CI/CD pipeline for automated testing and deployment.
+- [x] Add CI/CD pipeline for automated testing and deployment.
 
 ## License 📜
 This project is licensed under the MIT License. See the [LICENSE](LICENSE.md) file for details.

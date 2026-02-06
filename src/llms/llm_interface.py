@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
-from src.models.code_review import CodeReview
+from typing import List, Optional, Union
+from src.models.code_review import CodeReview, CodeSuggestion, CodeReviewSummary
 from src.utils.diff_parser import ParsedDiff
 
 
@@ -8,12 +8,15 @@ class LLMInterface(ABC):
     @property
     @abstractmethod
     def token_limit(self) -> int:
-        """The token limit for the model."""
+        pass
+
+    @property
+    @abstractmethod
+    def uploads_enabled(self) -> bool:
         pass
 
     @abstractmethod
     def count_tokens(self, text: str) -> int:
-        """Counts the number of tokens in a given text string."""
         pass
 
     @abstractmethod
@@ -23,10 +26,18 @@ class LLMInterface(ABC):
         parsed_files: Optional[List[ParsedDiff]] = None,
         file_paths: Optional[List[str]] = None,
     ) -> Optional[CodeReview]:
-        """Generates a code review based on the given diff."""
+        pass
+
+    @abstractmethod
+    def generate_summary(
+        self, suggestions: List[CodeSuggestion], as_text: bool = False
+    ) -> Union[CodeReviewSummary, str]:
+        pass
+
+    @abstractmethod
+    def generate_text(self, prompt: str) -> str:
         pass
 
     @abstractmethod
     def is_summary_different(self, summary_a: str, summary_b: str) -> bool:
-        """Compares two summaries to see if they are semantically different."""
         pass

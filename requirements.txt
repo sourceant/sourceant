@@ -4,6 +4,7 @@ cryptography # Required by pyjwt
 fastapi
 google-genai
 httpx
+litellm
 Mako
 psycopg2
 PyJWT==2.8.0
