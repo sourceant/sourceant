@@ -6,7 +6,10 @@ from typing import List, Optional, Tuple
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from src.config.settings import POSITIVE_SENTIMENT_THRESHOLD
+from src.config.settings import (
+    REVIEW_MISSING_EXISTING_CODE_POLICY,
+    POSITIVE_SENTIMENT_THRESHOLD,
+)
 from src.models.code_review import CodeSuggestion
 from src.utils.logger import logger
 
@@ -41,12 +44,25 @@ class SuggestionFilter:
         r"\b(inconsistent|confusing|unclear|ambiguous)\b",
     ]
 
+    ACTIONABLE_VERBS = [
+        r"\b(add|guard|validate|handle|ensure|remove)\b",
+        r"\b(refactor|rename|extract|simplify|split|inline)\b",
+        r"\b(catch|raise|document)\b",
+        r"\b(check|return|log|move)\s+\w+",
+        r"\b(replace|reorder|restructure)\b",
+        r"\buse\s+(a|an|the|\w+ing)\b",
+        r"\bavoid\s+\w+",
+    ]
+
     def __init__(self):
         self._positive_regex = re.compile(
             "|".join(self.POSITIVE_PATTERNS), re.IGNORECASE
         )
         self._negative_regex = re.compile(
             "|".join(self.NEGATIVE_INDICATORS), re.IGNORECASE
+        )
+        self._actionable_regex = re.compile(
+            "|".join(self.ACTIONABLE_VERBS), re.IGNORECASE
         )
         self._sentiment_analyzer = SentimentIntensityAnalyzer()
 
@@ -95,6 +111,20 @@ class SuggestionFilter:
         if not suggestion.suggested_code:
             return False, "no suggested code"
 
+        if not suggestion.existing_code:
+            policy = REVIEW_MISSING_EXISTING_CODE_POLICY
+            if policy not in {"drop", "warn", "keep"}:
+                logger.warning(
+                    f"Unknown REVIEW_MISSING_EXISTING_CODE_POLICY '{policy}', defaulting to drop."
+                )
+                policy = "drop"
+            if policy == "drop":
+                return False, "missing existing_code"
+            if policy == "warn":
+                logger.warning(
+                    "Suggestion missing existing_code; keeping due to policy."
+                )
+
         if self._is_code_identical(suggestion.existing_code, suggestion.suggested_code):
             return False, "suggested code identical to existing code"
 
@@ -103,10 +133,12 @@ class SuggestionFilter:
 
         scores = self._sentiment_analyzer.polarity_scores(suggestion.comment)
         has_negative_keywords = self._has_negative_indicators(suggestion.comment)
+        has_actionable_verbs = self._has_actionable_verbs(suggestion.comment)
         is_negative_sentiment = scores["compound"] <= -0.05
 
         if not has_negative_keywords and not is_negative_sentiment:
-            return False, "informational comment without actionable feedback"
+            if not has_actionable_verbs:
+                return False, "informational comment without actionable feedback"
 
         return True, ""
 
@@ -151,6 +183,10 @@ class SuggestionFilter:
         """Check if a comment contains any negative/actionable indicators."""
         return bool(self._negative_regex.search(comment))
 
+    def _has_actionable_verbs(self, comment: str) -> bool:
+        """Check if a comment contains actionable verbs."""
+        return bool(self._actionable_regex.search(comment))
+
     def _is_positive_only(self, comment: str) -> bool:
         """
         Detect if a comment is purely positive without actionable feedback.
@@ -158,6 +194,9 @@ class SuggestionFilter:
         """
         has_negative = bool(self._negative_regex.search(comment))
         if has_negative:
+            return False
+
+        if self._has_actionable_verbs(comment):
             return False
 
         scores = self._sentiment_analyzer.polarity_scores(comment)

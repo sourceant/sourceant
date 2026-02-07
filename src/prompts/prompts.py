@@ -30,6 +30,7 @@ class Prompts:
     - ❌ **NEVER** highlight existing good code without suggesting an improvement
     - ❌ **NEVER** comment on code just to acknowledge it exists
     - ❌ **NEVER** suggest code that is identical or substantially similar to existing code
+    - ❌ **NEVER** include a suggestion if no actionable improvement exists—omit it entirely
     - ✅ **ONLY** include suggestions that identify actual issues and propose fixes
     - ✅ Each suggestion MUST include `suggested_code` that is meaningfully different and better than existing code
     - ✅ If existing code is good enough, make NO comment about it at all

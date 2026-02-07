@@ -316,6 +316,32 @@ def test_has_existing_bot_approval_false(github_instance):
         assert github_instance.has_existing_bot_approval("owner", "repo", 1) is False
 
 
+def test_has_existing_bot_approval_paginates(github_instance):
+    with patch(
+        "src.integrations.github.github.GitHub.get_installation_access_token",
+        return_value="test_token",
+    ), patch(
+        "src.integrations.github.github.GitHub.get_app_slug",
+        return_value="sourceant",
+    ), patch(
+        "requests.get"
+    ) as mock_get:
+        first_page = MagicMock()
+        first_page.json.return_value = [
+            {"user": {"login": "other-user"}, "state": "APPROVED"}
+        ] * 100
+        first_page.raise_for_status.return_value = None
+        second_page = MagicMock()
+        second_page.json.return_value = [
+            {"user": {"login": "sourceant[bot]"}, "state": "APPROVED"}
+        ]
+        second_page.raise_for_status.return_value = None
+        mock_get.side_effect = [first_page, second_page]
+
+        assert github_instance.has_existing_bot_approval("owner", "repo", 1) is True
+        assert mock_get.call_count == 2
+
+
 def test_get_diff(github_instance, repository_instance, pull_request_instance):
     with patch(
         "src.integrations.github.github.GitHub.get_installation_access_token",

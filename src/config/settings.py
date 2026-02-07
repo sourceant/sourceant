@@ -35,3 +35,6 @@ LLM_UPLOADS_ENABLED = os.getenv("LLM_UPLOADS_ENABLED", "true").lower() == "true"
 # 0.3 is above VADER's default positive cutoff (0.05) to avoid
 # filtering mixed comments that contain actionable feedback.
 POSITIVE_SENTIMENT_THRESHOLD = float(os.getenv("POSITIVE_SENTIMENT_THRESHOLD", "0.3"))
+REVIEW_MISSING_EXISTING_CODE_POLICY = os.getenv(
+    "REVIEW_MISSING_EXISTING_CODE_POLICY", "drop"
+).lower()

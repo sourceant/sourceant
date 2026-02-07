@@ -198,16 +198,28 @@ class GitHub(ProviderAdapter):
             }
             app_slug = self.get_app_slug()
             bot_login = f"{app_slug}[bot]"
-            response = requests.get(
-                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
-                headers=headers,
-                timeout=30,
-            )
-            response.raise_for_status()
-            for review in response.json():
-                user = review.get("user", {})
-                if user.get("login") == bot_login and review.get("state") == "APPROVED":
-                    return True
+            page = 1
+            per_page = 100
+            max_pages = 10
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+                    headers=headers,
+                    params={"page": page, "per_page": per_page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                reviews = response.json()
+                for review in reviews:
+                    user = review.get("user", {})
+                    if (
+                        user.get("login") == bot_login
+                        and review.get("state") == "APPROVED"
+                    ):
+                        return True
+                if len(reviews) < per_page:
+                    break
+                page += 1
             return False
         except Exception as e:
             logger.warning(f"Could not check for existing approvals: {e}")

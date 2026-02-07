@@ -88,3 +88,60 @@ def test_informational_neutral_comment_filtered(suggestion_filter):
     kept, removed = suggestion_filter.filter_suggestions([suggestion])
     assert len(kept) == 0
     assert len(removed) == 1
+
+
+def test_missing_existing_code_dropped_by_default(suggestion_filter, monkeypatch):
+    monkeypatch.setattr(
+        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "drop"
+    )
+    suggestion = _make_suggestion(
+        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
+    )
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+    assert len(kept) == 0
+    assert len(removed) == 1
+
+
+def test_missing_existing_code_warn_policy_keeps(suggestion_filter, monkeypatch):
+    monkeypatch.setattr(
+        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "warn"
+    )
+    suggestion = _make_suggestion(
+        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
+    )
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+    assert len(kept) == 1
+    assert len(removed) == 0
+
+
+def test_missing_existing_code_keep_policy_keeps(suggestion_filter, monkeypatch):
+    monkeypatch.setattr(
+        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "keep"
+    )
+    suggestion = _make_suggestion(
+        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
+    )
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+    assert len(kept) == 1
+    assert len(removed) == 0
+
+
+def test_invalid_existing_code_policy_falls_back_to_drop(
+    suggestion_filter, monkeypatch
+):
+    monkeypatch.setattr(
+        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "invalid"
+    )
+    suggestion = _make_suggestion(
+        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
+    )
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+    assert len(kept) == 0
+    assert len(removed) == 1
+
+
+def test_positive_with_actionable_verb_kept(suggestion_filter):
+    suggestion = _make_suggestion(comment="Nice approach, add a null check for safety.")
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+    assert len(kept) == 1
+    assert len(removed) == 0
