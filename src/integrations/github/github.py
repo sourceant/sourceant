@@ -1,9 +1,10 @@
 import jwt
+import re
 import time
 import requests
 import os
 import base64
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from dateutil.parser import isoparse
 from ..provider_adapter import ProviderAdapter
 from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
@@ -443,6 +444,73 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             return {"status": "error", "message": error_msg}
 
+    def _identify_invalid_comments(
+        self, error_body: Dict[str, Any], comments: List[Dict]
+    ) -> List[int]:
+        indices = set()
+        for error in error_body.get("errors", []):
+            field = error.get("field", "")
+            match = re.search(r"comments\[(\d+)\]", field)
+            if match:
+                indices.add(int(match.group(1)))
+            message = error.get("message", "")
+            match = re.search(r"comments\[(\d+)\]", message)
+            if match:
+                indices.add(int(match.group(1)))
+        return sorted(indices)
+
+    def _post_review_with_retry(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        review_payload: Dict[str, Any],
+        headers: Dict[str, str],
+        max_retries: int = 3,
+    ) -> Dict[str, Any]:
+        payload = review_payload
+        for attempt in range(max_retries + 1):
+            response = requests.post(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+                headers=headers,
+                json=payload,
+                timeout=60,
+            )
+
+            if response.status_code != 422:
+                response.raise_for_status()
+                return response.json()
+
+            error_body = response.json()
+            comments = payload.get("comments", [])
+            invalid_indices = self._identify_invalid_comments(error_body, comments)
+
+            if not invalid_indices or not comments:
+                logger.warning(
+                    f"422 error but could not identify invalid comments: {error_body}"
+                )
+                response.raise_for_status()
+
+            logger.warning(
+                f"Attempt {attempt + 1}: Removing {len(invalid_indices)} invalid comment(s) "
+                f"at indices {invalid_indices} and retrying."
+            )
+            remaining = [
+                c for i, c in enumerate(comments) if i not in set(invalid_indices)
+            ]
+
+            if not remaining:
+                logger.warning(
+                    "All comments were invalid. Posting review without comments."
+                )
+                payload = {**payload, "comments": []}
+                continue
+
+            payload = {**payload, "comments": remaining}
+
+        response.raise_for_status()
+        return response.json()
+
     def post_review(
         self,
         repository: Repository,
@@ -498,16 +566,6 @@ class GitHub(ProviderAdapter):
                     if not suggestion or not suggestion.file_name:
                         continue
 
-                    # Use the line_mapper to get a valid position
-                    mapped_result = line_mapper.validate_and_map_suggestion(suggestion)
-                    if not mapped_result:
-                        logger.warning(
-                            f"Could not map suggestion to a valid line: {suggestion}"
-                        )
-                        continue
-
-                    position, _ = mapped_result
-
                     comment_body = suggestion.comment or ""
                     if suggestion.suggested_code:
                         comment_body += (
@@ -519,8 +577,7 @@ class GitHub(ProviderAdapter):
                         "body": comment_body,
                     }
 
-                    # For multi-line suggestions, use start_line and line.
-                    # Otherwise, use the diff-based position.
+                    side = suggestion.side.value if suggestion.side else "RIGHT"
                     if (
                         suggestion.start_line
                         and suggestion.end_line
@@ -528,14 +585,11 @@ class GitHub(ProviderAdapter):
                     ):
                         comment["start_line"] = suggestion.start_line
                         comment["line"] = suggestion.end_line
-                        comment["side"] = (
-                            suggestion.side.value if suggestion.side else "RIGHT"
-                        )
-                        comment["start_side"] = (
-                            suggestion.side.value if suggestion.side else "RIGHT"
-                        )
+                        comment["side"] = side
+                        comment["start_side"] = side
                     else:
-                        comment["position"] = position
+                        comment["line"] = suggestion.end_line
+                        comment["side"] = side
 
                     comments.append(comment)
 
@@ -552,14 +606,13 @@ class GitHub(ProviderAdapter):
 
             review_response_data = {}
             if comments or code_review.verdict != Verdict.COMMENT:
-                response = requests.post(
-                    f"https://api.github.com/repos/{repository.owner}/{repository.name}/pulls/{pull_request.number}/reviews",
-                    headers=headers,
-                    json=review_payload,
-                    timeout=60,
+                review_response_data = self._post_review_with_retry(
+                    repository.owner,
+                    repository.name,
+                    pull_request.number,
+                    review_payload,
+                    headers,
                 )
-                response.raise_for_status()
-                review_response_data = response.json()
             else:
                 logger.info(
                     "No suggestions to post and verdict is COMMENT. Skipping formal review submission."

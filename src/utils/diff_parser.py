@@ -151,11 +151,11 @@ class ParsedDiff:
                 value = line.value.rstrip("\n")
                 if line.is_context:
                     old_lines.append(f" {value}")
-                    new_lines.append(f" {value}")
+                    new_lines.append(f"{line.target_line_no}  {value}")
                 elif line.is_removed:
                     old_lines.append(f"-{value}")
                 elif line.is_added:
-                    new_lines.append(f"+{value}")
+                    new_lines.append(f"{line.target_line_no} +{value}")
 
             if old_lines:
                 parts.append(

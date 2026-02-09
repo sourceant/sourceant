@@ -119,14 +119,13 @@ class TestLineMapper:
 
         result = mapper.validate_and_map_suggestion(suggestion)
         assert result is not None
-        position, reason = result
+        mapping, reason = result
         # A successful match should not be a fallback.
         assert "fallback" not in reason.lower()
 
-        parsed_file = mapper.file_map[file_name]
-        line_num, side = parsed_file.position_to_line[position]
-        assert line_num == expected_line
-        assert side == "RIGHT"
+        assert mapping["line"] == expected_line
+        assert mapping["side"] == "RIGHT"
+        assert "position" in mapping
 
     def test_failed_match_fallback(self, diff_data):
         """Test fallback to line number when existing_code does not match."""
@@ -147,13 +146,11 @@ class TestLineMapper:
 
         result = mapper.validate_and_map_suggestion(suggestion)
         assert result is not None
-        position, reason = result
+        mapping, reason = result
         assert reason != "Matched via existing_code"
 
-        parsed_file = mapper.file_map[file_name]
-        line_num, side = parsed_file.position_to_line[position]
-        # The main point is that it fell back, the exact line can be adjusted.
-        assert side == "RIGHT"
+        assert mapping["side"] == "RIGHT"
+        assert "position" in mapping
 
     def test_successful_multiline_match(self, diff_data):
         """Test a successful match on a multi-line suggestion."""
@@ -212,14 +209,13 @@ class TestLineMapper:
 
         result = mapper.validate_and_map_suggestion(suggestion)
         assert result is not None
-        position, reason = result
+        mapping, reason = result
         # A successful match should not be a fallback.
         assert "fallback" not in reason.lower()
 
-        parsed_file = mapper.file_map[file_name]
-        line_num, side = parsed_file.position_to_line[position]
-        assert line_num == expected_line
-        assert side == "RIGHT"
+        assert mapping["line"] == expected_line
+        assert mapping["side"] == "RIGHT"
+        assert "position" in mapping
 
     def test_successful_match_with_line_shift(self, diff_data):
         """Tests a successful match where the line number has shifted due to preceding changes."""
@@ -246,10 +242,9 @@ class TestLineMapper:
 
         result = mapper.validate_and_map_suggestion(suggestion)
         assert result is not None
-        position, reason = result
+        mapping, reason = result
         assert "fallback" not in reason.lower()
 
-        parsed_file = mapper.file_map[parsed_diffs[0].file_path]
-        line_num, side = parsed_file.position_to_line[position]
-        assert line_num == expected_line
-        assert side == "RIGHT"
+        assert mapping["line"] == expected_line
+        assert mapping["side"] == "RIGHT"
+        assert "position" in mapping

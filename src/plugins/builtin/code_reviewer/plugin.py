@@ -12,7 +12,7 @@ from src.core.plugins import BasePlugin, PluginMetadata, PluginType
 from src.core.plugins import event_hooks, HookPriority
 from src.integrations.github.github import GitHub
 from src.llms.llm_factory import llm
-from src.models.code_review import CodeReview, Verdict, SuggestionCategory
+from src.models.code_review import CodeReview, Side, Verdict, SuggestionCategory
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.utils.diff_parser import parse_diff, ParsedDiff
@@ -22,6 +22,7 @@ from src.guards.base import GuardAction
 from src.guards.duplicate_approval import DuplicateApprovalGuard
 from src.config.settings import REVIEW_DRAFT_PRS, APP_ENV
 from src.utils.logger import logger
+from src.utils.review_record_service import get_last_reviewed_sha, save_review_record
 
 
 class CodeReviewerPlugin(BasePlugin):
@@ -188,7 +189,11 @@ class CodeReviewerPlugin(BasePlugin):
 
             # Generate and post review
             review_result = await self._generate_and_post_review(
-                repository, pull_request, pr_metadata=pr_metadata
+                repository,
+                pull_request,
+                pr_metadata=pr_metadata,
+                event_type=event_type,
+                repository_full_name=repository_context.get("full_name"),
             )
 
             # Broadcast review completion event
@@ -262,6 +267,8 @@ class CodeReviewerPlugin(BasePlugin):
         repository: Repository,
         pull_request: PullRequest,
         pr_metadata: Optional[Dict[str, Any]] = None,
+        event_type: Optional[str] = None,
+        repository_full_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -269,6 +276,9 @@ class CodeReviewerPlugin(BasePlugin):
         Args:
             repository: Repository instance
             pull_request: PullRequest instance
+            pr_metadata: Optional PR metadata dict
+            event_type: Event type string (e.g. "pull_request.synchronize")
+            repository_full_name: Full repo name (e.g. "owner/repo")
 
         Returns:
             Review generation and posting results
@@ -277,14 +287,40 @@ class CodeReviewerPlugin(BasePlugin):
             # Get GitHub client
             github = GitHub()
 
-            # Get diff
-            raw_diff = github.get_diff(
-                owner=repository.owner,
-                repo=repository.name,
-                pr_number=pull_request.number,
-                base_sha=pull_request.base_sha,
-                head_sha=pull_request.head_sha,
+            repo_full_name = (
+                repository_full_name or f"{repository.owner}/{repository.name}"
             )
+
+            # Incremental review: on synchronize, only review new changes
+            raw_diff = None
+            if event_type == "pull_request.synchronize" and pull_request.head_sha:
+                last_sha = get_last_reviewed_sha(repo_full_name, pull_request.number)
+                if last_sha and last_sha != pull_request.head_sha:
+                    try:
+                        raw_diff = github.get_diff_between_shas(
+                            owner=repository.owner,
+                            repo=repository.name,
+                            base_sha=last_sha,
+                            head_sha=pull_request.head_sha,
+                        )
+                        logger.info(
+                            f"Incremental review: diffing {last_sha[:8]}..{pull_request.head_sha[:8]}"
+                        )
+                    except ValueError:
+                        logger.warning(
+                            "Incremental diff failed (possible force push). Falling back to full diff."
+                        )
+                        raw_diff = None
+
+            # Full diff fallback
+            if not raw_diff:
+                raw_diff = github.get_diff(
+                    owner=repository.owner,
+                    repo=repository.name,
+                    pr_number=pull_request.number,
+                    base_sha=pull_request.base_sha,
+                    head_sha=pull_request.head_sha,
+                )
 
             if not raw_diff:
                 return {
@@ -369,6 +405,14 @@ class CodeReviewerPlugin(BasePlugin):
             logger.info(
                 f"Review generation and posting completed for PR #{pull_request.number}"
             )
+
+            if pull_request.head_sha and pull_request.base_sha:
+                save_review_record(
+                    repo_full_name,
+                    pull_request.number,
+                    pull_request.head_sha,
+                    pull_request.base_sha,
+                )
 
             return {
                 "status": "success",
@@ -498,7 +542,12 @@ class CodeReviewerPlugin(BasePlugin):
                 suggestion, strict_mode=(APP_ENV == "production")
             )
             if mapped_result:
-                suggestion.position = mapped_result[0]
+                mapping, reason = mapped_result
+                suggestion.position = mapping.get("position")
+                suggestion.end_line = mapping["line"]
+                suggestion.side = Side(mapping["side"])
+                if "start_line" in mapping:
+                    suggestion.start_line = mapping["start_line"]
                 result.append(suggestion)
         return result
 

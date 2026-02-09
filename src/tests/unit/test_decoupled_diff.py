@@ -1,3 +1,5 @@
+import re
+
 from src.tests.unit.helpers import make_diff as _make_diff
 from src.utils.diff_parser import parse_diff
 
@@ -88,3 +90,34 @@ class TestDecoupledDiffFormat:
         assert len(parsed) == 1
         # 2 removed + 2 added = 4 commentable lines
         assert parsed[0].changed_line_count == 4
+
+    def test_new_hunk_lines_have_line_numbers(self):
+        before = ["a = 1", "b = 2", "c = 3"]
+        after = ["a = 1", "b = 20", "c = 3"]
+        diff_text = _make_diff(before, after)
+        parsed = parse_diff(diff_text)
+        assert len(parsed) == 1
+
+        result = parsed[0].to_decoupled_format()
+        new_hunk_start = result.index("__new hunk__")
+        new_hunk_section = result[new_hunk_start:]
+
+        assert re.search(r"\d+  a = 1", new_hunk_section) or re.search(
+            r"\d+  c = 3", new_hunk_section
+        )
+        assert re.search(r"\d+ \+b = 20", new_hunk_section)
+
+    def test_old_hunk_lines_no_line_numbers(self):
+        before = ["a = 1", "b = 2", "c = 3"]
+        after = ["a = 1", "b = 20", "c = 3"]
+        diff_text = _make_diff(before, after)
+        parsed = parse_diff(diff_text)
+
+        result = parsed[0].to_decoupled_format()
+        old_hunk_start = result.index("__old hunk__")
+        new_hunk_start = result.index("__new hunk__")
+        old_hunk_section = result[old_hunk_start:new_hunk_start]
+
+        for line in old_hunk_section.splitlines():
+            if line.startswith("-") or line.startswith(" "):
+                assert not re.match(r"^\d+", line)

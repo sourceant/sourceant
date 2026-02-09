@@ -20,8 +20,8 @@ class Prompts:
     **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
     - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
     - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
-    - **Line Number Source**: Each hunk header shows `@@ start,length @@`. For added lines (`+`) in `__new hunk__`, count from the hunk's start line to determine the target file line number. For removed lines (`-`) in `__old hunk__`, count from the hunk's start line to determine the source file line number.
-    - **CRITICAL: `existing_code`**: You **MUST** provide the **exact code snippet** from the diff that your suggestion targets. Copy it character-for-character from the diff, including the `+` or `-` prefix. This is the primary anchor for placing your comment.
+    - **Line Number Source**: Each line in `__new hunk__` is prefixed with its exact file line number. Use these numbers directly as your `start_line` and `end_line`. Do NOT count from hunk headers.
+    - **CRITICAL: `existing_code`**: You **MUST** provide the **exact code snippet** from the diff that your suggestion targets. Copy it character-for-character from the diff, excluding the line number prefix, but including the `+` or `-` prefix. This is the primary anchor for placing your comment.
     - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
     - **Only Comment on Changed Lines**: You can ONLY comment on lines that appear in the diff with `+` or `-` prefixes. Context lines (no prefix) cannot receive comments."""
 
@@ -87,7 +87,7 @@ class Prompts:
 
     _FINAL_NOTES = """**Final Notes:**
     - **Ensure precision** → Always specify exact `line` numbers from the diff, `position`, and `side`.
-    - **Line Number Accuracy** → Count from hunk header start lines (`@@ start,length @@`).
+    - **Line Number Accuracy** → Read line numbers directly from the prefixed numbers in `__new hunk__` lines.
     - **Be specific** → Your suggestions should be easy to understand and implement.
     - **Stay on topic** → Focus only on the provided code diff.
 

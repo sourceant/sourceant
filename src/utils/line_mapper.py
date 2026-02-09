@@ -1,6 +1,6 @@
 # src/utils/line_mapper.py
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from src.models.code_review import CodeSuggestion
 from src.utils.diff_parser import ParsedDiff
@@ -18,9 +18,26 @@ class LineMapper:
         self.parsed_files = parsed_files
         self.file_map = {pf.file_path: pf for pf in parsed_files}
 
+    def _build_mapping(
+        self, line_num: int, side: str, position: int, suggestion: CodeSuggestion
+    ) -> Dict:
+        mapping = {
+            "line": line_num,
+            "side": side,
+            "position": position,
+        }
+        if (
+            suggestion.start_line
+            and suggestion.end_line
+            and suggestion.start_line < suggestion.end_line
+        ):
+            mapping["start_line"] = suggestion.start_line
+            mapping["start_side"] = side
+        return mapping
+
     def validate_and_map_suggestion(
         self, suggestion: CodeSuggestion, strict_mode: bool = False
-    ) -> Optional[Tuple[int, str]]:
+    ) -> Optional[Tuple[Dict, str]]:
         """
         Validate and map a code suggestion to the correct position.
 
@@ -29,7 +46,8 @@ class LineMapper:
             strict_mode: If True, only accept exact line matches
 
         Returns:
-            Tuple of (position, adjusted_reason) or None if cannot be mapped
+            Tuple of (mapping_dict, adjusted_reason) or None if cannot be mapped.
+            mapping_dict contains: line, side, position, and optionally start_line, start_side.
         """
         logger.info(f"\n\n--- Validating suggestion for {suggestion.file_name} ---")
         logger.info(f"Suggestion details: {suggestion}")
@@ -64,7 +82,10 @@ class LineMapper:
                 logger.info(
                     f"✅ Strategy 1 SUCCESS: Found precise anchor at line {line} via content match."
                 )
-                return position, "content_match"
+                return (
+                    self._build_mapping(line, side, position, suggestion),
+                    "content_match",
+                )
             else:
                 logger.warning(
                     f"⚠️ Strategy 1 WARNING: Content match found for line {line}, but no position mapped."
@@ -81,7 +102,10 @@ class LineMapper:
             logger.info(
                 f"✅ Strategy 3 SUCCESS: Found match for {suggestion.file_name}:{line} via line number."
             )
-            return position, "line_number_match"
+            return (
+                self._build_mapping(line, side, position, suggestion),
+                "line_number_match",
+            )
         else:
             logger.info(f"Strategy 3 FAILED: Line {line} is not a commentable line.")
 
@@ -100,7 +124,12 @@ class LineMapper:
             logger.warning(
                 f"✅ Strategy 4 SUCCESS: Adjusted {suggestion.file_name}:{line} -> {closest_line_num} (position {position})"
             )
-            return position, f"adjusted_from_{line}_to_{closest_line_num}"
+            return (
+                self._build_mapping(
+                    closest_line_num, closest_side, position, suggestion
+                ),
+                f"adjusted_from_{line}_to_{closest_line_num}",
+            )
         else:
             logger.info("Strategy 4 FAILED: No close commentable line found.")
 
