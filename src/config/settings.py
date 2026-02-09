@@ -29,6 +29,10 @@ LLM_TOKEN_LIMIT = int(os.getenv("LLM_TOKEN_LIMIT", DEFAULT_TOKEN_LIMIT))
 LOG_DRIVER: str = os.getenv("LOG_DRIVER", "console")
 LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
+GITHUB_OAUTH_CLIENT_ID = os.getenv("GITHUB_OAUTH_CLIENT_ID")
+GITHUB_OAUTH_CLIENT_SECRET = os.getenv("GITHUB_OAUTH_CLIENT_SECRET")
+GITHUB_OAUTH_SECRET = os.getenv("GITHUB_OAUTH_SECRET")
+APP_URL = os.getenv("APP_URL", "http://localhost:8000")
 REVIEW_DRAFT_PRS = os.getenv("REVIEW_DRAFT_PRS", "false").lower() == "true"
 LLM_UPLOADS_ENABLED = os.getenv("LLM_UPLOADS_ENABLED", "true").lower() == "true"
 # VADER compound score: -1.0 (negative) to +1.0 (positive).
