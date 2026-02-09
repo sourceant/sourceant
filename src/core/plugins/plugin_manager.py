@@ -131,6 +131,26 @@ class PluginManager:
             except Exception as e:
                 logger.warning(f"Error discovering plugin in {plugin_path}: {e}")
 
+    @staticmethod
+    def _resolve_dotted_package(package_dir: Path) -> Optional[str]:
+        """Walk up from package_dir building a dotted path until no __init__.py is found."""
+        parts = []
+        current = package_dir
+        while (current / "__init__.py").exists() or not parts:
+            parts.append(current.name)
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+            if not (current / "__init__.py").exists():
+                break
+
+        if not parts:
+            return None
+
+        parts.reverse()
+        return ".".join(parts)
+
     def _find_plugin_classes(
         self, plugin_path: Path, module_name: str
     ) -> List[Type[BasePlugin]]:
@@ -147,12 +167,37 @@ class PluginManager:
         plugin_classes = []
 
         try:
-            # Create module spec and load it
-            spec = importlib.util.spec_from_file_location(module_name, plugin_path)
+            package_dir = plugin_path.parent
+            dotted_package = self._resolve_dotted_package(package_dir)
+
+            if dotted_package and dotted_package not in sys.modules:
+                pkg_spec = importlib.util.spec_from_file_location(
+                    dotted_package,
+                    package_dir / "__init__.py",
+                    submodule_search_locations=[str(package_dir)],
+                )
+                if pkg_spec:
+                    pkg_module = importlib.util.module_from_spec(pkg_spec)
+                    pkg_module.__path__ = [str(package_dir)]
+                    sys.modules[dotted_package] = pkg_module
+                    if pkg_spec.loader and (package_dir / "__init__.py").exists():
+                        pkg_spec.loader.exec_module(pkg_module)
+
+            qualified_name = (
+                f"{dotted_package}.{plugin_path.stem}"
+                if dotted_package
+                else module_name
+            )
+
+            spec = importlib.util.spec_from_file_location(
+                qualified_name, plugin_path, submodule_search_locations=[]
+            )
             if spec is None or spec.loader is None:
                 return plugin_classes
 
             module = importlib.util.module_from_spec(spec)
+            module.__package__ = dotted_package or module_name
+            sys.modules[qualified_name] = module
             spec.loader.exec_module(module)
 
             # Find BasePlugin subclasses

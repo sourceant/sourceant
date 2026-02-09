@@ -1,9 +1,9 @@
-import difflib
 import pytest
 from unittest.mock import patch, MagicMock
 
 from src.llms.litellm_provider import LiteLLMProvider, CONTEXT_TOKEN_BUDGET
 from src.prompts.prompts import Prompts
+from src.tests.unit.helpers import make_diff as _make_diff
 from src.utils.diff_parser import parse_diff
 from src.models.code_review import (
     CodeReview,
@@ -11,17 +11,6 @@ from src.models.code_review import (
     CodeReviewScores,
     CodeReviewSummary,
 )
-
-
-def _make_diff(before_lines, after_lines, filename="test_file.py"):
-    return "".join(
-        difflib.unified_diff(
-            [l + "\n" for l in before_lines],
-            [l + "\n" for l in after_lines],
-            fromfile=f"a/{filename}",
-            tofile=f"b/{filename}",
-        )
-    )
 
 
 @pytest.fixture

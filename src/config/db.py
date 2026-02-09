@@ -38,3 +38,6 @@ def get_session():
 
     with Session(db_engine) as session:
         yield session
+
+
+get_db = get_session

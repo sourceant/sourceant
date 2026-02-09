@@ -1,18 +1,5 @@
-import difflib
+from src.tests.unit.helpers import make_diff as _make_diff
 from src.utils.diff_parser import parse_diff
-
-
-def _make_diff(before_lines, after_lines, filename="test_file.py"):
-    """Helper to create a unified diff string from before/after content."""
-    diff_text = "".join(
-        difflib.unified_diff(
-            [l + "\n" for l in before_lines],
-            [l + "\n" for l in after_lines],
-            fromfile=f"a/{filename}",
-            tofile=f"b/{filename}",
-        )
-    )
-    return diff_text
 
 
 class TestDecoupledDiffFormat:
