@@ -178,9 +178,17 @@ class CodeReviewerPlugin(BasePlugin):
                 logger.info(f"Skipping review: {skip_reason}")
                 return {"processed": False, "reason": skip_reason}
 
+            pr_metadata = {
+                "title": repository_event.get("title"),
+                "description": pull_request_payload.get("body"),
+                "number": repository_event.get("number"),
+                "base_ref": pull_request_payload.get("base", {}).get("ref"),
+                "head_ref": pull_request_payload.get("head", {}).get("ref"),
+            }
+
             # Generate and post review
             review_result = await self._generate_and_post_review(
-                repository, pull_request
+                repository, pull_request, pr_metadata=pr_metadata
             )
 
             # Broadcast review completion event
@@ -250,7 +258,10 @@ class CodeReviewerPlugin(BasePlugin):
         return None
 
     async def _generate_and_post_review(
-        self, repository: Repository, pull_request: PullRequest
+        self,
+        repository: Repository,
+        pull_request: PullRequest,
+        pr_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -319,11 +330,17 @@ class CodeReviewerPlugin(BasePlugin):
                     raw_diff,
                     parsed_files,
                     line_mapper,
+                    pr_metadata=pr_metadata,
                 )
             else:
                 logger.info("Diff is too large. Performing file-by-file review.")
                 final_review = await self._generate_file_by_file_review(
-                    github, repository, pull_request, parsed_files, line_mapper
+                    github,
+                    repository,
+                    pull_request,
+                    parsed_files,
+                    line_mapper,
+                    pr_metadata=pr_metadata,
                 )
 
             # Apply review guards
@@ -383,6 +400,7 @@ class CodeReviewerPlugin(BasePlugin):
         raw_diff: str,
         parsed_files: List[ParsedDiff],
         line_mapper: LineMapper,
+        pr_metadata: Optional[Dict[str, Any]] = None,
     ) -> CodeReview:
         """Generate review in a single pass for small diffs."""
         suggestion_filter = SuggestionFilter()
@@ -396,6 +414,7 @@ class CodeReviewerPlugin(BasePlugin):
                 diff=raw_diff,
                 parsed_files=parsed_files,
                 file_paths=temp_file_paths,
+                pr_metadata=pr_metadata,
             )
 
             all_suggestions = []
@@ -426,6 +445,7 @@ class CodeReviewerPlugin(BasePlugin):
         pull_request: PullRequest,
         parsed_files: List[ParsedDiff],
         line_mapper: LineMapper,
+        pr_metadata: Optional[Dict[str, Any]] = None,
     ) -> CodeReview:
         """Generate review file by file for large diffs."""
         suggestion_filter = SuggestionFilter()
@@ -443,6 +463,7 @@ class CodeReviewerPlugin(BasePlugin):
                     diff=parsed_file.diff_text,
                     parsed_files=[parsed_file],
                     file_paths=temp_file_paths,
+                    pr_metadata=pr_metadata,
                 )
 
                 if review_for_file and review_for_file.code_suggestions:

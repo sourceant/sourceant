@@ -1,13 +1,27 @@
+import difflib
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.llms.litellm_provider import LiteLLMProvider
+from src.llms.litellm_provider import LiteLLMProvider, CONTEXT_TOKEN_BUDGET
+from src.prompts.prompts import Prompts
+from src.utils.diff_parser import parse_diff
 from src.models.code_review import (
     CodeReview,
     Verdict,
     CodeReviewScores,
     CodeReviewSummary,
 )
+
+
+def _make_diff(before_lines, after_lines, filename="test_file.py"):
+    return "".join(
+        difflib.unified_diff(
+            [l + "\n" for l in before_lines],
+            [l + "\n" for l in after_lines],
+            fromfile=f"a/{filename}",
+            tofile=f"b/{filename}",
+        )
+    )
 
 
 @pytest.fixture
@@ -196,3 +210,137 @@ def test_model_is_configurable():
     )
     assert provider.model == "anthropic/claude-sonnet-4-5-20250929"
     assert provider.token_limit == 200000
+
+
+class TestSystemUserMessageStructure:
+    def test_sends_system_and_user_messages(self, provider, mock_completion):
+        mock_completion.completion.return_value = _make_completion_response(
+            '{"verdict": "COMMENT", "code_suggestions": []}'
+        )
+        mock_completion.token_counter.return_value = 10
+
+        provider.generate_code_review(diff="some diff")
+
+        call_args = mock_completion.completion.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_system_message_contains_review_system_prompt(
+        self, provider, mock_completion
+    ):
+        mock_completion.completion.return_value = _make_completion_response(
+            '{"verdict": "COMMENT", "code_suggestions": []}'
+        )
+        mock_completion.token_counter.return_value = 10
+
+        provider.generate_code_review(diff="some diff")
+
+        call_args = mock_completion.completion.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        assert messages[0]["content"] == Prompts.REVIEW_SYSTEM_PROMPT
+
+
+class TestPrMetadataInPrompt:
+    def test_pr_metadata_included_in_user_message(self, provider, mock_completion):
+        mock_completion.completion.return_value = _make_completion_response(
+            '{"verdict": "COMMENT", "code_suggestions": []}'
+        )
+        mock_completion.token_counter.return_value = 10
+
+        metadata = {
+            "title": "Test PR",
+            "number": 99,
+            "description": "A test pull request",
+            "base_ref": "main",
+            "head_ref": "feature/test",
+        }
+        provider.generate_code_review(diff="some diff", pr_metadata=metadata)
+
+        call_args = mock_completion.completion.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        user_content = messages[1]["content"]
+        assert "Test PR" in user_content
+        assert "99" in user_content
+        assert "feature/test → main" in user_content
+
+    def test_no_metadata_shows_fallback(self, provider, mock_completion):
+        mock_completion.completion.return_value = _make_completion_response(
+            '{"verdict": "COMMENT", "code_suggestions": []}'
+        )
+        mock_completion.token_counter.return_value = 10
+
+        provider.generate_code_review(diff="some diff")
+
+        call_args = mock_completion.completion.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        user_content = messages[1]["content"]
+        assert "No PR metadata available." in user_content
+
+
+class TestContextWindowCapping:
+    def test_build_file_context_sorts_by_changes(self, provider, tmp_path):
+        before_small = ["a = 1", "b = 2"]
+        after_small = ["a = 1", "b = 20"]
+        diff_small = _make_diff(before_small, after_small, "small.py")
+
+        before_big = ["x = 1", "y = 2", "z = 3"]
+        after_big = ["x = 10", "y = 20", "z = 30"]
+        diff_big = _make_diff(before_big, after_big, "big.py")
+
+        combined_diff = diff_small + diff_big
+        parsed = parse_diff(combined_diff)
+
+        small_file = tmp_path / "small.py"
+        small_file.write_text("a = 1\nb = 2\n")
+        big_file = tmp_path / "big.py"
+        big_file.write_text("x = 1\ny = 2\nz = 3\n")
+
+        with patch.object(provider, "count_tokens", return_value=100):
+            result = provider._build_file_context(
+                parsed, [str(small_file), str(big_file)]
+            )
+
+        big_pos = result.find("big.py")
+        small_pos = result.find("small.py")
+        assert big_pos < small_pos, "File with more changes should appear first"
+
+    def test_build_file_context_respects_token_budget(self, provider, tmp_path):
+        before = ["a = 1"]
+        after = ["a = 10"]
+        diff_text = _make_diff(before, after, "file1.py")
+        parsed = parse_diff(diff_text)
+
+        file1 = tmp_path / "file1.py"
+        file1.write_text("a = 1\n")
+
+        with patch.object(
+            provider, "count_tokens", return_value=CONTEXT_TOKEN_BUDGET + 1
+        ):
+            result = provider._build_file_context(parsed, [str(file1)])
+
+        assert result == ""
+
+
+class TestDecoupledDiffInReview:
+    def test_uses_decoupled_format_when_parsed_files_available(
+        self, provider, mock_completion
+    ):
+        mock_completion.completion.return_value = _make_completion_response(
+            '{"verdict": "COMMENT", "code_suggestions": []}'
+        )
+        mock_completion.token_counter.return_value = 10
+
+        before = ["a = 1"]
+        after = ["a = 10"]
+        diff_text = _make_diff(before, after)
+        parsed = parse_diff(diff_text)
+
+        provider.generate_code_review(diff=diff_text, parsed_files=parsed)
+
+        call_args = mock_completion.completion.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        user_content = messages[1]["content"]
+        assert "__old hunk__" in user_content or "__new hunk__" in user_content
