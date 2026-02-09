@@ -1,4 +1,5 @@
 import pytest
+import requests
 from unittest.mock import patch, mock_open, MagicMock
 import time
 import os
@@ -340,6 +341,146 @@ def test_has_existing_bot_approval_paginates(github_instance):
 
         assert github_instance.has_existing_bot_approval("owner", "repo", 1) is True
         assert mock_get.call_count == 2
+
+
+def test_post_review_single_line_uses_line_side(
+    github_instance, repository_instance, pull_request_instance
+):
+    """Single-line comments use line/side API, not position."""
+    from src.utils.line_mapper import LineMapper
+
+    from src.models.code_review import SuggestionCategory
+
+    review = CodeReview(
+        summary=None,
+        verdict=Verdict.COMMENT,
+        code_suggestions=[
+            CodeSuggestion(
+                file_name="test.py",
+                position=5,
+                start_line=10,
+                end_line=10,
+                side=Side.RIGHT,
+                comment="Fix this.",
+                category=SuggestionCategory.STYLE,
+                suggested_code="fixed()",
+            )
+        ],
+    )
+
+    mock_mapper = MagicMock(spec=LineMapper)
+
+    with patch(
+        "src.integrations.github.github.GitHub.get_installation_access_token",
+        return_value="test_token",
+    ), patch(
+        "src.integrations.github.github.GitHub._find_overview_comment",
+        return_value=None,
+    ), patch(
+        "requests.post"
+    ) as mock_post, patch(
+        "requests.get"
+    ):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"id": 1}
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        github_instance.post_review(
+            repository=repository_instance,
+            pull_request=pull_request_instance,
+            code_review=review,
+            line_mapper=mock_mapper,
+        )
+
+        review_call = None
+        for call in mock_post.call_args_list:
+            if "/reviews" in call[0][0]:
+                review_call = call
+                break
+
+        assert review_call is not None
+        payload = review_call[1]["json"]
+        comment = payload["comments"][0]
+        assert "line" in comment
+        assert "side" in comment
+        assert "position" not in comment
+        assert comment["line"] == 10
+        assert comment["side"] == "RIGHT"
+
+
+class TestPostReviewRetryOn422:
+    def test_retries_on_422_removing_invalid_comment(self, github_instance):
+        error_response = MagicMock()
+        error_response.status_code = 422
+        error_response.json.return_value = {
+            "message": "Validation Failed",
+            "errors": [{"field": "comments[1].line", "code": "invalid"}],
+        }
+
+        success_response = MagicMock()
+        success_response.status_code = 200
+        success_response.json.return_value = {"id": 42}
+        success_response.raise_for_status.return_value = None
+
+        with patch("requests.post", side_effect=[error_response, success_response]):
+            result = github_instance._post_review_with_retry(
+                "owner",
+                "repo",
+                1,
+                {
+                    "body": "Review",
+                    "event": "COMMENT",
+                    "comments": [
+                        {"path": "a.py", "line": 1, "body": "ok"},
+                        {"path": "b.py", "line": 99, "body": "bad"},
+                        {"path": "c.py", "line": 5, "body": "fine"},
+                    ],
+                },
+                {"Authorization": "Bearer test"},
+            )
+
+        assert result["id"] == 42
+
+    def test_identify_invalid_comments_parses_field(self, github_instance):
+        error_body = {
+            "errors": [
+                {"field": "comments[0].line", "code": "invalid"},
+                {"field": "comments[2].position", "code": "invalid"},
+            ]
+        }
+        result = github_instance._identify_invalid_comments(error_body, [])
+        assert result == [0, 2]
+
+    def test_identify_invalid_comments_parses_message(self, github_instance):
+        error_body = {
+            "errors": [
+                {"field": "comments", "message": "comments[1] is invalid"},
+            ]
+        }
+        result = github_instance._identify_invalid_comments(error_body, [])
+        assert result == [1]
+
+    def test_raises_when_no_invalid_indices_found(self, github_instance):
+        error_response = MagicMock()
+        error_response.status_code = 422
+        error_response.json.return_value = {
+            "message": "Validation Failed",
+            "errors": [{"field": "body", "code": "invalid"}],
+        }
+        error_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=error_response
+        )
+
+        with patch("requests.post", return_value=error_response):
+            with pytest.raises(requests.exceptions.HTTPError):
+                github_instance._post_review_with_retry(
+                    "owner",
+                    "repo",
+                    1,
+                    {"body": "Review", "event": "COMMENT", "comments": []},
+                    {"Authorization": "Bearer test"},
+                )
 
 
 def test_get_diff(github_instance, repository_instance, pull_request_instance):

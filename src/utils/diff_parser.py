@@ -8,6 +8,7 @@ class ParsedDiff:
     """Represents the parsed diff for a single file, with mappings for comment positions."""
 
     def __init__(self, patched_file: PatchedFile):
+        self._patched_file = patched_file
         self.file_path = patched_file.path
         self.diff_text = str(patched_file)
         # (line_in_file, side) -> position_in_diff (global position across all hunks)
@@ -118,6 +119,56 @@ class ParsedDiff:
 
         else:
             return f"Line {line_num} ({side}) - NOT FOUND IN DIFF"
+
+    @property
+    def changed_line_count(self) -> int:
+        """Return the number of added + removed lines in this diff."""
+        return len(self.commentable_lines)
+
+    def to_decoupled_format(self) -> str:
+        """Convert the parsed diff into a decoupled old/new hunk format.
+
+        Separates removed and added code into distinct labeled blocks per hunk,
+        making it clearer for the LLM what changed.
+        """
+        patched_file = self._patched_file
+        parts = [f"## File: {self.file_path}"]
+
+        if patched_file.is_removed_file:
+            parts.append("[file deleted]")
+            return "\n".join(parts)
+
+        if patched_file.is_rename:
+            parts.append(
+                f"[renamed from {patched_file.source_file} to {patched_file.target_file}]"
+            )
+
+        for hunk_idx, hunk in enumerate(patched_file):
+            old_lines = []
+            new_lines = []
+
+            for line in hunk:
+                value = line.value.rstrip("\n")
+                if line.is_context:
+                    old_lines.append(f" {value}")
+                    new_lines.append(f"{line.target_line_no}  {value}")
+                elif line.is_removed:
+                    old_lines.append(f"-{value}")
+                elif line.is_added:
+                    new_lines.append(f"{line.target_line_no} +{value}")
+
+            if old_lines:
+                parts.append(
+                    f"__old hunk__\n" f"@@ {hunk.source_start},{hunk.source_length} @@"
+                )
+                parts.extend(old_lines)
+            if new_lines:
+                parts.append(
+                    f"__new hunk__\n" f"@@ {hunk.target_start},{hunk.target_length} @@"
+                )
+                parts.extend(new_lines)
+
+        return "\n".join(parts)
 
     def debug_info(self) -> str:
         """Return debug information about the parsed diff."""

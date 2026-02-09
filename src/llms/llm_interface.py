@@ -25,6 +25,7 @@ class LLMInterface(ABC):
         diff: str,
         parsed_files: Optional[List[ParsedDiff]] = None,
         file_paths: Optional[List[str]] = None,
+        pr_metadata: Optional[dict] = None,
     ) -> Optional[CodeReview]:
         pass
 

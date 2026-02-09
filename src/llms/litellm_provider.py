@@ -14,6 +14,8 @@ from src.models.code_review import (
     CodeReviewSummary,
 )
 
+CONTEXT_TOKEN_BUDGET = 15000
+
 
 class LiteLLMProvider(LLMInterface):
     def __init__(
@@ -37,40 +39,112 @@ class LiteLLMProvider(LLMInterface):
     def count_tokens(self, text: str) -> int:
         return litellm.token_counter(model=self.model, text=text)
 
+    @staticmethod
+    def format_pr_metadata(pr_metadata: Optional[dict]) -> str:
+        if not pr_metadata:
+            return "No PR metadata available."
+
+        parts = []
+        if pr_metadata.get("title"):
+            parts.append(f"**Title:** {pr_metadata['title']}")
+        if pr_metadata.get("number"):
+            parts.append(f"**PR #:** {pr_metadata['number']}")
+        if pr_metadata.get("description"):
+            parts.append(f"**Description:** {pr_metadata['description']}")
+        if pr_metadata.get("base_ref") or pr_metadata.get("head_ref"):
+            base = pr_metadata.get("base_ref", "unknown")
+            head = pr_metadata.get("head_ref", "unknown")
+            parts.append(f"**Branches:** {head} → {base}")
+
+        return "\n".join(parts) if parts else "No PR metadata available."
+
+    def _build_file_context(
+        self,
+        parsed_files: List[ParsedDiff],
+        file_paths: List[str],
+    ) -> str:
+        temp_path_map = {Path(p).name: p for p in file_paths}
+
+        file_entries = []
+        for pf in parsed_files:
+            temp_path_str = temp_path_map.get(Path(pf.file_path).name)
+            if temp_path_str:
+                file_entries.append((pf, temp_path_str))
+
+        file_entries.sort(key=lambda entry: entry[0].changed_line_count, reverse=True)
+
+        context_parts = []
+        tokens_used = 0
+
+        for pf, temp_path_str in file_entries:
+            lined_content = self._get_line_numbered_content(temp_path_str)
+            if not lined_content:
+                continue
+
+            file_block = (
+                f"--- FILE: {pf.file_path} ---\n"
+                f"{lined_content}\n"
+                f"--- END FILE: {pf.file_path} ---"
+            )
+            block_tokens = self.count_tokens(file_block)
+
+            if tokens_used + block_tokens > CONTEXT_TOKEN_BUDGET:
+                logger.info(
+                    f"Context budget reached ({tokens_used} tokens). "
+                    f"Skipping {pf.file_path} ({block_tokens} tokens)."
+                )
+                continue
+
+            context_parts.append(file_block)
+            tokens_used += block_tokens
+
+        logger.info(
+            f"Built file context: {len(context_parts)} files, {tokens_used} tokens."
+        )
+        return "\n".join(context_parts)
+
+    @staticmethod
+    def _build_decoupled_diff(parsed_files: List[ParsedDiff]) -> str:
+        parts = []
+        for pf in parsed_files:
+            parts.append(pf.to_decoupled_format())
+        return "\n\n".join(parts)
+
     def generate_code_review(
         self,
         diff: str,
         parsed_files: Optional[List[ParsedDiff]] = None,
         file_paths: Optional[List[str]] = None,
+        pr_metadata: Optional[dict] = None,
     ) -> Optional[CodeReview]:
         context = ""
         if file_paths and parsed_files:
             logger.info("Building file context for prompt...")
-            context_parts = []
-            temp_path_map = {Path(p).name: p for p in file_paths}
+            context = self._build_file_context(parsed_files, file_paths)
 
-            for pf in parsed_files:
-                temp_path_str = temp_path_map.get(Path(pf.file_path).name)
-                if temp_path_str:
-                    lined_content = self._get_line_numbered_content(temp_path_str)
-                    if lined_content:
-                        context_parts.append(
-                            f"--- FILE: {pf.file_path} ---\n{lined_content}\n--- END FILE: {pf.file_path} ---"
-                        )
-            context = "\n".join(context_parts)
+        decoupled_diff = diff
+        if parsed_files:
+            decoupled_diff = self._build_decoupled_diff(parsed_files)
+
+        metadata_str = self.format_pr_metadata(pr_metadata)
 
         if context:
-            prompt_text = Prompts.REVIEW_PROMPT_WITH_FILES.format(
-                diff=diff, context=context
+            user_text = Prompts.REVIEW_PROMPT_WITH_FILES.format(
+                diff=decoupled_diff, context=context, pr_metadata=metadata_str
             )
         else:
-            prompt_text = Prompts.REVIEW_PROMPT.format(diff=diff, context=context)
+            user_text = Prompts.REVIEW_PROMPT.format(
+                diff=decoupled_diff, context=context, pr_metadata=metadata_str
+            )
 
         try:
             logger.info(f"Generating code review from model: {self.model}...")
             response = litellm.completion(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt_text}],
+                messages=[
+                    {"role": "system", "content": Prompts.REVIEW_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_text},
+                ],
                 response_format=CodeReview,
             )
 
