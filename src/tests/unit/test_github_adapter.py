@@ -343,6 +343,35 @@ def test_has_existing_bot_approval_paginates(github_instance):
         assert mock_get.call_count == 2
 
 
+def test_has_existing_bot_approval_false_after_request_changes(github_instance):
+    with patch(
+        "src.integrations.github.github.GitHub.get_installation_access_token",
+        return_value="test_token",
+    ), patch(
+        "src.integrations.github.github.GitHub.get_app_slug",
+        return_value="sourceant",
+    ), patch(
+        "requests.get"
+    ) as mock_get:
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "user": {"login": "sourceant[bot]"},
+                "state": "APPROVED",
+            },
+            {
+                "user": {"login": "sourceant[bot]"},
+                "state": "CHANGES_REQUESTED",
+            },
+        ]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        assert (
+            github_instance.has_existing_bot_approval("owner", "repo", 1) is False
+        )
+
+
 def test_post_review_uses_line_side_and_commit_id(
     github_instance, repository_instance, pull_request_instance
 ):
@@ -481,6 +510,130 @@ class TestPostReviewRetryOn422:
                     {"body": "Review", "event": "COMMENT", "comments": []},
                     {"Authorization": "Bearer test"},
                 )
+
+
+class TestGetExistingBotReviewComments:
+    def test_returns_bot_comments(self, github_instance):
+        with patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ), patch(
+            "src.integrations.github.github.GitHub.get_app_slug",
+            return_value="sourceant",
+        ), patch(
+            "requests.get"
+        ) as mock_get:
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                {
+                    "user": {"login": "sourceant[bot]"},
+                    "path": "src/main.py",
+                    "body": "Consider using a context manager here.",
+                    "line": 42,
+                    "start_line": 40,
+                },
+                {
+                    "user": {"login": "human-reviewer"},
+                    "path": "src/main.py",
+                    "body": "LGTM",
+                    "line": 10,
+                    "start_line": None,
+                },
+                {
+                    "user": {"login": "sourceant[bot]"},
+                    "path": "src/utils.py",
+                    "body": "Unused import.",
+                    "line": 3,
+                    "start_line": None,
+                },
+            ]
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            result = github_instance.get_existing_bot_review_comments(
+                "owner", "repo", 1
+            )
+
+            assert len(result) == 2
+            assert result[0]["path"] == "src/main.py"
+            assert result[0]["line"] == 42
+            assert result[0]["start_line"] == 40
+            assert result[1]["path"] == "src/utils.py"
+
+    def test_returns_empty_on_no_bot_comments(self, github_instance):
+        with patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ), patch(
+            "src.integrations.github.github.GitHub.get_app_slug",
+            return_value="sourceant",
+        ), patch(
+            "requests.get"
+        ) as mock_get:
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                {"user": {"login": "human"}, "path": "a.py", "body": "ok", "line": 1}
+            ]
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            result = github_instance.get_existing_bot_review_comments(
+                "owner", "repo", 1
+            )
+            assert result == []
+
+    def test_returns_empty_on_error(self, github_instance):
+        with patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            side_effect=Exception("auth failed"),
+        ):
+            result = github_instance.get_existing_bot_review_comments(
+                "owner", "repo", 1
+            )
+            assert result == []
+
+    def test_paginates(self, github_instance):
+        with patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ), patch(
+            "src.integrations.github.github.GitHub.get_app_slug",
+            return_value="sourceant",
+        ), patch(
+            "requests.get"
+        ) as mock_get:
+            page1 = MagicMock()
+            page1.json.return_value = [
+                {
+                    "user": {"login": "other"},
+                    "path": "a.py",
+                    "body": "x",
+                    "line": 1,
+                    "start_line": None,
+                }
+            ] * 100
+            page1.raise_for_status.return_value = None
+
+            page2 = MagicMock()
+            page2.json.return_value = [
+                {
+                    "user": {"login": "sourceant[bot]"},
+                    "path": "b.py",
+                    "body": "fix this",
+                    "line": 5,
+                    "start_line": None,
+                }
+            ]
+            page2.raise_for_status.return_value = None
+
+            mock_get.side_effect = [page1, page2]
+
+            result = github_instance.get_existing_bot_review_comments(
+                "owner", "repo", 1
+            )
+            assert len(result) == 1
+            assert result[0]["path"] == "b.py"
+            assert mock_get.call_count == 2
 
 
 def test_get_diff(github_instance, repository_instance, pull_request_instance):

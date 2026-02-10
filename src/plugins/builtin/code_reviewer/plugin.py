@@ -4,9 +4,13 @@ Code Reviewer Plugin for SourceAnt.
 Subscribes to pull request events and generates automated code reviews.
 """
 
+import difflib
+import re
 import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional, List
+
+from rapidfuzz import fuzz
 
 from src.core.plugins import BasePlugin, PluginMetadata, PluginType
 from src.core.plugins import event_hooks, HookPriority
@@ -356,6 +360,10 @@ class CodeReviewerPlugin(BasePlugin):
 
             logger.info(f"Total tokens in diff: {total_tokens}")
 
+            existing_comments = github.get_existing_bot_review_comments(
+                repository.owner, repository.name, pull_request.number
+            )
+
             # Generate review based on token count
             if total_tokens < llm_instance.token_limit:
                 logger.info("Diff is small enough for a single-pass review.")
@@ -367,6 +375,7 @@ class CodeReviewerPlugin(BasePlugin):
                     parsed_files,
                     line_mapper,
                     pr_metadata=pr_metadata,
+                    existing_comments=existing_comments,
                 )
             else:
                 logger.info("Diff is too large. Performing file-by-file review.")
@@ -377,7 +386,22 @@ class CodeReviewerPlugin(BasePlugin):
                     parsed_files,
                     line_mapper,
                     pr_metadata=pr_metadata,
+                    existing_comments=existing_comments,
                 )
+
+            if existing_comments and final_review.code_suggestions:
+                before_count = len(final_review.code_suggestions)
+                final_review.code_suggestions = self._filter_duplicate_suggestions(
+                    final_review.code_suggestions, existing_comments
+                )
+                removed = before_count - len(final_review.code_suggestions)
+                if removed:
+                    logger.info(
+                        f"Filtered {removed} duplicate suggestion(s) already posted on PR"
+                    )
+                    final_review.verdict = self._determine_verdict_from_suggestions(
+                        final_review.code_suggestions
+                    )
 
             # Apply review guards
             guards = [DuplicateApprovalGuard()]
@@ -445,6 +469,7 @@ class CodeReviewerPlugin(BasePlugin):
         parsed_files: List[ParsedDiff],
         line_mapper: LineMapper,
         pr_metadata: Optional[Dict[str, Any]] = None,
+        existing_comments: Optional[List[Dict[str, Any]]] = None,
     ) -> CodeReview:
         """Generate review in a single pass for small diffs."""
         suggestion_filter = SuggestionFilter()
@@ -459,6 +484,7 @@ class CodeReviewerPlugin(BasePlugin):
                 parsed_files=parsed_files,
                 file_paths=temp_file_paths,
                 pr_metadata=pr_metadata,
+                existing_comments=existing_comments,
             )
 
             all_suggestions = []
@@ -490,6 +516,7 @@ class CodeReviewerPlugin(BasePlugin):
         parsed_files: List[ParsedDiff],
         line_mapper: LineMapper,
         pr_metadata: Optional[Dict[str, Any]] = None,
+        existing_comments: Optional[List[Dict[str, Any]]] = None,
     ) -> CodeReview:
         """Generate review file by file for large diffs."""
         suggestion_filter = SuggestionFilter()
@@ -497,6 +524,14 @@ class CodeReviewerPlugin(BasePlugin):
 
         for parsed_file in parsed_files:
             logger.info(f"Reviewing file: {parsed_file.file_path}")
+
+            file_comments = None
+            if existing_comments:
+                file_comments = [
+                    c
+                    for c in existing_comments
+                    if c.get("path") == parsed_file.file_path
+                ]
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_file_paths = self._prepare_llm_file_context(
@@ -508,6 +543,7 @@ class CodeReviewerPlugin(BasePlugin):
                     parsed_files=[parsed_file],
                     file_paths=temp_file_paths,
                     pr_metadata=pr_metadata,
+                    existing_comments=file_comments or None,
                 )
 
                 if review_for_file and review_for_file.code_suggestions:
@@ -575,6 +611,105 @@ class CodeReviewerPlugin(BasePlugin):
             return Verdict.REQUEST_CHANGES
         else:
             return Verdict.COMMENT
+
+    @staticmethod
+    def _filter_duplicate_suggestions(
+        suggestions: List,
+        existing_comments: List[Dict[str, Any]],
+    ) -> List:
+        """Remove suggestions that match already-posted bot comments."""
+        filtered = []
+        for suggestion in suggestions:
+            if CodeReviewerPlugin._is_duplicate(suggestion, existing_comments):
+                logger.info(
+                    f"Filtering duplicate suggestion on {suggestion.file_name}:"
+                    f"{suggestion.start_line}-{suggestion.end_line}"
+                )
+                continue
+            filtered.append(suggestion)
+        return filtered
+
+    LINE_TOLERANCE = 3
+    CODE_SIMILARITY_THRESHOLD = 85
+    COMMENT_SIMILARITY_THRESHOLD = 70
+    COMMENT_SIMILARITY_STRICT = 60
+
+    @staticmethod
+    def _extract_suggestion_code(body: str) -> Optional[str]:
+        match = re.search(r"```suggestion\s*\n(.*?)```", body, re.DOTALL)
+        return match.group(1).strip() if match else None
+
+    @staticmethod
+    def _normalize(text: str) -> str:
+        return re.sub(r"\s+", " ", text.strip().lower())
+
+    @staticmethod
+    def _lines_overlap(
+        s_start: int, s_end: int, ec_start: int, ec_end: int, tolerance: int = 0
+    ) -> bool:
+        return (s_start - tolerance) <= ec_end and (s_end + tolerance) >= ec_start
+
+    @staticmethod
+    def _text_similarity(a: str, b: str) -> float:
+        """Return 0-100 similarity using the best of rapidfuzz and difflib."""
+        if not a or not b:
+            return 0.0
+        rf_score = max(
+            fuzz.ratio(a, b),
+            fuzz.token_sort_ratio(a, b),
+            fuzz.token_set_ratio(a, b),
+        )
+        dl_score = difflib.SequenceMatcher(None, a, b).ratio() * 100
+        return max(rf_score, dl_score)
+
+    @staticmethod
+    def _is_duplicate(suggestion, existing_comments: List[Dict[str, Any]]) -> bool:
+        for ec in existing_comments:
+            if ec.get("path") != suggestion.file_name:
+                continue
+
+            ec_line = ec.get("line")
+            ec_start = ec.get("start_line") or ec_line
+            if not ec_line:
+                continue
+
+            s_start = suggestion.start_line
+            s_end = suggestion.end_line
+
+            exact_overlap = CodeReviewerPlugin._lines_overlap(
+                s_start, s_end, ec_start, ec_line
+            )
+            fuzzy_overlap = CodeReviewerPlugin._lines_overlap(
+                s_start, s_end, ec_start, ec_line,
+                tolerance=CodeReviewerPlugin.LINE_TOLERANCE,
+            )
+
+            if not fuzzy_overlap:
+                continue
+
+            ec_body = ec.get("body", "")
+
+            ec_code = CodeReviewerPlugin._extract_suggestion_code(ec_body)
+            s_code = suggestion.suggested_code
+            if ec_code and s_code:
+                code_sim = CodeReviewerPlugin._text_similarity(
+                    CodeReviewerPlugin._normalize(s_code),
+                    CodeReviewerPlugin._normalize(ec_code),
+                )
+                if code_sim >= CodeReviewerPlugin.CODE_SIMILARITY_THRESHOLD:
+                    return True
+
+            s_comment = CodeReviewerPlugin._normalize(suggestion.comment or "")
+            ec_comment = CodeReviewerPlugin._normalize(ec_body)
+            comment_sim = CodeReviewerPlugin._text_similarity(s_comment, ec_comment)
+
+            if exact_overlap and comment_sim >= CodeReviewerPlugin.COMMENT_SIMILARITY_STRICT:
+                return True
+
+            if comment_sim >= CodeReviewerPlugin.COMMENT_SIMILARITY_THRESHOLD:
+                return True
+
+        return False
 
     def _prepare_llm_file_context(
         self,

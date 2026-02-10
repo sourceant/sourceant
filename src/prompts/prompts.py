@@ -117,7 +117,7 @@ Your task is to analyze code diffs and provide precise, structured, and actionab
 ## Additional Context (Full File Content)
 {context}
 
-## Code Diff for Review
+{existing_comments}## Code Diff for Review
 The diff below uses a decoupled format where removed and added code are shown in separate labeled blocks per file. `__old hunk__` shows removed lines and surrounding context, `__new hunk__` shows added lines and surrounding context.
 
 {diff}
@@ -135,7 +135,7 @@ The complete content for all changed files is provided below. **Use these files 
 ## Additional Context
 {context}
 
-## Code Diff for Review
+{existing_comments}## Code Diff for Review
 The diff below uses a decoupled format where removed and added code are shown in separate labeled blocks per file. `__old hunk__` shows removed lines and surrounding context, `__new hunk__` shows added lines and surrounding context.
 **REMINDER: Your review MUST focus only on changed lines.** Use the full files provided for surrounding context, but do not comment on unchanged code.
 
