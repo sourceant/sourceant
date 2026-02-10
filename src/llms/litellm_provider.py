@@ -110,12 +110,36 @@ class LiteLLMProvider(LLMInterface):
             parts.append(pf.to_decoupled_format())
         return "\n\n".join(parts)
 
+    @staticmethod
+    def _format_existing_comments(existing_comments: Optional[list]) -> str:
+        if not existing_comments:
+            return ""
+
+        parts = [
+            "## Existing Review Comments (DO NOT REPEAT)\n"
+            "The following comments have already been posted on this PR. "
+            "Do NOT generate suggestions that duplicate these — "
+            "skip any suggestion that covers the same file, line range, and issue.\n"
+        ]
+        for c in existing_comments:
+            path = c.get("path", "unknown")
+            line = c.get("line", "?")
+            start = c.get("start_line")
+            body = c.get("body", "")
+            if start and start != line:
+                parts.append(f"- **{path}** (lines {start}-{line}): {body}")
+            else:
+                parts.append(f"- **{path}** (line {line}): {body}")
+
+        return "\n".join(parts) + "\n"
+
     def generate_code_review(
         self,
         diff: str,
         parsed_files: Optional[List[ParsedDiff]] = None,
         file_paths: Optional[List[str]] = None,
         pr_metadata: Optional[dict] = None,
+        existing_comments: Optional[list] = None,
     ) -> Optional[CodeReview]:
         context = ""
         if file_paths and parsed_files:
@@ -127,14 +151,21 @@ class LiteLLMProvider(LLMInterface):
             decoupled_diff = self._build_decoupled_diff(parsed_files)
 
         metadata_str = self.format_pr_metadata(pr_metadata)
+        existing_comments_str = self._format_existing_comments(existing_comments)
 
         if context:
             user_text = Prompts.REVIEW_PROMPT_WITH_FILES.format(
-                diff=decoupled_diff, context=context, pr_metadata=metadata_str
+                diff=decoupled_diff,
+                context=context,
+                pr_metadata=metadata_str,
+                existing_comments=existing_comments_str,
             )
         else:
             user_text = Prompts.REVIEW_PROMPT.format(
-                diff=decoupled_diff, context=context, pr_metadata=metadata_str
+                diff=decoupled_diff,
+                context=context,
+                pr_metadata=metadata_str,
+                existing_comments=existing_comments_str,
             )
 
         try:
