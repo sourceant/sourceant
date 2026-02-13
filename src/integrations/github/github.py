@@ -15,7 +15,6 @@ from src.models.pull_request import PullRequest
 from src.utils.logger import logger
 from src.llms.llm_factory import llm
 
-
 COMMENT_MARKER = "<!-- SOURCEANT_REVIEW_SUMMARY -->"
 FALLBACK_COMMENT_MARKER = "<!-- SOURCEANT_FALLBACK_REVIEW -->"
 
