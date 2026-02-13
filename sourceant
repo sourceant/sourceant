@@ -5,7 +5,8 @@ import sys
 import subprocess
 from src.config.settings import DATABASE_URL, STATELESS_MODE
 from src.utils.logger import logger
-from alembic.config import CommandLine
+from src.utils.migration_paths import resolve_version_locations
+from alembic.config import Config, CommandLine
 
 
 @click.group()
@@ -27,7 +28,13 @@ def db_command(ctx):
         sys.exit(0)
 
     sys.argv = ["alembic"] + ctx.args
-    sys.exit(CommandLine().main())
+    cmd = CommandLine()
+    options = cmd.parser.parse_args(ctx.args)
+    cfg = Config("alembic.ini", cmd_opts=options)
+    cfg.set_main_option("version_locations", " ".join(resolve_version_locations()))
+    fn, positional, kwarg = options.cmd
+    fn(cfg, *[getattr(options, k) for k in positional], **{k: getattr(options, k) for k in kwarg})
+    sys.exit(0)
 
 
 @click.group(name='code')

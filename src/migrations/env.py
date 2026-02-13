@@ -1,15 +1,18 @@
 from logging.config import fileConfig
+
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
 
 from src.config.settings import DATABASE_URL
+from src.utils.migration_paths import resolve_version_locations
 
 config = context.config
 
 if DATABASE_URL:
     config.set_section_option("alembic", "sqlalchemy.url", DATABASE_URL)
 
+config.set_main_option("version_locations", " ".join(resolve_version_locations()))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

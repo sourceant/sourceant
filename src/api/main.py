@@ -70,5 +70,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from src.api.routes import repos as repo_endpoints
+
 app.include_router(app_endpoints.router, tags=["general"])
 app.include_router(pr_endpoints.router, prefix="/api/prs", tags=["pull_requests"])
+app.include_router(repo_endpoints.router, prefix="/api/repos", tags=["repositories"])

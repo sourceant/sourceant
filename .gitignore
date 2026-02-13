@@ -23,6 +23,9 @@ sourceant.db
 *.pem
 .venv/
 
+# Local docker overrides
+docker-compose.override.yml
+
 # External plugins (only builtin plugins are tracked)
 src/plugins/*/
 !src/plugins/builtin/

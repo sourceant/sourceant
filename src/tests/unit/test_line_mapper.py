@@ -166,15 +166,12 @@ class TestLineMapper:
                 side=Side.RIGHT,
                 comment="Refactored to a more verbose, multi-line block for testing.",
                 category=SuggestionCategory.REFACTOR,
-                suggested_code=dedent(
-                    """
+                suggested_code=dedent("""
                     # This is a more concise version of the report generation.
                     active_users = [u for u, d in user_manager.users.items() if d.get("active", True)]
                     return f"Active Users ({len(active_users)}): {', '.join(active_users)}"
-                    """
-                ).strip(),
-                existing_code=dedent(
-                    """
+                    """).strip(),
+                existing_code=dedent("""
                     # Refactored to a more verbose, multi-line block for testing.
                     print("Generating active user report...")
                     active_users = [
@@ -184,8 +181,7 @@ class TestLineMapper:
                     ]
                     report = f"Active Users ({len(active_users)}): {', '.join(active_users)}"
                     print("Report generation complete.")
-                    """
-                ).strip(),
+                    """).strip(),
             )
             expected_line = 81
         elif "large" in file_name:

@@ -15,7 +15,6 @@ from .models import User, UserRepository
 from src.config.db import get_db
 from src.utils.logger import logger
 
-
 router = APIRouter(prefix="/auth/github", tags=["github-oauth"])
 
 

@@ -1,0 +1,5 @@
+services:
+  app:
+    volumes:
+      - ../memory:/plugins/memory
+      # - ../analytics:/plugins/analytics

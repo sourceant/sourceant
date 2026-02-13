@@ -15,7 +15,6 @@ from pydantic import BaseModel, ConfigDict
 import hmac
 import hashlib
 
-
 router = APIRouter()
 
 

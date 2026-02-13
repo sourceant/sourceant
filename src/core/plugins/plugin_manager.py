@@ -66,16 +66,16 @@ class PluginManager:
         self._plugin_configs[plugin_name] = config
         logger.debug(f"Set config for plugin {plugin_name}: {list(config.keys())}")
 
-    def discover_plugins(self) -> Dict[str, Path]:
+    def discover_plugins(self) -> Dict[str, Any]:
         """
-        Discover plugins in registered directories.
+        Discover plugins in registered directories and via entry points.
 
         Searches for Python modules that contain plugin classes
-        inheriting from BasePlugin. Only scans subdirectories, not
-        root-level .py files (which are core plugin system files).
+        inheriting from BasePlugin. Also discovers pip-installed plugins
+        that declare a ``sourceant.plugins`` entry point.
 
         Returns:
-            Dictionary mapping plugin names to their file paths
+            Dictionary mapping plugin names to their source (Path or EntryPoint)
         """
         discovered_plugins = {}
 
@@ -83,8 +83,27 @@ class PluginManager:
             logger.info(f"Discovering plugins in: {plugin_dir}")
             self._discover_in_directory(plugin_dir, discovered_plugins)
 
+        self._discover_entrypoint_plugins(discovered_plugins)
+
         logger.info(f"Discovered {len(discovered_plugins)} plugins")
         return discovered_plugins
+
+    def _discover_entrypoint_plugins(self, discovered_plugins: Dict[str, Any]):
+        from importlib.metadata import entry_points
+
+        eps = entry_points(group="sourceant.plugins")
+        for ep in eps:
+            if ep.name in discovered_plugins:
+                continue
+            try:
+                plugin_class = ep.load()
+                if isinstance(plugin_class, type) and issubclass(
+                    plugin_class, BasePlugin
+                ):
+                    discovered_plugins[ep.name] = ep
+                    logger.debug(f"Discovered entrypoint plugin: {ep.name}")
+            except Exception as e:
+                logger.warning(f"Error loading entrypoint plugin {ep.name}: {e}")
 
     def _discover_in_directory(
         self, directory: Path, discovered_plugins: Dict[str, Path]
@@ -282,17 +301,41 @@ class PluginManager:
 
         logger.info(f"Loading {len(discovered)} discovered plugins")
 
-        for plugin_name, plugin_path in discovered.items():
-            module_name = (
-                plugin_path.stem if plugin_path.is_file() else plugin_path.parent.name
-            )
+        for plugin_name, source in discovered.items():
+            if isinstance(source, Path):
+                module_name = source.stem if source.is_file() else source.parent.name
+                plugin = await self.load_plugin(source, module_name)
+            else:
+                plugin = await self._load_entrypoint_plugin(plugin_name, source)
 
-            plugin = await self.load_plugin(plugin_path, module_name)
             if plugin:
                 loaded_plugins[plugin_name] = plugin
 
         logger.info(f"Successfully loaded {len(loaded_plugins)} plugins")
         return loaded_plugins
+
+    async def _load_entrypoint_plugin(self, name: str, ep) -> Optional[BasePlugin]:
+        try:
+            plugin_class = ep.load()
+            plugin_config = self._plugin_configs.get(name, {})
+            plugin_instance = plugin_class(config=plugin_config)
+
+            metadata = plugin_instance.metadata
+            if metadata.config_schema:
+                try:
+                    plugin_instance.validate_config(plugin_config)
+                except ValueError as e:
+                    logger.error(f"Invalid configuration for plugin {name}: {e}")
+                    return None
+
+            self.registry.register(plugin_instance)
+            self.registry.set_plugin_status(name, PluginStatus.LOADED)
+
+            logger.info(f"Loaded entrypoint plugin: {name} v{metadata.version}")
+            return plugin_instance
+        except Exception as e:
+            logger.error(f"Error loading entrypoint plugin {name}: {e}", exc_info=True)
+            return None
 
     async def initialize_plugins(self) -> Dict[str, bool]:
         """
@@ -535,16 +578,17 @@ class PluginManager:
                 logger.error(f"Plugin {plugin_name} not found during reload discovery")
                 return False
 
-            plugin_path = discovered[plugin_name]
-            module_name = (
-                plugin_path.stem if plugin_path.is_file() else plugin_path.parent.name
-            )
+            source = discovered[plugin_name]
 
             # Unregister old plugin
             self.registry.unregister(plugin_name)
 
             # Load new plugin
-            new_plugin = await self.load_plugin(plugin_path, module_name)
+            if isinstance(source, Path):
+                module_name = source.stem if source.is_file() else source.parent.name
+                new_plugin = await self.load_plugin(source, module_name)
+            else:
+                new_plugin = await self._load_entrypoint_plugin(plugin_name, source)
             if not new_plugin:
                 logger.error(f"Failed to load plugin {plugin_name} during reload")
                 return False
