@@ -38,7 +38,7 @@ async def list_repos(
     """List repos the user has access to via their GitHub token, with connected status."""
     github_token = user.get("github_token")
     if not github_token:
-        raise HTTPException(status_code=400, detail="No GitHub token available")
+        raise HTTPException(status_code=401, detail="No GitHub token available")
 
     async with httpx.AsyncClient() as client:
         resp = await client.get(
@@ -50,7 +50,7 @@ async def list_repos(
             params={"per_page": 100, "sort": "updated"},
         )
         if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail="GitHub API error")
+            raise HTTPException(status_code=502, detail="GitHub API error")
         github_repos = resp.json()
 
     user_id = user["user_id"]
@@ -143,8 +143,6 @@ async def connect_repo(
             owner_type=data.owner_type,
             language=data.language,
             default_branch=data.default_branch,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
         )
         session.add(repo)
         session.commit()

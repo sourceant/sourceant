@@ -192,6 +192,25 @@ class EventDispatcher:
             )
             return None
 
+    async def _ensure_plugins_loaded(self):
+        """Bootstrap the plugin system when running outside FastAPI (e.g. RQ worker)."""
+        if event_hooks._event_subscribers:
+            return
+
+        from pathlib import Path
+        from src.core.plugins import plugin_manager
+        from src.llms.llm_factory import llm
+        from src.utils.logger import setup_logger
+
+        setup_logger()
+        llm()
+
+        plugins_dir = Path(__file__).parent.parent / "plugins"
+        plugin_manager.add_plugin_directory(plugins_dir)
+        await plugin_manager.load_all_plugins()
+        await plugin_manager.initialize_plugins()
+        await plugin_manager.start_plugins()
+
     def _process_event_sync(self, event: Event):
         import asyncio
 
@@ -204,4 +223,5 @@ class EventDispatcher:
         if loop.is_running():
             asyncio.create_task(self._process_event(event))
         else:
+            loop.run_until_complete(self._ensure_plugins_loaded())
             loop.run_until_complete(self._process_event(event))

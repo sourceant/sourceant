@@ -18,13 +18,18 @@ IGNORE_PATTERNS = (
 
 _ALLOWED_URL_SCHEMES = {"https", "http"}
 _SAFE_PATH_RE = re.compile(r"^[a-zA-Z0-9_./ -]+$")
+_BASE_DIR = Path("/app")
+_SUBPROCESS_TIMEOUT = 300
 
 
 def _validate_path(path: str) -> str:
-    resolved = str(Path(path).resolve())
-    if not _SAFE_PATH_RE.match(resolved):
+    resolved = Path(path).resolve()
+    if not resolved.is_relative_to(_BASE_DIR):
+        raise ValueError(f"Path escapes base directory: {path}")
+    resolved_str = str(resolved)
+    if not _SAFE_PATH_RE.match(resolved_str):
         raise ValueError(f"Invalid path: {path}")
-    return resolved
+    return resolved_str
 
 
 def _validate_url(url: str) -> str:
@@ -59,10 +64,16 @@ class Repomix:
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            _, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=_SUBPROCESS_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError("repomix pack timed out")
 
         if proc.returncode != 0:
             error_msg = stderr.decode().strip()
@@ -100,10 +111,16 @@ class Repomix:
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            _, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=_SUBPROCESS_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError("repomix pack_remote timed out")
 
         if proc.returncode != 0:
             error_msg = stderr.decode().strip()

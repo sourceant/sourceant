@@ -448,6 +448,8 @@ class GitHub(ProviderAdapter):
     ) -> List[int]:
         indices = set()
         for error in error_body.get("errors", []):
+            if isinstance(error, str):
+                continue
             field = error.get("field", "")
             match = re.search(r"comments\[(\d+)\]", field)
             if match:
@@ -598,6 +600,7 @@ class GitHub(ProviderAdapter):
                 review_body = "Review complete. No specific code suggestions were generated. See the overview comment for a summary."
 
             review_payload = {
+                "commit_id": pull_request.head_sha,
                 "body": review_body,
                 "event": code_review.verdict.value,
                 "comments": comments,

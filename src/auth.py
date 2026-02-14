@@ -17,12 +17,14 @@ def _get_jwt_secret() -> str:
 
 async def get_current_user(authorization: str = Header(...)) -> dict:
     try:
-        token = authorization.removeprefix("Bearer ")
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+        token = authorization[7:]
         payload = jwt.decode(
             token,
             _get_jwt_secret(),
             algorithms=[JWT_ALGORITHM],
-            options={"require": ["exp", "sub"]},
+            options={"require": ["exp", "sub"], "verify_exp": True},
         )
         return {
             "user_id": payload["sub"],

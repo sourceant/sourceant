@@ -19,8 +19,6 @@ class Repository(BaseModel, table=True):
     owner_type: str
     language: Optional[str] = None
     default_branch: str
-    created_at: str
-    updated_at: str
 
     def __repr__(self):
         return f"<Repository(provider={self.provider}, name={self.name}, full_name={self.full_name})>"
