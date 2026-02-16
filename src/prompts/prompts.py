@@ -114,30 +114,8 @@ Your task is to analyze code diffs and provide precise, structured, and actionab
     REVIEW_PROMPT = """## Pull Request Metadata
 {pr_metadata}
 
-## Additional Context (Full File Content)
-{context}
-
-## Code Diff for Review
+{existing_comments}## Code Diff for Review
 The diff below uses a decoupled format where removed and added code are shown in separate labeled blocks per file. `__old hunk__` shows removed lines and surrounding context, `__new hunk__` shows added lines and surrounding context.
-
-{diff}
-"""
-
-    REVIEW_PROMPT_WITH_FILES = """## Primary Goal: Focus on the Diff
-Your primary goal is to review **only the changes** presented in the diff below. Your feedback, comments, and suggestions **must relate exclusively to the added or removed lines** in the diff. **Do not review or comment on unchanged code.**
-
-## Full File Context Provided
-The complete content for all changed files is provided below. **Use these files as the primary source of truth** for understanding the code, its structure, and for generating accurate line numbers.
-
-## Pull Request Metadata
-{pr_metadata}
-
-## Additional Context
-{context}
-
-## Code Diff for Review
-The diff below uses a decoupled format where removed and added code are shown in separate labeled blocks per file. `__old hunk__` shows removed lines and surrounding context, `__new hunk__` shows added lines and surrounding context.
-**REMINDER: Your review MUST focus only on changed lines.** Use the full files provided for surrounding context, but do not comment on unchanged code.
 
 {diff}
 """

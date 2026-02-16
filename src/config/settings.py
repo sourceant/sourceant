@@ -34,7 +34,6 @@ GITHUB_OAUTH_CLIENT_SECRET = os.getenv("GITHUB_OAUTH_CLIENT_SECRET")
 GITHUB_OAUTH_SECRET = os.getenv("GITHUB_OAUTH_SECRET")
 APP_URL = os.getenv("APP_URL", "http://localhost:8000")
 REVIEW_DRAFT_PRS = os.getenv("REVIEW_DRAFT_PRS", "false").lower() == "true"
-LLM_UPLOADS_ENABLED = os.getenv("LLM_UPLOADS_ENABLED", "true").lower() == "true"
 # VADER compound score: -1.0 (negative) to +1.0 (positive).
 # 0.3 is above VADER's default positive cutoff (0.05) to avoid
 # filtering mixed comments that contain actionable feedback.

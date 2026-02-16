@@ -25,21 +25,12 @@ class TestReviewSystemPrompt:
 class TestReviewUserPrompts:
     def test_review_prompt_has_placeholders(self):
         assert "{diff}" in Prompts.REVIEW_PROMPT
-        assert "{context}" in Prompts.REVIEW_PROMPT
         assert "{pr_metadata}" in Prompts.REVIEW_PROMPT
-
-    def test_review_prompt_with_files_has_placeholders(self):
-        assert "{diff}" in Prompts.REVIEW_PROMPT_WITH_FILES
-        assert "{context}" in Prompts.REVIEW_PROMPT_WITH_FILES
-        assert "{pr_metadata}" in Prompts.REVIEW_PROMPT_WITH_FILES
+        assert "{existing_comments}" in Prompts.REVIEW_PROMPT
 
     def test_review_prompt_mentions_decoupled_format(self):
         assert "__old hunk__" in Prompts.REVIEW_PROMPT
         assert "__new hunk__" in Prompts.REVIEW_PROMPT
-
-    def test_review_prompt_with_files_mentions_decoupled_format(self):
-        assert "__old hunk__" in Prompts.REVIEW_PROMPT_WITH_FILES
-        assert "__new hunk__" in Prompts.REVIEW_PROMPT_WITH_FILES
 
 
 class TestFormatPrMetadata:

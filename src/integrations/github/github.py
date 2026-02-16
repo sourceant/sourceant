@@ -198,6 +198,7 @@ class GitHub(ProviderAdapter):
             }
             app_slug = self.get_app_slug()
             bot_login = f"{app_slug}[bot]"
+            latest_bot_state = None
             page = 1
             per_page = 100
             max_pages = 10
@@ -212,18 +213,67 @@ class GitHub(ProviderAdapter):
                 reviews = response.json()
                 for review in reviews:
                     user = review.get("user", {})
-                    if (
-                        user.get("login") == bot_login
-                        and review.get("state") == "APPROVED"
-                    ):
-                        return True
+                    if user.get("login") == bot_login:
+                        latest_bot_state = review.get("state")
                 if len(reviews) < per_page:
                     break
                 page += 1
-            return False
+            return latest_bot_state == "APPROVED"
         except Exception as e:
             logger.warning(f"Could not check for existing approvals: {e}")
             return False
+
+    def get_existing_bot_review_comments(
+        self, owner: str, repo: str, pr_number: int
+    ) -> List[Dict[str, Any]]:
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            app_slug = self.get_app_slug()
+            bot_login = f"{app_slug}[bot]"
+
+            bot_comments = []
+            page = 1
+            per_page = 100
+            max_pages = 10
+
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+                    headers=headers,
+                    params={"page": page, "per_page": per_page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                comments = response.json()
+
+                for comment in comments:
+                    user = comment.get("user", {})
+                    if user.get("login") == bot_login:
+                        bot_comments.append(
+                            {
+                                "path": comment.get("path"),
+                                "body": comment.get("body", ""),
+                                "line": comment.get("line"),
+                                "start_line": comment.get("start_line"),
+                            }
+                        )
+
+                if len(comments) < per_page:
+                    break
+                page += 1
+
+            logger.info(
+                f"Found {len(bot_comments)} existing bot review comments on PR #{pr_number}"
+            )
+            return bot_comments
+        except Exception as e:
+            logger.warning(f"Could not fetch existing bot review comments: {e}")
+            return []
 
     def _find_overview_comment(
         self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]
