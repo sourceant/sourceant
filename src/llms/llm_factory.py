@@ -1,7 +1,7 @@
 from src.llms.litellm_provider import LiteLLMProvider
 from src.llms.llm_interface import LLMInterface
 from functools import lru_cache
-from src.config.settings import LLM_MODEL, LLM_TOKEN_LIMIT, LLM_UPLOADS_ENABLED
+from src.config.settings import LLM_MODEL, LLM_TOKEN_LIMIT
 from src.utils.logger import logger
 
 
@@ -15,5 +15,4 @@ def llm() -> LLMInterface:
     return LiteLLMProvider(
         model=LLM_MODEL,
         token_limit=LLM_TOKEN_LIMIT,
-        uploads_enabled=LLM_UPLOADS_ENABLED,
     )

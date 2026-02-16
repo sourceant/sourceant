@@ -6,8 +6,6 @@ Subscribes to pull request events and generates automated code reviews.
 
 import difflib
 import re
-import tempfile
-from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 from rapidfuzz import fuzz
@@ -343,21 +341,6 @@ class CodeReviewerPlugin(BasePlugin):
                 llm_instance.count_tokens(pf.diff_text) for pf in parsed_files
             )
 
-            # Add file content tokens if uploads are disabled
-            if not llm_instance.uploads_enabled:
-                logger.info(
-                    "File uploads disabled. Calculating tokens from full file content."
-                )
-                for pf in parsed_files:
-                    content = github.get_file_content(
-                        owner=repository.owner,
-                        repo=repository.name,
-                        file_path=pf.file_path,
-                        sha=pull_request.head_sha,
-                    )
-                    if content:
-                        total_tokens += llm_instance.count_tokens(content)
-
             logger.info(f"Total tokens in diff: {total_tokens}")
 
             existing_comments = github.get_existing_bot_review_comments(
@@ -474,39 +457,33 @@ class CodeReviewerPlugin(BasePlugin):
         """Generate review in a single pass for small diffs."""
         suggestion_filter = SuggestionFilter()
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_file_paths = self._prepare_llm_file_context(
-                github, repository, pull_request, parsed_files, temp_dir
+        full_review = llm().generate_code_review(
+            diff=raw_diff,
+            parsed_files=parsed_files,
+            pr_metadata=pr_metadata,
+            existing_comments=existing_comments,
+        )
+
+        all_suggestions = []
+        if full_review and full_review.code_suggestions:
+            all_suggestions = self._process_suggestions(
+                full_review.code_suggestions, suggestion_filter, line_mapper
             )
 
-            full_review = llm().generate_code_review(
-                diff=raw_diff,
-                parsed_files=parsed_files,
-                file_paths=temp_file_paths,
-                pr_metadata=pr_metadata,
-                existing_comments=existing_comments,
+        verdict = self._determine_verdict_from_suggestions(all_suggestions)
+        if full_review:
+            return CodeReview(
+                summary=full_review.summary,
+                verdict=verdict,
+                code_suggestions=all_suggestions,
+                scores=full_review.scores,
             )
-
-            all_suggestions = []
-            if full_review and full_review.code_suggestions:
-                all_suggestions = self._process_suggestions(
-                    full_review.code_suggestions, suggestion_filter, line_mapper
-                )
-
-            verdict = self._determine_verdict_from_suggestions(all_suggestions)
-            if full_review:
-                return CodeReview(
-                    summary=full_review.summary,
-                    verdict=verdict,
-                    code_suggestions=all_suggestions,
-                    scores=full_review.scores,
-                )
-            else:
-                return CodeReview(
-                    summary=None,
-                    verdict=verdict,
-                    code_suggestions=all_suggestions,
-                )
+        else:
+            return CodeReview(
+                summary=None,
+                verdict=verdict,
+                code_suggestions=all_suggestions,
+            )
 
     async def _generate_file_by_file_review(
         self,
@@ -533,27 +510,21 @@ class CodeReviewerPlugin(BasePlugin):
                     if c.get("path") == parsed_file.file_path
                 ]
 
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_file_paths = self._prepare_llm_file_context(
-                    github, repository, pull_request, [parsed_file], temp_dir
-                )
+            review_for_file = llm().generate_code_review(
+                diff=parsed_file.diff_text,
+                parsed_files=[parsed_file],
+                pr_metadata=pr_metadata,
+                existing_comments=file_comments or None,
+            )
 
-                review_for_file = llm().generate_code_review(
-                    diff=parsed_file.diff_text,
-                    parsed_files=[parsed_file],
-                    file_paths=temp_file_paths,
-                    pr_metadata=pr_metadata,
-                    existing_comments=file_comments or None,
-                )
-
-                if review_for_file and review_for_file.code_suggestions:
-                    all_suggestions.extend(
-                        self._process_suggestions(
-                            review_for_file.code_suggestions,
-                            suggestion_filter,
-                            line_mapper,
-                        )
+            if review_for_file and review_for_file.code_suggestions:
+                all_suggestions.extend(
+                    self._process_suggestions(
+                        review_for_file.code_suggestions,
+                        suggestion_filter,
+                        line_mapper,
                     )
+                )
 
         summary_obj = llm().generate_summary(all_suggestions)
         verdict = self._determine_verdict_from_suggestions(all_suggestions)
@@ -680,7 +651,10 @@ class CodeReviewerPlugin(BasePlugin):
                 s_start, s_end, ec_start, ec_line
             )
             fuzzy_overlap = CodeReviewerPlugin._lines_overlap(
-                s_start, s_end, ec_start, ec_line,
+                s_start,
+                s_end,
+                ec_start,
+                ec_line,
                 tolerance=CodeReviewerPlugin.LINE_TOLERANCE,
             )
 
@@ -703,37 +677,13 @@ class CodeReviewerPlugin(BasePlugin):
             ec_comment = CodeReviewerPlugin._normalize(ec_body)
             comment_sim = CodeReviewerPlugin._text_similarity(s_comment, ec_comment)
 
-            if exact_overlap and comment_sim >= CodeReviewerPlugin.COMMENT_SIMILARITY_STRICT:
+            if (
+                exact_overlap
+                and comment_sim >= CodeReviewerPlugin.COMMENT_SIMILARITY_STRICT
+            ):
                 return True
 
             if comment_sim >= CodeReviewerPlugin.COMMENT_SIMILARITY_THRESHOLD:
                 return True
 
         return False
-
-    def _prepare_llm_file_context(
-        self,
-        github: GitHub,
-        repository: Repository,
-        pull_request: PullRequest,
-        parsed_files: List[ParsedDiff],
-        temp_dir: str,
-    ) -> List[str]:
-        """Prepare file context for the LLM by creating temporary files."""
-        temp_file_paths = []
-
-        if pull_request.head_sha:
-            for pf in parsed_files:
-                content = github.get_file_content(
-                    owner=repository.owner,
-                    repo=repository.name,
-                    file_path=pf.file_path,
-                    sha=pull_request.head_sha,
-                )
-                if content:
-                    temp_file_path = Path(temp_dir) / pf.file_path
-                    temp_file_path.parent.mkdir(parents=True, exist_ok=True)
-                    temp_file_path.write_text(content)
-                    temp_file_paths.append(str(temp_file_path))
-
-        return temp_file_paths

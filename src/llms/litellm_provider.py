@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Optional, List, Union
 
 import litellm
@@ -14,27 +13,19 @@ from src.models.code_review import (
     CodeReviewSummary,
 )
 
-CONTEXT_TOKEN_BUDGET = 15000
-
 
 class LiteLLMProvider(LLMInterface):
     def __init__(
         self,
         model: str,
         token_limit: int,
-        uploads_enabled: bool = False,
     ):
         self.model = model
         self._token_limit = token_limit
-        self._uploads_enabled = uploads_enabled
 
     @property
     def token_limit(self) -> int:
         return self._token_limit
-
-    @property
-    def uploads_enabled(self) -> bool:
-        return self._uploads_enabled
 
     def count_tokens(self, text: str) -> int:
         return litellm.token_counter(model=self.model, text=text)
@@ -57,51 +48,6 @@ class LiteLLMProvider(LLMInterface):
             parts.append(f"**Branches:** {head} → {base}")
 
         return "\n".join(parts) if parts else "No PR metadata available."
-
-    def _build_file_context(
-        self,
-        parsed_files: List[ParsedDiff],
-        file_paths: List[str],
-    ) -> str:
-        temp_path_map = {Path(p).name: p for p in file_paths}
-
-        file_entries = []
-        for pf in parsed_files:
-            temp_path_str = temp_path_map.get(Path(pf.file_path).name)
-            if temp_path_str:
-                file_entries.append((pf, temp_path_str))
-
-        file_entries.sort(key=lambda entry: entry[0].changed_line_count, reverse=True)
-
-        context_parts = []
-        tokens_used = 0
-
-        for pf, temp_path_str in file_entries:
-            lined_content = self._get_line_numbered_content(temp_path_str)
-            if not lined_content:
-                continue
-
-            file_block = (
-                f"--- FILE: {pf.file_path} ---\n"
-                f"{lined_content}\n"
-                f"--- END FILE: {pf.file_path} ---"
-            )
-            block_tokens = self.count_tokens(file_block)
-
-            if tokens_used + block_tokens > CONTEXT_TOKEN_BUDGET:
-                logger.info(
-                    f"Context budget reached ({tokens_used} tokens). "
-                    f"Skipping {pf.file_path} ({block_tokens} tokens)."
-                )
-                continue
-
-            context_parts.append(file_block)
-            tokens_used += block_tokens
-
-        logger.info(
-            f"Built file context: {len(context_parts)} files, {tokens_used} tokens."
-        )
-        return "\n".join(context_parts)
 
     @staticmethod
     def _build_decoupled_diff(parsed_files: List[ParsedDiff]) -> str:
@@ -137,15 +83,9 @@ class LiteLLMProvider(LLMInterface):
         self,
         diff: str,
         parsed_files: Optional[List[ParsedDiff]] = None,
-        file_paths: Optional[List[str]] = None,
         pr_metadata: Optional[dict] = None,
         existing_comments: Optional[list] = None,
     ) -> Optional[CodeReview]:
-        context = ""
-        if file_paths and parsed_files:
-            logger.info("Building file context for prompt...")
-            context = self._build_file_context(parsed_files, file_paths)
-
         decoupled_diff = diff
         if parsed_files:
             decoupled_diff = self._build_decoupled_diff(parsed_files)
@@ -153,20 +93,11 @@ class LiteLLMProvider(LLMInterface):
         metadata_str = self.format_pr_metadata(pr_metadata)
         existing_comments_str = self._format_existing_comments(existing_comments)
 
-        if context:
-            user_text = Prompts.REVIEW_PROMPT_WITH_FILES.format(
-                diff=decoupled_diff,
-                context=context,
-                pr_metadata=metadata_str,
-                existing_comments=existing_comments_str,
-            )
-        else:
-            user_text = Prompts.REVIEW_PROMPT.format(
-                diff=decoupled_diff,
-                context=context,
-                pr_metadata=metadata_str,
-                existing_comments=existing_comments_str,
-            )
+        user_text = Prompts.REVIEW_PROMPT.format(
+            diff=decoupled_diff,
+            pr_metadata=metadata_str,
+            existing_comments=existing_comments_str,
+        )
 
         try:
             logger.info(f"Generating code review from model: {self.model}...")
@@ -188,20 +119,6 @@ class LiteLLMProvider(LLMInterface):
             logger.error(
                 f"An unexpected error occurred while generating code review: {e}"
             )
-            return None
-
-    def _get_line_numbered_content(self, file_path: str) -> Optional[str]:
-        try:
-            with open(file_path, "r") as f:
-                content = f.read()
-            return "\n".join(
-                f"{i+1}: {line}" for i, line in enumerate(content.splitlines())
-            )
-        except FileNotFoundError:
-            logger.warning(f"Could not find temp file for context: {file_path}")
-            return None
-        except Exception as e:
-            logger.error(f"Failed to read and number file {file_path}: {e}")
             return None
 
     def generate_summary(

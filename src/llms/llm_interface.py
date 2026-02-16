@@ -10,11 +10,6 @@ class LLMInterface(ABC):
     def token_limit(self) -> int:
         pass
 
-    @property
-    @abstractmethod
-    def uploads_enabled(self) -> bool:
-        pass
-
     @abstractmethod
     def count_tokens(self, text: str) -> int:
         pass
@@ -24,7 +19,6 @@ class LLMInterface(ABC):
         self,
         diff: str,
         parsed_files: Optional[List[ParsedDiff]] = None,
-        file_paths: Optional[List[str]] = None,
         pr_metadata: Optional[dict] = None,
         existing_comments: Optional[List[dict]] = None,
     ) -> Optional[CodeReview]:

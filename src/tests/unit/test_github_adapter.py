@@ -367,9 +367,7 @@ def test_has_existing_bot_approval_false_after_request_changes(github_instance):
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
-        assert (
-            github_instance.has_existing_bot_approval("owner", "repo", 1) is False
-        )
+        assert github_instance.has_existing_bot_approval("owner", "repo", 1) is False
 
 
 def test_post_review_uses_line_side_and_commit_id(

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.llms.litellm_provider import LiteLLMProvider, CONTEXT_TOKEN_BUDGET
+from src.llms.litellm_provider import LiteLLMProvider
 from src.prompts.prompts import Prompts
 from src.tests.unit.helpers import make_diff as _make_diff
 from src.utils.diff_parser import parse_diff
@@ -18,7 +18,6 @@ def provider():
     return LiteLLMProvider(
         model="gemini/gemini-2.5-flash",
         token_limit=1000000,
-        uploads_enabled=False,
     )
 
 
@@ -39,19 +38,13 @@ def test_init_sets_model_and_config():
     provider = LiteLLMProvider(
         model="deepseek/deepseek-chat",
         token_limit=500000,
-        uploads_enabled=True,
     )
     assert provider.model == "deepseek/deepseek-chat"
     assert provider.token_limit == 500000
-    assert provider.uploads_enabled is True
 
 
 def test_token_limit_property(provider):
     assert provider.token_limit == 1000000
-
-
-def test_uploads_enabled_property(provider):
-    assert provider.uploads_enabled is False
 
 
 def test_count_tokens_delegates_to_litellm(provider, mock_completion):
@@ -87,7 +80,7 @@ def test_generate_code_review_success(provider, mock_completion):
     )
 
     diff = "- old code\n+ new code"
-    result = provider.generate_code_review(diff, file_paths=None)
+    result = provider.generate_code_review(diff)
 
     assert isinstance(result, CodeReview)
     assert result.summary == summary
@@ -117,7 +110,7 @@ def test_generate_code_review_preserves_llm_verdict(provider, mock_completion):
         review.model_dump_json()
     )
 
-    result = provider.generate_code_review("- old\n+ new", file_paths=None)
+    result = provider.generate_code_review("- old\n+ new")
     assert result.verdict == Verdict.REQUEST_CHANGES
 
 
@@ -143,14 +136,14 @@ def test_generate_code_review_preserves_llm_verdict_approve(provider, mock_compl
         review.model_dump_json()
     )
 
-    result = provider.generate_code_review("- old\n+ new", file_paths=None)
+    result = provider.generate_code_review("- old\n+ new")
     assert result.verdict == Verdict.APPROVE
 
 
 def test_generate_code_review_api_error(provider, mock_completion):
     mock_completion.completion.side_effect = Exception("API is down")
 
-    result = provider.generate_code_review("- old\n+ new", file_paths=None)
+    result = provider.generate_code_review("- old\n+ new")
     assert result is None
 
 
@@ -267,50 +260,6 @@ class TestPrMetadataInPrompt:
         messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
         user_content = messages[1]["content"]
         assert "No PR metadata available." in user_content
-
-
-class TestContextWindowCapping:
-    def test_build_file_context_sorts_by_changes(self, provider, tmp_path):
-        before_small = ["a = 1", "b = 2"]
-        after_small = ["a = 1", "b = 20"]
-        diff_small = _make_diff(before_small, after_small, "small.py")
-
-        before_big = ["x = 1", "y = 2", "z = 3"]
-        after_big = ["x = 10", "y = 20", "z = 30"]
-        diff_big = _make_diff(before_big, after_big, "big.py")
-
-        combined_diff = diff_small + diff_big
-        parsed = parse_diff(combined_diff)
-
-        small_file = tmp_path / "small.py"
-        small_file.write_text("a = 1\nb = 2\n")
-        big_file = tmp_path / "big.py"
-        big_file.write_text("x = 1\ny = 2\nz = 3\n")
-
-        with patch.object(provider, "count_tokens", return_value=100):
-            result = provider._build_file_context(
-                parsed, [str(small_file), str(big_file)]
-            )
-
-        big_pos = result.find("big.py")
-        small_pos = result.find("small.py")
-        assert big_pos < small_pos, "File with more changes should appear first"
-
-    def test_build_file_context_respects_token_budget(self, provider, tmp_path):
-        before = ["a = 1"]
-        after = ["a = 10"]
-        diff_text = _make_diff(before, after, "file1.py")
-        parsed = parse_diff(diff_text)
-
-        file1 = tmp_path / "file1.py"
-        file1.write_text("a = 1\n")
-
-        with patch.object(
-            provider, "count_tokens", return_value=CONTEXT_TOKEN_BUDGET + 1
-        ):
-            result = provider._build_file_context(parsed, [str(file1)])
-
-        assert result == ""
 
 
 class TestDecoupledDiffInReview:

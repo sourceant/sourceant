@@ -61,7 +61,6 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.uploads_enabled = False
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -69,7 +68,6 @@ class TestIncrementalReview:
         )
         mock_llm_instance.generate_code_review.return_value = review
         mock_github.post_review.return_value = {"status": "success"}
-        mock_github.get_file_content.return_value = None
 
         import asyncio
 
@@ -116,7 +114,6 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.uploads_enabled = False
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -124,7 +121,6 @@ class TestIncrementalReview:
         )
         mock_llm_instance.generate_code_review.return_value = review
         mock_github.post_review.return_value = {"status": "success"}
-        mock_github.get_file_content.return_value = None
 
         import asyncio
 
@@ -164,7 +160,6 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.uploads_enabled = False
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -172,7 +167,6 @@ class TestIncrementalReview:
         )
         mock_llm_instance.generate_code_review.return_value = review
         mock_github.post_review.return_value = {"status": "success"}
-        mock_github.get_file_content.return_value = None
 
         import asyncio
 
@@ -213,7 +207,6 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.uploads_enabled = False
 
         review = CodeReview(
             verdict=Verdict.APPROVE,
@@ -221,7 +214,6 @@ class TestIncrementalReview:
         )
         mock_llm_instance.generate_code_review.return_value = review
         mock_github.post_review.return_value = {"status": "success"}
-        mock_github.get_file_content.return_value = None
 
         import asyncio
 
@@ -261,7 +253,9 @@ def _make_suggestion(
 
 
 class TestFilterDuplicateSuggestions:
-    def test_removes_duplicate_same_file_overlapping_lines_similar_comment(self, plugin):
+    def test_removes_duplicate_same_file_overlapping_lines_similar_comment(
+        self, plugin
+    ):
         existing = [
             {
                 "path": "test.py",
