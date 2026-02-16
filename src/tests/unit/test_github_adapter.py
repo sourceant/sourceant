@@ -33,7 +33,7 @@ def repository_instance():
 
 @pytest.fixture
 def pull_request_instance():
-    return PullRequest(number=1)
+    return PullRequest(number=1, head_sha="abc123")
 
 
 @pytest.fixture
@@ -343,10 +343,10 @@ def test_has_existing_bot_approval_paginates(github_instance):
         assert mock_get.call_count == 2
 
 
-def test_post_review_single_line_uses_line_side(
+def test_post_review_uses_line_side_and_commit_id(
     github_instance, repository_instance, pull_request_instance
 ):
-    """Single-line comments use line/side API, not position."""
+    """Review comments use line/side and payload includes commit_id."""
     from src.utils.line_mapper import LineMapper
 
     from src.models.code_review import SuggestionCategory
@@ -401,10 +401,10 @@ def test_post_review_single_line_uses_line_side(
 
         assert review_call is not None
         payload = review_call[1]["json"]
+        assert payload["commit_id"] == "abc123"
         comment = payload["comments"][0]
         assert "line" in comment
         assert "side" in comment
-        assert "position" not in comment
         assert comment["line"] == 10
         assert comment["side"] == "RIGHT"
 

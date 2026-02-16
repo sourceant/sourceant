@@ -1,0 +1,55 @@
+name: Build Plugin Image
+
+on:
+  workflow_call:
+    inputs:
+      plugins:
+        type: string
+        required: true
+        description: 'JSON array of plugins, e.g. [{"name": "memory", "repo": "sourceant/memory"}]'
+      image_name:
+        type: string
+        required: true
+        description: "Target GHCR image name"
+    secrets:
+      GHCR_TOKEN:
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Checkout plugins
+        run: |
+          echo '${{ inputs.plugins }}' | jq -c '.[]' | while read plugin; do
+            REPO=$(echo "$plugin" | jq -r '.repo')
+            NAME=$(echo "$plugin" | jq -r '.name')
+            REF=$(echo "$plugin" | jq -r '.ref // "main"')
+            git clone --depth 1 --branch "$REF" \
+              "https://x-access-token:${{ secrets.GHCR_TOKEN }}@github.com/${REPO}.git" \
+              "plugins/${NAME}"
+          done
+
+      - name: Generate Dockerfile
+        run: |
+          echo "FROM ghcr.io/sourceant/sourceant:latest" > Dockerfile
+          echo "USER root" >> Dockerfile
+          echo '${{ inputs.plugins }}' | jq -r '.[].name' | while read NAME; do
+            echo "COPY plugins/${NAME} /tmp/${NAME}" >> Dockerfile
+            echo "RUN pip install --no-cache /tmp/${NAME} && rm -rf /tmp/${NAME}" >> Dockerfile
+          done
+          echo "USER appuser" >> Dockerfile
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ inputs.image_name }}:latest

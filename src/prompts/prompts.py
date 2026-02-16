@@ -48,7 +48,6 @@ class Prompts:
                 "file_name": "<path/to/file>",
                 "start_line": <The first line of the code block to be replaced>,
                 "end_line": <The last line of the code block to be replaced. For single-line comments, this is the same as start_line>,
-                "position": <position_in_diff>,
                 "side": "<LEFT|RIGHT>",
                 "comment": "<Detailed review comment explaining the issue and why it matters.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
@@ -86,7 +85,7 @@ class Prompts:
     ```"""
 
     _FINAL_NOTES = """**Final Notes:**
-    - **Ensure precision** → Always specify exact `line` numbers from the diff, `position`, and `side`.
+    - **Ensure precision** → Always specify exact `line` numbers from the diff and `side`.
     - **Line Number Accuracy** → Read line numbers directly from the prefixed numbers in `__new hunk__` lines.
     - **Be specific** → Your suggestions should be easy to understand and implement.
     - **Stay on topic** → Focus only on the provided code diff.
