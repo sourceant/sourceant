@@ -42,3 +42,11 @@ POSITIVE_SENTIMENT_THRESHOLD = float(os.getenv("POSITIVE_SENTIMENT_THRESHOLD", "
 REVIEW_MISSING_EXISTING_CODE_POLICY = os.getenv(
     "REVIEW_MISSING_EXISTING_CODE_POLICY", "drop"
 ).lower()
+
+# Repo Manager plugin settings
+REPO_MANAGER_ENABLED = os.getenv("REPO_MANAGER_ENABLED", "false").lower() == "true"
+REPO_MANAGER_PR_TRIAGE = os.getenv("REPO_MANAGER_PR_TRIAGE", "true").lower() == "true"
+REPO_MANAGER_ISSUE_TRIAGE = (
+    os.getenv("REPO_MANAGER_ISSUE_TRIAGE", "true").lower() == "true"
+)
+REPO_MANAGER_AUTO_LABEL = os.getenv("REPO_MANAGER_AUTO_LABEL", "true").lower() == "true"
