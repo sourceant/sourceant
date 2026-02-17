@@ -387,8 +387,8 @@ class RepoManagerPlugin(BasePlugin):
         except (json.JSONDecodeError, ValueError):
             pass
 
-        # Fallback: extract numbers using regex
-        matches = re.findall(r"#?(\d+)", response)
+        # Fallback: extract issue/PR references like #123
+        matches = re.findall(r"(?:^|\s)#(\d+)(?=[\s,;.)}\]]|$)", response)
         return [int(m) for m in matches] if matches else []
 
     def _parse_label_response(self, response: str, repo_labels: List[str]) -> List[str]:

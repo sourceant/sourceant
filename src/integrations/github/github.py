@@ -740,7 +740,11 @@ class GitHub(ProviderAdapter):
     def list_open_issues(
         self, owner: str, repo: str, max_pages: int = 10
     ) -> List[Dict[str, Any]]:
-        """List open issues (excluding pull requests) for a repository."""
+        """List open issues (excluding pull requests) for a repository.
+
+        Uses the Search API with type:issue to avoid fetching PRs,
+        which is more efficient for repos where PRs outnumber issues.
+        """
         try:
             access_token = self.get_installation_access_token(owner, repo)
             headers = {
@@ -755,16 +759,19 @@ class GitHub(ProviderAdapter):
 
             while page <= max_pages:
                 response = requests.get(
-                    f"https://api.github.com/repos/{owner}/{repo}/issues",
+                    "https://api.github.com/search/issues",
                     headers=headers,
-                    params={"state": "open", "per_page": per_page, "page": page},
+                    params={
+                        "q": f"repo:{owner}/{repo} is:issue is:open",
+                        "per_page": per_page,
+                        "page": page,
+                    },
                     timeout=30,
                 )
                 response.raise_for_status()
-                issues = response.json()
-                # Filter out pull requests (GitHub includes PRs in issues endpoint)
-                real_issues = [issue for issue in issues if "pull_request" not in issue]
-                all_issues.extend(real_issues)
+                data = response.json()
+                issues = data.get("items", [])
+                all_issues.extend(issues)
                 if len(issues) < per_page:
                     break
                 page += 1
@@ -776,8 +783,10 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-    def list_labels(self, owner: str, repo: str) -> List[Dict[str, Any]]:
-        """List all labels for a repository."""
+    def list_labels(
+        self, owner: str, repo: str, max_pages: int = 5
+    ) -> List[Dict[str, Any]]:
+        """List all labels for a repository with pagination."""
         try:
             access_token = self.get_installation_access_token(owner, repo)
             headers = {
@@ -786,14 +795,26 @@ class GitHub(ProviderAdapter):
                 "X-GitHub-Api-Version": "2022-11-28",
             }
 
-            response = requests.get(
-                f"https://api.github.com/repos/{owner}/{repo}/labels",
-                headers=headers,
-                params={"per_page": 100},
-                timeout=30,
-            )
-            response.raise_for_status()
-            return response.json()
+            all_labels = []
+            per_page = 100
+            page = 1
+
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/labels",
+                    headers=headers,
+                    params={"per_page": per_page, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                labels = response.json()
+                all_labels.extend(labels)
+
+                if len(labels) < per_page:
+                    break
+                page += 1
+
+            return all_labels
 
         except requests.exceptions.RequestException as e:
             error_msg = f"Failed to list labels for {owner}/{repo}: {e}"
