@@ -242,7 +242,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE.md) fi
 
 ## Contact 📧
 Have questions or suggestions? Reach out to us:
-- **Email**: opensource@nfebe.com
+- **Email**: hello@sourceant.ai
 - **GitHub Issues**: [Open an issue](https://github.com/sourceant/sourceant/issues)
 
 ## Contributors ✨
