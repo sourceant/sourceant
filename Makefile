@@ -1,4 +1,7 @@
-.PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker
+IMAGE_NAME ?= ghcr.io/sourceant/sourceant
+IMAGE_TAG ?= latest
+
+.PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker prod-build prod-push
 
 help:
 	@echo "Usage: make [target]"
@@ -18,6 +21,10 @@ help:
 	@echo ""
 	@echo "Database:"
 	@echo "  db-upgrade   Run database migrations"
+	@echo ""
+	@echo "Production:"
+	@echo "  prod-build   Build production Docker image"
+	@echo "  prod-push    Push production Docker image to GHCR"
 	@echo ""
 	@echo "Worker:"
 	@echo "  worker       Start the RQ worker"
@@ -51,6 +58,12 @@ format:
 
 db-upgrade:
 	docker compose exec app sourceant db upgrade head
+
+prod-build:
+	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) -f Dockerfile .
+
+prod-push:
+	docker push $(IMAGE_NAME):$(IMAGE_TAG)
 
 worker:
 	docker compose exec app rq worker --url redis://redis:6379

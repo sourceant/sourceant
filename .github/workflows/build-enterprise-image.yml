@@ -1,0 +1,20 @@
+name: Build Enterprise Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugins:
+        description: 'JSON array of plugins, e.g. [{"name": "analytics", "repo": "sourceant/analytics"}]'
+        required: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-plugin-image.yml
+    with:
+      plugins: ${{ github.event.inputs.plugins || vars.ENTERPRISE_PLUGINS }}
+      image_name: ghcr.io/sourceant/sourceant-enterprise
+    permissions:
+      contents: read
+      packages: write
+    secrets:
+      PLUGIN_REPO_TOKEN: ${{ secrets.PLUGIN_REPO_TOKEN }}

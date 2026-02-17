@@ -185,6 +185,33 @@ The application supports different backend modes for processing background jobs,
 
 -   **`request`**: This mode is suitable for development, testing, or lightweight deployments where setting up Redis is not desired. It uses FastAPI's built-in `BackgroundTasks` feature. Tasks are tied to the lifecycle of the HTTP request that triggers them and are executed by the web server process after the response has been sent. No separate worker is needed.
 
+## Docker Images
+
+### Base Image
+The base SourceAnt image is built automatically on merge to `main` and pushed to `ghcr.io/sourceant/sourceant`. You can also trigger a build manually via **Actions → Build Image → Run workflow**.
+
+### Enterprise Image
+The enterprise image includes additional plugins and is built via manual dispatch.
+
+**Setup:**
+1. Add a repository secret `PLUGIN_REPO_TOKEN` — a PAT with repo access to clone private plugin repositories.
+2. Add a repository variable `ENTERPRISE_PLUGINS` with your plugin configuration:
+   ```json
+   [{"name": "analytics", "repo": "sourceant/analytics"}]
+   ```
+
+**Usage:**
+- Go to **Actions → Build Enterprise Image → Run workflow**.
+- Leave the `plugins` input empty to use the `ENTERPRISE_PLUGINS` variable, or override with a custom JSON array.
+- The image is pushed to `ghcr.io/sourceant/sourceant-enterprise:latest`.
+
+### Local Builds
+```bash
+make prod-build                              # Build with default tag (:latest)
+make prod-build IMAGE_TAG=v1.0.0             # Build with custom tag
+make prod-push                               # Push to GHCR
+```
+
 ## Setting Up GitHub Webhook
 1. Go to your GitHub repository.
 2. Navigate to **Settings > Webhooks > Add Webhook**.
