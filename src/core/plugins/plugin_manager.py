@@ -269,9 +269,9 @@ class PluginManager:
             # Create plugin instance
             plugin_instance = plugin_class(config=plugin_config)
 
-            # Validate configuration if plugin has schema
+            # Validate configuration if plugin has schema and is enabled
             metadata = plugin_instance.metadata
-            if metadata.config_schema:
+            if metadata.enabled and metadata.config_schema:
                 try:
                     plugin_instance.validate_config(plugin_config)
                 except ValueError as e:
@@ -321,7 +321,7 @@ class PluginManager:
             plugin_instance = plugin_class(config=plugin_config)
 
             metadata = plugin_instance.metadata
-            if metadata.config_schema:
+            if metadata.enabled and metadata.config_schema:
                 try:
                     plugin_instance.validate_config(plugin_config)
                 except ValueError as e:

@@ -1,12 +1,13 @@
 # 🐜 SourceAnt 🐜
-**SourceAnt** is an open-source tool that automates code reviews by integrating GitHub webhooks with AI models. It listens for pull request events, analyzes code changes and posts review feedback as comments on GitHub pull requests.
+**SourceAnt** is an open-source tool that automates code reviews and repository management by integrating GitHub webhooks with AI models. It listens for pull request and issue events, analyzes code changes, detects duplicates, applies labels, and posts review feedback — all automatically.
 
 ## Features ✨
 - **Multi-Model Support**: Use any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers) — Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ more](https://docs.litellm.ai/docs/providers). Switch models with a single env var.
 - **Automated Code Reviews**: Analyze pull requests automatically using the configured LLM.
 - **Dynamic Review Process**: Intelligently handles large diffs by summarizing the entire PR and then reviewing file-by-file with global context.
+- **Repo Management**: Automatically detect duplicate PRs/issues and apply labels using AI — keeping your repository organized without manual effort.
 - **GitHub Integration**: Seamlessly integrates with GitHub webhooks.
-- **Customizable Feedback**: Post detailed, actionable feedback on pull requests.
+- **Plugin System**: Extend SourceAnt with custom plugins for new integrations and workflows.
 - **Open Source**: Fully open-source and community-driven.
 
 
@@ -139,6 +140,19 @@ If you are running your own instance of SourceAnt (e.g., from this repository), 
     *   `GITHUB_APP_PRIVATE_KEY_PATH`: The file path to the `.pem` private key you downloaded.
     *   `GITHUB_SECRET`: The webhook secret you created.
 
+### Repo Management
+
+SourceAnt includes a builtin repo manager plugin that automates PR/issue triage and labeling. It is **disabled by default** — enable it with environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REPO_MANAGER_ENABLED` | `false` | Master switch for the repo manager |
+| `REPO_MANAGER_PR_TRIAGE` | `true` | Enable PR duplicate detection |
+| `REPO_MANAGER_ISSUE_TRIAGE` | `true` | Enable issue duplicate detection |
+| `REPO_MANAGER_AUTO_LABEL` | `true` | Enable auto-labeling |
+
+Settings can also be configured per-repository using the Config model. See the [Repo Management docs](https://sourceant.ai/docs/repo-management) for details.
+
 ### Stateless Mode
 For development, testing, or specific use cases where you want to process events without writing them to the database, you can enable stateless mode. In this mode, the application will not attempt to connect to or interact with any database, making it lighter and preventing data accumulation.
 
@@ -177,7 +191,7 @@ The application supports different backend modes for processing background jobs,
 3. Set the **Payload URL** to your server's `/webhook` endpoint (e.g., `https://your-server.com/webhook`).
 4. Set the **Content type** to `application/json`.
 5. Add the `GITHUB_WEBHOOK_SECRET` to the **Secret** field.
-6. Select **Let me select individual events** and choose **Pull requests**.
+6. Select **Let me select individual events** and choose **Pull requests** and **Issues**.
 7. Save the webhook.
 
 ## Contributing 🤝

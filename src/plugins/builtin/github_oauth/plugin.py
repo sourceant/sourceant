@@ -63,7 +63,7 @@ class GitHubOAuthPlugin(BasePlugin):
                 },
                 "required": ["client_id", "client_secret"],
             },
-            enabled=True,
+            enabled=False,
             priority=50,
         )
 

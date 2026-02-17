@@ -750,6 +750,237 @@ class GitHub(ProviderAdapter):
                 "error_type": "unexpected_error",
             }
 
+    def list_open_pull_requests(
+        self, owner: str, repo: str, max_pages: int = 10
+    ) -> List[Dict[str, Any]]:
+        """List open pull requests for a repository with pagination."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            all_prs = []
+            page = 1
+            per_page = 100
+
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls",
+                    headers=headers,
+                    params={"state": "open", "per_page": per_page, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                prs = response.json()
+                all_prs.extend(prs)
+                if len(prs) < per_page:
+                    break
+                page += 1
+
+            return all_prs
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to list open PRs for {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def list_open_issues(
+        self, owner: str, repo: str, max_pages: int = 10
+    ) -> List[Dict[str, Any]]:
+        """List open issues (excluding pull requests) for a repository.
+
+        Uses the Search API with type:issue to avoid fetching PRs,
+        which is more efficient for repos where PRs outnumber issues.
+        """
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            all_issues = []
+            page = 1
+            per_page = 100
+
+            while page <= max_pages:
+                response = requests.get(
+                    "https://api.github.com/search/issues",
+                    headers=headers,
+                    params={
+                        "q": f"repo:{owner}/{repo} is:issue is:open",
+                        "per_page": per_page,
+                        "page": page,
+                    },
+                    timeout=30,
+                )
+                response.raise_for_status()
+                data = response.json()
+                issues = data.get("items", [])
+                all_issues.extend(issues)
+                if len(issues) < per_page:
+                    break
+                page += 1
+
+            return all_issues
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to list open issues for {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def list_labels(
+        self, owner: str, repo: str, max_pages: int = 5
+    ) -> List[Dict[str, Any]]:
+        """List all labels for a repository with pagination."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            all_labels = []
+            per_page = 100
+            page = 1
+
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/labels",
+                    headers=headers,
+                    params={"per_page": per_page, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                labels = response.json()
+                all_labels.extend(labels)
+
+                if len(labels) < per_page:
+                    break
+                page += 1
+
+            return all_labels
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to list labels for {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def add_labels(
+        self, owner: str, repo: str, issue_number: int, labels: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Add labels to an issue or pull request."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.post(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/labels",
+                headers=headers,
+                json={"labels": labels},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to add labels to {owner}/{repo}#{issue_number}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def post_issue_comment(
+        self, owner: str, repo: str, issue_number: int, body: str
+    ) -> Dict[str, Any]:
+        """Post a comment on an issue or pull request."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.post(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                headers=headers,
+                json={"body": body},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to post comment on {owner}/{repo}#{issue_number}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def find_comment_with_marker(
+        self, owner: str, repo: str, issue_number: int, marker: str
+    ) -> Optional[Dict[str, Any]]:
+        """Find an existing comment containing a specific marker."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.get(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            comments = response.json()
+
+            for comment in comments:
+                if marker in comment.get("body", ""):
+                    return comment
+
+            return None
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(
+                f"Could not search for comment with marker on {owner}/{repo}#{issue_number}: {e}"
+            )
+            return None
+
+    def update_comment(
+        self, owner: str, repo: str, comment_id: int, body: str
+    ) -> Dict[str, Any]:
+        """Update an existing comment."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.patch(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{comment_id}",
+                headers=headers,
+                json={"body": body},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to update comment {comment_id} on {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
     def get_diff(
         self,
         owner: str,
