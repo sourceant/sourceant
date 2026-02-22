@@ -20,11 +20,11 @@ def upgrade() -> None:
     op.create_table(
         "configs",
         sa.Column("id", sa.Integer, primary_key=True, index=True),
-        sa.Column("configurable_type", sa.String, nullable=False),
-        sa.Column("configurable_id", sa.String, nullable=False),
-        sa.Column("key", sa.String, nullable=False),
-        sa.Column("value", sa.String, nullable=False),
-        sa.Column("type", sa.String, nullable=False, server_default="string"),
+        sa.Column("configurable_type", sa.String(100), nullable=False),
+        sa.Column("configurable_id", sa.String(255), nullable=False),
+        sa.Column("key", sa.String(255), nullable=False),
+        sa.Column("value", sa.Text, nullable=False),
+        sa.Column("type", sa.String(50), nullable=False, server_default="string"),
         sa.Column(
             "created_at", sa.DateTime(), server_default=func.now(), nullable=False
         ),

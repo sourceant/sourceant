@@ -8,7 +8,7 @@ Create Date: 2025-01-12 10:00:00.000000
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql import func
 
 # revision identifiers, used by Alembic.
 revision = "oauth_001"
@@ -30,13 +30,13 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.PrimaryKeyConstraint("id"),
@@ -58,13 +58,13 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.ForeignKeyConstraint(
@@ -94,13 +94,13 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.ForeignKeyConstraint(
@@ -136,13 +136,13 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=func.now(),
             nullable=True,
         ),
         sa.ForeignKeyConstraint(

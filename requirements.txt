@@ -7,6 +7,7 @@ httpx
 litellm
 Mako
 psycopg2
+pymysql==1.1.2
 PyJWT==2.8.0
 python-dateutil==2.8.2
 python-dotenv

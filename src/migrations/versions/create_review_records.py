@@ -20,11 +20,11 @@ def upgrade() -> None:
     op.create_table(
         "review_records",
         sa.Column("id", sa.Integer, primary_key=True, index=True),
-        sa.Column("repository_full_name", sa.String, nullable=False, index=True),
+        sa.Column("repository_full_name", sa.String(255), nullable=False, index=True),
         sa.Column("pr_number", sa.Integer, nullable=False, index=True),
-        sa.Column("reviewed_head_sha", sa.String, nullable=False),
-        sa.Column("reviewed_base_sha", sa.String, nullable=False),
-        sa.Column("status", sa.String, nullable=False, server_default="completed"),
+        sa.Column("reviewed_head_sha", sa.String(64), nullable=False),
+        sa.Column("reviewed_base_sha", sa.String(64), nullable=False),
+        sa.Column("status", sa.String(50), nullable=False, server_default="completed"),
         sa.Column(
             "created_at", sa.DateTime(), server_default=func.now(), nullable=False
         ),
