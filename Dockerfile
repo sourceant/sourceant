@@ -8,7 +8,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
 
 FROM python:3.10-slim-bookworm
 
-RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl && \
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl git && \
     rm -rf /var/lib/apt/lists/*
 
 RUN ARCH=$(uname -m) && \
