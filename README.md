@@ -254,3 +254,10 @@ Thanks to these amazing people who have contributed to this project:
 
 Made with ❤️ by [nfebe](https://github.com/nfebe).
 
+
+
+## Usage
+
+```python
+# Usage examples
+```
