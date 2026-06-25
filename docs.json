@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/whilesmart/docs-kit/main/schema/docs.schema.json",
+  "name": "SourceAnt",
+  "description": "Open-source AI tool that automates code reviews and repository management through GitHub webhook integration",
+  "icon": "sparkles",
+  "category": {
+    "language": "python",
+    "framework": "fastapi"
+  },
+  "sidebar": [
+    { "title": "Quick Start", "path": "docs/quick-start.md" },
+    { "title": "Configuration", "path": "docs/configuration.md" },
+    { "title": "GitHub App Setup", "path": "docs/github-app.md" },
+    { "title": "Repo Management", "path": "docs/repo-management.md" },
+    { "title": "Deployment", "path": "docs/deployment.md" }
+  ]
+}
