@@ -9,6 +9,7 @@
   },
   "sidebar": [
     { "title": "Quick Start", "path": "docs/quick-start.md" },
+    { "title": "Usage", "path": "docs/usage.md" },
     { "title": "Configuration", "path": "docs/configuration.md" },
     { "title": "GitHub App Setup", "path": "docs/github-app.md" },
     { "title": "Repo Management", "path": "docs/repo-management.md" },
