@@ -1,17 +1,15 @@
 ## Configuration
 
-SourceAnt is configured through environment variables. Copy `.env.example` to `.env` and adjust the values.
+SourceAnt is configured through environment variables. Copy `.env.example` to `.env` and set the values for your environment.
 
-### LLM Configuration
+### Required: LLM Provider
 
-SourceAnt supports 100+ LLM providers through LiteLLM. Set the model using the `provider/model` format:
+SourceAnt supports 100+ LLM providers through LiteLLM. Set your model and API key:
 
 ```env
 LLM_MODEL=gemini/gemini-2.5-flash
 LLM_TOKEN_LIMIT=1000000
 ```
-
-Set the corresponding API key for your provider:
 
 | Provider | `LLM_MODEL` | API Key |
 |---|---|---|
@@ -20,24 +18,46 @@ Set the corresponding API key for your provider:
 | OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
 | DeepSeek | `deepseek/deepseek-chat` | `DEEPSEEK_API_KEY` |
 
-### GitHub Integration
+### Required: GitHub Integration
+
+SourceAnt needs a GitHub App to receive events. Configure its credentials:
 
 ```env
-GITHUB_WEBHOOK_SECRET=your_webhook_secret
 GITHUB_APP_ID=your_github_app_id
 GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
-GITHUB_SECRET=your_github_secret
+GITHUB_SECRET=your_webhook_secret
 ```
 
-### Mode Settings
+See the [GitHub App setup guide](github-app.md) for instructions on creating and configuring your app.
 
-**Stateless Mode:** Process events without a database. Useful for development and testing.
+### Optional: Webhook-Only Mode
+
+If you are not using a GitHub App, configure a repository webhook directly:
+
+```env
+WEBHOOK_SECRET=your_webhook_secret
+REQUIRE_WEBHOOK_SECRET=true
+```
+
+### Required: Database
+
+A PostgreSQL database is required. SourceAnt manages its own schema via Alembic migrations.
+
+### Advanced Options
+
+The following settings control internal behavior and are safe to leave at defaults for most deployments.
+
+#### Mode Settings
+
+**Stateless Mode:** Process events without a database. Intended for development and testing.
 
 ```env
 STATELESS_MODE=true
 ```
 
-**Queue Mode:** Controls how background jobs are processed.
+---
+
+**Queue Mode:** Controls background job processing.
 
 | Mode | Description |
 |---|---|
@@ -49,7 +69,9 @@ STATELESS_MODE=true
 QUEUE_MODE=redis
 ```
 
-**Log Driver:**
+---
+
+**Log Driver:** Where logs are written.
 
 | Value | Description |
 |---|---|
@@ -60,3 +82,7 @@ QUEUE_MODE=redis
 ```env
 LOG_DRIVER=console
 ```
+
+#### Full Reference
+
+For the complete list of supported environment variables, refer to `.env.example` in the repository root.
