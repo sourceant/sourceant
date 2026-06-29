@@ -47,6 +47,6 @@ If you are not using the GitHub App flow, you can configure a webhook directly o
 1. Go to your repository **Settings > Webhooks > Add webhook**.
 2. **Payload URL:** Your server's `/webhook` endpoint.
 3. **Content type:** `application/json`.
-4. **Secret:** Your `GITHUB_WEBHOOK_SECRET`.
+4. **Secret:** Your `GITHUB_SECRET`.
 5. **Events:** Select **Pull requests** and **Issues**.
 6. Save the webhook.
