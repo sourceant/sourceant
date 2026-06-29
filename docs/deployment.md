@@ -1,21 +1,35 @@
 ## Deployment
 
-### Docker Compose
+### Container Images
 
-The recommended deployment method uses Docker Compose. The compose file includes the API server, a Redis queue, and a PostgreSQL database.
+Official Docker images are available on GHCR and are rebuilt automatically on every merge to `main`:
+
+```bash
+docker pull ghcr.io/sourceant/sourceant:latest
+```
+
+Run the container with the required environment variables:
+
+```bash
+docker run -d \
+  --name sourceant \
+  -p 8000:8000 \
+  -v /path/to/.env:/app/.env \
+  -v /path/to/private-key.pem:/app/private-key.pem \
+  ghcr.io/sourceant/sourceant:latest
+```
+
+### Docker Compose (Development)
+
+For local development, Docker Compose bundles the API server, a Redis queue, and a PostgreSQL database:
 
 ```bash
 docker compose up -d
 ```
 
-### Docker Images
+### Building Locally
 
-Official Docker images are built automatically on merge to `main` and pushed to GHCR:
-
-- **Base image:** `ghcr.io/sourceant/sourceant:latest`
-- **Enterprise image:** `ghcr.io/sourceant/sourceant-enterprise:latest`
-
-Build locally:
+Build a custom image in your local checkout:
 
 ```bash
 make prod-build
@@ -23,7 +37,7 @@ make prod-build IMAGE_TAG=v1.0.0
 make prod-push
 ```
 
-### Commands Reference
+### Commands
 
 | Command | Description |
 |---|---|
