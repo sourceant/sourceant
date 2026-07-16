@@ -14,6 +14,7 @@ from .base_plugin import BasePlugin, PluginType
 from .plugin_registry import PluginRegistry, PluginStatus, plugin_registry
 from .event_hooks import EventHooks, event_hooks
 from src.utils.logger import logger
+from src.core.services import ServiceRegistry, service_registry
 
 
 class PluginManager:
@@ -29,6 +30,7 @@ class PluginManager:
         self,
         registry: Optional[PluginRegistry] = None,
         hooks: Optional[EventHooks] = None,
+        services: Optional[ServiceRegistry] = None,
     ):
         """
         Initialize the plugin manager.
@@ -39,6 +41,7 @@ class PluginManager:
         """
         self.registry = registry or plugin_registry
         self.hooks = hooks or event_hooks
+        self.services = services or service_registry
         self._plugin_configs: Dict[str, Dict[str, Any]] = {}
         self._plugin_directories: List[Path] = []
 
@@ -268,6 +271,7 @@ class PluginManager:
 
             # Create plugin instance
             plugin_instance = plugin_class(config=plugin_config)
+            plugin_instance.bind_services(self.services)
 
             # Validate configuration if plugin has schema and is enabled
             metadata = plugin_instance.metadata
@@ -319,6 +323,7 @@ class PluginManager:
             plugin_class = ep.load()
             plugin_config = self._plugin_configs.get(name, {})
             plugin_instance = plugin_class(config=plugin_config)
+            plugin_instance.bind_services(self.services)
 
             metadata = plugin_instance.metadata
             if metadata.enabled and metadata.config_schema:
