@@ -5,7 +5,13 @@ from typing import BinaryIO, Protocol, runtime_checkable
 
 from src.core.scope import Scope
 
-from .models import Artifact, ArtifactKey, ArtifactWrite, WorkingArea, WorkingAreaRequest
+from .models import (
+    Artifact,
+    ArtifactKey,
+    ArtifactWrite,
+    WorkingArea,
+    WorkingAreaRequest,
+)
 
 
 @runtime_checkable
@@ -39,4 +45,6 @@ class WorkingAreaStore(Protocol):
 
     def remove(self, request: WorkingAreaRequest) -> bool: ...
 
-    def list(self, scope: Scope, purpose: str | None = None) -> Iterable[WorkingArea]: ...
+    def list(
+        self, scope: Scope, purpose: str | None = None
+    ) -> Iterable[WorkingArea]: ...

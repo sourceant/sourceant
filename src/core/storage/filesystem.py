@@ -89,7 +89,10 @@ class FileSystemArtifactStore:
                     size += len(chunk)
             value = digest.hexdigest()
             actual = ContentDigest(request.digest_algorithm, value)
-            if request.expected_digest is not None and request.expected_digest != actual:
+            if (
+                request.expected_digest is not None
+                and request.expected_digest != actual
+            ):
                 raise ValueError("artifact content does not match expected digest")
             os.replace(temporary_path, target)
             artifact = Artifact(
@@ -165,7 +168,9 @@ class FileSystemWorkingAreaStore:
 
     def list(self, scope: Scope, purpose: str | None = None) -> tuple[WorkingArea, ...]:
         scope_root = self._root / _scope_id(scope)
-        purposes = [scope_root / _component(purpose)] if purpose else scope_root.glob("*")
+        purposes = (
+            [scope_root / _component(purpose)] if purpose else scope_root.glob("*")
+        )
         areas = []
         for purpose_path in purposes:
             if not purpose_path.is_dir():
