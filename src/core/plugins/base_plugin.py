@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
+from src.core.services import ServiceRegistry, service_registry
+
 
 class PluginType(Enum):
     """Plugin type enumeration."""
@@ -52,6 +54,12 @@ class BasePlugin(ABC):
         self.config = config or {}
         self._initialized = False
         self._started = False
+        self.services = service_registry
+
+    def bind_services(self, services: ServiceRegistry) -> None:
+        if self._initialized:
+            raise RuntimeError("Cannot replace services after plugin initialization")
+        self.services = services
 
     @property
     @abstractmethod
@@ -85,8 +93,13 @@ class BasePlugin(ABC):
         if self._initialized:
             return
 
-        await self._initialize()
-        self._initialized = True
+        try:
+            await self._register_services()
+            await self._initialize()
+            self._initialized = True
+        except Exception:
+            self.services.unregister_provider(self.metadata.name)
+            raise
 
     async def start(self) -> None:
         """
@@ -125,12 +138,18 @@ class BasePlugin(ABC):
 
         Called after stop() for final cleanup. Plugin will be unloaded after this.
         """
-        await self._cleanup()
-        self._initialized = False
+        try:
+            await self._cleanup()
+        finally:
+            self.services.unregister_provider(self.metadata.name)
+            self._initialized = False
 
     # Override these methods in your plugin implementation
     async def _initialize(self) -> None:
         """Plugin-specific initialization logic."""
+        pass
+
+    async def _register_services(self) -> None:
         pass
 
     async def _start(self) -> None:
