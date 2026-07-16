@@ -44,6 +44,21 @@ def test_filesystem_artifact_checks_expected_digest_before_publish(tmp_path):
     assert store.get(key) is None
 
 
+def test_filesystem_artifact_recovers_content_without_metadata(tmp_path):
+    store = FileSystemArtifactStore(tmp_path)
+    key = ArtifactKey(PROJECT, "code-index", "repository", "abc123")
+    invalid = ArtifactWrite(key, expected_digest=ContentDigest("sha256", "incorrect"))
+    with pytest.raises(ValueError, match="expected digest"):
+        store.put(invalid, BytesIO(b"partial"))
+    orphan = next(tmp_path.rglob("abc123")) / "content"
+    orphan.write_bytes(b"partial")
+
+    artifact = store.put(ArtifactWrite(key), BytesIO(b"graph"))
+
+    assert artifact.size == 5
+    assert store.open(key).read() == b"graph"
+
+
 def test_filesystem_working_areas_are_stable_and_scope_isolated(tmp_path):
     store = FileSystemWorkingAreaStore(tmp_path)
     request = WorkingAreaRequest(PROJECT, "repository", "source")

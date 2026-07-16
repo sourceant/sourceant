@@ -74,7 +74,7 @@ class FileSystemArtifactStore:
 
     def put(self, request: ArtifactWrite, content: BinaryIO) -> Artifact:
         target = self._content_path(request.key)
-        if target.exists():
+        if self._metadata_path(request.key).exists():
             raise FileExistsError(f"artifact already exists: {request.key.version}")
         target.parent.mkdir(parents=True, exist_ok=True)
         digest = hashlib.new(request.digest_algorithm)
