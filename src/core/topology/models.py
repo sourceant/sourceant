@@ -14,6 +14,10 @@ class TopologyEvidence:
     revision: str = ""
     properties: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if not self.id:
+            raise ValueError("evidence id cannot be empty")
+
 
 @dataclass(frozen=True)
 class TopologyEntity:
@@ -26,6 +30,8 @@ class TopologyEntity:
     evidence: tuple[TopologyEvidence, ...] = ()
 
     def __post_init__(self) -> None:
+        if not self.id:
+            raise ValueError("entity id cannot be empty")
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("confidence must be between 0 and 1")
 
@@ -43,6 +49,12 @@ class TopologyRelationship:
     evidence: tuple[TopologyEvidence, ...] = ()
 
     def __post_init__(self) -> None:
+        if not self.id:
+            raise ValueError("relationship id cannot be empty")
+        if not self.source_id:
+            raise ValueError("relationship source_id cannot be empty")
+        if not self.target_id:
+            raise ValueError("relationship target_id cannot be empty")
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("confidence must be between 0 and 1")
 
@@ -67,6 +79,8 @@ class TopologyTraversal:
             raise ValueError("entity_ids must contain between 1 and 50 values")
         if len(self.entity_ids) != len(set(self.entity_ids)):
             raise ValueError("entity_ids must be unique")
+        if any(not entity_id for entity_id in self.entity_ids):
+            raise ValueError("entity_ids cannot contain empty values")
         if not 1 <= self.depth <= 3:
             raise ValueError("depth must be between 1 and 3")
         if not 0.0 <= self.minimum_confidence <= 1.0:

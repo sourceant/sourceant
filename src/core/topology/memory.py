@@ -24,11 +24,14 @@ class InMemoryTopologyRepository:
     def put_relationship(
         self, scope: Scope, relationship: TopologyRelationship
     ) -> None:
-        if (scope, relationship.source_id) not in self._entities or (
-            scope,
-            relationship.target_id,
-        ) not in self._entities:
-            raise ValueError("relationship endpoints must exist in the same scope")
+        if (scope, relationship.source_id) not in self._entities:
+            raise ValueError(
+                f"source entity {relationship.source_id!r} does not exist in scope"
+            )
+        if (scope, relationship.target_id) not in self._entities:
+            raise ValueError(
+                f"target entity {relationship.target_id!r} does not exist in scope"
+            )
         key = scope, relationship.id
         previous = self._relationships.get(key)
         if previous:

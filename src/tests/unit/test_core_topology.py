@@ -155,16 +155,31 @@ def test_topology_updates_preserve_identity_and_replace_duplicate_edges():
     assert [relationship.target_id for relationship in result.relationships] == ["c"]
 
 
-def test_topology_rejects_cross_scope_relationships():
+def test_topology_identifies_missing_relationship_endpoint():
     topology = InMemoryTopologyRepository()
     topology.put_entity(PRODUCT, entity("a"))
     topology.put_entity(OTHER_PRODUCT, entity("b"))
 
-    with pytest.raises(ValueError, match="same scope"):
+    with pytest.raises(ValueError, match="target entity 'b' does not exist in scope"):
         topology.put_relationship(
             PRODUCT,
             TopologyRelationship("edge", "a", "b", "depends_on", "approved"),
         )
+
+
+def test_topology_rejects_empty_identifiers():
+    with pytest.raises(ValueError, match="evidence id cannot be empty"):
+        TopologyEvidence("", "contract_test", "build")
+    with pytest.raises(ValueError, match="entity id cannot be empty"):
+        entity("")
+    with pytest.raises(ValueError, match="relationship id cannot be empty"):
+        TopologyRelationship("", "a", "b", "depends_on", "approved")
+    with pytest.raises(ValueError, match="relationship source_id cannot be empty"):
+        TopologyRelationship("edge", "", "b", "depends_on", "approved")
+    with pytest.raises(ValueError, match="relationship target_id cannot be empty"):
+        TopologyRelationship("edge", "a", "", "depends_on", "approved")
+    with pytest.raises(ValueError, match="entity_ids cannot contain empty values"):
+        TopologyTraversal(PRODUCT, ("",))
 
 
 @pytest.mark.parametrize(
