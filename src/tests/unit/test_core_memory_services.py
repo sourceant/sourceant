@@ -188,9 +188,7 @@ def test_knowledge_traversal_handles_cycles_directions_and_limits():
     for source, target in (("a", "b"), ("b", "c"), ("c", "a")):
         knowledge.put_relationship(
             PROJECT,
-            KnowledgeRelationship(
-                f"{source}-{target}", source, target, "relates_to"
-            ),
+            KnowledgeRelationship(f"{source}-{target}", source, target, "relates_to"),
         )
 
     outbound = knowledge.traverse(

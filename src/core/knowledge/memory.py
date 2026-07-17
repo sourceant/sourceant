@@ -139,12 +139,10 @@ class InMemoryKnowledgeRepository:
         packed_relationships = tuple(
             relationship
             for relationship in relationships.values()
-            if relationship.source_id in included
-            and relationship.target_id in included
+            if relationship.source_id in included and relationship.target_id in included
         )
         return KnowledgeSubgraph(
             items=tuple(items),
             relationships=packed_relationships,
-            truncated=truncated
-            or len(packed_relationships) != len(relationships),
+            truncated=truncated or len(packed_relationships) != len(relationships),
         )
