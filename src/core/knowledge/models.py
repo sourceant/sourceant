@@ -52,6 +52,7 @@ class KnowledgeTraversal:
     scope: Scope
     knowledge_ids: tuple[str, ...]
     depth: int = 2
+    knowledge_statuses: frozenset[str] = field(default_factory=frozenset)
     relationship_types: frozenset[str] = field(default_factory=frozenset)
     relationship_statuses: frozenset[str] = field(default_factory=frozenset)
     direction: Literal["outbound", "inbound", "both"] = "both"
