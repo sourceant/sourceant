@@ -64,13 +64,9 @@ class InMemoryTopologyRepository:
             if distance == traversal.depth:
                 continue
 
-            for relationship_id in sorted(
-                self._adjacency.get((scope, entity.id), ())
-            ):
+            for relationship_id in sorted(self._adjacency.get((scope, entity.id), ())):
                 relationship = self._relationships[(scope, relationship_id)]
-                if not self._matches_relationship(
-                    relationship, entity.id, traversal
-                ):
+                if not self._matches_relationship(relationship, entity.id, traversal):
                     continue
                 other_id = (
                     relationship.target_id
@@ -103,9 +99,7 @@ class InMemoryTopologyRepository:
         )
 
     @staticmethod
-    def _matches_entity(
-        entity: TopologyEntity, traversal: TopologyTraversal
-    ) -> bool:
+    def _matches_entity(entity: TopologyEntity, traversal: TopologyTraversal) -> bool:
         return (
             (not traversal.entity_kinds or entity.kind in traversal.entity_kinds)
             and (

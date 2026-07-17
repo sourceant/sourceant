@@ -39,15 +39,11 @@ def test_topology_traversal_is_bounded_filtered_and_scope_isolated():
     )
     topology.put_relationship(
         PRODUCT,
-        TopologyRelationship(
-            "api-contract", "api", "contract", "provides", "approved"
-        ),
+        TopologyRelationship("api-contract", "api", "contract", "provides", "approved"),
     )
     topology.put_relationship(
         PRODUCT,
-        TopologyRelationship(
-            "api-release", "api", "release", "released_as", "pending"
-        ),
+        TopologyRelationship("api-release", "api", "release", "released_as", "pending"),
     )
 
     result = topology.traverse(
@@ -109,9 +105,7 @@ def test_topology_traversal_handles_cycles_directions_and_limits():
 
 def test_topology_filters_confidence_lifecycle_and_stale_evidence():
     topology = InMemoryTopologyRepository()
-    evidence = TopologyEvidence(
-        "verification", "contract_test", "build", "abc123"
-    )
+    evidence = TopologyEvidence("verification", "contract_test", "build", "abc123")
     topology.put_entity(PRODUCT, entity("source", evidence=(evidence,)))
     topology.put_entity(PRODUCT, entity("trusted", confidence=0.9))
     topology.put_entity(PRODUCT, entity("uncertain", confidence=0.4))
@@ -148,9 +142,7 @@ def test_topology_updates_preserve_identity_and_replace_duplicate_edges():
         PRODUCT,
         TopologyRelationship("edge", "a", "b", "depends_on", "approved"),
     )
-    topology.put_entity(
-        PRODUCT, entity("a", properties={"qualified_name": "moved.a"})
-    )
+    topology.put_entity(PRODUCT, entity("a", properties={"qualified_name": "moved.a"}))
     topology.put_relationship(
         PRODUCT,
         TopologyRelationship("edge", "a", "c", "depends_on", "approved"),
@@ -160,9 +152,7 @@ def test_topology_updates_preserve_identity_and_replace_duplicate_edges():
 
     assert [item.id for item in result.entities] == ["a", "c"]
     assert result.entities[0].properties == {"qualified_name": "moved.a"}
-    assert [relationship.target_id for relationship in result.relationships] == [
-        "c"
-    ]
+    assert [relationship.target_id for relationship in result.relationships] == ["c"]
 
 
 def test_topology_rejects_cross_scope_relationships():
