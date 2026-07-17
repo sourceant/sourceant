@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from src.core.scope import Scope
 
@@ -54,7 +54,7 @@ class KnowledgeTraversal:
     depth: int = 2
     relationship_types: frozenset[str] = field(default_factory=frozenset)
     relationship_statuses: frozenset[str] = field(default_factory=frozenset)
-    direction: str = "both"
+    direction: Literal["outbound", "inbound", "both"] = "both"
     knowledge_limit: int = 50
     relationship_limit: int = 100
 

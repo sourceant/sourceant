@@ -80,6 +80,7 @@ class InMemoryKnowledgeRepository:
             for knowledge_id in traversal.knowledge_ids
             if (item := self._knowledge.get((scope, knowledge_id)))
         )
+        queued = {item.id for item, _ in queue}
         visited: set[str] = set()
         items: list[Knowledge] = []
         relationships: dict[str, KnowledgeRelationship] = {}
@@ -97,7 +98,7 @@ class InMemoryKnowledgeRepository:
             if distance == traversal.depth:
                 continue
 
-            for relationship_id in sorted(self._adjacency[(scope, item.id)]):
+            for relationship_id in sorted(self._adjacency.get((scope, item.id), ())):
                 relationship = self._relationships[(scope, relationship_id)]
                 if (
                     traversal.relationship_types
@@ -132,14 +133,14 @@ class InMemoryKnowledgeRepository:
                     else relationship.source_id
                 )
                 target = self._knowledge.get((scope, other_id))
-                if target:
+                if target and target.id not in queued:
+                    queued.add(target.id)
                     queue.append((target, distance + 1))
 
-        included = {item.id for item in items}
         packed_relationships = tuple(
             relationship
             for relationship in relationships.values()
-            if relationship.source_id in included and relationship.target_id in included
+            if relationship.source_id in visited and relationship.target_id in visited
         )
         return KnowledgeSubgraph(
             items=tuple(items),
