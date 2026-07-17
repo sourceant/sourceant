@@ -4,7 +4,14 @@ from typing import Protocol, runtime_checkable
 
 from src.core.scope import Scope
 
-from .models import Knowledge, KnowledgeQuery, KnowledgeRelationship, KnowledgeResult
+from .models import (
+    Knowledge,
+    KnowledgeQuery,
+    KnowledgeRelationship,
+    KnowledgeResult,
+    KnowledgeSubgraph,
+    KnowledgeTraversal,
+)
 
 
 @runtime_checkable
@@ -17,6 +24,8 @@ class KnowledgeReader(Protocol):
         knowledge_ids: frozenset[str],
         statuses: frozenset[str] = frozenset(),
     ) -> tuple[KnowledgeRelationship, ...]: ...
+
+    def traverse(self, traversal: KnowledgeTraversal) -> KnowledgeSubgraph: ...
 
 
 @runtime_checkable
