@@ -204,6 +204,33 @@ def test_knowledge_traversal_handles_cycles_directions_and_limits():
     assert limited.truncated is True
 
 
+def test_knowledge_traversal_filters_seed_and_connected_node_statuses():
+    knowledge = InMemoryKnowledgeRepository()
+    knowledge.put(PROJECT, Knowledge("active", "decision", "active", "Active"))
+    knowledge.put(
+        PROJECT,
+        Knowledge("superseded", "decision", "superseded", "Superseded"),
+    )
+    knowledge.put_relationship(
+        PROJECT,
+        KnowledgeRelationship(
+            "replacement", "active", "superseded", "supersedes", "approved"
+        ),
+    )
+
+    result = knowledge.traverse(
+        KnowledgeTraversal(
+            PROJECT,
+            ("active", "superseded"),
+            knowledge_statuses=frozenset({"active"}),
+        )
+    )
+
+    assert [item.id for item in result.items] == ["active"]
+    assert result.relationships == ()
+    assert result.truncated is False
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [

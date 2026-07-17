@@ -79,6 +79,10 @@ class InMemoryKnowledgeRepository:
             (item, 0)
             for knowledge_id in traversal.knowledge_ids
             if (item := self._knowledge.get((scope, knowledge_id)))
+            and (
+                not traversal.knowledge_statuses
+                or item.status in traversal.knowledge_statuses
+            )
         )
         queued = {item.id for item, _ in queue}
         visited: set[str] = set()
@@ -120,6 +124,17 @@ class InMemoryKnowledgeRepository:
                     and relationship.target_id != item.id
                 ):
                     continue
+                other_id = (
+                    relationship.target_id
+                    if relationship.source_id == item.id
+                    else relationship.source_id
+                )
+                target = self._knowledge.get((scope, other_id))
+                if not target or (
+                    traversal.knowledge_statuses
+                    and target.status not in traversal.knowledge_statuses
+                ):
+                    continue
                 if (
                     relationship.id not in relationships
                     and len(relationships) >= traversal.relationship_limit
@@ -127,13 +142,7 @@ class InMemoryKnowledgeRepository:
                     truncated = True
                     continue
                 relationships[relationship.id] = relationship
-                other_id = (
-                    relationship.target_id
-                    if relationship.source_id == item.id
-                    else relationship.source_id
-                )
-                target = self._knowledge.get((scope, other_id))
-                if target and target.id not in queued:
+                if target.id not in queued:
                     queued.add(target.id)
                     queue.append((target, distance + 1))
 
