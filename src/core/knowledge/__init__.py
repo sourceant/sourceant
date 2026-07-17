@@ -5,6 +5,8 @@ from .models import (
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
+    KnowledgeSubgraph,
+    KnowledgeTraversal,
 )
 
 __all__ = [
@@ -14,6 +16,8 @@ __all__ = [
     "KnowledgeReader",
     "KnowledgeRelationship",
     "KnowledgeResult",
+    "KnowledgeSubgraph",
+    "KnowledgeTraversal",
     "KnowledgeRepository",
     "KnowledgeWriter",
 ]

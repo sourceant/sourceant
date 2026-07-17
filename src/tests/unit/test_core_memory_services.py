@@ -15,6 +15,7 @@ from src.core.knowledge import (
     Knowledge,
     KnowledgeQuery,
     KnowledgeRelationship,
+    KnowledgeTraversal,
 )
 from src.core.plugins import (
     BasePlugin,
@@ -143,6 +144,86 @@ def test_knowledge_relationships_remain_inside_scope():
     )
 
     assert [relationship.id for relationship in relationships] == ["edge"]
+
+
+def test_knowledge_traversal_is_bounded_filtered_and_scope_isolated():
+    knowledge = InMemoryKnowledgeRepository()
+    for scope in (PROJECT, OTHER_PROJECT):
+        for identifier in ("a", "b", "c"):
+            knowledge.put(
+                scope,
+                Knowledge(identifier, "decision", "approved", identifier),
+            )
+    knowledge.put_relationship(
+        PROJECT,
+        KnowledgeRelationship("a-b", "a", "b", "depends_on", "approved"),
+    )
+    knowledge.put_relationship(
+        PROJECT,
+        KnowledgeRelationship("b-c", "b", "c", "relates_to", "pending"),
+    )
+
+    result = knowledge.traverse(
+        KnowledgeTraversal(
+            PROJECT,
+            ("a",),
+            depth=3,
+            relationship_types=frozenset({"depends_on"}),
+            relationship_statuses=frozenset({"approved"}),
+        )
+    )
+
+    assert [item.id for item in result.items] == ["a", "b"]
+    assert [relationship.id for relationship in result.relationships] == ["a-b"]
+    assert result.truncated is False
+
+
+def test_knowledge_traversal_handles_cycles_directions_and_limits():
+    knowledge = InMemoryKnowledgeRepository()
+    for identifier in ("a", "b", "c"):
+        knowledge.put(
+            PROJECT,
+            Knowledge(identifier, "decision", "approved", identifier),
+        )
+    for source, target in (("a", "b"), ("b", "c"), ("c", "a")):
+        knowledge.put_relationship(
+            PROJECT,
+            KnowledgeRelationship(
+                f"{source}-{target}", source, target, "relates_to"
+            ),
+        )
+
+    outbound = knowledge.traverse(
+        KnowledgeTraversal(PROJECT, ("a",), depth=3, direction="outbound")
+    )
+    limited = knowledge.traverse(
+        KnowledgeTraversal(PROJECT, ("a",), depth=3, knowledge_limit=2)
+    )
+
+    assert [item.id for item in outbound.items] == ["a", "b", "c"]
+    assert len(outbound.relationships) == 3
+    assert len(limited.items) == 2
+    assert limited.truncated is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("depth", 4, "depth must be between 1 and 3"),
+        ("knowledge_limit", 51, "knowledge_limit must be between 1 and 50"),
+        (
+            "relationship_limit",
+            501,
+            "relationship_limit must be between 1 and 500",
+        ),
+        ("direction", "sideways", "direction must be outbound, inbound, or both"),
+    ],
+)
+def test_knowledge_traversal_rejects_unbounded_inputs(field, value, message):
+    arguments = {"scope": PROJECT, "knowledge_ids": ("a",), field: value}
+
+    with pytest.raises(ValueError, match=message):
+        KnowledgeTraversal(**arguments)
 
 
 def test_review_state_uses_scope_and_extensible_state():
