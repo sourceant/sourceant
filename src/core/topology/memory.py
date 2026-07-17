@@ -58,7 +58,7 @@ class InMemoryTopologyRepository:
                 continue
             if len(entities) >= traversal.entity_limit:
                 truncated = True
-                continue
+                break
             visited.add(entity.id)
             entities.append(entity)
             if distance == traversal.depth:
