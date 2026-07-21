@@ -2,6 +2,7 @@ from .interfaces import (
     ContractAdapter,
     ContractComparator,
     ContractExtractor,
+    ContractProcessor,
     ContractReader,
     ContractRepository,
     ContractWriter,
@@ -14,12 +15,19 @@ from .models import (
     ContractElement,
     ContractEvidence,
     ContractPayload,
+    ContractProcessingResult,
     ContractQuery,
     ContractResult,
     ContractSnapshot,
 )
+from .processor import (
+    AmbiguousContractAdapterError,
+    DefaultContractProcessor,
+    UnsupportedContractFormatError,
+)
 
 __all__ = [
+    "AmbiguousContractAdapterError",
     "ContractAdapter",
     "ContractChange",
     "ContractComparator",
@@ -29,11 +37,15 @@ __all__ = [
     "ContractEvidence",
     "ContractExtractor",
     "ContractPayload",
+    "ContractProcessingResult",
+    "ContractProcessor",
     "ContractQuery",
     "ContractReader",
     "ContractRepository",
     "ContractResult",
     "ContractSnapshot",
     "ContractWriter",
+    "DefaultContractProcessor",
     "InMemoryContractRepository",
+    "UnsupportedContractFormatError",
 ]
