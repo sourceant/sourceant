@@ -3,7 +3,11 @@ from mcp.shared.memory import create_connected_server_and_client_session
 
 from src.core.code_index import CodeNode, InMemoryCodeIndex
 from src.core.context import DefaultContextProvider
-from src.core.knowledge import InMemoryKnowledgeRepository, Knowledge
+from src.core.knowledge import (
+    InMemoryKnowledgeRepository,
+    Knowledge,
+    SQLiteKnowledgeRepository,
+)
 from src.core.scope import Scope
 from src.mcp_server import create_mcp_server
 
@@ -34,7 +38,12 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
             },
         )
 
-    assert [tool.name for tool in tools.tools] == ["get_context"]
+    assert {tool.name for tool in tools.tools} == {
+        "get_context",
+        "put_knowledge",
+        "put_knowledge_relationship",
+        "search_knowledge",
+    }
     assert result.isError is False
     assert result.structuredContent["scope"] == {"project": "one"}
     assert result.structuredContent["code"]["nodes"][0]["properties"] == {
@@ -73,3 +82,67 @@ async def test_mcp_get_context_rejects_unbounded_and_empty_requests():
     assert excessive.isError is True
     assert excessive_limit.isError is True
     assert empty.isError is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_manages_durable_knowledge_through_protocol_boundary(tmp_path):
+    knowledge = SQLiteKnowledgeRepository(tmp_path / "knowledge.db")
+    server = create_mcp_server(
+        DefaultContextProvider(knowledge=knowledge),
+        knowledge=knowledge,
+    )
+
+    async with create_connected_server_and_client_session(server) as session:
+        for identifier, summary in (
+            ("decision", "Use signed requests"),
+            ("constraint", "Reject unsigned requests"),
+        ):
+            result = await session.call_tool(
+                "put_knowledge",
+                {
+                    "scope": {"project": "one"},
+                    "id": identifier,
+                    "kind": identifier,
+                    "status": "approved",
+                    "summary": summary,
+                },
+            )
+            assert result.isError is False
+        relationship = await session.call_tool(
+            "put_knowledge_relationship",
+            {
+                "scope": {"project": "one"},
+                "id": "decision-constraint",
+                "source_id": "decision",
+                "target_id": "constraint",
+                "type": "depends_on",
+                "status": "approved",
+            },
+        )
+        search = await session.call_tool(
+            "search_knowledge",
+            {
+                "scope": {"project": "one"},
+                "statuses": ["approved"],
+            },
+        )
+        other_scope = await session.call_tool(
+            "search_knowledge",
+            {"scope": {"project": "two"}},
+        )
+        context = await session.call_tool(
+            "get_context",
+            {
+                "scope": {"project": "one"},
+                "knowledge_ids": ["decision"],
+            },
+        )
+
+    assert relationship.isError is False
+    assert search.structuredContent["total"] == 2
+    assert other_scope.structuredContent["total"] == 0
+    assert [item["id"] for item in context.structuredContent["knowledge"]["items"]] == [
+        "decision",
+        "constraint",
+    ]
+    knowledge.close()
