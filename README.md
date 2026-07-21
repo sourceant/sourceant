@@ -1,22 +1,69 @@
-# 🐜 SourceAnt 🐜
-**SourceAnt** is an open-source tool that automates code reviews and repository management by integrating GitHub webhooks with AI models. It listens for pull request and issue events, analyzes code changes, detects duplicates, applies labels, and posts review feedback automatically.
+<p align="center">
+  <img src="docs/assets/sourceant-logo.png" alt="SourceAnt" width="720">
+</p>
 
-## Features ✨
-- **Multi-Model Support**: Use Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ providers through LiteLLM](https://docs.litellm.ai/docs/providers). Switch models with a single env var.
-- **Automated Code Reviews**: Analyze pull requests automatically using the configured LLM.
-- **Dynamic Review Process**: Intelligently handles large diffs by summarizing the entire PR and then reviewing file-by-file with global context.
-- **Repo Management**: Automatically detect duplicate PRs/issues and apply labels using AI, keeping your repository organized without manual effort.
-- **GitHub Integration**: Seamlessly integrates with GitHub webhooks.
-- **Plugin System**: Extend SourceAnt with custom plugins for new integrations and workflows.
-- **Engineering Context**: Compose bounded code, knowledge, topology, contract, and review context through storage-neutral interfaces.
-- **MCP Server**: Expose configured engineering context to MCP clients through a read-only `get_context` tool.
-- **Open Source**: Fully open-source and community-driven.
+<p align="center"><strong>Open engineering knowledge and context infrastructure.</strong></p>
 
+SourceAnt helps engineering tools remember how software works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
 
-## Getting Started 🛠️
+Code review is one application of this shared knowledge layer. SourceAnt also supports coding agents, architecture exploration, contract analysis, repository automation, and custom engineering workflows.
+
+## What the community edition provides
+
+- **Knowledge management through MCP**: Create, update, search, connect, and retrieve scoped engineering knowledge.
+- **Durable local storage**: Keep community knowledge in a local SQLite database with no external database service.
+- **Engineering context composition**: Combine code, knowledge, software topology, contracts, and active review findings into bounded context packs.
+- **Replaceable adapters**: Connect structural indexers, graph databases, or custom repositories without changing the core domain.
+- **Automated code reviews**: Use the same context interfaces for GitHub review and repository automation.
+- **Model choice**: Use Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ providers through LiteLLM](https://docs.litellm.ai/docs/providers).
+- **Plugin runtime**: Extend SourceAnt with new integrations and workflows.
+
+## Community knowledge server
+
+The included MCP server uses SQLite by default. Knowledge remains available after the MCP process restarts.
+
+### Start it
+
+```bash
+git clone https://github.com/sourceant/sourceant.git
+cd sourceant
+python -m pip install -r requirements.txt
+python -m src.mcp_server
+```
+
+The database is stored at `.sourceant/knowledge.db`. Set `SOURCEANT_KNOWLEDGE_DB` to use another path.
+
+Configure your MCP client to run `python -m src.mcp_server` from the repository directory. Use that client's documented format for a local stdio server.
+
+### Manage knowledge
+
+The community server exposes these MCP tools:
+
+| Tool | Purpose |
+|------|---------|
+| `put_knowledge` | Create or update a decision, rule, constraint, convention, note, or another knowledge type. |
+| `put_knowledge_relationship` | Connect knowledge with relationships such as `depends_on`, `supports`, or `contradicts`. |
+| `search_knowledge` | Find knowledge by scope, identity, type, status, or properties. |
+| `get_context` | Traverse related knowledge and combine it with other configured engineering context. |
+
+Scopes are open key-value pairs. A personal project can use `{"project": "shop"}`. An integration can use repository, organization, customer, or another boundary without changing core types.
+
+Example requests to an MCP-enabled coding agent:
+
+```text
+Remember that project shop uses signed webhook requests. Store it as an approved decision.
+
+Connect the signed webhook decision to the rule that rejects unsigned requests.
+
+Get the approved knowledge related to the signed webhook decision before changing its handler.
+```
+
+The SQLite repository is the basic community implementation. Applications can inject another `KnowledgeRepository` and the MCP tools continue to use the same contract.
+
+## Review automation setup
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.10+
 - GitHub account with a repository for testing.
 - LLM API key (supports any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers): Gemini, Anthropic, DeepSeek, OpenAI, etc.).
 
@@ -50,22 +97,6 @@
    GEMINI_API_KEY=your_gemini_api_key
    ```
 SourceAnt API should be live at http://localhost:8000
-
-### MCP context server
-
-SourceAnt provides an MCP server factory for integrations that implement the core context interfaces:
-
-```python
-from src.core.context import DefaultContextProvider
-from src.mcp_server import create_mcp_server
-
-provider = DefaultContextProvider(code=code_index, knowledge=knowledge_repository)
-server = create_mcp_server(provider)
-server.run()
-```
-
-The server retrieves bounded context through the configured adapters. Core includes in-memory repositories for development and tests. Structural indexing engines and durable graph databases remain replaceable integrations.
-
 
 ## SourceAnt Commands
 
