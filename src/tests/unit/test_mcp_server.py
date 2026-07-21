@@ -54,7 +54,15 @@ async def test_mcp_get_context_rejects_unbounded_and_empty_requests():
             {
                 "scope": {"project": "one"},
                 "code_node_ids": ["handler"],
-                "depth": 6,
+                "depth": 4,
+            },
+        )
+        excessive_limit = await session.call_tool(
+            "get_context",
+            {
+                "scope": {"project": "one"},
+                "code_node_ids": ["handler"],
+                "limit": 51,
             },
         )
         empty = await session.call_tool(
@@ -63,4 +71,5 @@ async def test_mcp_get_context_rejects_unbounded_and_empty_requests():
         )
 
     assert excessive.isError is True
+    assert excessive_limit.isError is True
     assert empty.isError is True

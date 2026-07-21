@@ -38,6 +38,10 @@ def create_mcp_server(provider: ContextProvider) -> FastMCP:
         depth: int = 2,
         limit: int = 50,
     ) -> dict[str, Any]:
+        if not 1 <= depth <= 3:
+            raise ValueError("depth must be between 1 and 3")
+        if not 1 <= limit <= 50:
+            raise ValueError("limit must be between 1 and 50")
         active_scope = Scope.from_mapping(scope)
         request = ContextRequest(
             scope=active_scope,
