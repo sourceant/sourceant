@@ -8,6 +8,7 @@ from .models import (
     ContractComparison,
     ContractDocument,
     ContractPayload,
+    ContractProcessingResult,
     ContractQuery,
     ContractResult,
     ContractSnapshot,
@@ -56,3 +57,13 @@ class ContractWriter(Protocol):
 @runtime_checkable
 class ContractRepository(ContractReader, ContractWriter, Protocol):
     pass
+
+
+@runtime_checkable
+class ContractProcessor(Protocol):
+    def process(
+        self,
+        scope: Scope,
+        payload: ContractPayload,
+        baseline_snapshot_id: str | None = None,
+    ) -> ContractProcessingResult: ...

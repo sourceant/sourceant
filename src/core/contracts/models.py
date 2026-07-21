@@ -148,3 +148,16 @@ class ContractResult:
     items: tuple[ContractSnapshot, ...]
     total: int
     has_more: bool
+
+
+@dataclass(frozen=True)
+class ContractProcessingResult:
+    snapshot: ContractSnapshot
+    comparison: ContractComparison | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            self.comparison is not None
+            and self.comparison.after_snapshot_id != self.snapshot.id
+        ):
+            raise ValueError("comparison must target the processed snapshot")
