@@ -32,9 +32,7 @@ class DefaultContractProcessor:
         baseline_snapshot_id: str | None = None,
     ) -> ContractProcessingResult:
         adapters = tuple(
-            adapter
-            for adapter in self._adapters
-            if adapter.supports(payload.document)
+            adapter for adapter in self._adapters if adapter.supports(payload.document)
         )
         if not adapters:
             raise UnsupportedContractFormatError(
