@@ -1,13 +1,15 @@
 # 🐜 SourceAnt 🐜
-**SourceAnt** is an open-source tool that automates code reviews and repository management by integrating GitHub webhooks with AI models. It listens for pull request and issue events, analyzes code changes, detects duplicates, applies labels, and posts review feedback — all automatically.
+**SourceAnt** is an open-source tool that automates code reviews and repository management by integrating GitHub webhooks with AI models. It listens for pull request and issue events, analyzes code changes, detects duplicates, applies labels, and posts review feedback automatically.
 
 ## Features ✨
-- **Multi-Model Support**: Use any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers) — Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ more](https://docs.litellm.ai/docs/providers). Switch models with a single env var.
+- **Multi-Model Support**: Use Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ providers through LiteLLM](https://docs.litellm.ai/docs/providers). Switch models with a single env var.
 - **Automated Code Reviews**: Analyze pull requests automatically using the configured LLM.
 - **Dynamic Review Process**: Intelligently handles large diffs by summarizing the entire PR and then reviewing file-by-file with global context.
-- **Repo Management**: Automatically detect duplicate PRs/issues and apply labels using AI — keeping your repository organized without manual effort.
+- **Repo Management**: Automatically detect duplicate PRs/issues and apply labels using AI, keeping your repository organized without manual effort.
 - **GitHub Integration**: Seamlessly integrates with GitHub webhooks.
 - **Plugin System**: Extend SourceAnt with custom plugins for new integrations and workflows.
+- **Engineering Context**: Compose bounded code, knowledge, topology, contract, and review context through storage-neutral interfaces.
+- **MCP Server**: Expose configured engineering context to MCP clients through a read-only `get_context` tool.
 - **Open Source**: Fully open-source and community-driven.
 
 
@@ -48,6 +50,21 @@
    GEMINI_API_KEY=your_gemini_api_key
    ```
 SourceAnt API should be live at http://localhost:8000
+
+### MCP context server
+
+SourceAnt provides an MCP server factory for integrations that implement the core context interfaces:
+
+```python
+from src.core.context import DefaultContextProvider
+from src.mcp_server import create_mcp_server
+
+provider = DefaultContextProvider(code=code_index, knowledge=knowledge_repository)
+server = create_mcp_server(provider)
+server.run()
+```
+
+The server retrieves bounded context through the configured adapters. Core includes in-memory repositories for development and tests. Structural indexing engines and durable graph databases remain replaceable integrations.
 
 
 ## SourceAnt Commands
@@ -142,7 +159,7 @@ If you are running your own instance of SourceAnt (e.g., from this repository), 
 
 ### Repo Management
 
-SourceAnt includes a builtin repo manager plugin that automates PR/issue triage and labeling. It is **disabled by default** — enable it with environment variables:
+SourceAnt includes a builtin repo manager plugin that automates PR/issue triage and labeling. It is **disabled by default**. Enable it with environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -194,7 +211,7 @@ The base SourceAnt image is built automatically on merge to `main` and pushed to
 The enterprise image includes additional plugins and is built via manual dispatch.
 
 **Setup:**
-1. Add a repository secret `PLUGIN_REPO_TOKEN` — a PAT with repo access to clone private plugin repositories.
+1. Add a repository secret named `PLUGIN_REPO_TOKEN` containing a PAT with access to clone private plugin repositories.
 2. Add a repository variable `ENTERPRISE_PLUGINS` with your plugin configuration:
    ```json
    [{"name": "analytics", "repo": "sourceant/analytics"}]
@@ -253,4 +270,3 @@ Thanks to these amazing people who have contributed to this project:
 </a>
 
 Made with ❤️ by [nfebe](https://github.com/nfebe).
-
