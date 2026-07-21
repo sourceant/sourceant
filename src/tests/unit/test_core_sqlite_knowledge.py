@@ -1,9 +1,11 @@
+from sqlalchemy import create_engine
+
 from src.core.knowledge import (
     Knowledge,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeTraversal,
-    SQLiteKnowledgeRepository,
+    SQLKnowledgeRepository,
 )
 from src.core.scope import Scope
 
@@ -11,9 +13,9 @@ PROJECT = Scope.from_mapping({"project": "one"})
 OTHER_PROJECT = Scope.from_mapping({"project": "two"})
 
 
-def test_sqlite_knowledge_survives_restart_and_preserves_scope(tmp_path):
-    path = tmp_path / "knowledge.db"
-    repository = SQLiteKnowledgeRepository(path)
+def test_sql_knowledge_survives_restart_and_preserves_scope(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'knowledge.db'}")
+    repository = SQLKnowledgeRepository(engine, create_schema=True)
     for scope, summary in ((PROJECT, "Use one"), (OTHER_PROJECT, "Use two")):
         repository.put(scope, Knowledge("decision", "decision", "approved", summary))
         repository.put(scope, Knowledge("rule", "rule", "approved", summary))
@@ -27,20 +29,18 @@ def test_sqlite_knowledge_survives_restart_and_preserves_scope(tmp_path):
                 "approved",
             ),
         )
-    repository.close()
-
-    reopened = SQLiteKnowledgeRepository(path)
+    reopened = SQLKnowledgeRepository(engine)
     result = reopened.traverse(KnowledgeTraversal(PROJECT, ("decision",)))
     other = reopened.search(KnowledgeQuery(OTHER_PROJECT))
 
     assert [item.summary for item in result.items] == ["Use one", "Use one"]
     assert [edge.id for edge in result.relationships] == ["decision-rule"]
     assert [item.summary for item in other.items] == ["Use two", "Use two"]
-    reopened.close()
 
 
-def test_sqlite_knowledge_updates_items_and_relationships(tmp_path):
-    repository = SQLiteKnowledgeRepository(tmp_path / "knowledge.db")
+def test_sql_knowledge_updates_items_and_relationships(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'knowledge.db'}")
+    repository = SQLKnowledgeRepository(engine, create_schema=True)
     for identifier in ("one", "two", "three"):
         repository.put(
             PROJECT,
@@ -61,4 +61,18 @@ def test_sqlite_knowledge_updates_items_and_relationships(tmp_path):
     assert result.items[0] == Knowledge("one", "rule", "active", "Updated")
     assert [item.id for item in result.items] == ["one", "three"]
     assert [edge.type for edge in result.relationships] == ["depends_on"]
-    repository.close()
+
+
+def test_sql_knowledge_reads_writes_from_another_repository_instance(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'knowledge.db'}")
+    reader = SQLKnowledgeRepository(engine, create_schema=True)
+    writer = SQLKnowledgeRepository(engine)
+
+    writer.put(
+        PROJECT,
+        Knowledge("decision", "decision", "approved", "Use signed requests"),
+    )
+
+    result = reader.search(KnowledgeQuery(PROJECT))
+
+    assert [item.id for item in result.items] == ["decision"]

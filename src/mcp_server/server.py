@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Callable
 
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
 from src.core.code_index import CodeTraversal
@@ -24,11 +26,20 @@ def create_mcp_server(
     provider: ContextProvider,
     *,
     knowledge: KnowledgeRepository | None = None,
+    scope_resolver: Callable[[Scope], Scope] | None = None,
+    auth: AuthSettings | None = None,
+    token_verifier: TokenVerifier | None = None,
 ) -> FastMCP:
     server = FastMCP(
         name="SourceAnt",
         instructions="Retrieve bounded engineering context before reviewing code.",
+        auth=auth,
+        token_verifier=token_verifier,
+        stateless_http=True,
+        json_response=True,
+        streamable_http_path="/",
     )
+    resolve_scope = scope_resolver or (lambda scope: scope)
 
     @server.tool(
         name="get_context",
@@ -52,7 +63,7 @@ def create_mcp_server(
             raise ValueError("depth must be between 1 and 3")
         if not 1 <= limit <= 50:
             raise ValueError("limit must be between 1 and 50")
-        active_scope = Scope.from_mapping(scope)
+        active_scope = resolve_scope(Scope.from_mapping(scope))
         request = ContextRequest(
             scope=active_scope,
             code=(
@@ -125,7 +136,7 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         repository = _require_knowledge(knowledge)
         item = Knowledge(id, kind, status, summary, properties or {})
-        repository.put(Scope.from_mapping(scope), item)
+        repository.put(resolve_scope(Scope.from_mapping(scope)), item)
         return asdict(item)
 
     @server.tool(
@@ -151,7 +162,9 @@ def create_mcp_server(
             status,
             properties or {},
         )
-        repository.put_relationship(Scope.from_mapping(scope), relationship)
+        repository.put_relationship(
+            resolve_scope(Scope.from_mapping(scope)), relationship
+        )
         return asdict(relationship)
 
     @server.tool(
@@ -173,7 +186,7 @@ def create_mcp_server(
         repository = _require_knowledge(knowledge)
         result = repository.search(
             KnowledgeQuery(
-                Scope.from_mapping(scope),
+                resolve_scope(Scope.from_mapping(scope)),
                 ids=frozenset(ids or ()),
                 kinds=frozenset(kinds or ()),
                 statuses=frozenset(statuses or ()),

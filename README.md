@@ -11,7 +11,7 @@ Code review is one application of this shared knowledge layer. SourceAnt also su
 ## What the community edition provides
 
 - **Knowledge management through MCP**: Create, update, search, connect, and retrieve scoped engineering knowledge.
-- **Durable local storage**: Keep community knowledge in a local SQLite database with no external database service.
+- **Durable storage**: Keep community knowledge in SourceAnt's existing SQL database. PostgreSQL is used in the normal deployment, while the existing SQLite fallback remains available for local use.
 - **Engineering context composition**: Combine code, knowledge, software topology, contracts, and active review findings into bounded context packs.
 - **Replaceable adapters**: Connect structural indexers, graph databases, or custom repositories without changing the core domain.
 - **Automated code reviews**: Use the same context interfaces for GitHub review and repository automation.
@@ -20,7 +20,7 @@ Code review is one application of this shared knowledge layer. SourceAnt also su
 
 ## Community knowledge server
 
-The included MCP server uses SQLite by default. Knowledge remains available after the MCP process restarts.
+The included MCP server uses SourceAnt's configured database. Knowledge remains available after the MCP process restarts.
 
 ### Start it
 
@@ -28,12 +28,28 @@ The included MCP server uses SQLite by default. Knowledge remains available afte
 git clone https://github.com/sourceant/sourceant.git
 cd sourceant
 python -m pip install -r requirements.txt
+sourceant db upgrade head
 python -m src.mcp_server
 ```
 
-The database is stored at `.sourceant/knowledge.db`. Set `SOURCEANT_KNOWLEDGE_DB` to use another path.
+This stdio option is useful for a local MCP client. It follows the required `DATABASE_URL`, just like the SourceAnt HTTP server. Set `STATELESS_MODE=true` to use temporary in-memory knowledge instead.
 
 Configure your MCP client to run `python -m src.mcp_server` from the repository directory. Use that client's documented format for a local stdio server.
+
+### Use the SourceAnt HTTP server
+
+The regular SourceAnt application can also serve MCP over Streamable HTTP at `/mcp/`. This transport is disabled unless all three authorization settings are present:
+
+```env
+MCP_HTTP_ISSUER_URL=https://issuer.example.com
+MCP_HTTP_RESOURCE_URL=https://sourceant.example.com/mcp/
+MCP_HTTP_AUDIENCE=sourceant-mcp
+MCP_HTTP_REQUIRED_SCOPES=sourceant
+```
+
+`JWT_SECRET` remains the signing secret. Tokens must contain `sub`, `exp`, `iss`, `aud`, and a space-separated `scope` claim. Enabling MCP does not change the existing HTTP API or its authentication behavior.
+
+HTTP knowledge is isolated by the authenticated principal and the requested scope. The server adds the principal boundary itself, so a client cannot select another principal through tool arguments.
 
 ### Manage knowledge
 
@@ -58,7 +74,9 @@ Connect the signed webhook decision to the rule that rejects unsigned requests.
 Get the approved knowledge related to the signed webhook decision before changing its handler.
 ```
 
-The SQLite repository is the basic community implementation. Applications can inject another `KnowledgeRepository` and the MCP tools continue to use the same contract.
+The SQL repository is the basic community implementation. Applications can inject another `KnowledgeRepository` and the MCP tools continue to use the same contract.
+
+Knowledge scopes can identify any repository. SourceAnt core does not clone or structurally index arbitrary repositories by itself. Code-aware context requires a `CodeIndexReader` integration, while knowledge management works without one.
 
 ## Review automation setup
 

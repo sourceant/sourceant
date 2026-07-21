@@ -8,7 +8,7 @@ from .models import (
     KnowledgeSubgraph,
     KnowledgeTraversal,
 )
-from .sqlite import SQLiteKnowledgeRepository
+from .sql import SQLKnowledgeRepository
 
 __all__ = [
     "InMemoryKnowledgeRepository",
@@ -21,5 +21,5 @@ __all__ = [
     "KnowledgeTraversal",
     "KnowledgeRepository",
     "KnowledgeWriter",
-    "SQLiteKnowledgeRepository",
+    "SQLKnowledgeRepository",
 ]
