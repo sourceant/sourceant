@@ -7,6 +7,7 @@ from src.core.scope import Scope
 from .models import (
     ChangedCodeReference,
     CompatibilityEvidence,
+    CompatibilityEvidenceQuery,
     ReviewImpact,
     ReviewImpactRequest,
 )
@@ -22,7 +23,7 @@ class ImpactSeedResolver(Protocol):
 @runtime_checkable
 class CompatibilityEvidenceReader(Protocol):
     def read(
-        self, scope: Scope, entity_ids: frozenset[str], limit: int
+        self, query: CompatibilityEvidenceQuery
     ) -> tuple[CompatibilityEvidence, ...]: ...
 
 

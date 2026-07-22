@@ -47,6 +47,24 @@ class CompatibilityEvidence:
 
 
 @dataclass(frozen=True)
+class CompatibilityEvidenceQuery:
+    scope: Scope
+    entity_ids: frozenset[str]
+    statuses: frozenset[str] = field(default_factory=frozenset)
+    minimum_confidence: float = 0.0
+    include_stale: bool = False
+    limit: int = 50
+
+    def __post_init__(self) -> None:
+        if not self.entity_ids or any(not item for item in self.entity_ids):
+            raise ValueError("entity_ids must contain non-empty values")
+        if not 0.0 <= self.minimum_confidence <= 1.0:
+            raise ValueError("minimum_confidence must be between 0 and 1")
+        if not 1 <= self.limit <= 51:
+            raise ValueError("limit must be between 1 and 51")
+
+
+@dataclass(frozen=True)
 class ReviewImpactRequest:
     scope: Scope
     changes: tuple[ChangedCodeReference, ...]

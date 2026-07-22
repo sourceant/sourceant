@@ -5,6 +5,7 @@ from src.core.topology import TopologyReader, TopologySubgraph, TopologyTraversa
 from .interfaces import CompatibilityEvidenceReader, ImpactSeedResolver
 from .models import (
     CompatibilityEvidence,
+    CompatibilityEvidenceQuery,
     ImpactFinding,
     ReviewImpact,
     ReviewImpactRequest,
@@ -42,17 +43,16 @@ class DefaultReviewImpactPreparer:
         )
         entity_ids = frozenset(entity.id for entity in topology.entities)
         evidence = self._compatibility.read(
-            request.scope, entity_ids, request.entity_limit + 1
+            CompatibilityEvidenceQuery(
+                scope=request.scope,
+                entity_ids=entity_ids,
+                statuses=frozenset({"approved"}),
+                minimum_confidence=request.minimum_confidence,
+                limit=request.entity_limit + 1,
+            )
         )
         evidence_truncated = len(evidence) > request.entity_limit
-        evidence = evidence[: request.entity_limit]
-        accepted = tuple(
-            item
-            for item in evidence
-            if not item.stale
-            and item.status == "approved"
-            and item.confidence >= request.minimum_confidence
-        )
+        accepted = evidence[: request.entity_limit]
         findings = tuple(
             self._finding(request, item)
             for item in accepted

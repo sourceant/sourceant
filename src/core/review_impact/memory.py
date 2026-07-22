@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from src.core.scope import Scope
 
-from .models import ChangedCodeReference, CompatibilityEvidence
+from .models import (
+    ChangedCodeReference,
+    CompatibilityEvidence,
+    CompatibilityEvidenceQuery,
+)
 
 
 class InMemoryImpactSeedResolver:
@@ -36,16 +40,19 @@ class InMemoryCompatibilityEvidenceReader:
         self._items[(scope, evidence.id)] = evidence
 
     def read(
-        self, scope: Scope, entity_ids: frozenset[str], limit: int
+        self, query: CompatibilityEvidenceQuery
     ) -> tuple[CompatibilityEvidence, ...]:
         matches = sorted(
             (
                 item
                 for (item_scope, _), item in self._items.items()
-                if item_scope == scope
-                and item.provider_entity_id in entity_ids
-                and item.consumer_entity_id in entity_ids
+                if item_scope == query.scope
+                and item.provider_entity_id in query.entity_ids
+                and item.consumer_entity_id in query.entity_ids
+                and (not query.statuses or item.status in query.statuses)
+                and item.confidence >= query.minimum_confidence
+                and (query.include_stale or not item.stale)
             ),
             key=lambda item: item.id,
         )
-        return tuple(matches[:limit])
+        return tuple(matches[: query.limit])

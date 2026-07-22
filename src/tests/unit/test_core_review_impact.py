@@ -119,6 +119,27 @@ def test_ignores_compatible_stale_pending_and_weak_evidence():
     assert result.findings == ()
 
 
+def test_filters_evidence_before_applying_the_result_limit():
+    preparer, seeds, topology, compatibility = build_preparer()
+    add_topology(seeds, topology)
+    for item in (
+        evidence(id="a-stale", stale=True),
+        evidence(id="b-pending", status="pending"),
+        evidence(id="c-weak", confidence=0.5),
+        evidence(id="z-valid"),
+    ):
+        compatibility.put(PRODUCT, item)
+
+    result = preparer.prepare(
+        ReviewImpactRequest(PRODUCT, (CHANGE,), entity_limit=2)
+    )
+
+    assert tuple(item.id for item in result.compatibility) == ("z-valid",)
+    assert tuple(item.compatibility_evidence_id for item in result.findings) == (
+        "z-valid",
+    )
+
+
 def test_preserves_scope_and_returns_empty_when_code_has_no_mapping():
     preparer, seeds, topology, compatibility = build_preparer()
     add_topology(seeds, topology, OTHER)
