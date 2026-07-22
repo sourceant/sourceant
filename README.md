@@ -108,7 +108,7 @@ Knowledge scopes can identify any repository. SourceAnt core does not clone or s
 4. **Set Environment Variables**:
    Copy `.env.example` into `.env` file in the root directory and update the credentials accordingly:
    ```bash
-   docker compose exec app cp .env.exmple .env
+   docker compose exec app cp .env.example .env
    ```
    #### `.env` file
    ```env
@@ -183,7 +183,7 @@ If you are using the official SourceAnt cloud service, simply install our offici
 
 - **[Install the SourceAnt GitHub App](https://github.com/apps/sourceant)**
 
-The app will request the necessary permissions, and once installed on your repositories, it will automatically send events to our hosted backend. No further configuration is needed.
+The app will request the necessary permissions, and once installed on your repositories, it will automatically send events to our hosted backend. No further configuration is needed. Manage your repositories, knowledge, and reviews from the dashboard at [app.sourceant.ai](https://app.sourceant.ai).
 
 #### For Self-Hosted Users
 
@@ -242,17 +242,14 @@ The `LOG_DRIVER` environment variable controls where the application logs are se
 
 The application supports different backend modes for processing background jobs, controlled by the `QUEUE_MODE` environment variable.
 
--   **`redis` (Default)**: This is the recommended mode for production. It uses a persistent Redis queue (`rq`) to handle background tasks. This requires a separate `rq` worker process to be running.
-
--   **`redislite`**: A self-contained, file-based Redis queue. This mode is ideal for local development or testing as it provides the full functionality of a Redis queue without needing to run a separate Redis server. The Redis database file (`redislite.db`) will be created in the project root.
-
--   **`request`**: This mode uses FastAPI's `BackgroundTasks` to process jobs in the same process as the web request. It's the simplest mode for development as it requires no external worker or database, but it is not suitable for production as jobs will be lost if the server restarts.
+-   **`redis` (Default)**: This is the recommended mode for production. It uses a persistent Redis queue (`rq`) to handle background tasks. This requires a separate `rq` worker process to be running:
     ```bash
-    # Run the worker for redis mode
     docker compose exec app rq worker --url redis://redis:6379
     ```
 
--   **`request`**: This mode is suitable for development, testing, or lightweight deployments where setting up Redis is not desired. It uses FastAPI's built-in `BackgroundTasks` feature. Tasks are tied to the lifecycle of the HTTP request that triggers them and are executed by the web server process after the response has been sent. No separate worker is needed.
+-   **`redislite`**: A self-contained, file-based Redis queue. This mode is ideal for local development or testing as it provides the full functionality of a Redis queue without needing to run a separate Redis server. The Redis database file (`redislite.db`) will be created in the project root.
+
+-   **`request`**: This mode uses FastAPI's `BackgroundTasks` to process jobs in the same process as the web request, after the response has been sent. It's the simplest mode for development as it requires no external worker or Redis, but it is not suitable for production as jobs are lost if the server restarts.
 
 ## Docker Images
 
@@ -290,35 +287,27 @@ make prod-push                               # Push to GHCR
 6. Select **Let me select individual events** and choose **Pull requests** and **Issues**.
 7. Save the webhook.
 
-## Contributing 🤝
-We welcome contributions! Here’s how you can help:
+## Contributing
+We welcome contributions! Here's how you can help:
 1. Fork the repository.
 2. Create a new branch: `git checkout -b feature/your-feature`.
 3. Make your changes and commit them: `git commit -m 'Add some feature'`.
 4. Push to the branch: `git push origin feature/your-feature`.
 5. Submit a pull request.
 
-## Roadmap 🗺️
-- [x] Set up FastAPI server and GitHub webhook integration.
-- [x] Implement API/Interface to integrate various AI models
-- [x] Integrate Gemini API for code analysis.
-- [x] Multi-provider support via LiteLLM (Gemini, Anthropic, DeepSeek, OpenAI, etc.).
-- [ ] Implement a dashboard for review history and metrics.
-- [x] Add CI/CD pipeline for automated testing and deployment.
-
-## License 📜
+## License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE.md) file for details.
 
-## Contact 📧
+## Contact
 Have questions or suggestions? Reach out to us:
 - **Email**: hello@sourceant.ai
 - **GitHub Issues**: [Open an issue](https://github.com/sourceant/sourceant/issues)
 
-## Contributors ✨
+## Contributors
 Thanks to these amazing people who have contributed to this project:
 
-<a href="https://github.com/your-username/sourceant/graphs/contributors">
+<a href="https://github.com/sourceant/sourceant/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=sourceant/sourceant" />
 </a>
 
-Made with ❤️ by [nfebe](https://github.com/nfebe).
+Maintained by [WhileSmart](https://whilesmart.com).
