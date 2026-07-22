@@ -130,9 +130,7 @@ def test_filters_evidence_before_applying_the_result_limit():
     ):
         compatibility.put(PRODUCT, item)
 
-    result = preparer.prepare(
-        ReviewImpactRequest(PRODUCT, (CHANGE,), entity_limit=2)
-    )
+    result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,), entity_limit=2))
 
     assert tuple(item.id for item in result.compatibility) == ("z-valid",)
     assert tuple(item.compatibility_evidence_id for item in result.findings) == (
