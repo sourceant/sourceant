@@ -1,20 +1,90 @@
-# 🐜 SourceAnt 🐜
-**SourceAnt** is an open-source tool that automates code reviews and repository management by integrating GitHub webhooks with AI models. It listens for pull request and issue events, analyzes code changes, detects duplicates, applies labels, and posts review feedback — all automatically.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/sourceant-logo-dark.svg">
+    <img src="docs/assets/sourceant-logo.svg" alt="SourceAnt" width="720">
+  </picture>
+</p>
 
-## Features ✨
-- **Multi-Model Support**: Use any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers) — Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ more](https://docs.litellm.ai/docs/providers). Switch models with a single env var.
-- **Automated Code Reviews**: Analyze pull requests automatically using the configured LLM.
-- **Dynamic Review Process**: Intelligently handles large diffs by summarizing the entire PR and then reviewing file-by-file with global context.
-- **Repo Management**: Automatically detect duplicate PRs/issues and apply labels using AI — keeping your repository organized without manual effort.
-- **GitHub Integration**: Seamlessly integrates with GitHub webhooks.
-- **Plugin System**: Extend SourceAnt with custom plugins for new integrations and workflows.
-- **Open Source**: Fully open-source and community-driven.
+<p align="center"><strong>Open engineering knowledge and context infrastructure.</strong></p>
 
+SourceAnt helps engineering tools remember how software works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
 
-## Getting Started 🛠️
+Code review is one application of this shared knowledge layer. SourceAnt also supports coding agents, architecture exploration, contract analysis, repository automation, and custom engineering workflows.
+
+## What the community edition provides
+
+- **Knowledge management through MCP**: Create, update, search, connect, and retrieve scoped engineering knowledge.
+- **Durable storage**: Keep community knowledge in SourceAnt's existing SQL database. PostgreSQL is used in the normal deployment, while the existing SQLite fallback remains available for local use.
+- **Engineering context composition**: Combine code, knowledge, software topology, contracts, and active review findings into bounded context packs.
+- **Replaceable adapters**: Connect structural indexers, graph databases, or custom repositories without changing the core domain.
+- **Automated code reviews**: Use the same context interfaces for GitHub review and repository automation.
+- **Model choice**: Use Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ providers through LiteLLM](https://docs.litellm.ai/docs/providers).
+- **Plugin runtime**: Extend SourceAnt with new integrations and workflows.
+
+## Community knowledge server
+
+The included MCP server uses SourceAnt's configured database. Knowledge remains available after the MCP process restarts.
+
+### Start it
+
+```bash
+git clone https://github.com/sourceant/sourceant.git
+cd sourceant
+python -m pip install -r requirements.txt
+sourceant db upgrade head
+python -m src.mcp_server
+```
+
+This stdio option is useful for a local MCP client. It follows the required `DATABASE_URL`, just like the SourceAnt HTTP server. Set `STATELESS_MODE=true` to use temporary in-memory knowledge instead.
+
+Configure your MCP client to run `python -m src.mcp_server` from the repository directory. Use that client's documented format for a local stdio server.
+
+### Use the SourceAnt HTTP server
+
+The regular SourceAnt application can also serve MCP over Streamable HTTP at `/mcp/`. This transport is disabled unless all three authorization settings are present:
+
+```env
+MCP_HTTP_ISSUER_URL=https://issuer.example.com
+MCP_HTTP_RESOURCE_URL=https://sourceant.example.com/mcp/
+MCP_HTTP_AUDIENCE=sourceant-mcp
+MCP_HTTP_REQUIRED_SCOPES=sourceant
+```
+
+`JWT_SECRET` remains the signing secret. Tokens must contain `sub`, `exp`, `iss`, `aud`, and a space-separated `scope` claim. Enabling MCP does not change the existing HTTP API or its authentication behavior.
+
+HTTP knowledge is isolated by the authenticated principal and the requested scope. The server adds the principal boundary itself, so a client cannot select another principal through tool arguments.
+
+### Manage knowledge
+
+The community server exposes these MCP tools:
+
+| Tool | Purpose |
+|------|---------|
+| `put_knowledge` | Create or update a decision, rule, constraint, convention, note, or another knowledge type. |
+| `put_knowledge_relationship` | Connect knowledge with relationships such as `depends_on`, `supports`, or `contradicts`. |
+| `search_knowledge` | Find knowledge by scope, identity, type, status, or properties. |
+| `get_context` | Traverse related knowledge and combine it with other configured engineering context. |
+
+Scopes are open key-value pairs. A personal project can use `{"project": "shop"}`. An integration can use repository, organization, customer, or another boundary without changing core types.
+
+Example requests to an MCP-enabled coding agent:
+
+```text
+Remember that project shop uses signed webhook requests. Store it as an approved decision.
+
+Connect the signed webhook decision to the rule that rejects unsigned requests.
+
+Get the approved knowledge related to the signed webhook decision before changing its handler.
+```
+
+The SQL repository is the basic community implementation. Applications can inject another `KnowledgeRepository` and the MCP tools continue to use the same contract.
+
+Knowledge scopes can identify any repository. SourceAnt core does not clone or structurally index arbitrary repositories by itself. Code-aware context requires a `CodeIndexReader` integration, while knowledge management works without one.
+
+## Review automation setup
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.10+
 - GitHub account with a repository for testing.
 - LLM API key (supports any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers): Gemini, Anthropic, DeepSeek, OpenAI, etc.).
 
@@ -48,7 +118,6 @@
    GEMINI_API_KEY=your_gemini_api_key
    ```
 SourceAnt API should be live at http://localhost:8000
-
 
 ## SourceAnt Commands
 
@@ -142,7 +211,7 @@ If you are running your own instance of SourceAnt (e.g., from this repository), 
 
 ### Repo Management
 
-SourceAnt includes a builtin repo manager plugin that automates PR/issue triage and labeling. It is **disabled by default** — enable it with environment variables:
+SourceAnt includes a builtin repo manager plugin that automates PR/issue triage and labeling. It is **disabled by default**. Enable it with environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -194,7 +263,7 @@ The base SourceAnt image is built automatically on merge to `main` and pushed to
 The enterprise image includes additional plugins and is built via manual dispatch.
 
 **Setup:**
-1. Add a repository secret `PLUGIN_REPO_TOKEN` — a PAT with repo access to clone private plugin repositories.
+1. Add a repository secret named `PLUGIN_REPO_TOKEN` containing a PAT with access to clone private plugin repositories.
 2. Add a repository variable `ENTERPRISE_PLUGINS` with your plugin configuration:
    ```json
    [{"name": "analytics", "repo": "sourceant/analytics"}]
@@ -253,4 +322,3 @@ Thanks to these amazing people who have contributed to this project:
 </a>
 
 Made with ❤️ by [nfebe](https://github.com/nfebe).
-

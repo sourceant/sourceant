@@ -8,6 +8,7 @@ from .models import (
     KnowledgeSubgraph,
     KnowledgeTraversal,
 )
+from .sql import SQLKnowledgeRepository
 
 __all__ = [
     "InMemoryKnowledgeRepository",
@@ -20,4 +21,5 @@ __all__ = [
     "KnowledgeTraversal",
     "KnowledgeRepository",
     "KnowledgeWriter",
+    "SQLKnowledgeRepository",
 ]
