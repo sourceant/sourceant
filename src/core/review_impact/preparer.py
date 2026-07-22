@@ -41,6 +41,8 @@ class DefaultReviewImpactPreparer:
                 relationship_limit=request.relationship_limit,
             )
         )
+        if not topology.entities:
+            return ReviewImpact(topology, (), (), topology.truncated or seed_truncated)
         entity_ids = frozenset(entity.id for entity in topology.entities)
         evidence = self._compatibility.read(
             CompatibilityEvidenceQuery(

@@ -151,6 +151,17 @@ def test_preserves_scope_and_returns_empty_when_code_has_no_mapping():
     assert result.findings == ()
 
 
+def test_returns_empty_when_mapped_topology_entity_does_not_exist():
+    preparer, seeds, _, _ = build_preparer()
+    seeds.put(PRODUCT, CHANGE.id, ("missing",))
+
+    result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
+
+    assert result.topology.entities == ()
+    assert result.compatibility == ()
+    assert result.findings == ()
+
+
 def test_rejects_impact_findings_without_traceable_evidence():
     with pytest.raises(ValueError, match="must identify changed code"):
         ImpactFinding("finding", "incompatible", "Failure", (), (), "", True)
