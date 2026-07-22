@@ -5,9 +5,9 @@
   </picture>
 </p>
 
-<p align="center"><strong>Open engineering knowledge and context infrastructure.</strong></p>
+<p align="center"><strong>Open-source infrastructure for engineering knowledge and context.</strong></p>
 
-SourceAnt helps engineering tools remember how software works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
+SourceAnt helps the agents and humans building your software remember how it works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
 
 Code review is one application of this shared knowledge layer. SourceAnt also supports coding agents, architecture exploration, contract analysis, repository automation, and custom engineering workflows.
 
