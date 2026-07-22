@@ -46,9 +46,7 @@ class CompatibilityEvidenceReader(Protocol):
 
 @runtime_checkable
 class CompatibilityEvidenceWriter(Protocol):
-    def put_evidence(
-        self, scope: Scope, evidence: CompatibilityEvidence
-    ) -> None: ...
+    def put_evidence(self, scope: Scope, evidence: CompatibilityEvidence) -> None: ...
 
 
 @runtime_checkable
