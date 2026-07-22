@@ -29,10 +29,11 @@ from .models import (
 )
 
 metadata = MetaData()
+scope_type = Text().with_variant(String(500), "mysql")
 knowledge_table = Table(
     "knowledge",
     metadata,
-    Column("scope", Text, primary_key=True),
+    Column("scope", scope_type, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("kind", String(255), nullable=False),
     Column("status", String(255), nullable=False),
@@ -42,7 +43,7 @@ knowledge_table = Table(
 relationship_table = Table(
     "knowledge_relationships",
     metadata,
-    Column("scope", Text, primary_key=True),
+    Column("scope", scope_type, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("source_id", String(255), nullable=False),
     Column("target_id", String(255), nullable=False),

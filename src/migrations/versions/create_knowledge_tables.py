@@ -12,7 +12,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "knowledge",
-        sa.Column("scope", sa.Text(), nullable=False),
+        sa.Column(
+            "scope",
+            sa.Text().with_variant(sa.String(length=500), "mysql"),
+            nullable=False,
+        ),
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("kind", sa.String(length=255), nullable=False),
         sa.Column("status", sa.String(length=255), nullable=False),
@@ -22,7 +26,11 @@ def upgrade() -> None:
     )
     op.create_table(
         "knowledge_relationships",
-        sa.Column("scope", sa.Text(), nullable=False),
+        sa.Column(
+            "scope",
+            sa.Text().with_variant(sa.String(length=500), "mysql"),
+            nullable=False,
+        ),
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("source_id", sa.String(length=255), nullable=False),
         sa.Column("target_id", sa.String(length=255), nullable=False),
