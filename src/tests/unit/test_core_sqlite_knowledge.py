@@ -19,9 +19,7 @@ OTHER_PROJECT = Scope.from_mapping({"project": "two"})
 def test_sql_knowledge_scope_keys_compile_for_supported_databases():
     for table in (knowledge_table, relationship_table):
         mysql_ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
-        postgres_ddl = str(
-            CreateTable(table).compile(dialect=postgresql.dialect())
-        )
+        postgres_ddl = str(CreateTable(table).compile(dialect=postgresql.dialect()))
 
         assert "scope VARCHAR(500) NOT NULL" in mysql_ddl
         assert "scope TEXT NOT NULL" in postgres_ddl
