@@ -7,7 +7,7 @@
 
 <p align="center"><strong>Code knowledge management.</strong></p>
 
-SourceAnt helps engineering tools remember how software works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
+SourceAnt helps the agents and humans building your software remember how it works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
 
 Code review is one application of this shared knowledge layer. SourceAnt also supports coding agents, architecture exploration, contract analysis, repository automation, and custom engineering workflows.
 
