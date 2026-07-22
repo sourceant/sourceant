@@ -60,8 +60,8 @@ class CompatibilityEvidenceQuery:
             raise ValueError("entity_ids must contain non-empty values")
         if not 0.0 <= self.minimum_confidence <= 1.0:
             raise ValueError("minimum_confidence must be between 0 and 1")
-        if not 1 <= self.limit <= 51:
-            raise ValueError("limit must be between 1 and 51")
+        if self.limit < 1:
+            raise ValueError("limit must be positive")
 
 
 @dataclass(frozen=True)

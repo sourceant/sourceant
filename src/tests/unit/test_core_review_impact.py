@@ -3,6 +3,7 @@ import pytest
 from src.core.review_impact import (
     ChangedCodeReference,
     CompatibilityEvidence,
+    CompatibilityEvidenceQuery,
     DefaultReviewImpactPreparer,
     ImpactFinding,
     InMemoryCompatibilityEvidenceReader,
@@ -153,3 +154,14 @@ def test_preserves_scope_and_returns_empty_when_code_has_no_mapping():
 def test_rejects_impact_findings_without_traceable_evidence():
     with pytest.raises(ValueError, match="must identify changed code"):
         ImpactFinding("finding", "incompatible", "Failure", (), (), "", True)
+
+
+def test_compatibility_query_accepts_limits_independent_of_review_defaults():
+    query = CompatibilityEvidenceQuery(PRODUCT, frozenset({"provider"}), limit=500)
+
+    assert query.limit == 500
+
+
+def test_compatibility_query_requires_a_positive_limit():
+    with pytest.raises(ValueError, match="limit must be positive"):
+        CompatibilityEvidenceQuery(PRODUCT, frozenset({"provider"}), limit=0)
