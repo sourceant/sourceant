@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<p align="center"><strong>Open engineering knowledge and context infrastructure.</strong></p>
+<p align="center"><strong>Code knowledge management.</strong></p>
 
 SourceAnt helps engineering tools remember how software works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
 
