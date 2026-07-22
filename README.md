@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<p align="center"><strong>Code knowledge management.</strong></p>
+<p align="center"><strong>Open-source infrastructure for engineering knowledge and context.</strong></p>
 
 SourceAnt helps the agents and humans building your software remember how it works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
 
