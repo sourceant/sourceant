@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/sourceant-logo.png" alt="SourceAnt" width="720">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/sourceant-logo-dark.svg">
+    <img src="docs/assets/sourceant-logo.svg" alt="SourceAnt" width="720">
+  </picture>
 </p>
 
 <p align="center"><strong>Open engineering knowledge and context infrastructure.</strong></p>
