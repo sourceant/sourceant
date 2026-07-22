@@ -3,7 +3,12 @@ from __future__ import annotations
 from src.core.topology import TopologyReader, TopologySubgraph, TopologyTraversal
 
 from .interfaces import CompatibilityEvidenceReader, ImpactSeedResolver
-from .models import ImpactFinding, ReviewImpact, ReviewImpactRequest
+from .models import (
+    CompatibilityEvidence,
+    ImpactFinding,
+    ReviewImpact,
+    ReviewImpactRequest,
+)
 
 
 class DefaultReviewImpactPreparer:
@@ -61,7 +66,9 @@ class DefaultReviewImpactPreparer:
         )
 
     @staticmethod
-    def _finding(request, evidence):
+    def _finding(
+        request: ReviewImpactRequest, evidence: CompatibilityEvidence
+    ) -> ImpactFinding:
         certain = evidence.compatible is False
         return ImpactFinding(
             id=f"compatibility:{evidence.id}",

@@ -82,6 +82,18 @@ class ImpactFinding:
     certain: bool
     properties: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if not self.id or not self.state or not self.summary:
+            raise ValueError("impact finding identity, state, and summary are required")
+        if not self.changed_code_ids or any(not item for item in self.changed_code_ids):
+            raise ValueError("impact finding must identify changed code")
+        if not self.topology_entity_ids or any(
+            not item for item in self.topology_entity_ids
+        ):
+            raise ValueError("impact finding must identify topology entities")
+        if not self.compatibility_evidence_id:
+            raise ValueError("impact finding must identify compatibility evidence")
+
 
 @dataclass(frozen=True)
 class ReviewImpact:
