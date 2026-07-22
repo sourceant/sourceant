@@ -4,8 +4,10 @@ from src.core.review_impact import (
     ChangedCodeReference,
     CompatibilityEvidence,
     CompatibilityEvidenceQuery,
+    CompatibilityEvidenceRepository,
     DefaultReviewImpactPreparer,
     ImpactFinding,
+    ImpactSeedRepository,
     InMemoryCompatibilityEvidenceReader,
     InMemoryImpactSeedResolver,
     ReviewImpactRequest,
@@ -38,8 +40,15 @@ def build_preparer():
     return preparer, seeds, topology, compatibility
 
 
+def test_in_memory_repositories_implement_read_and_write_contracts():
+    _, seeds, _, compatibility = build_preparer()
+
+    assert isinstance(seeds, ImpactSeedRepository)
+    assert isinstance(compatibility, CompatibilityEvidenceRepository)
+
+
 def add_topology(seeds, topology, scope=PRODUCT):
-    seeds.put(scope, CHANGE.id, ("provider",))
+    seeds.put_mapping(scope, CHANGE, ("provider",))
     topology.put_entity(scope, TopologyEntity("provider", "service", "active"))
     topology.put_entity(scope, TopologyEntity("consumer", "service", "active"))
     topology.put_relationship(
@@ -74,7 +83,7 @@ def evidence(**values):
 def test_prepares_deterministic_incompatible_impact_with_provenance():
     preparer, seeds, topology, compatibility = build_preparer()
     add_topology(seeds, topology)
-    compatibility.put(PRODUCT, evidence())
+    compatibility.put_evidence(PRODUCT, evidence())
 
     first = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
     second = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
@@ -95,7 +104,7 @@ def test_prepares_deterministic_incompatible_impact_with_provenance():
 def test_keeps_uncertain_evidence_out_of_certain_findings():
     preparer, seeds, topology, compatibility = build_preparer()
     add_topology(seeds, topology)
-    compatibility.put(PRODUCT, evidence(compatible=None))
+    compatibility.put_evidence(PRODUCT, evidence(compatible=None))
 
     result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
 
@@ -112,7 +121,7 @@ def test_ignores_compatible_stale_pending_and_weak_evidence():
         evidence(id="pending", status="pending"),
         evidence(id="weak", confidence=0.5),
     ):
-        compatibility.put(PRODUCT, item)
+        compatibility.put_evidence(PRODUCT, item)
 
     result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
 
@@ -129,7 +138,7 @@ def test_filters_evidence_before_applying_the_result_limit():
         evidence(id="c-weak", confidence=0.5),
         evidence(id="z-valid"),
     ):
-        compatibility.put(PRODUCT, item)
+        compatibility.put_evidence(PRODUCT, item)
 
     result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,), entity_limit=2))
 
@@ -142,7 +151,7 @@ def test_filters_evidence_before_applying_the_result_limit():
 def test_preserves_scope_and_returns_empty_when_code_has_no_mapping():
     preparer, seeds, topology, compatibility = build_preparer()
     add_topology(seeds, topology, OTHER)
-    compatibility.put(OTHER, evidence())
+    compatibility.put_evidence(OTHER, evidence())
 
     result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
 
@@ -153,13 +162,24 @@ def test_preserves_scope_and_returns_empty_when_code_has_no_mapping():
 
 def test_returns_empty_when_mapped_topology_entity_does_not_exist():
     preparer, seeds, _, _ = build_preparer()
-    seeds.put(PRODUCT, CHANGE.id, ("missing",))
+    seeds.put_mapping(PRODUCT, CHANGE, ("missing",))
 
     result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
 
     assert result.topology.entities == ()
     assert result.compatibility == ()
     assert result.findings == ()
+
+
+def test_code_mapping_is_revision_specific():
+    seeds = InMemoryImpactSeedResolver()
+    seeds.put_mapping(PRODUCT, CHANGE, ("provider",))
+
+    changed_revision = ChangedCodeReference(
+        CHANGE.id, CHANGE.kind, "provider-3", CHANGE.path
+    )
+
+    assert seeds.resolve(PRODUCT, (changed_revision,)) == ()
 
 
 def test_rejects_impact_findings_without_traceable_evidence():

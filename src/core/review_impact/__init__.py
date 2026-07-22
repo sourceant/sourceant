@@ -1,5 +1,9 @@
 from .interfaces import (
+    CompatibilityEvidenceRepository,
     CompatibilityEvidenceReader,
+    CompatibilityEvidenceWriter,
+    ImpactCodeMappingWriter,
+    ImpactSeedRepository,
     ImpactSeedResolver,
     ReviewImpactPreparer,
 )
@@ -18,9 +22,13 @@ __all__ = [
     "ChangedCodeReference",
     "CompatibilityEvidence",
     "CompatibilityEvidenceQuery",
+    "CompatibilityEvidenceRepository",
     "CompatibilityEvidenceReader",
+    "CompatibilityEvidenceWriter",
     "DefaultReviewImpactPreparer",
     "ImpactFinding",
+    "ImpactCodeMappingWriter",
+    "ImpactSeedRepository",
     "ImpactSeedResolver",
     "InMemoryCompatibilityEvidenceReader",
     "InMemoryImpactSeedResolver",

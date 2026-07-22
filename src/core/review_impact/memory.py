@@ -11,12 +11,18 @@ from .models import (
 
 class InMemoryImpactSeedResolver:
     def __init__(self) -> None:
-        self._mappings: dict[tuple[Scope, str], tuple[str, ...]] = {}
+        self._mappings: dict[tuple[Scope, str, str, str], tuple[str, ...]] = {}
 
-    def put(self, scope: Scope, code_id: str, entity_ids: tuple[str, ...]) -> None:
-        if not code_id or not entity_ids or any(not item for item in entity_ids):
-            raise ValueError("code and topology identities are required")
-        self._mappings[(scope, code_id)] = tuple(sorted(set(entity_ids)))
+    def put_mapping(
+        self,
+        scope: Scope,
+        change: ChangedCodeReference,
+        entity_ids: tuple[str, ...],
+    ) -> None:
+        if not entity_ids or any(not item for item in entity_ids):
+            raise ValueError("topology identities are required")
+        key = scope, change.kind, change.id, change.revision
+        self._mappings[key] = tuple(sorted(set(entity_ids)))
 
     def resolve(
         self, scope: Scope, changes: tuple[ChangedCodeReference, ...]
@@ -26,7 +32,9 @@ class InMemoryImpactSeedResolver:
                 {
                     entity_id
                     for change in changes
-                    for entity_id in self._mappings.get((scope, change.id), ())
+                    for entity_id in self._mappings.get(
+                        (scope, change.kind, change.id, change.revision), ()
+                    )
                 }
             )
         )
@@ -36,7 +44,7 @@ class InMemoryCompatibilityEvidenceReader:
     def __init__(self) -> None:
         self._items: dict[tuple[Scope, str], CompatibilityEvidence] = {}
 
-    def put(self, scope: Scope, evidence: CompatibilityEvidence) -> None:
+    def put_evidence(self, scope: Scope, evidence: CompatibilityEvidence) -> None:
         self._items[(scope, evidence.id)] = evidence
 
     def read(
