@@ -17,13 +17,14 @@ OTHER_PROJECT = Scope.from_mapping({"project": "two"})
 
 
 def test_sql_knowledge_scope_keys_compile_for_supported_databases():
-    mysql_ddl = str(CreateTable(knowledge_table).compile(dialect=mysql.dialect()))
-    postgres_ddl = str(
-        CreateTable(relationship_table).compile(dialect=postgresql.dialect())
-    )
+    for table in (knowledge_table, relationship_table):
+        mysql_ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
+        postgres_ddl = str(
+            CreateTable(table).compile(dialect=postgresql.dialect())
+        )
 
-    assert "scope VARCHAR(500) NOT NULL" in mysql_ddl
-    assert "scope TEXT NOT NULL" in postgres_ddl
+        assert "scope VARCHAR(500) NOT NULL" in mysql_ddl
+        assert "scope TEXT NOT NULL" in postgres_ddl
 
 
 def test_sql_knowledge_survives_restart_and_preserves_scope(tmp_path):
