@@ -86,9 +86,7 @@ def test_code_index_searches_exact_node_identities():
     index.put_node(PROJECT, code_node("two"))
     index.put_node(OTHER_PROJECT, code_node("two"))
 
-    result = index.search(
-        CodeSearch(PROJECT, node_ids=frozenset({"two", "missing"}))
-    )
+    result = index.search(CodeSearch(PROJECT, node_ids=frozenset({"two", "missing"})))
 
     assert [node.id for node in result.nodes] == ["two"]
     assert result.total == 1
