@@ -53,9 +53,7 @@ class InMemoryCodeIndex:
             )
         else:
             candidates = (
-                node
-                for (scope, _), node in self._nodes.items()
-                if scope == query.scope
+                node for (scope, _), node in self._nodes.items() if scope == query.scope
             )
         matches = [
             node
