@@ -51,12 +51,14 @@ class InMemoryCodeIndex:
             node
             for (scope, _), node in self._nodes.items()
             if scope == query.scope
+            and (not query.node_ids or node.id in query.node_ids)
             and query.labels.issubset(node.labels)
             and all(
                 node.properties.get(key) == value
                 for key, value in query.properties.items()
             )
         ]
+        matches.sort(key=lambda node: node.id)
         nodes = tuple(matches[query.offset : query.offset + query.limit])
         return CodeSearchResult(
             nodes=nodes,

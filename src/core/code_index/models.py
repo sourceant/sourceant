@@ -51,8 +51,11 @@ class CodeSearch:
     properties: Mapping[str, Any] = field(default_factory=dict)
     limit: int = 50
     offset: int = 0
+    node_ids: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
+        if len(self.node_ids) > 100 or any(not node_id for node_id in self.node_ids):
+            raise ValueError("node_ids must contain at most 100 non-empty values")
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         if self.offset < 0:
