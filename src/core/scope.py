@@ -18,10 +18,13 @@ class Scope:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> "Scope":
-        return cls(tuple(sorted(values.items())))
+        return cls(tuple(values.items()))
 
     def get(self, key: str, default: str | None = None) -> str | None:
-        return dict(self.values).get(key, default)
+        for candidate, value in self.values:
+            if candidate == key:
+                return value
+        return default
 
     def extend(self, values: Mapping[str, str]) -> "Scope":
         combined = dict(self.values)
@@ -52,10 +55,13 @@ class ScopeReference:
         id: str,
         qualifiers: Mapping[str, str],
     ) -> "ScopeReference":
-        return cls(kind, id, tuple(sorted(qualifiers.items())))
+        return cls(kind, id, tuple(qualifiers.items()))
 
     def get(self, key: str, default: str | None = None) -> str | None:
-        return dict(self.qualifiers).get(key, default)
+        for candidate, value in self.qualifiers:
+            if candidate == key:
+                return value
+        return default
 
 
 @runtime_checkable
