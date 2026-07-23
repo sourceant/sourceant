@@ -47,16 +47,25 @@ class InMemoryCodeIndex:
                 del self._edges[key]
 
     def search(self, query: CodeSearch) -> CodeSearchResult:
+        if query.node_ids:
+            candidates = (
+                self._nodes.get((query.scope, node_id)) for node_id in query.node_ids
+            )
+        else:
+            candidates = (
+                node for (scope, _), node in self._nodes.items() if scope == query.scope
+            )
         matches = [
             node
-            for (scope, _), node in self._nodes.items()
-            if scope == query.scope
+            for node in candidates
+            if node is not None
             and query.labels.issubset(node.labels)
             and all(
                 node.properties.get(key) == value
                 for key, value in query.properties.items()
             )
         ]
+        matches.sort(key=lambda node: node.id)
         nodes = tuple(matches[query.offset : query.offset + query.limit])
         return CodeSearchResult(
             nodes=nodes,

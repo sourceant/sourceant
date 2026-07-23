@@ -80,6 +80,24 @@ def test_code_index_searches_open_labels_properties_and_pages():
     assert result.has_more is True
 
 
+def test_code_index_searches_exact_node_identities():
+    index = InMemoryCodeIndex()
+    index.put_node(PROJECT, code_node("one"))
+    index.put_node(PROJECT, code_node("two"))
+    index.put_node(OTHER_PROJECT, code_node("two"))
+
+    result = index.search(CodeSearch(PROJECT, node_ids=frozenset({"two", "missing"})))
+
+    assert [node.id for node in result.nodes] == ["two"]
+    assert result.total == 1
+    assert result.has_more is False
+
+
+def test_code_index_rejects_invalid_identity_filters():
+    with pytest.raises(ValueError, match="at most 100 non-empty"):
+        CodeSearch(PROJECT, node_ids=frozenset({""}))
+
+
 def test_code_index_traverses_cycles_with_limits():
     index = InMemoryCodeIndex()
     for identifier in ("a", "b", "c"):
