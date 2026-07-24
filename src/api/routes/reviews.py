@@ -1,5 +1,5 @@
 import httpx
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from src.auth import get_current_user
@@ -28,6 +28,58 @@ async def _fetch_pull_request(
     except httpx.HTTPError:
         return None
     return resp.json() if resp.status_code == 200 else None
+
+
+@router.get("/detail")
+async def review_detail(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    number: int = Query(..., description="Pull request number"),
+    user: dict = Depends(get_current_user),
+):
+    """A pull request with the reviews posted on it, from live GitHub."""
+    github_token = user.get("github_token")
+    if not github_token:
+        raise HTTPException(status_code=400, detail="No GitHub token available")
+
+    headers = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github+json",
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        pr_resp = await client.get(
+            f"{_GITHUB_API}/repos/{repo}/pulls/{number}", headers=headers
+        )
+        if pr_resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="GitHub API error")
+        pr = pr_resp.json()
+
+        reviews_resp = await client.get(
+            f"{_GITHUB_API}/repos/{repo}/pulls/{number}/reviews",
+            headers=headers,
+            params={"per_page": 50},
+        )
+        reviews = reviews_resp.json() if reviews_resp.status_code == 200 else []
+
+    return success_response(
+        {
+            "number": pr["number"],
+            "title": pr["title"],
+            "body": pr.get("body") or "",
+            "state": pr["state"],
+            "author": (pr.get("user") or {}).get("login"),
+            "url": pr.get("html_url"),
+            "reviews": [
+                {
+                    "author": (r.get("user") or {}).get("login"),
+                    "state": r.get("state"),
+                    "body": r.get("body") or "",
+                    "submitted_at": r.get("submitted_at"),
+                }
+                for r in reviews
+                if r.get("body")
+            ],
+        }
+    )
 
 
 @router.get("")
