@@ -100,6 +100,45 @@ async def _fetch_pull_request(
     return resp.json() if resp.status_code == 200 else None
 
 
+@router.get("/pulls")
+async def list_pulls(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    user: dict = Depends(get_current_user),
+):
+    """Open pull requests for a repository, from live GitHub."""
+    github_token = user.get("github_token")
+    if not github_token:
+        return success_response([])
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            f"{_GITHUB_API}/repos/{repo}/pulls",
+            headers={
+                "Authorization": f"token {github_token}",
+                "Accept": "application/vnd.github+json",
+            },
+            params={"state": "open", "per_page": 50, "sort": "updated"},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="GitHub API error")
+
+    results = []
+    for pr in resp.json():
+        results.append(
+            {
+                "number": pr["number"],
+                "title": pr["title"],
+                "state": pr["state"],
+                "draft": pr.get("draft", False),
+                "author": (pr.get("user") or {}).get("login"),
+                "url": pr.get("html_url"),
+                "updated_at": pr.get("updated_at"),
+            }
+        )
+
+    return success_response(results)
+
+
 @router.get("/detail")
 async def review_detail(
     repo: str = Query(..., description="Repository full name, e.g. owner/name"),
