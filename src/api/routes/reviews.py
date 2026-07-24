@@ -1,5 +1,6 @@
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from src.auth import get_current_user
@@ -10,6 +11,75 @@ from src.models.review_record import ReviewRecord
 router = APIRouter()
 
 _GITHUB_API = "https://api.github.com"
+
+
+class RerunRequest(BaseModel):
+    repo: str
+    number: int
+    # Preview by default: generate the review and return it without posting.
+    post: bool = False
+
+
+@router.post("/rerun")
+async def rerun_review(
+    data: RerunRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Re-run the reviewer for a pull request; preview to the dashboard or post to GitHub."""
+    from src.core.plugins.plugin_registry import plugin_registry
+    from src.models.pull_request import PullRequest
+    from src.models.repository import Repository
+
+    github_token = user.get("github_token")
+    if not github_token:
+        raise HTTPException(status_code=400, detail="No GitHub token available")
+
+    owner, _, name = data.repo.partition("/")
+    if not owner or not name:
+        raise HTTPException(status_code=400, detail="Invalid repository name")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        pr_resp = await client.get(
+            f"{_GITHUB_API}/repos/{data.repo}/pulls/{data.number}",
+            headers={
+                "Authorization": f"token {github_token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+    if pr_resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Could not load the pull request")
+    pr = pr_resp.json()
+
+    plugin = plugin_registry.get_plugin("code_reviewer")
+    if plugin is None:
+        raise HTTPException(status_code=503, detail="Reviewer is not available")
+
+    repository = Repository(name=name, owner=owner)
+    pull_request = PullRequest(
+        number=pr["number"],
+        title=pr.get("title"),
+        draft=pr.get("draft", False),
+        merged=pr.get("merged", False),
+        base_sha=(pr.get("base") or {}).get("sha"),
+        head_sha=(pr.get("head") or {}).get("sha"),
+    )
+    pr_metadata = {
+        "title": pr.get("title"),
+        "description": pr.get("body"),
+        "number": pr["number"],
+        "base_ref": (pr.get("base") or {}).get("ref"),
+        "head_ref": (pr.get("head") or {}).get("ref"),
+    }
+
+    result = await plugin._generate_and_post_review(
+        repository,
+        pull_request,
+        pr_metadata=pr_metadata,
+        event_type=None,
+        repository_full_name=data.repo,
+        post=data.post,
+    )
+    return success_response(result)
 
 
 async def _fetch_pull_request(
