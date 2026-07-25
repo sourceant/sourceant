@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -71,7 +73,7 @@ async def rerun_review(
         "head_ref": (pr.get("head") or {}).get("ref"),
     }
 
-    result = await plugin._generate_and_post_review(
+    result = await plugin.generate_review(
         repository,
         pull_request,
         pr_metadata=pr_metadata,
@@ -206,28 +208,38 @@ async def list_reviews(
         .order_by(ReviewRecord.id.desc())
     ).all()
 
-    pr_cache: dict[int, dict | None] = {}
-    results = []
+    # Fetch each distinct pull request once, concurrently but bounded so a
+    # repository with many reviewed PRs does not open a flood of requests that
+    # trips GitHub's secondary rate limits.
+    pr_numbers = list({record.pr_number for record in records})
+    semaphore = asyncio.Semaphore(8)
+
     async with httpx.AsyncClient(timeout=10) as client:
-        for record in records:
-            if record.pr_number not in pr_cache:
-                pr_cache[record.pr_number] = await _fetch_pull_request(
-                    client, repo, record.pr_number, github_token
+
+        async def _fetch(number: int):
+            async with semaphore:
+                return number, await _fetch_pull_request(
+                    client, repo, number, github_token
                 )
-            pr = pr_cache[record.pr_number]
-            results.append(
-                {
-                    "id": record.id,
-                    "repository_full_name": record.repository_full_name,
-                    "pr_number": record.pr_number,
-                    "status": record.status,
-                    "reviewed_head_sha": record.reviewed_head_sha,
-                    "title": pr.get("title") if pr else None,
-                    "state": pr.get("state") if pr else None,
-                    "author": (pr.get("user") or {}).get("login") if pr else None,
-                    "url": pr.get("html_url") if pr else None,
-                    "updated_at": pr.get("updated_at") if pr else None,
-                }
-            )
+
+        pr_cache = dict(await asyncio.gather(*[_fetch(n) for n in pr_numbers]))
+
+    results = []
+    for record in records:
+        pr = pr_cache.get(record.pr_number)
+        results.append(
+            {
+                "id": record.id,
+                "repository_full_name": record.repository_full_name,
+                "pr_number": record.pr_number,
+                "status": record.status,
+                "reviewed_head_sha": record.reviewed_head_sha,
+                "title": pr.get("title") if pr else None,
+                "state": pr.get("state") if pr else None,
+                "author": (pr.get("user") or {}).get("login") if pr else None,
+                "url": pr.get("html_url") if pr else None,
+                "updated_at": pr.get("updated_at") if pr else None,
+            }
+        )
 
     return success_response(results)

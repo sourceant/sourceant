@@ -190,7 +190,7 @@ class CodeReviewerPlugin(BasePlugin):
             }
 
             # Generate and post review
-            review_result = await self._generate_and_post_review(
+            review_result = await self.generate_review(
                 repository,
                 pull_request,
                 pr_metadata=pr_metadata,
@@ -264,7 +264,7 @@ class CodeReviewerPlugin(BasePlugin):
 
         return None
 
-    async def _generate_and_post_review(
+    async def generate_review(
         self,
         repository: Repository,
         pull_request: PullRequest,
