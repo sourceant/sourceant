@@ -271,6 +271,7 @@ class CodeReviewerPlugin(BasePlugin):
         pr_metadata: Optional[Dict[str, Any]] = None,
         event_type: Optional[str] = None,
         repository_full_name: Optional[str] = None,
+        post: bool = True,
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -401,29 +402,32 @@ class CodeReviewerPlugin(BasePlugin):
                     final_review = result.review
                     logger.info(f"Review modified by guard: {result.reason}")
 
-            # Post review to GitHub
-            post_result = github.post_review(
-                repository=repository,
-                pull_request=pull_request,
-                code_review=final_review,
-                line_mapper=line_mapper,
-            )
+            # Post review to GitHub, unless this is a preview run
+            post_result = None
+            if post:
+                post_result = github.post_review(
+                    repository=repository,
+                    pull_request=pull_request,
+                    code_review=final_review,
+                    line_mapper=line_mapper,
+                )
+                if pull_request.head_sha and pull_request.base_sha:
+                    save_review_record(
+                        repo_full_name,
+                        pull_request.number,
+                        pull_request.head_sha,
+                        pull_request.base_sha,
+                    )
 
             logger.info(
-                f"Review generation and posting completed for PR #{pull_request.number}"
+                f"Review generation {'and posting ' if post else '(preview) '}"
+                f"completed for PR #{pull_request.number}"
             )
-
-            if pull_request.head_sha and pull_request.base_sha:
-                save_review_record(
-                    repo_full_name,
-                    pull_request.number,
-                    pull_request.head_sha,
-                    pull_request.base_sha,
-                )
 
             return {
                 "status": "success",
                 "review_posted": post_result,
+                "review": final_review.model_dump() if final_review else None,
                 "suggestions_count": (
                     len(final_review.code_suggestions)
                     if final_review.code_suggestions
