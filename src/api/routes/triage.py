@@ -134,7 +134,9 @@ async def triage_action(
             )
         elif data.action == "label":
             if not data.labels:
-                raise HTTPException(status_code=400, detail="At least one label is required")
+                raise HTTPException(
+                    status_code=400, detail="At least one label is required"
+                )
             resp = await client.post(
                 f"{base}/labels",
                 headers=_headers(github_token),
@@ -147,7 +149,9 @@ async def triage_action(
                 json={"state": "closed"},
             )
         else:
-            raise HTTPException(status_code=400, detail=f"Unknown action: {data.action}")
+            raise HTTPException(
+                status_code=400, detail=f"Unknown action: {data.action}"
+            )
 
     if resp.status_code >= 300:
         raise HTTPException(status_code=502, detail="GitHub rejected the action")
