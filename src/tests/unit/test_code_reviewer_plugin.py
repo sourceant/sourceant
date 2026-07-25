@@ -72,7 +72,7 @@ class TestIncrementalReview:
         import asyncio
 
         result = asyncio.get_event_loop().run_until_complete(
-            plugin._generate_and_post_review(
+            plugin.generate_review(
                 repository,
                 pull_request,
                 event_type="pull_request.synchronize",
@@ -125,7 +125,7 @@ class TestIncrementalReview:
         import asyncio
 
         result = asyncio.get_event_loop().run_until_complete(
-            plugin._generate_and_post_review(
+            plugin.generate_review(
                 repository,
                 pull_request,
                 event_type="pull_request.synchronize",
@@ -171,7 +171,7 @@ class TestIncrementalReview:
         import asyncio
 
         result = asyncio.get_event_loop().run_until_complete(
-            plugin._generate_and_post_review(
+            plugin.generate_review(
                 repository,
                 pull_request,
                 event_type="pull_request.synchronize",
@@ -218,7 +218,7 @@ class TestIncrementalReview:
         import asyncio
 
         asyncio.get_event_loop().run_until_complete(
-            plugin._generate_and_post_review(
+            plugin.generate_review(
                 repository,
                 pull_request,
                 event_type="pull_request.opened",

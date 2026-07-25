@@ -1,3 +1,5 @@
+from typing import Literal
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -20,7 +22,7 @@ def _headers(token: str) -> dict:
 class TriageAction(BaseModel):
     repo: str
     number: int
-    action: str  # comment | label | close
+    action: Literal["comment", "label", "close"]
     comment: str | None = None
     labels: list[str] | None = None
 
