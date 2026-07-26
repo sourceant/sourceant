@@ -13,7 +13,7 @@ from src.core.knowledge import (
     SQLKnowledgeRepository,
 )
 from src.core.review_state import InMemoryReviewStateRepository
-from src.core.topology import InMemoryTopologyRepository
+from src.core.topology import InMemoryTopologyRepository, SQLTopologyRepository
 
 from .auth import PrincipalScopeResolver, SourceAntTokenVerifier
 from .server import create_mcp_server
@@ -26,16 +26,22 @@ def create_default_mcp_server():
         if engine is not None
         else InMemoryKnowledgeRepository()
     )
+    topology = (
+        SQLTopologyRepository(engine)
+        if engine is not None
+        else InMemoryTopologyRepository()
+    )
     provider = DefaultContextProvider(
         code=InMemoryCodeIndex(),
         knowledge=knowledge,
-        topology=InMemoryTopologyRepository(),
+        topology=topology,
         contracts=InMemoryContractRepository(),
         review_state=InMemoryReviewStateRepository(),
     )
     return create_mcp_server(
         provider,
         knowledge=knowledge,
+        topology=topology,
     )
 
 
@@ -65,16 +71,22 @@ def create_http_mcp_server():
         if engine is not None
         else InMemoryKnowledgeRepository()
     )
+    topology = (
+        SQLTopologyRepository(engine)
+        if engine is not None
+        else InMemoryTopologyRepository()
+    )
     provider = DefaultContextProvider(
         code=InMemoryCodeIndex(),
         knowledge=knowledge,
-        topology=InMemoryTopologyRepository(),
+        topology=topology,
         contracts=InMemoryContractRepository(),
         review_state=InMemoryReviewStateRepository(),
     )
     return create_mcp_server(
         provider,
         knowledge=knowledge,
+        topology=topology,
         scope_resolver=PrincipalScopeResolver(),
         auth=AuthSettings(
             issuer_url=values["issuer"],

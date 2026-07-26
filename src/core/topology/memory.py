@@ -6,7 +6,9 @@ from src.core.scope import Scope
 
 from .models import (
     TopologyEntity,
+    TopologyQuery,
     TopologyRelationship,
+    TopologyResult,
     TopologySubgraph,
     TopologyTraversal,
 )
@@ -40,6 +42,71 @@ class InMemoryTopologyRepository:
         self._relationships[key] = relationship
         self._adjacency[(scope, relationship.source_id)].add(relationship.id)
         self._adjacency[(scope, relationship.target_id)].add(relationship.id)
+
+    def remove_entity(self, scope: Scope, entity_id: str) -> bool:
+        if (scope, entity_id) not in self._entities:
+            return False
+        for relationship_id in tuple(self._adjacency.get((scope, entity_id), ())):
+            self.remove_relationship(scope, relationship_id)
+        self._adjacency.pop((scope, entity_id), None)
+        del self._entities[(scope, entity_id)]
+        return True
+
+    def remove_relationship(self, scope: Scope, relationship_id: str) -> bool:
+        relationship = self._relationships.pop((scope, relationship_id), None)
+        if relationship is None:
+            return False
+        self._adjacency[(scope, relationship.source_id)].discard(relationship.id)
+        self._adjacency[(scope, relationship.target_id)].discard(relationship.id)
+        return True
+
+    def search(self, query: TopologyQuery) -> TopologyResult:
+        matches = sorted(
+            (
+                entity
+                for (scope, _), entity in self._entities.items()
+                if scope == query.scope
+                and (not query.ids or entity.id in query.ids)
+                and (not query.kinds or entity.kind in query.kinds)
+                and (not query.statuses or entity.status in query.statuses)
+                and entity.confidence >= query.minimum_confidence
+                and (query.include_stale or not entity.stale)
+                and all(
+                    entity.properties.get(key) == value
+                    for key, value in query.properties.items()
+                )
+            ),
+            key=lambda entity: entity.id,
+        )
+        entities = tuple(matches[query.offset : query.offset + query.limit])
+        return TopologyResult(
+            entities=entities,
+            total=len(matches),
+            has_more=query.offset + len(entities) < len(matches),
+        )
+
+    def get_relationships(
+        self,
+        scope: Scope,
+        entity_ids: frozenset[str],
+        statuses: frozenset[str] = frozenset(),
+    ) -> tuple[TopologyRelationship, ...]:
+        return tuple(
+            sorted(
+                (
+                    relationship
+                    for (
+                        relationship_scope,
+                        _,
+                    ), relationship in self._relationships.items()
+                    if relationship_scope == scope
+                    and (not statuses or relationship.status in statuses)
+                    and relationship.source_id in entity_ids
+                    and relationship.target_id in entity_ids
+                ),
+                key=lambda relationship: relationship.id,
+            )
+        )
 
     def traverse(self, traversal: TopologyTraversal) -> TopologySubgraph:
         scope = traversal.scope
