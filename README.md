@@ -81,6 +81,12 @@ The SQL repository is the basic community implementation. Applications can injec
 
 Knowledge scopes can identify any repository. SourceAnt core does not clone or structurally index arbitrary repositories by itself. Code-aware context requires a `CodeIndexReader` integration, while knowledge management works without one.
 
+### Model software boundaries
+
+Software topology is independent of repository layout. A topology entity can represent a system, subsystem, component, service, module, interface, repository, document, or deployment. Relationships describe containment, dependencies, ownership, and storage without assigning architectural meaning to a repository boundary.
+
+A monorepo can contain assets from several systems. One system can also contain assets stored across several repositories. Reviews can start from changed code, resolve its owning assets, and traverse system dependencies before repository locations are considered.
+
 ## Review automation setup
 
 ### Prerequisites
