@@ -427,7 +427,9 @@ class CodeReviewerPlugin(BasePlugin):
             return {
                 "status": "success",
                 "review_posted": post_result,
-                "review": final_review.model_dump() if final_review else None,
+                "review": (
+                    final_review.model_dump(mode="json") if final_review else None
+                ),
                 "suggestions_count": (
                     len(final_review.code_suggestions)
                     if final_review.code_suggestions

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -11,6 +13,7 @@ from src.models.code_review import (
 )
 from src.models.repository import Repository
 from src.models.pull_request import PullRequest
+from src.core.responses import success_response
 
 
 @pytest.fixture
@@ -399,3 +402,84 @@ class TestFilterDuplicateSuggestions:
 
         result = plugin._filter_duplicate_suggestions(suggestions, existing)
         assert len(result) == 0
+
+
+_DIFF = """diff --git a/test.py b/test.py
+index 1111111..2222222 100644
+--- a/test.py
++++ b/test.py
+@@ -7,7 +7,7 @@ def load(path):
+     if not path:
+         return None
+ 
+-    f = open(path)
+-    data = f.read()
+-    f.close()
++    f = open(path, "r")
++    data = f.read()
++    f.close()
+     return data
+"""
+
+
+class TestPreviewResponseIsSerializable:
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    def test_preview_run_renders_as_json(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save_record,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        mock_get_sha.return_value = None
+
+        mock_github = MagicMock()
+        mock_github_cls.return_value = mock_github
+        mock_github.get_diff.return_value = _DIFF
+        mock_github.get_existing_bot_review_comments.return_value = []
+
+        mock_llm_instance = MagicMock()
+        mock_llm.return_value = mock_llm_instance
+        mock_llm_instance.count_tokens.return_value = 100
+        mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_code_review.return_value = CodeReview(
+            verdict=Verdict.REQUEST_CHANGES,
+            code_suggestions=[
+                CodeSuggestion(
+                    file_name="test.py",
+                    start_line=10,
+                    end_line=12,
+                    side=Side.RIGHT,
+                    comment="Consider a context manager so the file is closed on failure.",
+                    category=SuggestionCategory.BUG,
+                    existing_code='    f = open(path, "r")\n    data = f.read()\n    f.close()',
+                    suggested_code="    with open(path) as f:\n        data = f.read()",
+                )
+            ],
+        )
+
+        import asyncio
+
+        result = asyncio.get_event_loop().run_until_complete(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="test_owner/test_repo",
+                post=False,
+            )
+        )
+
+        assert result["status"] == "success"
+        mock_github.post_review.assert_not_called()
+
+        body = json.loads(success_response(result).body)
+        suggestion = body["data"]["review"]["code_suggestions"][0]
+        assert suggestion["side"] == "RIGHT"
+        assert suggestion["category"] == "BUG"
+        assert body["data"]["review"]["verdict"] == "REQUEST_CHANGES"

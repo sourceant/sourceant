@@ -179,6 +179,8 @@ async def review_detail(
             "state": pr["state"],
             "author": (pr.get("user") or {}).get("login"),
             "url": pr.get("html_url"),
+            "head_sha": (pr.get("head") or {}).get("sha"),
+            "base_sha": (pr.get("base") or {}).get("sha"),
             "reviews": [
                 {
                     "author": (r.get("user") or {}).get("login"),
