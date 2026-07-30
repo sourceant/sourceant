@@ -176,7 +176,7 @@ async def review_detail(
             raise HTTPException(status_code=502, detail="GitHub API error")
         pr = pr_resp.json()
 
-        reviews_resp, comments_resp = await asyncio.gather(
+        reviews_resp, comments_resp, files_resp = await asyncio.gather(
             client.get(
                 f"{_GITHUB_API}/repos/{repo}/pulls/{number}/reviews",
                 headers=headers,
@@ -187,9 +187,15 @@ async def review_detail(
                 headers=headers,
                 params={"per_page": 100},
             ),
+            client.get(
+                f"{_GITHUB_API}/repos/{repo}/pulls/{number}/files",
+                headers=headers,
+                params={"per_page": 100},
+            ),
         )
         reviews = reviews_resp.json() if reviews_resp.status_code == 200 else []
         comments = comments_resp.json() if comments_resp.status_code == 200 else []
+        files = files_resp.json() if files_resp.status_code == 200 else []
 
     return success_response(
         {
@@ -229,6 +235,20 @@ async def review_detail(
                 }
                 for c in comments
                 if c.get("body")
+            ],
+            # What the change touches at all, not only what the review remarked
+            # on. A file nobody expected to see is a finding in itself.
+            "files": [
+                {
+                    "filename": f.get("filename"),
+                    "previous_filename": f.get("previous_filename"),
+                    "status": f.get("status"),
+                    "additions": f.get("additions", 0),
+                    "deletions": f.get("deletions", 0),
+                    "changes": f.get("changes", 0),
+                    "patch": f.get("patch"),
+                }
+                for f in files
             ],
         }
     )
