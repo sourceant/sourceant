@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from itertools import chain
 from typing import Any
 
 from .models import TopologyEntity, TopologyEvidence, TopologyRelationship
@@ -31,10 +32,9 @@ class TopologySnapshot:
             for relationship in self.relationships
         ):
             raise ValueError("topology snapshot relationship endpoints must exist")
-        values = (*self.entities, *self.relationships)
         if any(
             len(item.evidence) != len({evidence.id for evidence in item.evidence})
-            for item in values
+            for item in chain(self.entities, self.relationships)
         ):
             raise ValueError("topology snapshot evidence ids must be unique")
         object.__setattr__(
