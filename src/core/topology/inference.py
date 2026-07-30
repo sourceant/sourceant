@@ -20,6 +20,43 @@ from src.core.topology.models import TopologyEvidence, TopologyRelationship
 
 DEPENDS_ON = "depends_on"
 
+# A package name is only half an identifier. The Package URL specification exists
+# because every ecosystem names and compares packages by its own rules, so a name
+# is only meaningful alongside the ecosystem that issued it. The comparison rules
+# below are the ones that specification records for each type.
+NPM = "npm"
+PYPI = "pypi"
+COMPOSER = "composer"
+GOLANG = "golang"
+
+_PYPI_SEPARATORS = re.compile(r"[-_.]+")
+
+
+def normalise(ecosystem: str, name: str) -> str:
+    """Reduce a declared name to the form its own ecosystem compares by."""
+    if ecosystem == PYPI:
+        # PEP 503: runs of dot, hyphen and underscore collapse to one hyphen,
+        # and the name is lowercased. friendly.bard and Friendly_Bard are one
+        # project.
+        return _PYPI_SEPARATORS.sub("-", name).lower()
+    if ecosystem == COMPOSER:
+        # Both vendor and package are compared without regard to case.
+        return name.lower()
+    # npm and go compare names exactly.
+    return name
+
+
+def is_namespaced(ecosystem: str, name: str) -> bool:
+    """
+    Whether the name carries who owns it, rather than being a bare word anyone
+    could publish.
+    """
+    if ecosystem in (COMPOSER, GOLANG):
+        return "/" in name
+    if ecosystem == NPM:
+        return name.startswith("@") and "/" in name
+    return False
+
 
 @dataclass(frozen=True)
 class RepositoryManifest:
@@ -28,6 +65,8 @@ class RepositoryManifest:
     entity_id: str
     repository: str
     path: str
+    # Which ecosystem issued these names, since names only compare within one.
+    ecosystem: str = ""
     # The names this repository publishes itself under.
     identity: tuple[str, ...] = ()
     # The names it declares a dependency on.
@@ -62,6 +101,7 @@ def parse_package_json(entity_id: str, repository: str, path: str, content: str)
         entity_id=entity_id,
         repository=repository,
         path=path,
+        ecosystem=NPM,
         identity=_clean([data.get("name")]),
         dependencies=_clean(deps),
     )
@@ -79,6 +119,7 @@ def parse_composer_json(entity_id: str, repository: str, path: str, content: str
         entity_id=entity_id,
         repository=repository,
         path=path,
+        ecosystem=COMPOSER,
         identity=_clean([data.get("name")]),
         dependencies=_clean(deps),
     )
@@ -102,6 +143,7 @@ def parse_go_mod(entity_id: str, repository: str, path: str, content: str):
         entity_id=entity_id,
         repository=repository,
         path=path,
+        ecosystem=GOLANG,
         identity=_clean(identity),
         dependencies=_clean(deps),
     )
@@ -124,6 +166,7 @@ def parse_requirements_txt(entity_id: str, repository: str, path: str, content: 
         entity_id=entity_id,
         repository=repository,
         path=path,
+        ecosystem=PYPI,
         dependencies=_clean(deps),
     )
 
@@ -145,6 +188,7 @@ def parse_pyproject_toml(entity_id: str, repository: str, path: str, content: st
         entity_id=entity_id,
         repository=repository,
         path=path,
+        ecosystem=PYPI,
         identity=_clean([project.get("name")]),
         dependencies=_clean(deps),
     )
@@ -187,26 +231,39 @@ def infer_dependencies(
 
     # Which entity publishes which name. A name published by more than one
     # repository is ambiguous and proposes nothing.
-    published: dict[str, set[str]] = {}
+    published: dict[tuple[str, str], set[str]] = {}
     for manifest in manifests:
         for name in manifest.identity:
-            published.setdefault(name, set()).add(manifest.entity_id)
+            key = (manifest.ecosystem, normalise(manifest.ecosystem, name))
+            published.setdefault(key, set()).add(manifest.entity_id)
 
     proposals: dict[str, TopologyRelationship] = {}
     for manifest in manifests:
         for name in manifest.dependencies:
-            owners = published.get(name)
+            owners = published.get(
+                (manifest.ecosystem, normalise(manifest.ecosystem, name))
+            )
             if not owners or len(owners) > 1:
                 continue
             target_id = next(iter(owners))
             if target_id == manifest.entity_id:
                 continue
 
+            # A bare name is not proof the dependency resolves here. A public
+            # registry can carry the same name, which is how dependency
+            # confusion works, so an unowned name proposes with less confidence.
+            namespaced = is_namespaced(manifest.ecosystem, name)
+            confidence = 1.0 if namespaced else 0.6
+
             evidence = TopologyEvidence(
                 id=f"{manifest.repository}:{manifest.path}:{name}",
                 kind="manifest",
                 source=f"{manifest.repository}/{manifest.path}",
-                properties={"declared": name},
+                properties={
+                    "declared": name,
+                    "ecosystem": manifest.ecosystem,
+                    "namespaced": namespaced,
+                },
             )
             key = _relationship_id(manifest.entity_id, target_id)
             existing = proposals.get(key)
@@ -230,8 +287,11 @@ def infer_dependencies(
                 type=DEPENDS_ON,
                 # Proposed, never applied. A person decides whether it is real.
                 status="pending",
-                confidence=1.0,
-                properties={"inferred_from": "manifest"},
+                confidence=confidence,
+                properties={
+                    "inferred_from": "manifest",
+                    "ecosystem": manifest.ecosystem,
+                },
                 evidence=(evidence,),
             )
 

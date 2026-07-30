@@ -3,9 +3,14 @@ from pathlib import Path
 import pytest
 
 from src.core.topology.inference import (
+    COMPOSER,
     DEPENDS_ON,
+    GOLANG,
+    NPM,
+    PYPI,
     RepositoryManifest,
     infer_dependencies,
+    normalise,
     parse_manifest,
 )
 
@@ -85,6 +90,7 @@ class TestProposingDependencies:
                     entity_id="asset:web",
                     repository="acme/web",
                     path="package.json",
+                    ecosystem=NPM,
                     identity=("@acme/web",),
                     dependencies=("@acme/design", "lodash"),
                 ),
@@ -92,6 +98,7 @@ class TestProposingDependencies:
                     entity_id="asset:design",
                     repository="acme/design",
                     path="package.json",
+                    ecosystem=NPM,
                     identity=("@acme/design",),
                 ),
             ]
@@ -114,6 +121,7 @@ class TestProposingDependencies:
                     entity_id="asset:web",
                     repository="acme/web",
                     path="package.json",
+                    ecosystem=NPM,
                     dependencies=("lodash", "nuxt"),
                 )
             ]
@@ -121,10 +129,10 @@ class TestProposingDependencies:
 
         assert proposals == ()
 
-    def test_a_name_two_repositories_publish_proposes_nothing(self):
-        """Taken from these repositories: the dashboard and memory both call
-        themselves sourceant-memory, so a dependency on that name cannot say
-        which one is meant."""
+    def test_the_same_name_in_two_ecosystems_is_two_packages(self):
+        """Taken from these repositories: the dashboard publishes
+        sourceant-memory to npm and memory publishes it to pypi. A python
+        dependency on that name can only mean the python one."""
         dashboard = parse_manifest(
             "asset:dashboard",
             "sourceant/dashboard",
@@ -138,15 +146,49 @@ class TestProposingDependencies:
             read("memory.pyproject.toml"),
         )
         assert dashboard.identity == memory.identity
+        assert dashboard.ecosystem != memory.ecosystem
 
         caller = RepositoryManifest(
             entity_id="asset:core",
             repository="sourceant/sourceant",
             path="requirements.txt",
+            ecosystem=PYPI,
             dependencies=("sourceant-memory",),
         )
 
-        assert infer_dependencies([dashboard, memory, caller]) == ()
+        proposals = infer_dependencies([dashboard, memory, caller])
+
+        assert len(proposals) == 1
+        assert proposals[0].target_id == "asset:memory"
+
+    def test_the_same_name_twice_in_one_ecosystem_proposes_nothing(self):
+        proposals = infer_dependencies(
+            [
+                RepositoryManifest(
+                    entity_id="a",
+                    repository="o/a",
+                    path="package.json",
+                    ecosystem=NPM,
+                    identity=("shared",),
+                ),
+                RepositoryManifest(
+                    entity_id="b",
+                    repository="o/b",
+                    path="package.json",
+                    ecosystem=NPM,
+                    identity=("shared",),
+                ),
+                RepositoryManifest(
+                    entity_id="c",
+                    repository="o/c",
+                    path="package.json",
+                    ecosystem=NPM,
+                    dependencies=("shared",),
+                ),
+            ]
+        )
+
+        assert proposals == ()
 
     def test_a_repository_depending_on_itself_proposes_nothing(self):
         proposals = infer_dependencies(
@@ -155,6 +197,7 @@ class TestProposingDependencies:
                     entity_id="asset:web",
                     repository="acme/web",
                     path="package.json",
+                    ecosystem=NPM,
                     identity=("@acme/web",),
                     dependencies=("@acme/web",),
                 )
@@ -170,18 +213,21 @@ class TestProposingDependencies:
                     entity_id="asset:web",
                     repository="acme/web",
                     path="package.json",
+                    ecosystem=NPM,
                     dependencies=("@acme/design",),
                 ),
                 RepositoryManifest(
                     entity_id="asset:web",
                     repository="acme/web",
                     path="apps/admin/package.json",
+                    ecosystem=NPM,
                     dependencies=("@acme/design",),
                 ),
                 RepositoryManifest(
                     entity_id="asset:design",
                     repository="acme/design",
                     path="package.json",
+                    ecosystem=NPM,
                     identity=("@acme/design",),
                 ),
             ]
@@ -198,15 +244,115 @@ class TestProposingDependencies:
                     entity_id="a",
                     repository="o/a",
                     path="package.json",
+                    ecosystem=NPM,
                     dependencies=("b",),
                 ),
                 RepositoryManifest(
                     entity_id="b",
                     repository="o/b",
                     path="package.json",
+                    ecosystem=NPM,
                     identity=("b",),
                 ),
             ]
         )
 
         assert all(p.status == status for p in proposals)
+
+
+class TestNameComparison:
+    """The rules each ecosystem compares names by, as the Package URL
+    specification records them."""
+
+    def test_python_ignores_case_and_separator_style(self):
+        # PEP 503: runs of dot, hyphen and underscore collapse to one hyphen.
+        for written in (
+            "friendly-bard",
+            "Friendly_Bard",
+            "friendly.bard",
+            "friendly--bard",
+        ):
+            assert normalise(PYPI, written) == "friendly-bard"
+
+    def test_php_ignores_case(self):
+        assert normalise(COMPOSER, "Laravel/Framework") == "laravel/framework"
+
+    def test_node_and_go_compare_exactly(self):
+        assert normalise(NPM, "MyPackage") == "MyPackage"
+        assert normalise(GOLANG, "github.com/Acme/Thing") == "github.com/Acme/Thing"
+
+    def test_a_python_dependency_written_either_way_finds_the_same_repository(self):
+        proposals = infer_dependencies(
+            [
+                RepositoryManifest(
+                    entity_id="asset:lib",
+                    repository="o/lib",
+                    path="pyproject.toml",
+                    ecosystem=PYPI,
+                    identity=("Source_Ant.Memory",),
+                ),
+                RepositoryManifest(
+                    entity_id="asset:app",
+                    repository="o/app",
+                    path="requirements.txt",
+                    ecosystem=PYPI,
+                    dependencies=("source-ant-memory",),
+                ),
+            ]
+        )
+
+        assert len(proposals) == 1
+        assert proposals[0].target_id == "asset:lib"
+
+
+class TestConfidence:
+    """A name that says who owns it proves more than a bare word, because a
+    public registry can carry the same bare word."""
+
+    def test_an_owned_name_is_proposed_with_full_confidence(self):
+        proposals = infer_dependencies(
+            [
+                RepositoryManifest(
+                    entity_id="asset:app",
+                    repository="o/app",
+                    path="composer.json",
+                    ecosystem=COMPOSER,
+                    dependencies=("acme/billing",),
+                ),
+                RepositoryManifest(
+                    entity_id="asset:billing",
+                    repository="o/billing",
+                    path="composer.json",
+                    ecosystem=COMPOSER,
+                    identity=("acme/billing",),
+                ),
+            ]
+        )
+
+        assert proposals[0].confidence == 1.0
+        assert proposals[0].evidence[0].properties["namespaced"] is True
+
+    def test_a_bare_name_is_proposed_with_less(self):
+        proposals = infer_dependencies(
+            [
+                RepositoryManifest(
+                    entity_id="asset:app",
+                    repository="o/app",
+                    path="requirements.txt",
+                    ecosystem=PYPI,
+                    dependencies=("billing",),
+                ),
+                RepositoryManifest(
+                    entity_id="asset:billing",
+                    repository="o/billing",
+                    path="pyproject.toml",
+                    ecosystem=PYPI,
+                    identity=("billing",),
+                ),
+            ]
+        )
+
+        assert proposals[0].confidence < 1.0
+        assert proposals[0].evidence[0].properties["namespaced"] is False
+        # Still pending either way: confidence never decides.
+        assert proposals[0].status == "pending"
