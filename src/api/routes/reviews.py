@@ -164,12 +164,20 @@ async def review_detail(
             raise HTTPException(status_code=502, detail="GitHub API error")
         pr = pr_resp.json()
 
-        reviews_resp = await client.get(
-            f"{_GITHUB_API}/repos/{repo}/pulls/{number}/reviews",
-            headers=headers,
-            params={"per_page": 50},
+        reviews_resp, comments_resp = await asyncio.gather(
+            client.get(
+                f"{_GITHUB_API}/repos/{repo}/pulls/{number}/reviews",
+                headers=headers,
+                params={"per_page": 50},
+            ),
+            client.get(
+                f"{_GITHUB_API}/repos/{repo}/pulls/{number}/comments",
+                headers=headers,
+                params={"per_page": 100},
+            ),
         )
         reviews = reviews_resp.json() if reviews_resp.status_code == 200 else []
+        comments = comments_resp.json() if comments_resp.status_code == 200 else []
 
     return success_response(
         {
@@ -190,6 +198,25 @@ async def review_detail(
                 }
                 for r in reviews
                 if r.get("body")
+            ],
+            # The findings themselves are inline comments, not the review body,
+            # which carries only a pointer to the overview comment.
+            "comments": [
+                {
+                    "id": c.get("id"),
+                    "author": (c.get("user") or {}).get("login"),
+                    "body": c.get("body") or "",
+                    "path": c.get("path"),
+                    "line": c.get("line") or c.get("original_line"),
+                    "start_line": c.get("start_line") or c.get("original_start_line"),
+                    "side": c.get("side"),
+                    "diff_hunk": c.get("diff_hunk"),
+                    "in_reply_to_id": c.get("in_reply_to_id"),
+                    "url": c.get("html_url"),
+                    "created_at": c.get("created_at"),
+                }
+                for c in comments
+                if c.get("body")
             ],
         }
     )
