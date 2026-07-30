@@ -9,6 +9,8 @@ from src.auth import get_current_user
 from src.config.db import get_session
 from src.core.responses import success_response
 from src.models.review_record import ReviewRecord
+from src.utils.review_cache import get_review as get_cached_review
+from src.utils.review_cache import save_review as save_cached_review
 
 router = APIRouter()
 
@@ -20,6 +22,8 @@ class RerunRequest(BaseModel):
     number: int
     # Preview by default: generate the review and return it without posting.
     post: bool = False
+    # Ignore a review already generated for this revision and pay for a new one.
+    refresh: bool = False
 
 
 @router.post("/rerun")
@@ -52,6 +56,12 @@ async def rerun_review(
         raise HTTPException(status_code=502, detail="Could not load the pull request")
     pr = pr_resp.json()
 
+    head_sha = (pr.get("head") or {}).get("sha")
+    if not data.post and not data.refresh:
+        cached = get_cached_review(data.repo, data.number, head_sha)
+        if cached:
+            return success_response({**cached, "cached": True})
+
     plugin = plugin_registry.get_plugin("code_reviewer")
     if plugin is None:
         raise HTTPException(status_code=503, detail="Reviewer is not available")
@@ -81,7 +91,9 @@ async def rerun_review(
         repository_full_name=data.repo,
         post=data.post,
     )
-    return success_response(result)
+    if result.get("status") == "success":
+        save_cached_review(data.repo, data.number, head_sha, result)
+    return success_response({**result, "cached": False})
 
 
 async def _fetch_pull_request(
