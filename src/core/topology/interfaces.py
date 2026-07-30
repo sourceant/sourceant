@@ -10,6 +10,7 @@ from .models import (
     TopologySubgraph,
     TopologyTraversal,
 )
+from .snapshots import TopologySnapshot
 
 
 @runtime_checkable
@@ -29,3 +30,12 @@ class TopologyWriter(Protocol):
 @runtime_checkable
 class TopologyRepository(TopologyReader, TopologyWriter, Protocol):
     pass
+
+
+@runtime_checkable
+class TopologySnapshotCodec(Protocol):
+    media_type: str
+
+    def encode(self, snapshot: TopologySnapshot) -> bytes: ...
+
+    def decode(self, payload: bytes) -> TopologySnapshot: ...

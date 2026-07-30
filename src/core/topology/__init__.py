@@ -1,4 +1,9 @@
-from .interfaces import TopologyReader, TopologyRepository, TopologyWriter
+from .interfaces import (
+    TopologyReader,
+    TopologyRepository,
+    TopologySnapshotCodec,
+    TopologyWriter,
+)
 from .memory import InMemoryTopologyRepository
 from .models import (
     TopologyEntity,
@@ -7,14 +12,18 @@ from .models import (
     TopologySubgraph,
     TopologyTraversal,
 )
+from .snapshots import JSONTopologySnapshotCodec, TopologySnapshot
 
 __all__ = [
     "InMemoryTopologyRepository",
+    "JSONTopologySnapshotCodec",
     "TopologyEntity",
     "TopologyEvidence",
     "TopologyReader",
     "TopologyRelationship",
     "TopologyRepository",
+    "TopologySnapshot",
+    "TopologySnapshotCodec",
     "TopologySubgraph",
     "TopologyTraversal",
     "TopologyWriter",
