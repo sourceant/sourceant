@@ -9,6 +9,8 @@ from src.auth import get_current_user
 from src.config.db import get_session
 from src.core.responses import success_response
 from src.models.review_record import ReviewRecord
+from src.utils.concurrency import gather_bounded
+from src.utils.pagination import Params, as_data, page_of, page_of_query
 from src.utils.provider_pages import fetch_all
 from src.utils.review_cache import get_review as get_cached_review
 from src.utils.review_cache import save_review as save_cached_review
@@ -117,42 +119,59 @@ async def _fetch_pull_request(
 
 @router.get("/pulls")
 async def list_pulls(
-    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    repo: list[str] = Query(
+        ..., description="Repository full name, e.g. owner/name. May repeat."
+    ),
+    params: Params = Depends(),
     user: dict = Depends(get_current_user),
 ):
-    """Open pull requests for a repository, from live GitHub."""
+    """One page of open pull requests across the given repositories."""
     github_token = user.get("github_token")
     if not github_token:
-        return success_response([])
+        return success_response(page_of([], params))
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    headers = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async def _pulls_of(client: httpx.AsyncClient, full_name: str):
         pulls, truncated = await fetch_all(
             client,
-            f"{_GITHUB_API}/repos/{repo}/pulls",
-            {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github+json",
-            },
+            f"{_GITHUB_API}/repos/{full_name}/pulls",
+            headers,
             params={"state": "open", "sort": "updated"},
         )
-    if not pulls and truncated:
-        raise HTTPException(status_code=502, detail="GitHub API error")
+        return full_name, pulls, truncated
 
-    results = []
-    for pr in pulls:
-        results.append(
-            {
-                "number": pr["number"],
-                "title": pr["title"],
-                "state": pr["state"],
-                "draft": pr.get("draft", False),
-                "author": (pr.get("user") or {}).get("login"),
-                "url": pr.get("html_url"),
-                "updated_at": pr.get("updated_at"),
-            }
+    async with httpx.AsyncClient(timeout=30) as client:
+        gathered = await gather_bounded(
+            [
+                lambda c=client, name=name: _pulls_of(c, name)
+                for name in dict.fromkeys(repo)
+            ]
         )
 
-    return success_response(results)
+    if all(truncated and not pulls for _, pulls, truncated in gathered):
+        raise HTTPException(status_code=502, detail="GitHub API error")
+
+    results = [
+        {
+            "repo": full_name,
+            "number": pr["number"],
+            "title": pr["title"],
+            "state": pr["state"],
+            "draft": pr.get("draft", False),
+            "author": (pr.get("user") or {}).get("login"),
+            "url": pr.get("html_url"),
+            "updated_at": pr.get("updated_at"),
+        }
+        for full_name, pulls, _ in gathered
+        for pr in pulls
+    ]
+    results.sort(key=lambda item: item["updated_at"] or "", reverse=True)
+
+    return success_response(page_of(results, params))
 
 
 @router.get("/detail")
@@ -258,42 +277,52 @@ async def review_detail(
 
 @router.get("")
 async def list_reviews(
-    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    repo: list[str] = Query(
+        ..., description="Repository full name, e.g. owner/name. May repeat."
+    ),
+    params: Params = Depends(),
     session: Session = Depends(get_session),
     user: dict = Depends(get_current_user),
 ):
-    """List SourceAnt's reviews for a repository, enriched with live GitHub PR state."""
+    """One page of SourceAnt's reviews, enriched with live GitHub state."""
     github_token = user.get("github_token")
 
-    records = session.exec(
+    page = page_of_query(
+        session,
         select(ReviewRecord)
-        .where(ReviewRecord.repository_full_name == repo)
-        .order_by(ReviewRecord.id.desc())
-    ).all()
+        .where(ReviewRecord.repository_full_name.in_(repo))
+        .order_by(ReviewRecord.id.desc()),
+        params,
+    )
 
-    # Fetch each distinct pull request once, concurrently but bounded so a
-    # repository with many reviewed PRs does not open a flood of requests that
-    # trips GitHub's secondary rate limits.
-    pr_numbers = list({record.pr_number for record in records})
-    semaphore = asyncio.Semaphore(8)
+    # Only the page is enriched, so the number of provider calls follows the
+    # page size rather than the whole review history.
+    wanted = {(record.repository_full_name, record.pr_number) for record in page.items}
 
     async with httpx.AsyncClient(timeout=10) as client:
 
-        async def _fetch(number: int):
-            async with semaphore:
-                return number, await _fetch_pull_request(
-                    client, repo, number, github_token
-                )
+        async def _fetch(full_name: str, number: int):
+            return (full_name, number), await _fetch_pull_request(
+                client, full_name, number, github_token
+            )
 
-        pr_cache = dict(await asyncio.gather(*[_fetch(n) for n in pr_numbers]))
+        pr_cache = dict(
+            await gather_bounded(
+                [
+                    lambda name=name, number=number: _fetch(name, number)
+                    for name, number in wanted
+                ]
+            )
+        )
 
     results = []
-    for record in records:
-        pr = pr_cache.get(record.pr_number)
+    for record in page.items:
+        pr = pr_cache.get((record.repository_full_name, record.pr_number))
         results.append(
             {
                 "id": record.id,
                 "repository_full_name": record.repository_full_name,
+                "repo": record.repository_full_name,
                 "pr_number": record.pr_number,
                 "status": record.status,
                 "reviewed_head_sha": record.reviewed_head_sha,
@@ -305,4 +334,4 @@ async def list_reviews(
             }
         )
 
-    return success_response(results)
+    return success_response(as_data(page, results))
