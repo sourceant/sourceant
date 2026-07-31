@@ -20,6 +20,7 @@ from src.core.knowledge import (
     SQLKnowledgeRepository,
 )
 from src.core.scope import Scope
+from src.core.topology import SQLTopologyRepository
 from src.mcp_server import create_mcp_server
 from src.mcp_server.application import create_http_mcp_server
 from src.mcp_server.auth import PrincipalScopeResolver, SourceAntTokenVerifier
@@ -78,6 +79,9 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
         "put_knowledge",
         "put_knowledge_relationship",
         "search_knowledge",
+        "put_topology_entity",
+        "put_topology_relationship",
+        "traverse_topology",
     }
     assert result.isError is False
     assert result.structuredContent["scope"] == {"project": "one"}
@@ -183,6 +187,99 @@ async def test_mcp_manages_durable_knowledge_through_protocol_boundary(tmp_path)
         "decision",
         "constraint",
     ]
+
+
+@pytest.mark.asyncio
+async def test_mcp_manages_durable_topology_through_protocol_boundary(tmp_path):
+    topology = SQLTopologyRepository(
+        create_engine(f"sqlite:///{tmp_path / 'topology.db'}"),
+        create_schema=True,
+    )
+    server = create_mcp_server(
+        DefaultContextProvider(topology=topology),
+        topology=topology,
+    )
+
+    async with create_connected_server_and_client_session(server) as session:
+        for identifier in ("checkout", "ledger"):
+            entity = await session.call_tool(
+                "put_topology_entity",
+                {
+                    "scope": {"workspace": "one"},
+                    "id": identifier,
+                    "kind": "service",
+                    "status": "approved",
+                },
+            )
+            assert entity.isError is False
+        relationship = await session.call_tool(
+            "put_topology_relationship",
+            {
+                "scope": {"workspace": "one"},
+                "id": "checkout-ledger",
+                "source_id": "checkout",
+                "target_id": "ledger",
+                "type": "depends_on",
+                "status": "pending",
+                "confidence": 0.6,
+                "evidence": [{"id": "commit-1", "kind": "commit", "source": "github"}],
+            },
+        )
+        traversal = await session.call_tool(
+            "traverse_topology",
+            {"scope": {"workspace": "one"}, "entity_ids": ["checkout"]},
+        )
+        approved_only = await session.call_tool(
+            "traverse_topology",
+            {
+                "scope": {"workspace": "one"},
+                "entity_ids": ["checkout"],
+                "relationship_statuses": ["approved"],
+            },
+        )
+        other_scope = await session.call_tool(
+            "traverse_topology",
+            {"scope": {"workspace": "two"}, "entity_ids": ["checkout"]},
+        )
+        context = await session.call_tool(
+            "get_context",
+            {
+                "scope": {"workspace": "one"},
+                "topology_entity_ids": ["checkout"],
+            },
+        )
+
+    assert relationship.isError is False
+    assert [edge["id"] for edge in traversal.structuredContent["relationships"]] == [
+        "checkout-ledger"
+    ]
+    assert traversal.structuredContent["relationships"][0]["evidence"][0]["id"] == (
+        "commit-1"
+    )
+    assert approved_only.structuredContent["relationships"] == []
+    assert other_scope.structuredContent["entities"] == []
+    assert [
+        entity["id"] for entity in context.structuredContent["topology"]["entities"]
+    ] == ["checkout", "ledger"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_topology_tools_are_unavailable_without_a_repository():
+    server = create_mcp_server(DefaultContextProvider(code=InMemoryCodeIndex()))
+
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "put_topology_entity",
+            {
+                "scope": {"workspace": "one"},
+                "id": "checkout",
+                "kind": "service",
+                "status": "approved",
+            },
+        )
+
+    assert result.isError is True
+    assert "topology management is not configured" in result.content[0].text
 
 
 @pytest.mark.asyncio

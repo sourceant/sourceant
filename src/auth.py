@@ -21,10 +21,12 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
             raise HTTPException(status_code=401, detail="Invalid authorization header")
         token = authorization[7:]
         payload = decode_access_token(token)
+        claimed_scope = payload.get("scope")
         return {
             "user_id": payload["sub"],
             "github_token": payload.get("github_token"),
             "username": payload.get("username"),
+            "scope": claimed_scope if isinstance(claimed_scope, dict) else {},
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")

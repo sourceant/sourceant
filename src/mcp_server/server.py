@@ -19,13 +19,20 @@ from src.core.knowledge import (
 )
 from src.core.review_state import FindingQuery
 from src.core.scope import Scope
-from src.core.topology import TopologyTraversal
+from src.core.topology import (
+    TopologyEntity,
+    TopologyEvidence,
+    TopologyRelationship,
+    TopologyRepository,
+    TopologyTraversal,
+)
 
 
 def create_mcp_server(
     provider: ContextProvider,
     *,
     knowledge: KnowledgeRepository | None = None,
+    topology: TopologyRepository | None = None,
     scope_resolver: Callable[[Scope], Scope] | None = None,
     auth: AuthSettings | None = None,
     token_verifier: TokenVerifier | None = None,
@@ -197,6 +204,106 @@ def create_mcp_server(
         )
         return asdict(result)
 
+    @server.tool(
+        name="put_topology_entity",
+        description="Create or update a scoped software topology entity.",
+        structured_output=True,
+    )
+    def put_topology_entity(
+        scope: dict[str, str],
+        id: str,
+        kind: str,
+        status: str,
+        confidence: float = 1.0,
+        stale: bool = False,
+        properties: dict[str, Any] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        repository = _require_topology(topology)
+        entity = TopologyEntity(
+            id,
+            kind,
+            status,
+            confidence,
+            stale,
+            properties or {},
+            _build_evidence(evidence),
+        )
+        repository.put_entity(resolve_scope(Scope.from_mapping(scope)), entity)
+        return asdict(entity)
+
+    @server.tool(
+        name="put_topology_relationship",
+        description="Create or update a relationship between scoped topology entities.",
+        structured_output=True,
+    )
+    def put_topology_relationship(
+        scope: dict[str, str],
+        id: str,
+        source_id: str,
+        target_id: str,
+        type: str,
+        status: str,
+        confidence: float = 1.0,
+        stale: bool = False,
+        properties: dict[str, Any] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        repository = _require_topology(topology)
+        relationship = TopologyRelationship(
+            id,
+            source_id,
+            target_id,
+            type,
+            status,
+            confidence,
+            stale,
+            properties or {},
+            _build_evidence(evidence),
+        )
+        repository.put_relationship(
+            resolve_scope(Scope.from_mapping(scope)), relationship
+        )
+        return asdict(relationship)
+
+    @server.tool(
+        name="traverse_topology",
+        description="Traverse scoped software topology from a set of seed entities.",
+        structured_output=True,
+    )
+    def traverse_topology(
+        scope: dict[str, str],
+        entity_ids: list[str],
+        depth: int = 2,
+        entity_kinds: list[str] | None = None,
+        entity_statuses: list[str] | None = None,
+        relationship_types: list[str] | None = None,
+        relationship_statuses: list[str] | None = None,
+        direction: str = "both",
+        minimum_confidence: float = 0.0,
+        include_stale: bool = False,
+        entity_limit: int = 50,
+        relationship_limit: int = 100,
+    ) -> dict[str, Any]:
+        repository = _require_topology(topology)
+        result = repository.traverse(
+            TopologyTraversal(
+                resolve_scope(Scope.from_mapping(scope)),
+                tuple(entity_ids),
+                depth=depth,
+                entity_kinds=frozenset(entity_kinds or ()),
+                entity_statuses=frozenset(entity_statuses or ()),
+                relationship_types=frozenset(relationship_types or ()),
+                relationship_statuses=frozenset(relationship_statuses or ()),
+                direction=direction,
+                minimum_confidence=minimum_confidence,
+                include_stale=include_stale,
+                entity_limit=entity_limit,
+                relationship_limit=relationship_limit,
+            )
+        )
+        return asdict(result)
+
     return server
 
 
@@ -206,3 +313,26 @@ def _require_knowledge(
     if knowledge is None:
         raise ValueError("knowledge management is not configured")
     return knowledge
+
+
+def _require_topology(
+    topology: TopologyRepository | None,
+) -> TopologyRepository:
+    if topology is None:
+        raise ValueError("topology management is not configured")
+    return topology
+
+
+def _build_evidence(
+    evidence: list[dict[str, Any]] | None,
+) -> tuple[TopologyEvidence, ...]:
+    return tuple(
+        TopologyEvidence(
+            item["id"],
+            item["kind"],
+            item["source"],
+            item.get("revision", ""),
+            item.get("properties", {}),
+        )
+        for item in evidence or ()
+    )
