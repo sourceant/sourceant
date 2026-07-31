@@ -105,6 +105,43 @@ class TestFetchAll:
         assert truncated is True
 
     @pytest.mark.asyncio
+    async def test_keeps_what_it_read_when_a_page_is_not_json(self):
+        def handler(request):
+            if "page=2" in str(request.url):
+                # What a proxy in front of the provider answers with.
+                return httpx.Response(200, text="<html>Gateway Time-out</html>")
+            return httpx.Response(
+                200,
+                json=[{"id": 1}],
+                headers={"Link": '<https://api.github.com/x?page=2>; rel="next"'},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            items, truncated = await fetch_all(client, "https://api.github.com/x", {})
+
+        assert [item["id"] for item in items] == [1]
+        assert truncated is True
+
+    @pytest.mark.asyncio
+    async def test_keeps_what_it_read_when_a_page_is_not_a_list(self):
+        def handler(request):
+            if "page=2" in str(request.url):
+                return httpx.Response(200, json={"message": "Bad credentials"})
+            return httpx.Response(
+                200,
+                json=[{"id": 1}],
+                headers={"Link": '<https://api.github.com/x?page=2>; rel="next"'},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            items, truncated = await fetch_all(client, "https://api.github.com/x", {})
+
+        # The caller iterates what comes back, so handing it the object would
+        # walk the keys of an error message and call them repositories.
+        assert [item["id"] for item in items] == [1]
+        assert truncated is True
+
+    @pytest.mark.asyncio
     async def test_asks_for_the_largest_page_the_provider_allows(self):
         client, calls = _client([[{"id": 1}]], lambda i: None)
         async with client:

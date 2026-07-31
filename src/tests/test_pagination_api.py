@@ -252,6 +252,25 @@ class TestPagedEndpoints:
         assert body["total"] == 1
         assert body["items"][0]["full_name"] == "acme/repo-90"
 
+    def test_connected_status_still_answers_for_the_repositories_named(
+        self, monkeypatch
+    ):
+        self.connect(["acme/api"])
+        self.answer_github(
+            monkeypatch,
+            lambda request: [
+                {"id": 1, "name": "api", "full_name": "acme/api"},
+                {"id": 2, "name": "web", "full_name": "acme/web"},
+            ],
+        )
+
+        body = self.client.get(
+            "/api/repos", params={"size": 10}, headers=self.headers
+        ).json()["data"]
+
+        connected = {item["full_name"]: item["connected"] for item in body["items"]}
+        assert connected == {"acme/api": True, "acme/web": False}
+
     def test_only_the_reviews_on_the_page_are_looked_up_upstream(self, monkeypatch):
         for number in range(1, 21):
             self.session.add(

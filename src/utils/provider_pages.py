@@ -58,9 +58,20 @@ async def fetch_all(
             logger.warning(f"{url} answered {response.status_code} while paging")
             return items, True
 
-        page = response.json()
+        try:
+            page = response.json()
+        except ValueError:
+            # A proxy error page, or a body cut off part way through. Keeping
+            # what was read and saying the list is short beats handing back a
+            # prefix that looks whole.
+            logger.warning(f"{url} answered something other than JSON while paging")
+            return items, True
+
         if not isinstance(page, list):
-            return page, False
+            logger.warning(
+                f"{url} answered a {type(page).__name__} where a list was expected"
+            )
+            return items, True
 
         items.extend(page)
         pages += 1

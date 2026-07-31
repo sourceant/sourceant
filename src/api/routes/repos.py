@@ -64,8 +64,11 @@ async def list_repos(
     ).all()
     connected_ids = {row.repository_id for row in connected_rows}
 
-    all_repos = session.exec(select(Repository)).all()
-    repo_map = {r.full_name: r.id for r in all_repos}
+    # Only the repositories the provider just named, rather than every row in
+    # the table, which grows with every account on the platform.
+    seen = [gh_repo["full_name"] for gh_repo in github_repos]
+    known = session.exec(select(Repository).where(Repository.full_name.in_(seen))).all()
+    repo_map = {r.full_name: r.id for r in known}
 
     needle = q.strip().lower()
     results = []

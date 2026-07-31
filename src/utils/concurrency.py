@@ -24,4 +24,4 @@ async def gather_bounded(
         async with semaphore:
             return await call()
 
-    return list(await asyncio.gather(*[_run(call) for call in calls]))
+    return await asyncio.gather(*[_run(call) for call in calls])
