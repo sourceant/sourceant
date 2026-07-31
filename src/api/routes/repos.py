@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+
+from src.utils.provider_pages import fetch_all
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -11,6 +13,7 @@ from src.config.db import get_session
 from src.core.responses import success_response
 from src.models.repository import Repository
 from src.models.connected_repository import ConnectedRepository
+from src.utils.pagination import Params, as_data, page_of, page_of_query
 
 router = APIRouter()
 
@@ -32,26 +35,28 @@ class ConnectRepoRequest(BaseModel):
 
 @router.get("")
 async def list_repos(
+    q: str = Query("", description="Match against the name or description"),
+    params: Params = Depends(),
     session: Session = Depends(get_session),
     user: dict = Depends(get_current_user),
 ):
-    """List repos the user has access to via their GitHub token, with connected status."""
+    """One page of the repos the user's GitHub token reaches, with connected status."""
     github_token = user.get("github_token")
     if not github_token:
         raise HTTPException(status_code=401, detail="No GitHub token available")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
+    async with httpx.AsyncClient(timeout=30) as client:
+        github_repos, truncated = await fetch_all(
+            client,
             "https://api.github.com/user/repos",
-            headers={
+            {
                 "Authorization": f"token {github_token}",
                 "Accept": "application/vnd.github+json",
             },
-            params={"per_page": 100, "sort": "updated"},
+            params={"sort": "updated"},
         )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="GitHub API error")
-        github_repos = resp.json()
+    if not github_repos and truncated:
+        raise HTTPException(status_code=502, detail="GitHub API error")
 
     user_id = user["user_id"]
     connected_rows = session.exec(
@@ -59,11 +64,17 @@ async def list_repos(
     ).all()
     connected_ids = {row.repository_id for row in connected_rows}
 
-    all_repos = session.exec(select(Repository)).all()
-    repo_map = {r.full_name: r.id for r in all_repos}
+    # Only the repositories the provider just named, rather than every row in
+    # the table, which grows with every account on the platform.
+    seen = [gh_repo["full_name"] for gh_repo in github_repos]
+    known = session.exec(select(Repository).where(Repository.full_name.in_(seen))).all()
+    repo_map = {r.full_name: r.id for r in known}
 
+    needle = q.strip().lower()
     results = []
     for gh_repo in github_repos:
+        if needle and not _matches(gh_repo, needle):
+            continue
         repo_id = repo_map.get(gh_repo["full_name"])
         results.append(
             {
@@ -73,47 +84,67 @@ async def list_repos(
             }
         )
 
-    return results
+    # The whole list is read, and searched, before the page is cut: connected
+    # status comes from here rather than from the provider, and a search that
+    # only covered the page in hand would miss most of what it was asked about.
+    return success_response(page_of(results, params))
+
+
+def _matches(repo: dict, needle: str) -> bool:
+    haystack = f"{repo.get('full_name') or ''} {repo.get('description') or ''}"
+    return needle in haystack.lower()
 
 
 @router.get("/connected")
 async def list_connected_repos(
+    params: Params = Depends(),
     session: Session = Depends(get_session),
     user: dict = Depends(get_current_user),
 ):
-    """List only the user's connected repositories from the DB cache."""
+    """One page of the user's connected repositories, from the DB cache."""
     user_id = user["user_id"]
     connected_rows = session.exec(
         select(ConnectedRepository).where(ConnectedRepository.user_id == user_id)
     ).all()
 
     if not connected_rows:
-        return []
+        return success_response(page_of([], params))
 
     repo_ids = [row.repository_id for row in connected_rows]
     connected_at_map = {row.repository_id: row.connected_at for row in connected_rows}
 
-    repos = session.exec(select(Repository).where(Repository.id.in_(repo_ids))).all()
+    page = page_of_query(
+        session,
+        select(Repository)
+        .where(Repository.id.in_(repo_ids))
+        .order_by(Repository.full_name),
+        params,
+    )
 
-    return [
-        {
-            "id": repo.id,
-            "name": repo.full_name,
-            "full_name": repo.full_name,
-            "description": repo.description,
-            "private": repo.private,
-            "language": repo.language,
-            "default_branch": repo.default_branch,
-            "visibility": repo.visibility,
-            "archived": repo.archived,
-            "owner": repo.owner,
-            "url": repo.url,
-            "contexts": 0,
-            "connected_at": connected_at_map[repo.id].isoformat(),
-            "status": "active",
-        }
-        for repo in repos
-    ]
+    return success_response(
+        as_data(
+            page,
+            [
+                {
+                    "id": repo.id,
+                    "name": repo.full_name,
+                    "full_name": repo.full_name,
+                    "description": repo.description,
+                    "private": repo.private,
+                    "language": repo.language,
+                    "default_branch": repo.default_branch,
+                    "visibility": repo.visibility,
+                    "archived": repo.archived,
+                    "owner": repo.owner,
+                    "url": repo.url,
+                    "contexts": 0,
+                    "connected_at": connected_at_map[repo.id].isoformat(),
+                    "status": "active",
+                }
+                for repo in page.items
+            ],
+        )
+    )
 
 
 @router.post("/connect")
