@@ -49,6 +49,50 @@ def diff_data(request):
 
 
 class TestLineMapper:
+    def test_detects_replacement_already_applied_in_diff(self):
+        diff = """\
+--- a/components/SystemCanvas.vue
++++ b/components/SystemCanvas.vue
+@@ -1 +1 @@
+-const assetId = Number(targetEl.dataset.assetId)
++const assetId = targetEl?.dataset.assetId ?? null
+"""
+        mapper = LineMapper(parse_diff(diff))
+        suggestion = CodeSuggestion(
+            file_name="components/SystemCanvas.vue",
+            start_line=1,
+            end_line=1,
+            side=Side.RIGHT,
+            comment="Use the string identifier.",
+            category=SuggestionCategory.REFACTOR,
+            existing_code="-const assetId = Number(targetEl.dataset.assetId)",
+            suggested_code="const assetId = targetEl?.dataset.assetId ?? null",
+        )
+
+        assert mapper.suggestion_replays_diff(suggestion)
+
+    def test_does_not_reject_replacement_not_present_in_diff(self):
+        diff = """\
+--- a/components/SystemCanvas.vue
++++ b/components/SystemCanvas.vue
+@@ -1 +1 @@
+-const assetId = Number(targetEl.dataset.assetId)
++const assetId = targetEl?.dataset.assetId ?? null
+"""
+        mapper = LineMapper(parse_diff(diff))
+        suggestion = CodeSuggestion(
+            file_name="components/SystemCanvas.vue",
+            start_line=1,
+            end_line=1,
+            side=Side.RIGHT,
+            comment="Guard against an empty identifier.",
+            category=SuggestionCategory.BUG,
+            existing_code="const assetId = targetEl?.dataset.assetId ?? null",
+            suggested_code="const assetId = targetEl?.dataset.assetId || null",
+        )
+
+        assert not mapper.suggestion_replays_diff(suggestion)
+
     def test_successful_match(self, diff_data):
         """Test a successful match on a line that was modified."""
         parsed_diffs, file_name = diff_data

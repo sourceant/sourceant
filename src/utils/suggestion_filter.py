@@ -20,7 +20,7 @@ class SuggestionFilter:
     """
 
     POSITIVE_PATTERNS = [
-        r"\b(good|great|excellent|nice|well done|perfect|correctly|properly)\b",
+        r"\b(good|great|excellent|nice|clean|well done|perfect|correctly|properly)\b",
         r"\b(looks good|lgtm|ship it|no issues|no problems)\b",
         r"\b(appropriate|suitable|adequate|sufficient)\b",
         r"\bthis is (a )?(good|great|correct|proper)\b",
@@ -32,7 +32,8 @@ class SuggestionFilter:
     ]
 
     NEGATIVE_INDICATORS = [
-        r"\b(bug|error|issue|problem|flaw|vulnerability)\b",
+        r"\b(bug|error|issue|problem|flaw|vulnerability|crash|exception|regression)\b",
+        r"\bnull dereference\b",
         r"\b(should|could|might|consider|recommend|suggest)\b",
         r"\b(missing|lacks?|needs?|requires?)\b",
         r"\b(incorrect|wrong|invalid|broken|fails?)\b",
@@ -54,6 +55,22 @@ class SuggestionFilter:
         r"\bavoid\s+\w+",
     ]
 
+    COMPLETED_ACTIONS = [
+        r"\b(?:remov(?:e|es|ed|ing)|replac(?:e|es|ed|ing)|"
+        r"simplif(?:y|ies|ied|ying)|fix(?:es|ed|ing)?|"
+        r"address(?:es|ed|ing)?|avoid(?:s|ed|ing)?)\b",
+    ]
+
+    UNRESOLVED_TRANSITIONS = [
+        r"\b(?:but|however|although|though|yet|nevertheless)\b",
+    ]
+
+    UNRESOLVED_HARM = [
+        r"\b(?:introduces?|causes?|creates?|leads? to|still|remains?|fails?)\b"
+        r".{0,80}\b(?:bug|error|failure|crash|exception|vulnerability|"
+        r"regression|null dereference)\b",
+    ]
+
     def __init__(self):
         self._positive_regex = re.compile(
             "|".join(self.POSITIVE_PATTERNS), re.IGNORECASE
@@ -63,6 +80,15 @@ class SuggestionFilter:
         )
         self._actionable_regex = re.compile(
             "|".join(self.ACTIONABLE_VERBS), re.IGNORECASE
+        )
+        self._completed_action_regex = re.compile(
+            "|".join(self.COMPLETED_ACTIONS), re.IGNORECASE
+        )
+        self._unresolved_transition_regex = re.compile(
+            "|".join(self.UNRESOLVED_TRANSITIONS), re.IGNORECASE
+        )
+        self._unresolved_harm_regex = re.compile(
+            "|".join(self.UNRESOLVED_HARM), re.IGNORECASE
         )
         self._sentiment_analyzer = SentimentIntensityAnalyzer()
 
@@ -128,6 +154,9 @@ class SuggestionFilter:
         if self._is_code_identical(suggestion.existing_code, suggestion.suggested_code):
             return False, "suggested code identical to existing code"
 
+        if self._is_completed_change_praise(suggestion.comment):
+            return False, "comment praises a completed change"
+
         if self._is_positive_only(suggestion.comment):
             return False, "positive-only comment without actionable feedback"
 
@@ -187,20 +216,49 @@ class SuggestionFilter:
         """Check if a comment contains actionable verbs."""
         return bool(self._actionable_regex.search(comment))
 
+    def _is_completed_change_praise(self, comment: str) -> bool:
+        sentences = self._sentences(comment)
+        return (
+            bool(sentences)
+            and any(
+                self._completed_action_regex.search(sentence) for sentence in sentences
+            )
+            and all(self._is_positive_sentence(sentence) for sentence in sentences)
+        )
+
+    def _is_positive_sentence(self, sentence: str) -> bool:
+        if self._unresolved_transition_regex.search(
+            sentence
+        ) or self._unresolved_harm_regex.search(sentence):
+            return False
+
+        has_completed_action = bool(self._completed_action_regex.search(sentence))
+        if self._has_actionable_verbs(sentence) and not has_completed_action:
+            return False
+
+        scores = self._sentiment_analyzer.polarity_scores(sentence)
+        has_positive = scores["compound"] >= POSITIVE_SENTIMENT_THRESHOLD or bool(
+            self._positive_regex.search(sentence)
+        )
+        if not has_positive:
+            return False
+
+        has_negative = bool(self._negative_regex.search(sentence))
+        return not has_negative or has_completed_action
+
+    def _sentences(self, comment: str) -> List[str]:
+        return [
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])|\n+", comment)
+            if sentence.strip()
+        ]
+
     def _is_positive_only(self, comment: str) -> bool:
         """
         Detect if a comment is purely positive without actionable feedback.
         Returns True if the comment is just praise without criticism.
         """
-        has_negative = bool(self._negative_regex.search(comment))
-        if has_negative:
-            return False
-
-        if self._has_actionable_verbs(comment):
-            return False
-
-        scores = self._sentiment_analyzer.polarity_scores(comment)
-        if scores["compound"] >= POSITIVE_SENTIMENT_THRESHOLD:
-            return True
-
-        return bool(self._positive_regex.search(comment))
+        sentences = self._sentences(comment)
+        return bool(sentences) and all(
+            self._is_positive_sentence(sentence) for sentence in sentences
+        )

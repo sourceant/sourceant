@@ -35,6 +35,23 @@ class LineMapper:
             mapping["start_side"] = side
         return mapping
 
+    def suggestion_replays_diff(self, suggestion: CodeSuggestion) -> bool:
+        normalized_file_name = suggestion.file_name
+        if normalized_file_name.startswith(("a/", "b/")):
+            normalized_file_name = normalized_file_name[2:]
+
+        parsed_file = self.file_map.get(normalized_file_name)
+        if (
+            not parsed_file
+            or not suggestion.existing_code
+            or not suggestion.suggested_code
+        ):
+            return False
+
+        return parsed_file.contains_applied_replacement(
+            suggestion.existing_code, suggestion.suggested_code
+        )
+
     def validate_and_map_suggestion(
         self, suggestion: CodeSuggestion, strict_mode: bool = False
     ) -> Optional[Tuple[Dict, str]]:

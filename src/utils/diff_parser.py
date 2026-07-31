@@ -125,6 +125,43 @@ class ParsedDiff:
         """Return the number of added + removed lines in this diff."""
         return len(self.commentable_lines)
 
+    def contains_applied_replacement(
+        self, existing_code: str, suggested_code: str
+    ) -> bool:
+        existing_lines = self._normalize_snippet(existing_code)
+        suggested_lines = self._normalize_snippet(suggested_code)
+        if not existing_lines or not suggested_lines:
+            return False
+
+        for hunk in self._patched_file:
+            removed_lines = [line.value.strip() for line in hunk if line.is_removed]
+            added_lines = [line.value.strip() for line in hunk if line.is_added]
+            if self._contains_lines(
+                removed_lines, existing_lines
+            ) and self._contains_lines(added_lines, suggested_lines):
+                return True
+
+        return False
+
+    @staticmethod
+    def _normalize_snippet(code: str) -> List[str]:
+        lines = []
+        for line in code.splitlines():
+            normalized = line.strip()
+            if normalized.startswith(("+", "-")):
+                normalized = normalized[1:].strip()
+            if normalized:
+                lines.append(normalized)
+        return lines
+
+    @staticmethod
+    def _contains_lines(lines: List[str], expected: List[str]) -> bool:
+        width = len(expected)
+        return any(
+            lines[index : index + width] == expected
+            for index in range(len(lines) - width + 1)
+        )
+
     def to_decoupled_format(self) -> str:
         """Convert the parsed diff into a decoupled old/new hunk format.
 
