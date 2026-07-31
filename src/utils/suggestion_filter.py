@@ -32,11 +32,14 @@ class SuggestionFilter:
     ]
 
     NEGATIVE_INDICATORS = [
-        r"\b(bug|error|issue|problem|flaw|vulnerability|crash|exception|regression)\b",
+        r"\b(bugs?|errors?|issues?|problems?|flaws?|vulnerabilit(?:y|ies)|"
+        r"crash(?:es)?|exceptions?|regressions?)\b",
         r"\bnull dereference\b",
         r"\b(should|could|might|consider|recommend|suggest)\b",
         r"\b(missing|lacks?|needs?|requires?)\b",
         r"\b(incorrect|wrong|invalid|broken|fails?)\b",
+        # How a reviewer reports a fault at runtime, rather than naming it.
+        r"\b(throws?|throwing|raises?|raising|panics?|hangs?|leaks?)\b",
         r"\b(improve|fix|refactor|optimize|simplify)\b",
         r"\b(avoid|don'?t|shouldn'?t|never)\b",
         r"\b(instead|rather|better|prefer)\b",
@@ -61,14 +64,17 @@ class SuggestionFilter:
         r"address(?:es|ed|ing)?|avoid(?:s|ed|ing)?)\b",
     ]
 
+    ABBREVIATIONS = ("e.g.", "i.e.", "etc.", "vs.", "cf.", "approx.", "resp.")
+
     UNRESOLVED_TRANSITIONS = [
         r"\b(?:but|however|although|though|yet|nevertheless)\b",
     ]
 
     UNRESOLVED_HARM = [
         r"\b(?:introduces?|causes?|creates?|leads? to|still|remains?|fails?)\b"
-        r".{0,80}\b(?:bug|error|failure|crash|exception|vulnerability|"
-        r"regression|null dereference)\b",
+        r".{0,80}\b(?:bugs?|errors?|failures?|crash(?:es)?|exceptions?|"
+        r"vulnerabilit(?:y|ies)|"
+        r"regressions?|null dereferences?)\b",
     ]
 
     def __init__(self):
@@ -247,11 +253,36 @@ class SuggestionFilter:
         return not has_negative or has_completed_action
 
     def _sentences(self, comment: str) -> List[str]:
-        return [
-            sentence.strip()
-            for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])|\n+", comment)
-            if sentence.strip()
-        ]
+        sentences: List[str] = []
+        for part in self._split_sentences(comment):
+            part = part.strip()
+            if not part:
+                continue
+            # An abbreviation ends in a full stop without ending a sentence, so
+            # what follows belongs to the sentence before it.
+            if sentences and sentences[-1].lower().endswith(self.ABBREVIATIONS):
+                sentences[-1] = f"{sentences[-1]} {part}"
+            else:
+                sentences.append(part)
+        return sentences
+
+    def _split_sentences(self, comment: str) -> List[str]:
+        """Split on sentence ends, but not on punctuation inside inline code.
+
+        A comment quotes the code it is about, and that code carries the same
+        characters a sentence ends with.
+        """
+        parts: List[str] = []
+        cursor = 0
+        for match in re.finditer(r"(?<=[.!?])\s+|\n+", comment):
+            # An odd number of backticks before this point means it falls inside
+            # a quoted span, where a full stop ends nothing.
+            if comment.count("`", 0, match.start()) % 2:
+                continue
+            parts.append(comment[cursor : match.start()])
+            cursor = match.end()
+        parts.append(comment[cursor:])
+        return parts
 
     def _is_positive_only(self, comment: str) -> bool:
         """
