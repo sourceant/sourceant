@@ -20,7 +20,7 @@ class SuggestionFilter:
     """
 
     POSITIVE_PATTERNS = [
-        r"\b(good|great|excellent|nice|well done|perfect|correctly|properly)\b",
+        r"\b(good|great|excellent|nice|clean|well done|perfect|correctly|properly)\b",
         r"\b(looks good|lgtm|ship it|no issues|no problems)\b",
         r"\b(appropriate|suitable|adequate|sufficient)\b",
         r"\bthis is (a )?(good|great|correct|proper)\b",
@@ -32,10 +32,14 @@ class SuggestionFilter:
     ]
 
     NEGATIVE_INDICATORS = [
-        r"\b(bug|error|issue|problem|flaw|vulnerability)\b",
+        r"\b(bugs?|errors?|issues?|problems?|flaws?|vulnerabilit(?:y|ies)|"
+        r"crash(?:es)?|exceptions?|regressions?)\b",
+        r"\bnull dereference\b",
         r"\b(should|could|might|consider|recommend|suggest)\b",
         r"\b(missing|lacks?|needs?|requires?)\b",
         r"\b(incorrect|wrong|invalid|broken|fails?)\b",
+        # How a reviewer reports a fault at runtime, rather than naming it.
+        r"\b(throws?|throwing|raises?|raising|panics?|hangs?|leaks?)\b",
         r"\b(improve|fix|refactor|optimize|simplify)\b",
         r"\b(avoid|don'?t|shouldn'?t|never)\b",
         r"\b(instead|rather|better|prefer)\b",
@@ -54,6 +58,25 @@ class SuggestionFilter:
         r"\bavoid\s+\w+",
     ]
 
+    COMPLETED_ACTIONS = [
+        r"\b(?:remov(?:e|es|ed|ing)|replac(?:e|es|ed|ing)|"
+        r"simplif(?:y|ies|ied|ying)|fix(?:es|ed|ing)?|"
+        r"address(?:es|ed|ing)?|avoid(?:s|ed|ing)?)\b",
+    ]
+
+    ABBREVIATIONS = ("e.g.", "i.e.", "etc.", "vs.", "cf.", "approx.", "resp.")
+
+    UNRESOLVED_TRANSITIONS = [
+        r"\b(?:but|however|although|though|yet|nevertheless)\b",
+    ]
+
+    UNRESOLVED_HARM = [
+        r"\b(?:introduces?|causes?|creates?|leads? to|still|remains?|fails?)\b"
+        r".{0,80}\b(?:bugs?|errors?|failures?|crash(?:es)?|exceptions?|"
+        r"vulnerabilit(?:y|ies)|"
+        r"regressions?|null dereferences?)\b",
+    ]
+
     def __init__(self):
         self._positive_regex = re.compile(
             "|".join(self.POSITIVE_PATTERNS), re.IGNORECASE
@@ -63,6 +86,15 @@ class SuggestionFilter:
         )
         self._actionable_regex = re.compile(
             "|".join(self.ACTIONABLE_VERBS), re.IGNORECASE
+        )
+        self._completed_action_regex = re.compile(
+            "|".join(self.COMPLETED_ACTIONS), re.IGNORECASE
+        )
+        self._unresolved_transition_regex = re.compile(
+            "|".join(self.UNRESOLVED_TRANSITIONS), re.IGNORECASE
+        )
+        self._unresolved_harm_regex = re.compile(
+            "|".join(self.UNRESOLVED_HARM), re.IGNORECASE
         )
         self._sentiment_analyzer = SentimentIntensityAnalyzer()
 
@@ -128,6 +160,9 @@ class SuggestionFilter:
         if self._is_code_identical(suggestion.existing_code, suggestion.suggested_code):
             return False, "suggested code identical to existing code"
 
+        if self._is_completed_change_praise(suggestion.comment):
+            return False, "comment praises a completed change"
+
         if self._is_positive_only(suggestion.comment):
             return False, "positive-only comment without actionable feedback"
 
@@ -187,20 +222,74 @@ class SuggestionFilter:
         """Check if a comment contains actionable verbs."""
         return bool(self._actionable_regex.search(comment))
 
+    def _is_completed_change_praise(self, comment: str) -> bool:
+        sentences = self._sentences(comment)
+        return (
+            bool(sentences)
+            and any(
+                self._completed_action_regex.search(sentence) for sentence in sentences
+            )
+            and all(self._is_positive_sentence(sentence) for sentence in sentences)
+        )
+
+    def _is_positive_sentence(self, sentence: str) -> bool:
+        if self._unresolved_transition_regex.search(
+            sentence
+        ) or self._unresolved_harm_regex.search(sentence):
+            return False
+
+        has_completed_action = bool(self._completed_action_regex.search(sentence))
+        if self._has_actionable_verbs(sentence) and not has_completed_action:
+            return False
+
+        scores = self._sentiment_analyzer.polarity_scores(sentence)
+        has_positive = scores["compound"] >= POSITIVE_SENTIMENT_THRESHOLD or bool(
+            self._positive_regex.search(sentence)
+        )
+        if not has_positive:
+            return False
+
+        has_negative = bool(self._negative_regex.search(sentence))
+        return not has_negative or has_completed_action
+
+    def _sentences(self, comment: str) -> List[str]:
+        sentences: List[str] = []
+        for part in self._split_sentences(comment):
+            part = part.strip()
+            if not part:
+                continue
+            # An abbreviation ends in a full stop without ending a sentence, so
+            # what follows belongs to the sentence before it.
+            if sentences and sentences[-1].lower().endswith(self.ABBREVIATIONS):
+                sentences[-1] = f"{sentences[-1]} {part}"
+            else:
+                sentences.append(part)
+        return sentences
+
+    def _split_sentences(self, comment: str) -> List[str]:
+        """Split on sentence ends, but not on punctuation inside inline code.
+
+        A comment quotes the code it is about, and that code carries the same
+        characters a sentence ends with.
+        """
+        parts: List[str] = []
+        cursor = 0
+        for match in re.finditer(r"(?<=[.!?])\s+|\n+", comment):
+            # An odd number of backticks before this point means it falls inside
+            # a quoted span, where a full stop ends nothing.
+            if comment.count("`", 0, match.start()) % 2:
+                continue
+            parts.append(comment[cursor : match.start()])
+            cursor = match.end()
+        parts.append(comment[cursor:])
+        return parts
+
     def _is_positive_only(self, comment: str) -> bool:
         """
         Detect if a comment is purely positive without actionable feedback.
         Returns True if the comment is just praise without criticism.
         """
-        has_negative = bool(self._negative_regex.search(comment))
-        if has_negative:
-            return False
-
-        if self._has_actionable_verbs(comment):
-            return False
-
-        scores = self._sentiment_analyzer.polarity_scores(comment)
-        if scores["compound"] >= POSITIVE_SENTIMENT_THRESHOLD:
-            return True
-
-        return bool(self._positive_regex.search(comment))
+        sentences = self._sentences(comment)
+        return bool(sentences) and all(
+            self._is_positive_sentence(sentence) for sentence in sentences
+        )

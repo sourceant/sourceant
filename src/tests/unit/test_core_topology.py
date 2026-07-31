@@ -68,6 +68,56 @@ def test_topology_traversal_is_bounded_filtered_and_scope_isolated():
     assert result.truncated is False
 
 
+def test_topology_traverses_architecture_independently_of_repository_layout():
+    topology = InMemoryTopologyRepository()
+    for item in (
+        entity("commerce", "system"),
+        entity("checkout", "system"),
+        entity("checkout-ui", "component"),
+        entity("checkout-api", "service"),
+        entity("platform", "repository"),
+        entity("backend", "repository"),
+    ):
+        topology.put_entity(PRODUCT, item)
+    for relationship in (
+        TopologyRelationship(
+            "commerce-checkout", "commerce", "checkout", "contains", "approved"
+        ),
+        TopologyRelationship(
+            "checkout-ui", "checkout", "checkout-ui", "contains", "approved"
+        ),
+        TopologyRelationship(
+            "checkout-api", "checkout", "checkout-api", "contains", "approved"
+        ),
+        TopologyRelationship(
+            "ui-location", "checkout-ui", "platform", "stored_in", "approved"
+        ),
+        TopologyRelationship(
+            "api-location", "checkout-api", "backend", "stored_in", "approved"
+        ),
+        TopologyRelationship(
+            "ui-api", "checkout-ui", "checkout-api", "depends_on", "approved"
+        ),
+    ):
+        topology.put_relationship(PRODUCT, relationship)
+
+    result = topology.traverse(TopologyTraversal(PRODUCT, ("checkout-ui",), depth=2))
+
+    assert {item.id for item in result.entities} == {
+        "commerce",
+        "checkout",
+        "checkout-ui",
+        "checkout-api",
+        "platform",
+        "backend",
+    }
+    assert {item.type for item in result.relationships} == {
+        "contains",
+        "depends_on",
+        "stored_in",
+    }
+
+
 def test_topology_traversal_handles_cycles_directions_and_limits():
     topology = InMemoryTopologyRepository()
     for identifier in ("a", "b", "c"):
