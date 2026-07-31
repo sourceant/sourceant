@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Mapping
+
+from src.core.scope import Scope
+
+
+@dataclass(frozen=True)
+class EvidenceReference:
+    source: str
+    identifier: str
+    revision: str | None = None
+    path: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.source or not self.identifier:
+            raise ValueError("evidence source and identifier must not be empty")
+        if (self.start_line is None) != (self.end_line is None):
+            raise ValueError("evidence line range must be complete")
+        if self.start_line is not None and (
+            self.start_line < 1 or self.end_line < self.start_line
+        ):
+            raise ValueError("evidence line range is invalid")
+
+
+@dataclass(frozen=True)
+class InitializationEvidence:
+    scope: Scope
+    id: str
+    kind: str
+    summary: str
+    content: str = ""
+    references: tuple[EvidenceReference, ...] = ()
+    properties: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.id or not self.kind or not self.summary:
+            raise ValueError("evidence id, kind, and summary must not be empty")
+
+
+@dataclass(frozen=True)
+class EvidenceQuery:
+    scope: Scope
+    intents: tuple[str, ...] = ()
+    kinds: frozenset[str] = field(default_factory=frozenset)
+    identifiers: frozenset[str] = field(default_factory=frozenset)
+    limit: int = 20
+    character_limit: int = 20_000
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.limit <= 100:
+            raise ValueError("evidence limit must be between 1 and 100")
+        if not 1_000 <= self.character_limit <= 100_000:
+            raise ValueError("evidence character_limit must be between 1000 and 100000")
+
+
+@dataclass(frozen=True)
+class EvidenceBundle:
+    scope: Scope
+    items: tuple[InitializationEvidence, ...]
+    truncated: bool = False
+
+    def __post_init__(self) -> None:
+        if any(item.scope != self.scope for item in self.items):
+            raise ValueError("evidence bundle items must match its scope")
+        ids = [item.id for item in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("evidence bundle ids must be unique")
+
+
+@dataclass(frozen=True)
+class InitializationLimits:
+    candidate_limit: int = 20
+    evidence_limit: int = 20
+    evidence_character_limit: int = 20_000
+    investigation_limit: int = 12
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.candidate_limit <= 50:
+            raise ValueError("candidate_limit must be between 1 and 50")
+        if not 1 <= self.evidence_limit <= 100:
+            raise ValueError("evidence_limit must be between 1 and 100")
+        if not 1_000 <= self.evidence_character_limit <= 100_000:
+            raise ValueError("evidence_character_limit must be between 1000 and 100000")
+        if not 0 <= self.investigation_limit <= 50:
+            raise ValueError("investigation_limit must be between 0 and 50")
