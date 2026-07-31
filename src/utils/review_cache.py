@@ -2,17 +2,19 @@
 
 Generating a review costs a model run, so one is kept per revision and served
 again until the change moves. The key carries the revision, so a new commit
-misses rather than needing invalidation.
+misses rather than needing invalidation. How long a review is worth reusing is
+a judgement about the repository, so it is asked of the repository rather than
+fixed here.
 """
 
 import json
 from typing import Any, Dict, Optional
 
 from src.config.settings import REDIS_HOST, REDIS_PORT
+from src.core.settings import value_of
 from src.utils.logger import logger
 
-# A review is only worth reusing while the pull request is still being worked on.
-TTL_SECONDS = 7 * 24 * 60 * 60
+SECONDS_PER_DAY = 24 * 60 * 60
 
 _client = None
 _unavailable = False
@@ -55,6 +57,12 @@ def get_review(
         return None
 
 
+def _ttl_seconds(repo_full_name: str) -> int:
+    """How long this repository reuses a review, as it or its organisation says."""
+    days = value_of("review.reuse_days", repository=repo_full_name)
+    return int(days) * SECONDS_PER_DAY
+
+
 def save_review(
     repo_full_name: str,
     pr_number: int,
@@ -66,9 +74,13 @@ def save_review(
     client = _redis()
     if client is None:
         return
+    ttl = _ttl_seconds(repo_full_name)
+    # Reuse turned off entirely means nothing is worth storing.
+    if ttl <= 0:
+        return
     try:
         client.setex(
-            _key(repo_full_name, pr_number, head_sha), TTL_SECONDS, json.dumps(payload)
+            _key(repo_full_name, pr_number, head_sha), ttl, json.dumps(payload)
         )
     except Exception as e:
         logger.warning(f"Could not write the review cache: {e}")

@@ -125,6 +125,25 @@ class Config(BaseModel, table=True):
             session.refresh(entry)
         return entry
 
+    @classmethod
+    def delete_value(
+        cls, configurable_type: str, configurable_id: str, key: str
+    ) -> bool:
+        """Remove a config entry so the entity falls back to what it inherits."""
+        with next(get_session()) as session:
+            entry = session.exec(
+                select(cls).where(
+                    cls.configurable_type == configurable_type,
+                    cls.configurable_id == configurable_id,
+                    cls.key == key,
+                )
+            ).first()
+            if entry is None:
+                return False
+            session.delete(entry)
+            session.commit()
+        return True
+
     @staticmethod
     def _serialize_value(value: Any, type: str) -> str:
         """Convert a Python value to its string representation for storage."""

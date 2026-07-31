@@ -61,6 +61,7 @@ app = FastAPI(
 
 from src.api.routes import repos as repo_endpoints
 from src.api.routes import reviews as review_endpoints
+from src.api.routes import settings as settings_endpoints
 from src.api.routes import triage as triage_endpoints
 
 app.include_router(app_endpoints.router, tags=["general"])
@@ -68,5 +69,6 @@ app.include_router(pr_endpoints.router, prefix="/api/prs", tags=["pull_requests"
 app.include_router(repo_endpoints.router, prefix="/api/repos", tags=["repositories"])
 app.include_router(review_endpoints.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(triage_endpoints.router, prefix="/api/triage", tags=["triage"])
+app.include_router(settings_endpoints.router, prefix="/api/settings", tags=["settings"])
 if mcp_http_app is not None:
     app.mount("/mcp", mcp_http_app)
