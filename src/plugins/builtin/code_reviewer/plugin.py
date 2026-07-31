@@ -549,6 +549,13 @@ class CodeReviewerPlugin(BasePlugin):
         result = []
         filtered, _ = suggestion_filter.filter_suggestions(suggestions)
         for suggestion in filtered:
+            if line_mapper.suggestion_replays_diff(suggestion):
+                logger.info(
+                    f"Filtered out suggestion for "
+                    f"{suggestion.file_name}:{suggestion.start_line}: "
+                    f"suggested code is already applied"
+                )
+                continue
             mapped_result = line_mapper.validate_and_map_suggestion(
                 suggestion, strict_mode=(APP_ENV == "production")
             )

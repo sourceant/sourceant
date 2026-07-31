@@ -145,3 +145,78 @@ def test_positive_with_actionable_verb_kept(suggestion_filter):
     kept, removed = suggestion_filter.filter_suggestions([suggestion])
     assert len(kept) == 1
     assert len(removed) == 0
+
+
+def test_completed_change_praise_with_negative_keyword_filtered(suggestion_filter):
+    suggestion = _make_suggestion(
+        comment=(
+            "The change from `Number(targetEl.dataset.assetId)` to "
+            "`targetEl?.dataset.assetId ?? null` correctly reflects the new "
+            "string-based ID system. This is a good simplification, removing "
+            "an unnecessary type conversion."
+        )
+    )
+
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+
+    assert kept == []
+    assert removed == [suggestion]
+
+
+def test_completed_change_description_with_unresolved_problem_kept(suggestion_filter):
+    suggestion = _make_suggestion(
+        comment=(
+            "This change correctly preserves the string ID, but it still fails "
+            "when the target element is missing. Add a null guard."
+        )
+    )
+
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+
+    assert kept == [suggestion]
+    assert removed == []
+
+
+@pytest.mark.parametrize(
+    "comment",
+    [
+        "This is a good simplification that removes an unnecessary type conversion.",
+        "Nice catch removing the redundant null check here.",
+        "The refactor here is clean and removes an unnecessary conversion.",
+    ],
+)
+def test_completed_change_praise_variants_filtered(suggestion_filter, comment):
+    suggestion = _make_suggestion(comment=comment)
+
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+
+    assert kept == []
+    assert removed == [suggestion]
+
+
+def test_praise_followed_by_separate_unresolved_problem_kept(suggestion_filter):
+    suggestion = _make_suggestion(
+        comment=(
+            "The change correctly removes the conversion. "
+            "It introduces a null dereference at line 40."
+        )
+    )
+
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+
+    assert kept == [suggestion]
+    assert removed == []
+
+
+def test_completed_change_praise_with_same_sentence_harm_kept(suggestion_filter):
+    suggestion = _make_suggestion(
+        comment=(
+            "The change correctly removes the conversion and introduces a "
+            "null dereference at line 40."
+        )
+    )
+
+    kept, removed = suggestion_filter.filter_suggestions([suggestion])
+
+    assert kept == [suggestion]
+    assert removed == []
