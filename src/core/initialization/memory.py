@@ -50,19 +50,14 @@ class InMemoryInitializationEvidenceReader:
         limit: int,
         character_limit: int,
     ) -> EvidenceBundle:
+        intents = tuple(intent.lower() for intent in query.intents)
         matched = [
             item
             for item in self._items
             if item.scope == query.scope
             and (not query.kinds or item.kind in query.kinds)
             and (not query.identifiers or item.id in query.identifiers)
-            and (
-                not query.intents
-                or any(
-                    intent.lower() in f"{item.summary}\n{item.content}".lower()
-                    for intent in query.intents
-                )
-            )
+            and (not intents or _matches_intent(item, intents))
         ]
         selected = []
         characters = 0
@@ -81,3 +76,11 @@ class InMemoryInitializationEvidenceReader:
             selected.append(item)
             characters += size
         return EvidenceBundle(query.scope, tuple(selected), truncated)
+
+
+def _matches_intent(
+    item: InitializationEvidence,
+    intents: tuple[str, ...],
+) -> bool:
+    searchable = f"{item.summary}\n{item.content}".lower()
+    return any(intent in searchable for intent in intents)

@@ -60,6 +60,23 @@ def test_rejects_partial_evidence_line_range():
         EvidenceReference("code", "auth", start_line=2)
 
 
+@pytest.mark.parametrize(
+    "reference",
+    (
+        EvidenceReference,
+        lambda source, identifier: InitializationEvidence(
+            SCOPE,
+            identifier,
+            "fact",
+            "Evidence",
+        ),
+    ),
+)
+def test_rejects_whitespace_evidence_identifiers(reference):
+    with pytest.raises(ValueError, match="must not be empty"):
+        reference("   ", "   ")
+
+
 def test_does_not_return_evidence_from_another_scope():
     other_scope = Scope.from_mapping({"repository": "other"})
     reader = InMemoryInitializationEvidenceReader(
@@ -158,6 +175,35 @@ def test_evidence_properties_are_immutable_and_not_part_of_identity():
 
     assert hash(first) == hash(second)
     assert first == second
+
+
+def test_query_normalizes_collections_for_stable_hashing():
+    query = EvidenceQuery(
+        SCOPE,
+        intents=["authorized"],
+        kinds=["constraint"],
+        identifiers=["auth"],
+    )
+
+    assert query.intents == ("authorized",)
+    assert query.kinds == frozenset({"constraint"})
+    assert query.identifiers == frozenset({"auth"})
+    assert isinstance(hash(query), int)
+
+
+@pytest.mark.parametrize("confidence", (-0.1, 1.1))
+def test_candidate_rejects_confidence_outside_probability_range(confidence):
+    with pytest.raises(ValueError, match="confidence must be between 0 and 1"):
+        InitializationCandidate(
+            "decision",
+            "candidate",
+            "Candidate summary",
+            "Candidate rationale",
+            "Future decision",
+            "Invalidation condition",
+            ("evidence",),
+            confidence=confidence,
+        )
 
 
 @pytest.mark.parametrize(

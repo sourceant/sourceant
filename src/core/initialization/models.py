@@ -17,7 +17,7 @@ class EvidenceReference:
     end_line: int | None = None
 
     def __post_init__(self) -> None:
-        if not self.source or not self.identifier:
+        if not _present(self.source) or not _present(self.identifier):
             raise ValueError("evidence source and identifier must not be empty")
         if (self.start_line is None) != (self.end_line is None):
             raise ValueError("evidence line range must be complete")
@@ -38,7 +38,11 @@ class InitializationEvidence:
     properties: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.id or not self.kind or not self.summary:
+        if (
+            not _present(self.id)
+            or not _present(self.kind)
+            or not _present(self.summary)
+        ):
             raise ValueError("evidence id, kind, and summary must not be empty")
         object.__setattr__(self, "properties", _immutable_mapping(self.properties))
 
@@ -80,6 +84,10 @@ def _hashable(value: Any) -> Any:
     return value
 
 
+def _present(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 @dataclass(frozen=True)
 class EvidenceQuery:
     scope: Scope
@@ -90,6 +98,9 @@ class EvidenceQuery:
     character_limit: int = 20_000
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "intents", tuple(self.intents))
+        object.__setattr__(self, "kinds", frozenset(self.kinds))
+        object.__setattr__(self, "identifiers", frozenset(self.identifiers))
         if not 1 <= self.limit <= 100:
             raise ValueError("evidence limit must be between 1 and 100")
         if not 1_000 <= self.character_limit <= 100_000:
@@ -139,6 +150,10 @@ class InitializationCandidate:
     evidence_ids: tuple[str, ...]
     paths: tuple[str, ...] = ()
     confidence: float = 0.5
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.confidence <= 1:
+            raise ValueError("confidence must be between 0 and 1")
 
 
 @dataclass(frozen=True)
