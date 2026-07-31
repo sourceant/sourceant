@@ -60,6 +60,34 @@ class TopologyRelationship:
 
 
 @dataclass(frozen=True)
+class TopologyQuery:
+    scope: Scope
+    ids: frozenset[str] = field(default_factory=frozenset)
+    kinds: frozenset[str] = field(default_factory=frozenset)
+    statuses: frozenset[str] = field(default_factory=frozenset)
+    properties: Mapping[str, Any] = field(default_factory=dict)
+    minimum_confidence: float = 0.0
+    include_stale: bool = True
+    limit: int = 50
+    offset: int = 0
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if self.offset < 0:
+            raise ValueError("offset must not be negative")
+        if not 0.0 <= self.minimum_confidence <= 1.0:
+            raise ValueError("minimum_confidence must be between 0 and 1")
+
+
+@dataclass(frozen=True)
+class TopologyResult:
+    entities: tuple[TopologyEntity, ...]
+    total: int
+    has_more: bool
+
+
+@dataclass(frozen=True)
 class TopologyTraversal:
     scope: Scope
     entity_ids: tuple[str, ...]
