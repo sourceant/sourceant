@@ -9,6 +9,9 @@ from src.config.db import get_engine
 from src.core.responses import success_response
 from src.core.scope import Scope
 from src.core.services import service_registry
+from src.core.topology.inference import infer_dependencies
+from src.core.topology.manifests import read_manifests
+from src.utils.logger import logger
 from src.core.topology import (
     InMemoryTopologyRepository,
     SQLTopologyRepository,
@@ -83,6 +86,18 @@ class RelationshipInput(BaseModel):
     stale: bool = False
     properties: dict[str, Any] = Field(default_factory=dict)
     evidence: list[EvidenceInput] = Field(default_factory=list)
+
+
+class InferAssetInput(BaseModel):
+    entity_id: str
+    repository: str
+
+
+class InferInput(BaseModel):
+    assets: list[InferAssetInput] = Field(default_factory=list)
+    # Proposals are recorded as pending by default so they can be looked at in
+    # place. Asking for a preview leaves the graph untouched.
+    persist: bool = True
 
 
 class SearchInput(BaseModel):
@@ -168,6 +183,49 @@ async def put_relationship(
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
     return success_response(asdict(relationship))
+
+
+@router.post("/infer")
+async def infer_relationships(
+    payload: InferInput,
+    user: dict = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
+    repository: TopologyRepository = Depends(get_topology_repository),
+):
+    """Propose dependencies between repositories from the manifests they publish.
+
+    Every proposal is pending and carries the file it came from. Nothing is
+    approved here: a person decides whether a proposed relationship is real.
+    """
+    github_token = user.get("github_token")
+    if not github_token:
+        raise HTTPException(status_code=400, detail="No GitHub token available")
+    if not payload.assets:
+        return success_response({"proposed": [], "read": 0})
+
+    manifests = await read_manifests(
+        [
+            {"entity_id": a.entity_id, "repository": a.repository}
+            for a in payload.assets
+        ],
+        github_token,
+    )
+    proposals = infer_dependencies(manifests)
+
+    if payload.persist:
+        for proposal in proposals:
+            try:
+                repository.put_relationship(scope, proposal)
+            except ValueError as error:
+                logger.warning(f"Could not record a proposed relationship: {error}")
+
+    return success_response(
+        {
+            "proposed": [asdict(p) for p in proposals],
+            "read": len(manifests),
+            "persisted": payload.persist,
+        }
+    )
 
 
 @router.delete("/entities/{entity_id:path}")

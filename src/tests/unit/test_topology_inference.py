@@ -5,6 +5,7 @@ import pytest
 from src.core.topology.inference import (
     COMPOSER,
     DEPENDS_ON,
+    EXTENDS,
     GOLANG,
     NPM,
     PYPI,
@@ -157,9 +158,10 @@ class TestProposingDependencies:
         )
 
         proposals = infer_dependencies([dashboard, memory, caller])
+        depends = [p for p in proposals if p.type == DEPENDS_ON]
 
-        assert len(proposals) == 1
-        assert proposals[0].target_id == "asset:memory"
+        assert len(depends) == 1
+        assert depends[0].target_id == "asset:memory"
 
     def test_the_same_name_twice_in_one_ecosystem_proposes_nothing(self):
         proposals = infer_dependencies(
@@ -356,3 +358,63 @@ class TestConfidence:
         assert proposals[0].evidence[0].properties["namespaced"] is False
         # Still pending either way: confidence never decides.
         assert proposals[0].status == "pending"
+
+
+class TestProposingExtensions:
+    """A repository that registers itself into another's extension point is
+    saying so out loud, even when no package manager resolves it."""
+
+    def test_a_plugin_entry_point_proposes_an_extension_of_its_host(self):
+        """Taken from these repositories: memory registers itself into the
+        sourceant.plugins group, and nothing in either manifest declares a
+        dependency between them."""
+        memory = parse_manifest(
+            "asset:memory",
+            "sourceant/memory",
+            "pyproject.toml",
+            read("memory.pyproject.toml"),
+        )
+        core = RepositoryManifest(
+            entity_id="asset:core",
+            repository="sourceant/sourceant",
+            path="requirements.txt",
+            ecosystem=PYPI,
+        )
+
+        assert "sourceant.plugins" in memory.plugin_groups
+
+        proposals = infer_dependencies([memory, core])
+        extends = [p for p in proposals if p.type == EXTENDS]
+
+        assert len(extends) == 1
+        assert extends[0].source_id == "asset:memory"
+        assert extends[0].target_id == "asset:core"
+        assert extends[0].status == "pending"
+        # The group names the host only by convention, so it proves less.
+        assert extends[0].confidence < 1.0
+        assert (
+            extends[0].evidence[0].properties["entry_point_group"]
+            == "sourceant.plugins"
+        )
+
+    def test_an_entry_point_naming_nothing_in_the_system_proposes_nothing(self):
+        manifest = RepositoryManifest(
+            entity_id="asset:plugin",
+            repository="o/plugin",
+            path="pyproject.toml",
+            ecosystem=PYPI,
+            plugin_groups=("console_scripts",),
+        )
+
+        assert infer_dependencies([manifest]) == ()
+
+    def test_a_repository_extending_itself_proposes_nothing(self):
+        manifest = RepositoryManifest(
+            entity_id="asset:core",
+            repository="sourceant/sourceant",
+            path="pyproject.toml",
+            ecosystem=PYPI,
+            plugin_groups=("sourceant.plugins",),
+        )
+
+        assert infer_dependencies([manifest]) == ()

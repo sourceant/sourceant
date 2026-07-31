@@ -14,11 +14,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 from src.core.topology.models import TopologyEvidence, TopologyRelationship
 
 DEPENDS_ON = "depends_on"
+EXTENDS = "extends"
 
 # A package name is only half an identifier. The Package URL specification exists
 # because every ecosystem names and compares packages by its own rules, so a name
@@ -71,6 +72,8 @@ class RepositoryManifest:
     identity: tuple[str, ...] = ()
     # The names it declares a dependency on.
     dependencies: tuple[str, ...] = ()
+    # Extension points it registers itself into, such as a plugin group.
+    plugin_groups: tuple[str, ...] = ()
     properties: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -184,6 +187,7 @@ def parse_pyproject_toml(entity_id: str, repository: str, path: str, content: st
         match = _REQUIREMENT.match(str(raw))
         if match:
             deps.append(match.group(1))
+    groups = project.get("entry-points") or {}
     return RepositoryManifest(
         entity_id=entity_id,
         repository=repository,
@@ -191,6 +195,7 @@ def parse_pyproject_toml(entity_id: str, repository: str, path: str, content: st
         ecosystem=PYPI,
         identity=_clean([project.get("name")]),
         dependencies=_clean(deps),
+        plugin_groups=_clean(groups.keys()) if isinstance(groups, dict) else (),
     )
 
 
@@ -295,4 +300,61 @@ def infer_dependencies(
                 evidence=(evidence,),
             )
 
+    proposals.update(_infer_extensions(manifests, proposals))
     return tuple(proposals.values())
+
+
+def _repository_name(repository: str) -> str:
+    return repository.rsplit("/", 1)[-1].lower()
+
+
+def _infer_extensions(
+    manifests: Sequence[RepositoryManifest],
+    existing: Mapping[str, TopologyRelationship],
+) -> dict[str, TopologyRelationship]:
+    """
+    Propose an extension wherever a repository registers itself into another
+    repository's extension point, such as a python entry point group named
+    after the host.
+
+    The group only names the host by convention, so this is proposed with less
+    confidence than a dependency a package manager would resolve.
+    """
+    by_name: dict[str, set[str]] = {}
+    for manifest in manifests:
+        by_name.setdefault(_repository_name(manifest.repository), set()).add(
+            manifest.entity_id
+        )
+
+    found: dict[str, TopologyRelationship] = {}
+    for manifest in manifests:
+        for group in manifest.plugin_groups:
+            host = group.split(".", 1)[0].lower()
+            owners = by_name.get(host)
+            if not owners or len(owners) > 1:
+                continue
+            target_id = next(iter(owners))
+            if target_id == manifest.entity_id:
+                continue
+
+            key = f"{manifest.entity_id}--{EXTENDS}--{target_id}"
+            if key in existing or key in found:
+                continue
+            found[key] = TopologyRelationship(
+                id=key,
+                source_id=manifest.entity_id,
+                target_id=target_id,
+                type=EXTENDS,
+                status="pending",
+                confidence=0.6,
+                properties={"inferred_from": "entry_point", "group": group},
+                evidence=(
+                    TopologyEvidence(
+                        id=f"{manifest.repository}:{manifest.path}:{group}",
+                        kind="manifest",
+                        source=f"{manifest.repository}/{manifest.path}",
+                        properties={"entry_point_group": group},
+                    ),
+                ),
+            )
+    return found
