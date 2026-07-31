@@ -2,6 +2,7 @@ alembic
 click
 cryptography # Required by pyjwt
 fastapi
+fastapi-pagination
 google-genai
 httpx
 litellm

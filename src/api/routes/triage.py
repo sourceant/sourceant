@@ -6,6 +6,9 @@ from pydantic import BaseModel
 
 from src.auth import get_current_user
 from src.core.responses import success_response
+from src.utils.concurrency import gather_bounded
+from src.utils.pagination import Params, page_of
+from src.utils.provider_pages import fetch_all
 
 router = APIRouter()
 
@@ -29,41 +32,57 @@ class TriageAction(BaseModel):
 
 @router.get("")
 async def list_triage(
-    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    repo: list[str] = Query(
+        ..., description="Repository full name, e.g. owner/name. May repeat."
+    ),
+    params: Params = Depends(),
     user: dict = Depends(get_current_user),
 ):
-    """The open-issue triage queue for a repository, from live GitHub state."""
+    """One page of the open-issue triage queue across the given repositories."""
     github_token = user.get("github_token")
     if not github_token:
-        return success_response([])
+        return success_response(page_of([], params))
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(
-            f"{_GITHUB_API}/repos/{repo}/issues",
-            headers=_headers(github_token),
-            params={"state": "open", "per_page": 50, "sort": "updated"},
+    async def _issues_of(client: httpx.AsyncClient, full_name: str):
+        issues, truncated = await fetch_all(
+            client,
+            f"{_GITHUB_API}/repos/{full_name}/issues",
+            _headers(github_token),
+            params={"state": "open", "sort": "updated"},
         )
-    if resp.status_code != 200:
+        return full_name, issues, truncated
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        gathered = await gather_bounded(
+            [
+                lambda c=client, name=name: _issues_of(c, name)
+                for name in dict.fromkeys(repo)
+            ]
+        )
+
+    if all(truncated and not issues for _, issues, truncated in gathered):
         raise HTTPException(status_code=502, detail="GitHub API error")
 
-    results = []
-    for issue in resp.json():
-        if "pull_request" in issue:
-            continue
-        results.append(
-            {
-                "number": issue["number"],
-                "title": issue["title"],
-                "state": issue["state"],
-                "author": (issue.get("user") or {}).get("login"),
-                "labels": [label["name"] for label in issue.get("labels", [])],
-                "comments": issue.get("comments", 0),
-                "url": issue.get("html_url"),
-                "updated_at": issue.get("updated_at"),
-            }
-        )
+    results = [
+        {
+            "repo": full_name,
+            "number": issue["number"],
+            "title": issue["title"],
+            "state": issue["state"],
+            "author": (issue.get("user") or {}).get("login"),
+            "labels": [label["name"] for label in issue.get("labels", [])],
+            "comments": issue.get("comments", 0),
+            "url": issue.get("html_url"),
+            "updated_at": issue.get("updated_at"),
+        }
+        for full_name, issues, _ in gathered
+        for issue in issues
+        # The provider answers pull requests from the issues endpoint too.
+        if "pull_request" not in issue
+    ]
+    results.sort(key=lambda item: item["updated_at"] or "", reverse=True)
 
-    return success_response(results)
+    return success_response(page_of(results, params))
 
 
 @router.get("/detail")
