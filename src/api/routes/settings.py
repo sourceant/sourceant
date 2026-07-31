@@ -1,8 +1,8 @@
-"""Read and change what a repository or organisation has configured.
+"""Read and change what a user, repository, or organization has configured.
 
 Every response says where a value came from, so a screen can show whether it is
-set here, inherited from the organisation, or simply the shipped default, and
-can offer to go back to inheriting.
+set here, inherited, or simply the shipped default, and can offer to go back to
+inheriting.
 """
 
 from dataclasses import asdict
@@ -16,6 +16,7 @@ from src.core.responses import success_response
 from src.core.settings import (
     ORGANIZATION,
     REPOSITORY,
+    USER,
     Resolved,
     clear_value,
     for_scope,
@@ -25,11 +26,18 @@ from src.core.settings import (
 
 router = APIRouter()
 
-Scope = Literal["repository", "organization"]
+Scope = Literal["user", "repository", "organization"]
 
 
 class SettingInput(BaseModel):
     value: Any
+
+
+def _authorize_user_scope(scope: Scope, scope_id: str, user: dict) -> None:
+    if scope == USER and str(user.get("user_id")) != scope_id:
+        raise HTTPException(
+            status_code=403, detail="User setting scope is not permitted"
+        )
 
 
 def _described(resolved: Resolved) -> dict:
@@ -67,7 +75,10 @@ async def read_settings(
     user: dict = Depends(get_current_user),
 ):
     """Every setting that applies here, resolved, with where each came from."""
-    if scope == REPOSITORY:
+    _authorize_user_scope(scope, scope_id, user)
+    if scope == USER:
+        resolved = resolve_all(user=scope_id)
+    elif scope == REPOSITORY:
         resolved = resolve_all(repository=scope_id)
     else:
         resolved = resolve_all(organization=scope_id)
@@ -83,6 +94,7 @@ async def write_setting(
     user: dict = Depends(get_current_user),
 ):
     """Give one setting a value here. Narrower scopes still win over this one."""
+    _authorize_user_scope(scope, scope_id, user)
     try:
         resolved = set_value(scope, scope_id, key, payload.value)
     except KeyError:
@@ -100,12 +112,15 @@ async def reset_setting(
     user: dict = Depends(get_current_user),
 ):
     """Stop setting this here, so it goes back to whatever it inherits."""
+    _authorize_user_scope(scope, scope_id, user)
     try:
         clear_value(scope, scope_id, key)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown setting: {key}")
 
-    if scope == REPOSITORY:
+    if scope == USER:
+        resolved = resolve_all(user=scope_id)
+    elif scope == REPOSITORY:
         resolved = resolve_all(repository=scope_id)
     else:
         resolved = resolve_all(organization=scope_id)
@@ -115,4 +130,4 @@ async def reset_setting(
     return success_response(_described(current))
 
 
-__all__ = ["router", "ORGANIZATION", "REPOSITORY"]
+__all__ = ["router", "ORGANIZATION", "REPOSITORY", "USER"]

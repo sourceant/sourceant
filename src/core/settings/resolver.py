@@ -1,9 +1,8 @@
-"""Resolve a setting for a repository, falling back the way a reader expects.
+"""Resolve a setting through user, repository, and organization scopes.
 
-A repository takes its organisation's answer unless it has given its own, and
-an organisation takes the shipped default unless it has given its own. The
-answer carries where it came from, so a screen can show whether a value is set
-here, inherited, or simply the default.
+A user value wins when supplied. Repository values otherwise inherit from their
+organization, and an organization inherits the shipped default. The answer carries
+its source so a screen can show whether it is set here or inherited.
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from typing import Any, Optional
 from src.core.settings.definitions import (
     ORGANIZATION,
     REPOSITORY,
+    USER,
     Resolved,
     Setting,
     for_scope,
@@ -53,9 +53,15 @@ def resolve(
     key: str,
     repository: Optional[str] = None,
     organization: Optional[str] = None,
+    user: Optional[str] = None,
 ) -> Resolved:
     """Resolve one setting, narrowest scope first."""
     setting = get(key)
+
+    if user:
+        value = _stored(setting, USER, user)
+        if value is not None:
+            return Resolved(key, value, USER, user, setting)
 
     if repository:
         value = _stored(setting, REPOSITORY, repository)
@@ -75,19 +81,22 @@ def value_of(
     key: str,
     repository: Optional[str] = None,
     organization: Optional[str] = None,
+    user: Optional[str] = None,
 ) -> Any:
     """The resolved value alone, for callers that do not care where it came from."""
-    return resolve(key, repository, organization).value
+    return resolve(key, repository, organization, user).value
 
 
 def resolve_all(
     repository: Optional[str] = None,
     organization: Optional[str] = None,
+    user: Optional[str] = None,
 ) -> tuple[Resolved, ...]:
     """Every setting that applies to this scope, resolved."""
-    scope = REPOSITORY if repository else ORGANIZATION
+    scope = USER if user else REPOSITORY if repository else ORGANIZATION
     return tuple(
-        resolve(setting.key, repository, organization) for setting in for_scope(scope)
+        resolve(setting.key, repository, organization, user)
+        for setting in for_scope(scope)
     )
 
 
