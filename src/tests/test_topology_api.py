@@ -238,6 +238,39 @@ class TestTopologyApi(BaseTestCase):
         assert too_deep.status_code == 422
         assert empty_seed.status_code == 422
 
+    def test_an_unreachable_store_is_reported_as_unavailable(self):
+        """The graph driver raises a bare ValueError when it cannot connect."""
+
+        class UnreachableStore(InMemoryTopologyRepository):
+            def search(self, query):
+                raise ValueError("Cannot resolve address memgraph:7687")
+
+            def traverse(self, traversal):
+                raise ValueError("Cannot resolve address memgraph:7687")
+
+        app.dependency_overrides[get_topology_repository] = UnreachableStore
+
+        listing = self.client.post(
+            "/api/topology/search", json={}, headers=self.headers
+        )
+        traversal = self.client.post(
+            "/api/topology/traverse",
+            json={"entity_ids": ["checkout"]},
+            headers=self.headers,
+        )
+
+        assert listing.status_code == 503
+        assert "Cannot resolve address" in listing.json()["detail"]
+        assert traversal.status_code == 503
+
+    def test_a_query_the_caller_can_correct_is_still_rejected_as_invalid(self):
+        response = self.client.post(
+            "/api/topology/search", json={"limit": 500}, headers=self.headers
+        )
+
+        assert response.status_code == 422
+        assert "limit" in response.json()["detail"]
+
     def test_a_token_without_a_workspace_scope_is_refused(self):
         unscoped = jwt.encode(
             {"sub": "1", "exp": int(time.time()) + 300},
