@@ -29,9 +29,8 @@ class Setting:
     label: str
     description: str
     type: str
+    scopes: tuple[str, ...]
     default: Any
-    # The scopes this setting may be given a value at, narrowest first.
-    scopes: tuple[str, ...] = SCOPE_ORDER
     # What the number means, so a screen can say "days" without hardcoding it.
     unit: str | None = None
     minimum: float | None = None
@@ -76,6 +75,7 @@ SETTINGS: tuple[Setting, ...] = (
             "regardless."
         ),
         type=ConfigType.INT,
+        scopes=(REPOSITORY, ORGANIZATION),
         default=7,
         unit="days",
         minimum=0,

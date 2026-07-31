@@ -18,12 +18,38 @@ class InMemoryInitializationEvidenceReader:
     def discover(
         self, query: EvidenceQuery, limits: InitializationLimits
     ) -> EvidenceBundle:
-        return self._select(query, min(query.limit, limits.evidence_limit))
+        return self._select(
+            query,
+            min(query.limit, limits.evidence_limit),
+            min(query.character_limit, limits.evidence_character_limit),
+        )
 
-    def investigate(self, query: EvidenceQuery) -> EvidenceBundle:
-        return self._select(query, query.limit)
+    def investigate(
+        self, query: EvidenceQuery, limits: InitializationLimits
+    ) -> EvidenceBundle:
+        if not query.identifiers or limits.investigation_limit == 0:
+            return EvidenceBundle(query.scope, (), bool(query.identifiers))
+        identifiers = frozenset(sorted(query.identifiers)[: limits.investigation_limit])
+        effective_query = replace(query, identifiers=identifiers)
+        selected = self._select(
+            effective_query,
+            min(query.limit, limits.evidence_limit),
+            min(query.character_limit, limits.evidence_character_limit),
+        )
+        return replace(
+            selected,
+            truncated=(
+                selected.truncated
+                or len(query.identifiers) > limits.investigation_limit
+            ),
+        )
 
-    def _select(self, query: EvidenceQuery, limit: int) -> EvidenceBundle:
+    def _select(
+        self,
+        query: EvidenceQuery,
+        limit: int,
+        character_limit: int,
+    ) -> EvidenceBundle:
         matched = [
             item
             for item in self._items
@@ -43,7 +69,7 @@ class InMemoryInitializationEvidenceReader:
         truncated = len(matched) > limit
         for item in matched[:limit]:
             size = len(item.summary) + len(item.content)
-            remaining = query.character_limit - characters
+            remaining = character_limit - characters
             if size > remaining:
                 truncated = True
                 available_content = remaining - len(item.summary)

@@ -93,6 +93,73 @@ def test_truncates_evidence_content_to_character_limit():
     assert result.truncated
 
 
+def test_discovery_enforces_the_configured_character_budget():
+    reader = InMemoryInitializationEvidenceReader(
+        (
+            InitializationEvidence(
+                SCOPE,
+                "large",
+                "fact",
+                "Large item",
+                "x" * 50_000,
+            ),
+        )
+    )
+
+    result = reader.discover(
+        EvidenceQuery(SCOPE, character_limit=100_000),
+        InitializationLimits(evidence_character_limit=1_000),
+    )
+
+    assert len(result.items[0].summary) + len(result.items[0].content) == 1_000
+    assert result.truncated
+
+
+def test_investigation_enforces_configured_limits():
+    reader = InMemoryInitializationEvidenceReader(
+        tuple(
+            InitializationEvidence(SCOPE, str(index), "fact", "Evidence")
+            for index in range(4)
+        )
+    )
+
+    result = reader.investigate(
+        EvidenceQuery(
+            SCOPE,
+            identifiers=frozenset({"0", "1", "2", "3"}),
+            limit=4,
+        ),
+        InitializationLimits(evidence_limit=3, investigation_limit=2),
+    )
+
+    assert tuple(item.id for item in result.items) == ("0", "1")
+
+
+def test_evidence_properties_are_immutable_and_not_part_of_identity():
+    first = InitializationEvidence(
+        SCOPE,
+        "evidence",
+        "fact",
+        "Evidence",
+        properties={"nested": {"values": [1, 2]}},
+    )
+    second = InitializationEvidence(
+        SCOPE,
+        "evidence",
+        "fact",
+        "Evidence",
+        properties={"nested": {"values": [1, 2]}},
+    )
+
+    with pytest.raises(TypeError):
+        first.properties["changed"] = True
+    with pytest.raises(TypeError):
+        first.properties["nested"]["changed"] = True
+
+    assert hash(first) == hash(second)
+    assert first == second
+
+
 @pytest.mark.parametrize(
     "summary",
     (
@@ -101,6 +168,7 @@ def test_truncates_evidence_content_to_character_limit():
         "This repository contains Terraform modules",
         "The backend is powered by Django",
         "Configuration lives in config/settings",
+        "The scheduler runs jobs nightly",
     ),
 )
 def test_candidate_policy_rejects_repository_inventory(summary):
@@ -142,4 +210,3 @@ def test_initialization_limits_are_exposed_as_settings():
     assert get("initialization.evidence_limit").maximum == 100
     assert get("initialization.evidence_character_limit").default == 20_000
     assert get("initialization.investigation_limit").minimum == 0
-    InitializationCandidate,

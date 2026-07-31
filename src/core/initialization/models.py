@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from src.core.scope import Scope
@@ -39,6 +40,44 @@ class InitializationEvidence:
     def __post_init__(self) -> None:
         if not self.id or not self.kind or not self.summary:
             raise ValueError("evidence id, kind, and summary must not be empty")
+        object.__setattr__(self, "properties", _immutable_mapping(self.properties))
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.scope,
+                self.id,
+                self.kind,
+                self.summary,
+                self.content,
+                self.references,
+                _hashable(self.properties),
+            )
+        )
+
+
+def _immutable(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _immutable_mapping(value)
+    if isinstance(value, (list, tuple)):
+        return tuple(_immutable(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_immutable(item) for item in value)
+    return value
+
+
+def _immutable_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    return MappingProxyType({key: _immutable(item) for key, item in value.items()})
+
+
+def _hashable(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return tuple(sorted((key, _hashable(item)) for key, item in value.items()))
+    if isinstance(value, tuple):
+        return tuple(_hashable(item) for item in value)
+    if isinstance(value, frozenset):
+        return frozenset(_hashable(item) for item in value)
+    return value
 
 
 @dataclass(frozen=True)

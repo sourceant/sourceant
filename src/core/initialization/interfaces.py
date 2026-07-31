@@ -17,7 +17,9 @@ class InitializationEvidenceReader(Protocol):
         self, query: EvidenceQuery, limits: InitializationLimits
     ) -> EvidenceBundle: ...
 
-    def investigate(self, query: EvidenceQuery) -> EvidenceBundle: ...
+    def investigate(
+        self, query: EvidenceQuery, limits: InitializationLimits
+    ) -> EvidenceBundle: ...
 
 
 @runtime_checkable

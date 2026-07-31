@@ -8,8 +8,7 @@ from .models import CandidateAssessment, InitializationCandidate
 class DefaultInitializationCandidatePolicy:
     _inventory_summary = re.compile(
         r"^(?:(?:the|this)\s+)?"
-        r"(?:(?:project|repository|application|app|service|codebase|backend|frontend|"
-        r"dependencies|configuration)\s+)?"
+        r"(?:[\w.-]+\s+){0,5}?"
         r"(?:uses?|has|contains?|includes?|defines?|runs?|depends\s+on|"
         r"lives\s+in|"
         r"is\s+(?:built|written|implemented)\s+(?:with|in)|"

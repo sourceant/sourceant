@@ -35,6 +35,7 @@ def reuse_days(monkeypatch):
         label="Reuse a review for",
         description="",
         type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
         default=7,
         minimum=0,
         maximum=90,
