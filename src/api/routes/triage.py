@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from src.auth import get_current_user
 from src.core.responses import success_response
+from src.utils.provider_pages import fetch_all
 
 router = APIRouter()
 
@@ -37,17 +38,18 @@ async def list_triage(
     if not github_token:
         return success_response([])
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(
+    async with httpx.AsyncClient(timeout=30) as client:
+        issues, truncated = await fetch_all(
+            client,
             f"{_GITHUB_API}/repos/{repo}/issues",
-            headers=_headers(github_token),
-            params={"state": "open", "per_page": 50, "sort": "updated"},
+            _headers(github_token),
+            params={"state": "open", "sort": "updated"},
         )
-    if resp.status_code != 200:
+    if not issues and truncated:
         raise HTTPException(status_code=502, detail="GitHub API error")
 
     results = []
-    for issue in resp.json():
+    for issue in issues:
         if "pull_request" in issue:
             continue
         results.append(

@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+
+from src.utils.provider_pages import fetch_all
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -40,18 +42,18 @@ async def list_repos(
     if not github_token:
         raise HTTPException(status_code=401, detail="No GitHub token available")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
+    async with httpx.AsyncClient(timeout=30) as client:
+        github_repos, truncated = await fetch_all(
+            client,
             "https://api.github.com/user/repos",
-            headers={
+            {
                 "Authorization": f"token {github_token}",
                 "Accept": "application/vnd.github+json",
             },
-            params={"per_page": 100, "sort": "updated"},
+            params={"sort": "updated"},
         )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="GitHub API error")
-        github_repos = resp.json()
+    if not github_repos and truncated:
+        raise HTTPException(status_code=502, detail="GitHub API error")
 
     user_id = user["user_id"]
     connected_rows = session.exec(

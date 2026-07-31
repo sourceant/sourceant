@@ -9,6 +9,7 @@ from src.auth import get_current_user
 from src.config.db import get_session
 from src.core.responses import success_response
 from src.models.review_record import ReviewRecord
+from src.utils.provider_pages import fetch_all
 from src.utils.review_cache import get_review as get_cached_review
 from src.utils.review_cache import save_review as save_cached_review
 
@@ -124,20 +125,21 @@ async def list_pulls(
     if not github_token:
         return success_response([])
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(
+    async with httpx.AsyncClient(timeout=30) as client:
+        pulls, truncated = await fetch_all(
+            client,
             f"{_GITHUB_API}/repos/{repo}/pulls",
-            headers={
+            {
                 "Authorization": f"token {github_token}",
                 "Accept": "application/vnd.github+json",
             },
-            params={"state": "open", "per_page": 50, "sort": "updated"},
+            params={"state": "open", "sort": "updated"},
         )
-    if resp.status_code != 200:
+    if not pulls and truncated:
         raise HTTPException(status_code=502, detail="GitHub API error")
 
     results = []
-    for pr in resp.json():
+    for pr in pulls:
         results.append(
             {
                 "number": pr["number"],
