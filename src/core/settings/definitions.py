@@ -16,10 +16,11 @@ from src.models.config import ConfigType
 # Where a setting can be given a value. Order matters: the narrowest scope that
 # has a value wins, which is what lets a repository depart from its
 # organisation without detaching from it.
+USER = "user"
 REPOSITORY = "repository"
 ORGANIZATION = "organization"
 
-SCOPE_ORDER: tuple[str, ...] = (REPOSITORY, ORGANIZATION)
+SCOPE_ORDER: tuple[str, ...] = (USER, REPOSITORY, ORGANIZATION)
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,51 @@ SETTINGS: tuple[Setting, ...] = (
         maximum=90,
         group="Review",
     ),
+    Setting(
+        key="initialization.candidate_limit",
+        label="Maximum knowledge proposals",
+        description="Maximum proposals considered during repository initialization.",
+        type=ConfigType.INT,
+        default=20,
+        minimum=1,
+        maximum=50,
+        scopes=(REPOSITORY, ORGANIZATION),
+        group="Knowledge initialization",
+    ),
+    Setting(
+        key="initialization.evidence_limit",
+        label="Maximum evidence items",
+        description="Maximum evidence items supplied during repository initialization.",
+        type=ConfigType.INT,
+        default=20,
+        minimum=1,
+        maximum=100,
+        scopes=(REPOSITORY, ORGANIZATION),
+        group="Knowledge initialization",
+    ),
+    Setting(
+        key="initialization.evidence_character_limit",
+        label="Evidence character budget",
+        description="Maximum evidence characters supplied in one initialization stage.",
+        type=ConfigType.INT,
+        default=20_000,
+        unit="characters",
+        minimum=1_000,
+        maximum=100_000,
+        scopes=(REPOSITORY, ORGANIZATION),
+        group="Knowledge initialization",
+    ),
+    Setting(
+        key="initialization.investigation_limit",
+        label="Maximum follow-up investigations",
+        description="Maximum graph identities investigated after initial retrieval.",
+        type=ConfigType.INT,
+        default=12,
+        minimum=0,
+        maximum=50,
+        scopes=(REPOSITORY, ORGANIZATION),
+        group="Knowledge initialization",
+    ),
 )
 
 BY_KEY: Mapping[str, Setting] = {setting.key: setting for setting in SETTINGS}
@@ -104,7 +150,7 @@ class Resolved:
 
     key: str
     value: Any
-    # "repository", "organization", or "default".
+    # "user", "repository", "organization", or "default".
     source: str
     # The scope the value was read from, absent when it is the default.
     source_id: str | None = None

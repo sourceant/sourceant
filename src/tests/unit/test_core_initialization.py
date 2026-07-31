@@ -1,12 +1,15 @@
 import pytest
 
 from src.core.initialization import (
+    DefaultInitializationCandidatePolicy,
     EvidenceQuery,
     EvidenceReference,
     InMemoryInitializationEvidenceReader,
+    InitializationCandidate,
     InitializationEvidence,
     InitializationLimits,
 )
+from src.core.settings import get
 from src.core.scope import Scope
 
 SCOPE = Scope.from_mapping({"repository": "sourceant"})
@@ -88,3 +91,55 @@ def test_truncates_evidence_content_to_character_limit():
 
     assert len(result.items[0].summary) + len(result.items[0].content) == 1_000
     assert result.truncated
+
+
+@pytest.mark.parametrize(
+    "summary",
+    (
+        "The service is written in Go",
+        "Dependencies include Dramatiq",
+        "This repository contains Terraform modules",
+        "The backend is powered by Django",
+        "Configuration lives in config/settings",
+    ),
+)
+def test_candidate_policy_rejects_repository_inventory(summary):
+    candidate = InitializationCandidate(
+        "decision",
+        "repository-fact",
+        summary,
+        "The declaration and dependency manifest show this repository fact.",
+        "Future changes should continue following the observed repository fact.",
+        "The repository no longer contains the observed declaration.",
+        ("symbol",),
+    )
+
+    result = DefaultInitializationCandidatePolicy().assess(candidate)
+
+    assert not result.accepted
+    assert result.reasons == ("summary describes repository inventory",)
+
+
+def test_candidate_policy_accepts_an_actionable_invariant():
+    candidate = InitializationCandidate(
+        "constraint",
+        "delivery-before-checkpoint",
+        "Advance the checkpoint only after external delivery succeeds",
+        "Earlier advancement can permanently hide work after delivery fails.",
+        "New delivery paths must persist success before advancing the checkpoint.",
+        "Delivery and checkpoint persistence become one atomic operation.",
+        ("worker.delivery.checkpoint",),
+    )
+
+    assert DefaultInitializationCandidatePolicy().assess(candidate).accepted
+
+
+def test_initialization_limits_are_exposed_as_settings():
+    candidate_limit = get("initialization.candidate_limit")
+
+    assert candidate_limit.default == 20
+    assert candidate_limit.scopes == ("repository", "organization")
+    assert get("initialization.evidence_limit").maximum == 100
+    assert get("initialization.evidence_character_limit").default == 20_000
+    assert get("initialization.investigation_limit").minimum == 0
+    InitializationCandidate,

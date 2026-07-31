@@ -1,7 +1,7 @@
 import pytest
 
 from src.core.settings import definitions
-from src.core.settings.definitions import ORGANIZATION, REPOSITORY, Setting
+from src.core.settings.definitions import ORGANIZATION, REPOSITORY, USER, Setting
 from src.core.settings.resolver import organization_of
 from src.models.config import ConfigType
 
@@ -45,6 +45,29 @@ def reuse_days(monkeypatch):
 
 
 class TestResolution:
+    def test_a_user_value_wins_for_that_user(self, store, reuse_days):
+        from src.core.settings.resolver import resolve, set_value
+
+        set_value(ORGANIZATION, "acme", "review.reuse_days", 14)
+        set_value(REPOSITORY, "acme/web", "review.reuse_days", 2)
+        set_value(USER, "42", "review.reuse_days", 1)
+
+        answer = resolve(
+            "review.reuse_days",
+            user="42",
+            repository="acme/web",
+        )
+
+        assert answer.value == 1
+        assert answer.source == USER
+
+    def test_one_user_does_not_answer_for_another(self, store, reuse_days):
+        from src.core.settings.resolver import resolve, set_value
+
+        set_value(USER, "42", "review.reuse_days", 1)
+
+        assert resolve("review.reuse_days", user="84").value == 7
+
     def test_falls_back_to_the_shipped_default(self, store, reuse_days):
         from src.core.settings.resolver import resolve
 

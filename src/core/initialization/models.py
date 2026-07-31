@@ -87,3 +87,22 @@ class InitializationLimits:
             raise ValueError("evidence_character_limit must be between 1000 and 100000")
         if not 0 <= self.investigation_limit <= 50:
             raise ValueError("investigation_limit must be between 0 and 50")
+
+
+@dataclass(frozen=True)
+class InitializationCandidate:
+    kind: str
+    slug: str
+    summary: str
+    rationale: str
+    future_decision: str
+    invalidation: str
+    evidence_ids: tuple[str, ...]
+    paths: tuple[str, ...] = ()
+    confidence: float = 0.5
+
+
+@dataclass(frozen=True)
+class CandidateAssessment:
+    accepted: bool
+    reasons: tuple[str, ...] = ()
