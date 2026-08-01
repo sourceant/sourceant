@@ -98,6 +98,39 @@ def test_review_context_is_bounded_and_marks_truncation():
     assert context.truncated is True
 
 
+def test_review_context_character_limit_keeps_a_valid_bounded_graph():
+    scope = Scope.from_mapping(
+        {"repository": "sourceant/sourceant", "revision": "abc123"}
+    )
+    index = build_changed_file_code_index(
+        scope,
+        ["src/service.py"],
+        lambda path: "\n".join(
+            f"def function_with_a_long_name_{item}(): pass" for item in range(20)
+        ),
+    )
+
+    context = DefaultReviewCodeContextPreparer(
+        index,
+        node_limit=30,
+        character_limit=500,
+    ).prepare(
+        repository="sourceant/sourceant",
+        revision="abc123",
+        paths=["src/service.py"],
+    )
+
+    assert context is not None
+    assert len(context.content) <= 500
+    payload = json.loads(context.content)
+    node_ids = {node["id"] for node in payload["nodes"]}
+    assert all(
+        edge["source"] in node_ids and edge["target"] in node_ids
+        for edge in payload["edges"]
+    )
+    assert payload["truncated"] is True
+
+
 def test_changed_file_index_reads_files_only_when_queried():
     scope = Scope.from_mapping(
         {"repository": "sourceant/sourceant", "revision": "abc123"}

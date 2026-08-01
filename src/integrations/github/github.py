@@ -5,8 +5,7 @@ import requests
 import os
 import base64
 import binascii
-from typing import BinaryIO
-from typing import Dict, Any, List, Optional
+from typing import Any, BinaryIO, Dict, List, Optional
 from dateutil.parser import isoparse
 from ..provider_adapter import ProviderAdapter
 from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
@@ -186,7 +185,9 @@ class GitHub(ProviderAdapter):
                 continue
             written += len(chunk)
             if written > byte_limit:
-                raise ValueError("repository archive exceeds the download limit")
+                raise ValueError(
+                    f"repository archive exceeds the {byte_limit}-byte download limit"
+                )
             destination.write(chunk)
         destination.seek(0)
 

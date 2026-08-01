@@ -11,7 +11,9 @@ from src.core.code_index import (
     CodeIndexReader,
     CodeNode,
     CodeSearch,
+    CodeSearchResult,
     CodeTraversal,
+    CodeTraversalResult,
     InMemoryCodeIndex,
 )
 from src.core.scope import Scope
@@ -43,10 +45,10 @@ class LazyChangedFileCodeIndex:
         self._read_content = read_content
         self._index: InMemoryCodeIndex | None = None
 
-    def search(self, query: CodeSearch):
+    def search(self, query: CodeSearch) -> CodeSearchResult:
         return self._resolve().search(query)
 
-    def traverse(self, traversal: CodeTraversal):
+    def traverse(self, traversal: CodeTraversal) -> CodeTraversalResult:
         return self._resolve().traverse(traversal)
 
     def _resolve(self) -> InMemoryCodeIndex:
@@ -58,6 +60,19 @@ class LazyChangedFileCodeIndex:
 
 
 class DefaultReviewCodeContextPreparer:
+    _ALLOWED_PROPERTIES = frozenset(
+        {
+            "end_line",
+            "file_path",
+            "kind",
+            "line",
+            "name",
+            "signature",
+            "start_line",
+            "trace_direction",
+        }
+    )
+
     def __init__(
         self,
         reader: CodeIndexReader,
@@ -125,35 +140,53 @@ class DefaultReviewCodeContextPreparer:
             "truncated": search_truncated or traversal.truncated,
         }
         content = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        while len(content) > self._character_limit and payload["nodes"]:
-            payload["truncated"] = True
-            payload["nodes"].pop()
-            included = {node["id"] for node in payload["nodes"]}
-            payload["edges"] = [
-                edge
-                for edge in payload["edges"]
-                if edge["source"] in included and edge["target"] in included
-            ]
-            content = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        if len(content) > self._character_limit:
+            content = self._fit_to_character_limit(payload)
         truncated = payload["truncated"]
         return ReviewCodeContext(content=content, truncated=truncated)
 
-    @staticmethod
-    def _node(node) -> dict:
+    def _fit_to_character_limit(self, payload: dict) -> str:
+        payload["truncated"] = True
+        nodes = payload["nodes"]
+        edges = payload["edges"]
+        lower = 0
+        upper = len(nodes)
+        content = ""
+        while lower <= upper:
+            count = (lower + upper) // 2
+            candidate_nodes = nodes[:count]
+            included = {node["id"] for node in candidate_nodes}
+            candidate = {
+                "nodes": candidate_nodes,
+                "edges": [
+                    edge
+                    for edge in edges
+                    if edge["source"] in included and edge["target"] in included
+                ],
+                "truncated": True,
+            }
+            serialized = json.dumps(candidate, sort_keys=True, separators=(",", ":"))
+            if len(serialized) <= self._character_limit:
+                content = serialized
+                lower = count + 1
+            else:
+                upper = count - 1
+        kept = max(0, lower - 1)
+        payload["nodes"] = nodes[:kept]
+        included = {node["id"] for node in payload["nodes"]}
+        payload["edges"] = [
+            edge
+            for edge in edges
+            if edge["source"] in included and edge["target"] in included
+        ]
+        return content
+
+    @classmethod
+    def _node(cls, node: CodeNode) -> dict:
         properties = {
             key: value
             for key, value in node.properties.items()
-            if key
-            in {
-                "end_line",
-                "file_path",
-                "kind",
-                "line",
-                "name",
-                "signature",
-                "start_line",
-                "trace_direction",
-            }
+            if key in cls._ALLOWED_PROPERTIES
             and isinstance(value, (str, int, float, bool, type(None)))
         }
         return {

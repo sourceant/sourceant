@@ -62,6 +62,30 @@ def test_download_repository_archive_streams_authenticated_revision(github_insta
     )
 
 
+def test_download_repository_archive_reports_the_configured_limit(github_instance):
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"archive-content"
+    response._content_consumed = True
+
+    with patch.object(
+        github_instance,
+        "get_installation_access_token",
+        return_value="installation-token",
+    ), patch("src.integrations.github.github.requests.get", return_value=response):
+        with pytest.raises(
+            ValueError,
+            match="repository archive exceeds the 3-byte download limit",
+        ):
+            github_instance.download_repository_archive(
+                "sourceant",
+                "sourceant",
+                "abc123",
+                io.BytesIO(),
+                byte_limit=3,
+            )
+
+
 @pytest.fixture
 def code_review_instance():
     return CodeReview(
