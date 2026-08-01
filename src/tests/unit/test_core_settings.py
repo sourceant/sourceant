@@ -6,6 +6,15 @@ from src.core.settings.resolver import organization_of
 from src.models.config import ConfigType
 
 
+def test_structural_context_file_limit_is_repository_and_organization_scoped():
+    setting = definitions.get("review.structural_context_file_limit")
+
+    assert setting.default == 20
+    assert setting.minimum == 1
+    assert setting.maximum == 100
+    assert setting.scopes == (REPOSITORY, ORGANIZATION)
+
+
 @pytest.fixture
 def store(monkeypatch):
     """A configuration store held in memory, so resolution is tested on its own."""

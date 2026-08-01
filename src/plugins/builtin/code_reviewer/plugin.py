@@ -18,6 +18,7 @@ from src.core.review_context import (
     LazyChangedFileCodeIndex,
 )
 from src.core.scope import Scope
+from src.core.settings.resolver import value_of
 from src.core.review_evidence import (
     CachedChangedFileEvidenceReader,
     ChangedFileEvidenceReader,
@@ -391,6 +392,10 @@ class CodeReviewerPlugin(BasePlugin):
                     if not parsed_file.is_binary_file
                 ],
                 read_changed_file,
+                file_limit=value_of(
+                    "review.structural_context_file_limit",
+                    repository=repo_full_name,
+                ),
             )
             try:
                 durable_code = self.services.resolve(CodeIndexReader)

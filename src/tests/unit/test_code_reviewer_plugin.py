@@ -487,12 +487,14 @@ class TestPreviewResponseIsSerializable:
 
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=1)
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
     @patch("src.plugins.builtin.code_reviewer.plugin.llm")
     def test_preview_drops_a_missing_import_claim_disproved_by_post_change_file(
         self,
         mock_llm,
         mock_github_cls,
+        mock_value_of,
         mock_get_sha,
         mock_save_record,
         plugin,
@@ -563,6 +565,10 @@ class TestPreviewResponseIsSerializable:
         ]
         assert '"file_path":"test.py"' in code_context
         assert '"name":"load"' in code_context
+        mock_value_of.assert_called_once_with(
+            "review.structural_context_file_limit",
+            repository="test_owner/test_repo",
+        )
         mock_github.get_file_content.assert_called_once_with(
             "test_owner", "test_repo", "test.py", "head_sha_def"
         )
