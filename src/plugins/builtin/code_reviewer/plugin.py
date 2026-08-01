@@ -22,6 +22,8 @@ from src.core.settings.resolver import value_of
 from src.core.review_evidence import (
     CachedChangedFileEvidenceReader,
     ChangedFileEvidenceReader,
+    FallbackChangedFileEvidenceReader,
+    IndexedChangedFileEvidenceReader,
     StructuralReviewEvidenceValidator,
 )
 from src.integrations.github.github import GitHub
@@ -377,7 +379,6 @@ class CodeReviewerPlugin(BasePlugin):
                     )
                 return content_cache[path]
 
-            evidence = CachedChangedFileEvidenceReader(read_changed_file)
             code_scope = Scope.from_mapping(
                 {
                     "repository": repo_full_name,
@@ -402,6 +403,13 @@ class CodeReviewerPlugin(BasePlugin):
                 durable_code = self.services.resolve(CodeIndexReader)
             except LookupError:
                 durable_code = None
+            local_evidence = CachedChangedFileEvidenceReader(read_changed_file)
+            evidence: ChangedFileEvidenceReader = local_evidence
+            if durable_code is not None:
+                evidence = FallbackChangedFileEvidenceReader(
+                    IndexedChangedFileEvidenceReader(durable_code, code_scope),
+                    local_evidence,
+                )
 
             # Generate review based on token count
             if total_tokens < llm_instance.token_limit:

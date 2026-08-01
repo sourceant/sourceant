@@ -12,11 +12,12 @@ from .models import (
     StructuralFact,
     StructuralPredicate,
 )
-from .python import CachedPythonFileEvidenceReader
 
 
 class CachedChangedFileEvidenceReader:
-    _SUPPORTED_LANGUAGES = frozenset({"java", "javascript", "php", "typescript", "tsx"})
+    _IMPORT_LANGUAGES = frozenset(
+        {"java", "javascript", "php", "python", "typescript", "tsx"}
+    )
 
     def __init__(
         self,
@@ -29,10 +30,6 @@ class CachedChangedFileEvidenceReader:
         self._read_content = read_content
         self._character_limit = character_limit
         self._cache: dict[str, FileEvidence | None] = {}
-        self._python = CachedPythonFileEvidenceReader(
-            read_content,
-            character_limit=character_limit,
-        )
 
     def read(self, path: str) -> FileEvidence | None:
         if path not in self._cache:
@@ -41,9 +38,7 @@ class CachedChangedFileEvidenceReader:
 
     def _extract(self, path: str) -> FileEvidence | None:
         language = detect_language(path)
-        if language == "python":
-            return self._python.read(path)
-        if language not in self._SUPPORTED_LANGUAGES:
+        if language is None:
             return None
         try:
             content = self._read_content(path)
@@ -61,13 +56,14 @@ class CachedChangedFileEvidenceReader:
         for name in _imported_names(language, content, result.imports):
             facts.add(StructuralFact(name, StructuralPredicate.IMPORTED))
             facts.add(StructuralFact(name, StructuralPredicate.DEFINED))
+        supported_predicates = {StructuralPredicate.DEFINED}
+        if language in self._IMPORT_LANGUAGES:
+            supported_predicates.add(StructuralPredicate.IMPORTED)
         return FileEvidence(
             path=path,
             language=language,
             facts=frozenset(facts),
-            supported_predicates=frozenset(
-                {StructuralPredicate.IMPORTED, StructuralPredicate.DEFINED}
-            ),
+            supported_predicates=frozenset(supported_predicates),
         )
 
 
@@ -105,6 +101,8 @@ def _imported_names(language: str, content: str, imports) -> set[str]:
         return _java_imports(imports)
     if language == "php":
         return _php_imports(content)
+    if language == "python":
+        return _python_imports(imports)
     return set()
 
 
@@ -148,4 +146,25 @@ def _php_imports(content: str) -> set[str]:
         content,
     ):
         names.add(match.group(2) or match.group(1).rsplit("\\", 1)[-1])
+    return names
+
+
+def _python_imports(imports) -> set[str]:
+    names: set[str] = set()
+    for item in imports:
+        statement = item.source.strip()
+        direct = re.match(r"import\s+(.+)$", statement)
+        if direct:
+            for entry in direct.group(1).split(","):
+                parts = re.split(r"\s+as\s+", entry.strip())
+                name = parts[-1] if len(parts) > 1 else parts[0].split(".", 1)[0]
+                if name:
+                    names.add(name)
+            continue
+        imported = re.match(r"from\s+[.\w]+\s+import\s+(.+)$", statement)
+        if imported:
+            for entry in imported.group(1).strip("()").split(","):
+                parts = re.split(r"\s+as\s+", entry.strip())
+                if parts and parts[0] != "*":
+                    names.add(parts[-1])
     return names

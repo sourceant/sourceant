@@ -1,4 +1,5 @@
 from .interfaces import ChangedFileEvidenceReader, ReviewEvidenceValidator
+from .indexed import FallbackChangedFileEvidenceReader, IndexedChangedFileEvidenceReader
 from .models import (
     EvidenceDecision,
     FileEvidence,
@@ -15,7 +16,9 @@ __all__ = [
     "CachedChangedFileEvidenceReader",
     "ChangedFileEvidenceReader",
     "EvidenceDecision",
+    "FallbackChangedFileEvidenceReader",
     "FileEvidence",
+    "IndexedChangedFileEvidenceReader",
     "ReviewClaim",
     "ReviewEvidenceValidator",
     "StructuralFact",
