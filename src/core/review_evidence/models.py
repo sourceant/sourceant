@@ -28,6 +28,7 @@ class FileEvidence:
     path: str
     language: str
     facts: frozenset[StructuralFact] = field(default_factory=frozenset)
+    conditional_facts: frozenset[StructuralFact] = field(default_factory=frozenset)
     supported_predicates: frozenset[StructuralPredicate] = field(
         default_factory=frozenset
     )

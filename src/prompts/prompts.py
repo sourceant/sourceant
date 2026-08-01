@@ -36,6 +36,7 @@ class Prompts:
     - Encode each structural fact that the issue depends on in `claims`
     - A claim states the expected fact using `subject`, `predicate`, and `expected`
     - Use `IMPORTED` for import presence and `DEFINED` for symbol definitions
+    - Qualify class members as `ClassName.member`; do not use an unqualified member name
     - Claims are checked against post-change code. A contradicted suggestion is discarded
     - Every assertion that an import or definition is present or absent MUST have a matching claim
     - Leave `claims` empty only when the suggestion makes no assertion about imports or definitions

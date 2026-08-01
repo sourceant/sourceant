@@ -160,3 +160,37 @@ def test_changed_file_index_caps_files_before_reading():
     index.search(CodeSearch(scope=scope, properties={"file_path": paths[0]}))
 
     assert reads == paths[:20]
+
+
+def test_context_file_limit_controls_indexing_and_context_seeds():
+    scope = Scope.from_mapping(
+        {"repository": "sourceant/sourceant", "revision": "abc123"}
+    )
+    reads = []
+    paths = [f"src/service_{number}.py" for number in range(25)]
+    index = LazyChangedFileCodeIndex(
+        scope,
+        paths,
+        lambda path: reads.append(path) or "def run(): return 1",
+        file_limit=25,
+    )
+
+    context = DefaultReviewCodeContextPreparer(
+        index,
+        file_limit=25,
+        node_limit=100,
+        character_limit=20_000,
+    ).prepare(
+        repository="sourceant/sourceant",
+        revision="abc123",
+        paths=paths,
+    )
+
+    assert context is not None
+    assert reads == paths
+    file_paths = {
+        node["properties"].get("file_path")
+        for node in json.loads(context.content)["nodes"]
+        if "File" in node["labels"]
+    }
+    assert file_paths == set(paths)

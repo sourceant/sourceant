@@ -1,6 +1,7 @@
 from src.core.review_evidence import (
     CachedChangedFileEvidenceReader,
     ReviewClaim,
+    StructuralFact,
     StructuralPredicate,
     StructuralReviewEvidenceValidator,
 )
@@ -89,6 +90,81 @@ def test_structure_does_not_treat_local_assignments_as_file_definitions():
     )
 
     assert decision.contradicted is False
+
+
+def test_structure_uses_qualified_class_members():
+    reader = CachedChangedFileEvidenceReader(
+        lambda path: "class Service:\n    registry = {}\n\n    def run(self):\n        pass\n"
+    )
+    evidence = reader.read("handler.py")
+    validator = StructuralReviewEvidenceValidator()
+
+    for subject in ("Service.registry", "Service.run"):
+        present = validator.validate(
+            [
+                ReviewClaim(
+                    subject=subject,
+                    predicate=StructuralPredicate.DEFINED,
+                    expected=True,
+                )
+            ],
+            evidence,
+        )
+        missing = validator.validate(
+            [
+                ReviewClaim(
+                    subject=subject,
+                    predicate=StructuralPredicate.DEFINED,
+                    expected=False,
+                )
+            ],
+            evidence,
+        )
+
+        assert present.contradicted is False
+        assert missing.contradicted is True
+
+
+def test_structure_preserves_positive_claim_when_presence_is_not_proven():
+    reader = CachedChangedFileEvidenceReader(lambda path: "class Service:\n    pass\n")
+
+    decision = StructuralReviewEvidenceValidator().validate(
+        [
+            ReviewClaim(
+                subject="Service.run",
+                predicate=StructuralPredicate.DEFINED,
+                expected=True,
+            )
+        ],
+        reader.read("handler.py"),
+    )
+
+    assert decision.contradicted is False
+
+
+def test_structure_marks_control_flow_facts_as_conditional():
+    reader = CachedChangedFileEvidenceReader(
+        lambda path: (
+            "try:\n"
+            "    import orjson\n"
+            "except ImportError:\n"
+            "    orjson = None\n"
+            "if TYPE_CHECKING:\n"
+            "    FLAG = True\n"
+        )
+    )
+
+    evidence = reader.read("handler.py")
+
+    assert evidence is not None
+    assert (
+        StructuralFact("orjson", StructuralPredicate.IMPORTED)
+        in evidence.conditional_facts
+    )
+    assert (
+        StructuralFact("FLAG", StructuralPredicate.DEFINED)
+        in evidence.conditional_facts
+    )
 
 
 def test_changed_file_evidence_is_cached_and_bounded():

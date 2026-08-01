@@ -384,6 +384,10 @@ class CodeReviewerPlugin(BasePlugin):
                     "revision": pull_request.head_sha,
                 }
             )
+            context_file_limit = value_of(
+                "review.structural_context_file_limit",
+                repository=repo_full_name,
+            )
             local_code = LazyChangedFileCodeIndex(
                 code_scope,
                 [
@@ -392,10 +396,7 @@ class CodeReviewerPlugin(BasePlugin):
                     if not parsed_file.is_binary_file
                 ],
                 read_changed_file,
-                file_limit=value_of(
-                    "review.structural_context_file_limit",
-                    repository=repo_full_name,
-                ),
+                file_limit=context_file_limit,
             )
             try:
                 durable_code = self.services.resolve(CodeIndexReader)
@@ -416,6 +417,7 @@ class CodeReviewerPlugin(BasePlugin):
                     existing_comments=existing_comments,
                     evidence=evidence,
                     code_readers=(durable_code, local_code),
+                    context_file_limit=context_file_limit,
                 )
             else:
                 logger.info("Diff is too large. Performing file-by-file review.")
@@ -429,6 +431,7 @@ class CodeReviewerPlugin(BasePlugin):
                     existing_comments=existing_comments,
                     evidence=evidence,
                     code_readers=(durable_code, local_code),
+                    context_file_limit=context_file_limit,
                 )
 
             if existing_comments and final_review.code_suggestions:
@@ -519,6 +522,7 @@ class CodeReviewerPlugin(BasePlugin):
         existing_comments: Optional[List[Dict[str, Any]]] = None,
         evidence: ChangedFileEvidenceReader | None = None,
         code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
+        context_file_limit: int = 20,
     ) -> CodeReview:
         """Generate review in a single pass for small diffs."""
         suggestion_filter = SuggestionFilter()
@@ -527,6 +531,7 @@ class CodeReviewerPlugin(BasePlugin):
             repository.full_name or f"{repository.owner}/{repository.name}",
             pull_request.head_sha,
             [parsed_file.file_path for parsed_file in parsed_files],
+            file_limit=context_file_limit,
         )
 
         full_review = llm().generate_code_review(
@@ -578,6 +583,7 @@ class CodeReviewerPlugin(BasePlugin):
         existing_comments: Optional[List[Dict[str, Any]]] = None,
         evidence: ChangedFileEvidenceReader | None = None,
         code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
+        context_file_limit: int = 20,
     ) -> CodeReview:
         """Generate review file by file for large diffs."""
         suggestion_filter = SuggestionFilter()
@@ -604,6 +610,7 @@ class CodeReviewerPlugin(BasePlugin):
                     repository.full_name or f"{repository.owner}/{repository.name}",
                     pull_request.head_sha,
                     [parsed_file.file_path],
+                    file_limit=context_file_limit,
                 ),
             )
 
@@ -631,6 +638,8 @@ class CodeReviewerPlugin(BasePlugin):
         repository: str,
         revision: str,
         paths: List[str],
+        *,
+        file_limit: int = 20,
     ) -> str | None:
         if readers is None:
             return None
@@ -638,7 +647,10 @@ class CodeReviewerPlugin(BasePlugin):
             if reader is None:
                 continue
             try:
-                context = DefaultReviewCodeContextPreparer(reader).prepare(
+                context = DefaultReviewCodeContextPreparer(
+                    reader,
+                    file_limit=file_limit,
+                ).prepare(
                     repository=repository,
                     revision=revision,
                     paths=paths,
