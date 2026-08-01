@@ -25,6 +25,8 @@ from src.core.topology import (
 
 router = APIRouter()
 
+STORE_UNREACHABLE = "Graph store unreachable"
+
 _fallback: TopologyRepository | None = None
 
 
@@ -273,16 +275,19 @@ async def search_entities(
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
-    # The graph driver reports an unreachable store as a bare ValueError, so the
-    # store calls cannot share the validation handler above without reporting an
-    # outage as a query the caller could have written differently.
+    # The graph driver reports an unreachable store as a bare ValueError, so
+    # these calls cannot share the validation handler above without reporting
+    # an outage as a query the caller could have written differently.
     try:
         result = repository.search(query)
         relationships = repository.get_relationships(
             scope, frozenset(entity.id for entity in result.entities)
         )
     except ValueError as error:
-        raise HTTPException(status_code=503, detail=str(error))
+        # The reason names internal hosts and ports, so it is logged rather
+        # than answered with. The caller still learns the store is at fault.
+        logger.error(f"Topology store unreachable: {error}")
+        raise HTTPException(status_code=503, detail=STORE_UNREACHABLE)
     return success_response(
         {
             **asdict(result),
@@ -318,5 +323,6 @@ async def traverse(
     try:
         result = repository.traverse(traversal)
     except ValueError as error:
-        raise HTTPException(status_code=503, detail=str(error))
+        logger.error(f"Topology store unreachable: {error}")
+        raise HTTPException(status_code=503, detail=STORE_UNREACHABLE)
     return success_response(asdict(result))

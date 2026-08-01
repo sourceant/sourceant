@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import uuid
@@ -238,7 +239,7 @@ class TestTopologyApi(BaseTestCase):
         assert too_deep.status_code == 422
         assert empty_seed.status_code == 422
 
-    def test_an_unreachable_store_is_reported_as_unavailable(self):
+    def test_an_unreachable_store_is_reported_as_unavailable(self, caplog):
         """The graph driver raises a bare ValueError when it cannot connect."""
 
         class UnreachableStore(InMemoryTopologyRepository):
@@ -250,18 +251,22 @@ class TestTopologyApi(BaseTestCase):
 
         app.dependency_overrides[get_topology_repository] = UnreachableStore
 
-        listing = self.client.post(
-            "/api/topology/search", json={}, headers=self.headers
-        )
-        traversal = self.client.post(
-            "/api/topology/traverse",
-            json={"entity_ids": ["checkout"]},
-            headers=self.headers,
-        )
+        with caplog.at_level(logging.ERROR):
+            listing = self.client.post(
+                "/api/topology/search", json={}, headers=self.headers
+            )
+            traversal = self.client.post(
+                "/api/topology/traverse",
+                json={"entity_ids": ["checkout"]},
+                headers=self.headers,
+            )
 
         assert listing.status_code == 503
-        assert "Cannot resolve address" in listing.json()["detail"]
         assert traversal.status_code == 503
+        # The caller is told which subsystem failed, never which host it is on.
+        assert listing.json()["detail"] == "Graph store unreachable"
+        assert "memgraph:7687" not in listing.text
+        assert "memgraph:7687" in caplog.text
 
     def test_a_query_the_caller_can_correct_is_still_rejected_as_invalid(self):
         response = self.client.post(
