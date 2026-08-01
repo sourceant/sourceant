@@ -4,6 +4,7 @@ import time
 import requests
 import os
 import base64
+import binascii
 from typing import BinaryIO
 from typing import Dict, Any, List, Optional
 from dateutil.parser import isoparse
@@ -1128,7 +1129,7 @@ class GitHub(ProviderAdapter):
             )
             logger.error(error_msg)
             raise ValueError(error_msg)
-        except (base64.B64DecodeError, UnicodeDecodeError) as e:
+        except (binascii.Error, UnicodeDecodeError) as e:
             error_msg = f"Failed to decode file content for {file_path}: {e}"
             logger.error(error_msg)
             raise ValueError(error_msg)

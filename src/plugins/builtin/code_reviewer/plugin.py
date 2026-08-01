@@ -385,7 +385,11 @@ class CodeReviewerPlugin(BasePlugin):
             )
             local_code = LazyChangedFileCodeIndex(
                 code_scope,
-                [parsed_file.file_path for parsed_file in parsed_files],
+                [
+                    parsed_file.file_path
+                    for parsed_file in parsed_files
+                    if not parsed_file.is_binary_file
+                ],
                 read_changed_file,
             )
             try:

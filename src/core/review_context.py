@@ -29,9 +29,17 @@ class LazyChangedFileCodeIndex:
         scope: Scope,
         paths: list[str],
         read_content: Callable[[str], str | None],
+        *,
+        file_limit: int = 20,
     ) -> None:
+        if not 1 <= file_limit <= 100:
+            raise ValueError("file_limit must be between 1 and 100")
         self._scope = scope
-        self._paths = paths
+        self._paths = [
+            path
+            for path in dict.fromkeys(paths)
+            if path and detect_language(path) is not None
+        ][:file_limit]
         self._read_content = read_content
         self._index: InMemoryCodeIndex | None = None
 
@@ -164,6 +172,9 @@ def build_changed_file_code_index(
 ) -> InMemoryCodeIndex:
     index = InMemoryCodeIndex()
     for path in dict.fromkeys(paths):
+        language = detect_language(path)
+        if language is None:
+            continue
         try:
             content = read_content(path)
         except (OSError, RuntimeError, ValueError):
@@ -171,9 +182,6 @@ def build_changed_file_code_index(
         if not isinstance(content, str) or len(content) > character_limit:
             continue
         try:
-            language = detect_language(path)
-            if language is None:
-                continue
             result = process(content, ProcessConfig(language=language))
         except Error:
             continue

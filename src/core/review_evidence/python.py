@@ -45,7 +45,7 @@ class CachedChangedFileEvidenceReader:
             return None
 
         facts: set[StructuralFact] = set()
-        for node in ast.walk(tree):
+        for node in tree.body:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     module = alias.name.split(".", 1)[0]
@@ -58,8 +58,9 @@ class CachedChangedFileEvidenceReader:
                     local_name = alias.asname or alias.name
                     facts.add(StructuralFact(local_name, StructuralPredicate.IMPORTED))
                     facts.add(StructuralFact(local_name, StructuralPredicate.DEFINED))
-            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                facts.add(StructuralFact(node.id, StructuralPredicate.DEFINED))
+            elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+                for target in _assignment_targets(node):
+                    facts.add(StructuralFact(target, StructuralPredicate.DEFINED))
             elif isinstance(
                 node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
             ):
@@ -84,12 +85,22 @@ class StructuralReviewEvidenceValidator:
             return EvidenceDecision(False)
         for claim in claims:
             if claim.predicate not in evidence.supported_predicates:
-                return EvidenceDecision(False)
+                continue
             actual = StructuralFact(claim.subject, claim.predicate) in evidence.facts
-            if actual == claim.expected:
-                return EvidenceDecision(False)
+            if actual != claim.expected:
+                return EvidenceDecision(
+                    True,
+                    "post-change structure contradicts a factual claim",
+                )
 
-        return EvidenceDecision(
-            True,
-            "post-change structure contradicts every factual claim",
-        )
+        return EvidenceDecision(False)
+
+
+def _assignment_targets(node: ast.Assign | ast.AnnAssign | ast.NamedExpr) -> set[str]:
+    roots = node.targets if isinstance(node, ast.Assign) else [node.target]
+    names: set[str] = set()
+    for root in roots:
+        for target in ast.walk(root):
+            if isinstance(target, ast.Name) and isinstance(target.ctx, ast.Store):
+                names.add(target.id)
+    return names

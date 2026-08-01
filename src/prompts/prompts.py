@@ -36,7 +36,9 @@ class Prompts:
     - Encode each structural fact that the issue depends on in `claims`
     - A claim states the expected fact using `subject`, `predicate`, and `expected`
     - Use `IMPORTED` for import presence and `DEFINED` for symbol definitions
-    - Leave `claims` empty when the suggestion does not depend on a supported structural fact
+    - Claims are checked against post-change code. A contradicted suggestion is discarded
+    - Every assertion that an import or definition is present or absent MUST have a matching claim
+    - Leave `claims` empty only when the suggestion makes no assertion about imports or definitions
     - Do not infer structural facts that are not established by the provided code
     - If existing code is good enough, make NO comment about it at all
 

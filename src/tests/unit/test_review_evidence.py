@@ -6,7 +6,7 @@ from src.core.review_evidence import (
 )
 
 
-def test_structure_contradicts_all_factual_claims():
+def test_structure_rejects_when_any_factual_claim_is_contradicted():
     reader = CachedChangedFileEvidenceReader(
         lambda path: "import logging\n\nlogger = logging.getLogger(__name__)\n"
     )
@@ -28,7 +28,7 @@ def test_structure_contradicts_all_factual_claims():
     )
 
     assert decision.contradicted is True
-    assert decision.reason == "post-change structure contradicts every factual claim"
+    assert decision.reason == "post-change structure contradicts a factual claim"
 
 
 def test_structure_keeps_a_claim_that_matches_the_file():
@@ -50,7 +50,7 @@ def test_structure_keeps_a_claim_that_matches_the_file():
     assert decision.contradicted is False
 
 
-def test_structure_keeps_compound_claim_when_one_claim_matches():
+def test_structure_rejects_compound_claim_when_another_claim_is_contradicted():
     reader = CachedChangedFileEvidenceReader(lambda path: "import logging\n")
 
     decision = StructuralReviewEvidenceValidator().validate(
@@ -65,6 +65,25 @@ def test_structure_keeps_compound_claim_when_one_claim_matches():
                 predicate=StructuralPredicate.DEFINED,
                 expected=False,
             ),
+        ],
+        reader.read("handler.py"),
+    )
+
+    assert decision.contradicted is True
+
+
+def test_structure_does_not_treat_local_assignments_as_file_definitions():
+    reader = CachedChangedFileEvidenceReader(
+        lambda path: "def unrelated():\n    logger = object()\n"
+    )
+
+    decision = StructuralReviewEvidenceValidator().validate(
+        [
+            ReviewClaim(
+                subject="logger",
+                predicate=StructuralPredicate.DEFINED,
+                expected=False,
+            )
         ],
         reader.read("handler.py"),
     )
