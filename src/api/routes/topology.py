@@ -260,24 +260,30 @@ async def search_entities(
 ):
     """List entities in the caller's workspace, with their relationships."""
     try:
-        result = repository.search(
-            TopologyQuery(
-                scope,
-                ids=frozenset(payload.ids),
-                kinds=frozenset(payload.kinds),
-                statuses=frozenset(payload.statuses),
-                properties=payload.properties,
-                minimum_confidence=payload.minimum_confidence,
-                include_stale=payload.include_stale,
-                limit=payload.limit,
-                offset=payload.offset,
-            )
+        query = TopologyQuery(
+            scope,
+            ids=frozenset(payload.ids),
+            kinds=frozenset(payload.kinds),
+            statuses=frozenset(payload.statuses),
+            properties=payload.properties,
+            minimum_confidence=payload.minimum_confidence,
+            include_stale=payload.include_stale,
+            limit=payload.limit,
+            offset=payload.offset,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
-    relationships = repository.get_relationships(
-        scope, frozenset(entity.id for entity in result.entities)
-    )
+    # The graph driver reports an unreachable store as a bare ValueError, so
+    # these calls cannot share the validation handler above without reporting
+    # an outage as a query the caller could have written differently.
+    try:
+        result = repository.search(query)
+        relationships = repository.get_relationships(
+            scope, frozenset(entity.id for entity in result.entities)
+        )
+    except ValueError as error:
+        logger.exception("Topology store unreachable during search")
+        raise HTTPException(status_code=503, detail=str(error))
     return success_response(
         {
             **asdict(result),
@@ -294,22 +300,25 @@ async def traverse(
 ):
     """Walk the workspace graph outward from a bounded set of seed entities."""
     try:
-        result = repository.traverse(
-            TopologyTraversal(
-                scope,
-                tuple(payload.entity_ids),
-                depth=payload.depth,
-                entity_kinds=frozenset(payload.entity_kinds),
-                entity_statuses=frozenset(payload.entity_statuses),
-                relationship_types=frozenset(payload.relationship_types),
-                relationship_statuses=frozenset(payload.relationship_statuses),
-                direction=payload.direction,
-                minimum_confidence=payload.minimum_confidence,
-                include_stale=payload.include_stale,
-                entity_limit=payload.entity_limit,
-                relationship_limit=payload.relationship_limit,
-            )
+        traversal = TopologyTraversal(
+            scope,
+            tuple(payload.entity_ids),
+            depth=payload.depth,
+            entity_kinds=frozenset(payload.entity_kinds),
+            entity_statuses=frozenset(payload.entity_statuses),
+            relationship_types=frozenset(payload.relationship_types),
+            relationship_statuses=frozenset(payload.relationship_statuses),
+            direction=payload.direction,
+            minimum_confidence=payload.minimum_confidence,
+            include_stale=payload.include_stale,
+            entity_limit=payload.entity_limit,
+            relationship_limit=payload.relationship_limit,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
+    try:
+        result = repository.traverse(traversal)
+    except ValueError as error:
+        logger.exception("Topology store unreachable during traversal")
+        raise HTTPException(status_code=503, detail=str(error))
     return success_response(asdict(result))
