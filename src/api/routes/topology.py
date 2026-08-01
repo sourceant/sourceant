@@ -25,8 +25,6 @@ from src.core.topology import (
 
 router = APIRouter()
 
-STORE_UNREACHABLE = "Graph store unreachable"
-
 _fallback: TopologyRepository | None = None
 
 
@@ -283,11 +281,9 @@ async def search_entities(
         relationships = repository.get_relationships(
             scope, frozenset(entity.id for entity in result.entities)
         )
-    except ValueError:
-        # The reason names internal hosts and ports, so it is logged rather
-        # than answered with. The caller still learns the store is at fault.
+    except ValueError as error:
         logger.exception("Topology store unreachable during search")
-        raise HTTPException(status_code=503, detail=STORE_UNREACHABLE)
+        raise HTTPException(status_code=503, detail=str(error))
     return success_response(
         {
             **asdict(result),
@@ -322,7 +318,7 @@ async def traverse(
         raise HTTPException(status_code=422, detail=str(error))
     try:
         result = repository.traverse(traversal)
-    except ValueError:
+    except ValueError as error:
         logger.exception("Topology store unreachable during traversal")
-        raise HTTPException(status_code=503, detail=STORE_UNREACHABLE)
+        raise HTTPException(status_code=503, detail=str(error))
     return success_response(asdict(result))
