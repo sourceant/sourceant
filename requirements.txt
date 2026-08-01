@@ -19,6 +19,7 @@ redislite
 requests==2.31.0
 rq
 sqlmodel
+tree-sitter-language-pack==1.13.2
 unidiff
 uvicorn
 vaderSentiment

@@ -11,6 +11,7 @@ from src.models.code_review import (
     SuggestionCategory,
     Verdict,
 )
+from src.core.review_evidence import ReviewClaim, StructuralPredicate
 from src.models.repository import Repository
 from src.models.pull_request import PullRequest
 from src.core.responses import success_response
@@ -483,3 +484,85 @@ class TestPreviewResponseIsSerializable:
         assert suggestion["side"] == "RIGHT"
         assert suggestion["category"] == "BUG"
         assert body["data"]["review"]["verdict"] == "REQUEST_CHANGES"
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    def test_preview_drops_a_missing_import_claim_disproved_by_post_change_file(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save_record,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        mock_get_sha.return_value = None
+        mock_github = MagicMock()
+        mock_github_cls.return_value = mock_github
+        mock_github.get_diff.return_value = _DIFF
+        mock_github.get_existing_bot_review_comments.return_value = []
+        mock_github.get_file_content.return_value = (
+            "import logging\n\nlogger = logging.getLogger(__name__)\n"
+            "\ndef load(path):\n    return path\n"
+        )
+
+        mock_llm_instance = MagicMock()
+        mock_llm.return_value = mock_llm_instance
+        mock_llm_instance.count_tokens.return_value = 100
+        mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_code_review.return_value = CodeReview(
+            verdict=Verdict.REQUEST_CHANGES,
+            code_suggestions=[
+                CodeSuggestion(
+                    file_name="test.py",
+                    start_line=10,
+                    end_line=10,
+                    side=Side.RIGHT,
+                    comment=(
+                        "Missing import logging and logger instantiation will cause "
+                        "a NameError."
+                    ),
+                    category=SuggestionCategory.BUG,
+                    existing_code='    f = open(path, "r")',
+                    suggested_code="    logging.info(path)",
+                    claims=[
+                        ReviewClaim(
+                            subject="logging",
+                            predicate=StructuralPredicate.IMPORTED,
+                            expected=False,
+                        ),
+                        ReviewClaim(
+                            subject="logger",
+                            predicate=StructuralPredicate.DEFINED,
+                            expected=False,
+                        ),
+                    ],
+                )
+            ],
+        )
+
+        import asyncio
+
+        result = asyncio.get_event_loop().run_until_complete(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="test_owner/test_repo",
+                post=False,
+            )
+        )
+
+        assert result["status"] == "success"
+        assert result["review"]["code_suggestions"] == []
+        assert result["review"]["summary"]["critical_issues"] == []
+        code_context = mock_llm_instance.generate_code_review.call_args.kwargs[
+            "code_context"
+        ]
+        assert '"file_path":"test.py"' in code_context
+        assert '"name":"load"' in code_context
+        mock_github.get_file_content.assert_called_once_with(
+            "test_owner", "test_repo", "test.py", "head_sha_def"
+        )

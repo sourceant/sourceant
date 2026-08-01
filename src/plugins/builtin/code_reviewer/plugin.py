@@ -12,9 +12,26 @@ from rapidfuzz import fuzz
 
 from src.core.plugins import BasePlugin, PluginMetadata, PluginType
 from src.core.plugins import event_hooks, HookPriority
+from src.core.code_index import CodeIndexReader
+from src.core.review_context import (
+    DefaultReviewCodeContextPreparer,
+    LazyChangedFileCodeIndex,
+)
+from src.core.scope import Scope
+from src.core.review_evidence import (
+    CachedChangedFileEvidenceReader,
+    ChangedFileEvidenceReader,
+    StructuralReviewEvidenceValidator,
+)
 from src.integrations.github.github import GitHub
 from src.llms.llm_factory import llm
-from src.models.code_review import CodeReview, Side, Verdict, SuggestionCategory
+from src.models.code_review import (
+    CodeReview,
+    CodeReviewSummary,
+    Side,
+    Verdict,
+    SuggestionCategory,
+)
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.utils.diff_parser import parse_diff, ParsedDiff
@@ -347,6 +364,34 @@ class CodeReviewerPlugin(BasePlugin):
             existing_comments = github.get_existing_bot_review_comments(
                 repository.owner, repository.name, pull_request.number
             )
+            content_cache: Dict[str, str | None] = {}
+
+            def read_changed_file(path: str) -> str | None:
+                if path not in content_cache:
+                    content_cache[path] = github.get_file_content(
+                        repository.owner,
+                        repository.name,
+                        path,
+                        pull_request.head_sha,
+                    )
+                return content_cache[path]
+
+            evidence = CachedChangedFileEvidenceReader(read_changed_file)
+            code_scope = Scope.from_mapping(
+                {
+                    "repository": repo_full_name,
+                    "revision": pull_request.head_sha,
+                }
+            )
+            local_code = LazyChangedFileCodeIndex(
+                code_scope,
+                [parsed_file.file_path for parsed_file in parsed_files],
+                read_changed_file,
+            )
+            try:
+                durable_code = self.services.resolve(CodeIndexReader)
+            except LookupError:
+                durable_code = None
 
             # Generate review based on token count
             if total_tokens < llm_instance.token_limit:
@@ -360,6 +405,8 @@ class CodeReviewerPlugin(BasePlugin):
                     line_mapper,
                     pr_metadata=pr_metadata,
                     existing_comments=existing_comments,
+                    evidence=evidence,
+                    code_readers=(durable_code, local_code),
                 )
             else:
                 logger.info("Diff is too large. Performing file-by-file review.")
@@ -371,6 +418,8 @@ class CodeReviewerPlugin(BasePlugin):
                     line_mapper,
                     pr_metadata=pr_metadata,
                     existing_comments=existing_comments,
+                    evidence=evidence,
+                    code_readers=(durable_code, local_code),
                 )
 
             if existing_comments and final_review.code_suggestions:
@@ -459,27 +508,45 @@ class CodeReviewerPlugin(BasePlugin):
         line_mapper: LineMapper,
         pr_metadata: Optional[Dict[str, Any]] = None,
         existing_comments: Optional[List[Dict[str, Any]]] = None,
+        evidence: ChangedFileEvidenceReader | None = None,
+        code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
     ) -> CodeReview:
         """Generate review in a single pass for small diffs."""
         suggestion_filter = SuggestionFilter()
+        code_context = self._prepare_code_context(
+            code_readers,
+            repository.full_name or f"{repository.owner}/{repository.name}",
+            pull_request.head_sha,
+            [parsed_file.file_path for parsed_file in parsed_files],
+        )
 
         full_review = llm().generate_code_review(
             diff=raw_diff,
             parsed_files=parsed_files,
             pr_metadata=pr_metadata,
             existing_comments=existing_comments,
+            code_context=code_context,
         )
 
         all_suggestions = []
+        evidence_rejections: List[str] = []
         if full_review and full_review.code_suggestions:
             all_suggestions = self._process_suggestions(
-                full_review.code_suggestions, suggestion_filter, line_mapper
+                full_review.code_suggestions,
+                suggestion_filter,
+                line_mapper,
+                evidence=evidence,
+                evidence_rejections=evidence_rejections,
             )
 
         verdict = self._determine_verdict_from_suggestions(all_suggestions)
         if full_review:
             return CodeReview(
-                summary=full_review.summary,
+                summary=(
+                    self._summary_from_suggestions(all_suggestions)
+                    if evidence_rejections
+                    else full_review.summary
+                ),
                 verdict=verdict,
                 code_suggestions=all_suggestions,
                 scores=full_review.scores,
@@ -500,6 +567,8 @@ class CodeReviewerPlugin(BasePlugin):
         line_mapper: LineMapper,
         pr_metadata: Optional[Dict[str, Any]] = None,
         existing_comments: Optional[List[Dict[str, Any]]] = None,
+        evidence: ChangedFileEvidenceReader | None = None,
+        code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
     ) -> CodeReview:
         """Generate review file by file for large diffs."""
         suggestion_filter = SuggestionFilter()
@@ -521,16 +590,22 @@ class CodeReviewerPlugin(BasePlugin):
                 parsed_files=[parsed_file],
                 pr_metadata=pr_metadata,
                 existing_comments=file_comments or None,
+                code_context=self._prepare_code_context(
+                    code_readers,
+                    repository.full_name or f"{repository.owner}/{repository.name}",
+                    pull_request.head_sha,
+                    [parsed_file.file_path],
+                ),
             )
 
             if review_for_file and review_for_file.code_suggestions:
-                all_suggestions.extend(
-                    self._process_suggestions(
-                        review_for_file.code_suggestions,
-                        suggestion_filter,
-                        line_mapper,
-                    )
+                accepted = self._process_suggestions(
+                    review_for_file.code_suggestions,
+                    suggestion_filter,
+                    line_mapper,
+                    evidence=evidence,
                 )
+                all_suggestions.extend(accepted)
 
         summary_obj = llm().generate_summary(all_suggestions)
         verdict = self._determine_verdict_from_suggestions(all_suggestions)
@@ -541,14 +616,41 @@ class CodeReviewerPlugin(BasePlugin):
             code_suggestions=all_suggestions,
         )
 
+    @staticmethod
+    def _prepare_code_context(
+        readers: tuple[CodeIndexReader | None, CodeIndexReader] | None,
+        repository: str,
+        revision: str,
+        paths: List[str],
+    ) -> str | None:
+        if readers is None:
+            return None
+        for reader in readers:
+            if reader is None:
+                continue
+            try:
+                context = DefaultReviewCodeContextPreparer(reader).prepare(
+                    repository=repository,
+                    revision=revision,
+                    paths=paths,
+                )
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if context:
+                return context.content
+        return None
+
     def _process_suggestions(
         self,
         suggestions: List,
         suggestion_filter: SuggestionFilter,
         line_mapper: LineMapper,
+        evidence: ChangedFileEvidenceReader | None = None,
+        evidence_rejections: List[str] | None = None,
     ) -> List:
         """Filter and map suggestions to valid diff positions."""
         result = []
+        validator = StructuralReviewEvidenceValidator()
         filtered, _ = suggestion_filter.filter_suggestions(suggestions)
         for suggestion in filtered:
             if line_mapper.suggestion_replays_diff(suggestion):
@@ -568,8 +670,45 @@ class CodeReviewerPlugin(BasePlugin):
                 suggestion.side = Side(mapping["side"])
                 if "start_line" in mapping:
                     suggestion.start_line = mapping["start_line"]
+                decision = validator.validate(
+                    suggestion.claims,
+                    evidence.read(suggestion.file_name) if evidence else None,
+                )
+                if decision.contradicted:
+                    if evidence_rejections is not None:
+                        evidence_rejections.append(decision.reason)
+                    logger.info(
+                        f"Filtered contradicted suggestion for {suggestion.file_name}: "
+                        f"{decision.reason}"
+                    )
+                    continue
                 result.append(suggestion)
         return result
+
+    @staticmethod
+    def _summary_from_suggestions(suggestions: List) -> CodeReviewSummary:
+        critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
+        critical = [
+            suggestion.comment
+            for suggestion in suggestions
+            if suggestion.category in critical_categories
+        ]
+        minor = [
+            suggestion.comment
+            for suggestion in suggestions
+            if suggestion.category not in critical_categories
+        ]
+        overview = (
+            f"Review found {len(suggestions)} actionable issue(s)."
+            if suggestions
+            else "No actionable issues were found."
+        )
+        return CodeReviewSummary(
+            overview=overview,
+            key_improvements=[],
+            minor_suggestions=minor,
+            critical_issues=critical,
+        )
 
     def _determine_verdict_from_suggestions(self, suggestions: List) -> Verdict:
         """Determine the appropriate verdict based on suggestions analysis."""

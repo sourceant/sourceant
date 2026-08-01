@@ -8,6 +8,7 @@ from .models import (
     CodeTraversal,
     CodeTraversalResult,
 )
+from .resolving import ResolvingCodeIndexReader
 
 __all__ = [
     "CodeEdge",
@@ -20,4 +21,5 @@ __all__ = [
     "CodeTraversal",
     "CodeTraversalResult",
     "InMemoryCodeIndex",
+    "ResolvingCodeIndexReader",
 ]

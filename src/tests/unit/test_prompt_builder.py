@@ -21,6 +21,11 @@ class TestReviewSystemPrompt:
     def test_system_prompt_contains_code_suggestions_rules(self):
         assert "code_suggestions" in Prompts.REVIEW_SYSTEM_PROMPT
 
+    def test_system_prompt_requires_machine_checkable_structural_claims(self):
+        assert '"claims"' in Prompts.REVIEW_SYSTEM_PROMPT
+        assert '"predicate": "<IMPORTED|DEFINED>"' in Prompts.REVIEW_SYSTEM_PROMPT
+        assert "Do not infer structural facts" in Prompts.REVIEW_SYSTEM_PROMPT
+
 
 class TestReviewUserPrompts:
     def test_review_prompt_has_placeholders(self):

@@ -4,6 +4,7 @@ import time
 import requests
 import os
 import base64
+from typing import BinaryIO
 from typing import Dict, Any, List, Optional
 from dateutil.parser import isoparse
 from ..provider_adapter import ProviderAdapter
@@ -155,6 +156,38 @@ class GitHub(ProviderAdapter):
                 error_msg += f" - Response: {e.response.text}"
             logger.error(error_msg)
             raise ValueError(error_msg)
+
+    def download_repository_archive(
+        self,
+        owner: str,
+        repo: str,
+        revision: str,
+        destination: BinaryIO,
+        *,
+        byte_limit: int = 500_000_000,
+    ) -> None:
+        access_token = self.get_installation_access_token(owner, repo)
+        response = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/tarball/{revision}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            allow_redirects=True,
+            stream=True,
+            timeout=60,
+        )
+        response.raise_for_status()
+        written = 0
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if not chunk:
+                continue
+            written += len(chunk)
+            if written > byte_limit:
+                raise ValueError("repository archive exceeds the download limit")
+            destination.write(chunk)
+        destination.seek(0)
 
     def get_app_slug(self) -> str:
         """Get the slug of the GitHub App."""

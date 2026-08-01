@@ -30,9 +30,14 @@ class Prompts:
     - **NEVER** highlight existing good code without suggesting an improvement
     - **NEVER** comment on code just to acknowledge it exists
     - **NEVER** suggest code that is identical or substantially similar to existing code
-    - **NEVER** include a suggestion if no actionable improvement exists—omit it entirely
+    - **NEVER** include a suggestion if no actionable improvement exists. Omit it entirely
     - **ONLY** include suggestions that identify actual issues and propose fixes
     - Each suggestion MUST include `suggested_code` that is meaningfully different and better than existing code
+    - Encode each structural fact that the issue depends on in `claims`
+    - A claim states the expected fact using `subject`, `predicate`, and `expected`
+    - Use `IMPORTED` for import presence and `DEFINED` for symbol definitions
+    - Leave `claims` empty when the suggestion does not depend on a supported structural fact
+    - Do not infer structural facts that are not established by the provided code
     - If existing code is good enough, make NO comment about it at all
 
     **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
@@ -52,7 +57,14 @@ class Prompts:
                 "comment": "<Detailed review comment explaining the issue and why it matters.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
                 "suggested_code": "<Corrected or improved code snippet.>",
-                "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>"
+                "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>",
+                "claims": [
+                    {{
+                        "subject": "<The symbol whose state supports this issue>",
+                        "predicate": "<IMPORTED|DEFINED>",
+                        "expected": <true|false>
+                    }}
+                ]
             }}
         ],
         "documentation_suggestions": "<Markdown-formatted documentation suggestions.>",
@@ -90,7 +102,7 @@ class Prompts:
     - **Be specific** → Your suggestions should be easy to understand and implement.
     - **Stay on topic** → Focus only on the provided code diff.
 
-    **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**"""
+    **Deliver a precise review containing only findings supported by the available code.**"""
 
     REVIEW_SYSTEM_PROMPT = f"""{_EXPERT_REVIEWER_INTRO}
 Your task is to analyze code diffs and provide precise, structured, and actionable feedback.
@@ -114,7 +126,12 @@ Your task is to analyze code diffs and provide precise, structured, and actionab
     REVIEW_PROMPT = """## Pull Request Metadata
 {pr_metadata}
 
-{existing_comments}## Code Diff for Review
+{existing_comments}## Bounded Structural Context
+This deterministic graph contains relevant post-change files, symbols, and direct relationships. Use it to check claims about definitions, references, imports, and callers. An omitted node is not proof that the node does not exist.
+
+{code_context}
+
+## Code Diff for Review
 The diff below uses a decoupled format where removed and added code are shown in separate labeled blocks per file. `__old hunk__` shows removed lines and surrounding context, `__new hunk__` shows added lines and surrounding context.
 
 {diff}

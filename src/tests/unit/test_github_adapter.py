@@ -4,6 +4,7 @@ from unittest.mock import patch, mock_open, MagicMock
 import time
 import os
 import unittest
+import io
 from src.integrations.github.github import GitHub
 from src.models.code_review import CodeReview, Verdict, CodeSuggestion, Side
 from src.models.repository import Repository
@@ -34,6 +35,31 @@ def repository_instance():
 @pytest.fixture
 def pull_request_instance():
     return PullRequest(number=1, head_sha="abc123")
+
+
+def test_download_repository_archive_streams_authenticated_revision(github_instance):
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"archive-content"
+    response._content_consumed = True
+    destination = io.BytesIO()
+
+    with patch.object(
+        github_instance,
+        "get_installation_access_token",
+        return_value="installation-token",
+    ), patch(
+        "src.integrations.github.github.requests.get", return_value=response
+    ) as get:
+        github_instance.download_repository_archive(
+            "sourceant", "sourceant", "abc123", destination
+        )
+
+    assert destination.read() == b"archive-content"
+    assert get.call_args.args[0].endswith("/repos/sourceant/sourceant/tarball/abc123")
+    assert get.call_args.kwargs["headers"]["Authorization"] == (
+        "Bearer installation-token"
+    )
 
 
 @pytest.fixture
