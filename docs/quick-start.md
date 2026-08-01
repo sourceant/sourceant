@@ -1,59 +1,68 @@
 ## Quick Start
 
-SourceAnt automates code reviews and repository management by listening to GitHub webhook events and analyzing code changes with AI models.
+SourceAnt reviews pull requests, triages issues, and holds the engineering context behind both. This walkthrough gets a local instance running and answering GitHub events.
 
 ### Prerequisites
 
-- Python 3.8 or later
 - Docker and Docker Compose
-- A GitHub account with a repository for testing
-- An LLM API key (Gemini, Anthropic, OpenAI, DeepSeek, or any LiteLLM-compatible provider)
+- An LLM API key (Gemini, Anthropic, OpenAI, DeepSeek, or any other provider LiteLLM supports)
+- A GitHub repository to connect
 
-### Installation
-
-Clone the repository and start the services:
+### Install
 
 ```bash
 git clone https://github.com/sourceant/sourceant.git
 cd sourceant
-docker compose up -d
-```
-
-Dependencies are pre-installed in the Docker image. No additional steps are needed.
-
-### Configuration
-
-Copy the environment file and configure your LLM provider and GitHub credentials:
-
-```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your LLM API key and GitHub App credentials (see [Configuration](configuration.md) for details).
+Create `.env` before starting anything: Compose loads it into the app container and will not start without it.
 
-### Database Setup
+Set at least your model and its API key:
 
-Run database migrations:
+```env
+LLM_MODEL=gemini/gemini-2.5-flash
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+See [Configuration](configuration.md) for the rest.
+
+### Start
 
 ```bash
+docker compose up -d
 docker compose exec -T app sourceant db upgrade head
 ```
 
-### Start the Worker
-
-For Redis queue mode (default), start a background worker in a separate terminal:
+Reviews run on a Redis queue by default, so a worker has to be running for anything to be processed:
 
 ```bash
 docker compose exec -T app rq worker --url redis://redis:6379
 ```
 
+`make worker` runs the same command.
+
 ### Verify
 
-SourceAnt API will be available at `http://localhost:8000`.
+```bash
+curl http://localhost:8000/
+```
 
-### Next Steps
+```json
+{"message":"The 🐜 SourceAnt 🐜  API is live!"}
+```
 
-- Read [Usage](usage.md) to understand the review workflow.
-- Configure a [GitHub App](github-app.md) to receive webhook events.
-- Enable the [Repo Manager](repo-management.md) for automated issue and PR triage.
-- See [Deployment](deployment.md) for production setup.
+The interactive API reference is at `http://localhost:8000/docs`.
+
+### Connect a repository
+
+GitHub delivers events to `POST /api/prs/github-webhook`, so your instance needs an address GitHub can reach. For a local instance, expose port 8000 through a tunnel and use that address when you create a [GitHub App](github-app.md).
+
+### Next steps
+
+- [Code Review](reviews.md): what SourceAnt posts on a pull request, and how to shape it.
+- [Lens](lens.md): the risk-ranked way to read a change, in SourceAnt Cloud.
+- [Triage](triage.md): work the open-issue queue.
+- [Systems](systems.md): map how repositories depend on each other.
+- [Knowledge and Context](context.md): give agents the decisions and rules behind the code.
+- [Deployment](deployment.md): run it somewhere permanent.

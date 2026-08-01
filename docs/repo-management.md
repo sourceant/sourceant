@@ -1,30 +1,36 @@
 ## Repo Management
 
-SourceAnt includes a built-in repo manager plugin that automates PR and issue triage. It is disabled by default.
-
-### Enabling
+The repo manager is the automatic half of triage. When a pull request or issue is opened or reopened, it checks whether the same thing is already open and labels it from the repository's own labels, so the queue a person works has already been narrowed. It is off by default.
 
 ```env
 REPO_MANAGER_ENABLED=true
 ```
 
-### Features
+### What it does
 
-| Variable | Default | Description |
+**Duplicate detection.** A new pull request is compared against the other open pull requests, a new issue against the other open issues, up to 50 candidates. When the model reports a likely duplicate, one comment is posted naming what it matched. The comment carries a marker, so a later run edits it rather than posting again.
+
+**Labelling.** Labels are suggested from the title and body, plus the diff on a pull request, then validated against the labels that already exist on the repository. Labels SourceAnt cannot find are discarded, so it never invents a label or reshapes your taxonomy. A repository with no labels gets none.
+
+Both use the same LLM the reviewer uses, so provider configuration is shared.
+
+### Settings
+
+| Variable | Default | What it does |
 |---|---|---|
-| `REPO_MANAGER_ENABLED` | `false` | Master switch for the repo manager |
-| `REPO_MANAGER_PR_TRIAGE` | `true` | Enable PR duplicate detection |
-| `REPO_MANAGER_ISSUE_TRIAGE` | `true` | Enable issue duplicate detection |
-| `REPO_MANAGER_AUTO_LABEL` | `true` | Enable AI-powered auto-labeling |
+| `REPO_MANAGER_ENABLED` | `false` | Master switch |
+| `REPO_MANAGER_PR_TRIAGE` | `true` | Duplicate detection on pull requests |
+| `REPO_MANAGER_ISSUE_TRIAGE` | `true` | Duplicate detection on issues |
+| `REPO_MANAGER_AUTO_LABEL` | `true` | Labelling |
 
-### How It Works
+A repository can override any of these under the key `repo_manager.<name>`, for example `repo_manager.auto_label_enabled`. These keys are not part of the settings catalogue, so they are not reachable through the settings API yet; today they are read from stored configuration and otherwise fall back to the environment.
 
-When enabled, the repo manager:
+### Requirements
 
-- **Detects duplicates** - Compares new PRs and issues against existing ones to find potential duplicates using AI analysis.
-- **Applies labels** - Automatically suggests and applies labels to PRs and issues based on their content.
-- **Sends feedback** - Posts review comments and triage results directly on the PR or issue.
+The GitHub App needs **Issues: read and write** and a subscription to the **Issues** event, on top of what code review needs. See [GitHub App Setup](github-app.md).
 
-### Per-Repository Configuration
+Only deliveries authenticated as the GitHub App are processed. Events from repositories connected through OAuth are skipped.
 
-Settings can also be configured per repository using the Config model through the API, allowing different configurations for different repositories.
+### Next steps
+
+- [Triage](triage.md): the queue a person works, and the actions available there.

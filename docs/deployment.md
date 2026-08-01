@@ -1,14 +1,16 @@
 ## Deployment
 
-### Container Images
+### Container images
 
-Official Docker images are available on GHCR and are rebuilt automatically on every merge to `main`:
+Images are published to GHCR and rebuilt on every merge to `main`:
 
 ```bash
 docker pull ghcr.io/sourceant/sourceant:latest
 ```
 
-Run the container with the required environment variables:
+Every build is also tagged with its commit sha, which is what you want to pin to for a reproducible deployment.
+
+The container runs migrations and then serves the API on port 8000. It needs a PostgreSQL database and, in the default queue mode, a Redis instance, both reachable from inside the container:
 
 ```bash
 docker run -d \
@@ -19,17 +21,28 @@ docker run -d \
   ghcr.io/sourceant/sourceant:latest
 ```
 
-### Docker Compose (Development)
-
-For local development, Docker Compose bundles the API server, a Redis queue, and a PostgreSQL database:
+Run at least one worker against the same configuration, or queued reviews are never processed:
 
 ```bash
-docker compose up -d
+docker run -d --name sourceant-worker \
+  -v /path/to/.env:/app/.env \
+  --entrypoint rq \
+  ghcr.io/sourceant/sourceant:latest worker --url redis://your-redis:6379
 ```
 
-### Building Locally
+### Docker Compose
 
-Build a custom image in your local checkout:
+Compose brings up the API, PostgreSQL, and Redis together, and is the development path:
+
+```bash
+cp .env.example .env
+docker compose up -d
+docker compose exec -T app sourceant db upgrade head
+```
+
+Copy `docker-compose.override.yml.example` to `docker-compose.override.yml` to mount local plugin directories into the app container.
+
+### Building your own image
 
 ```bash
 make prod-build
@@ -37,22 +50,31 @@ make prod-build IMAGE_TAG=v1.0.0
 make prod-push
 ```
 
+`IMAGE_NAME` and `IMAGE_TAG` override the target, which defaults to `ghcr.io/sourceant/sourceant:latest`.
+
+### Enterprise image
+
+The enterprise image is the same application with private plugins built in.
+
+1. Add a repository secret `PLUGIN_REPO_TOKEN`: a token with read access to the plugin repositories.
+2. Add a repository variable `ENTERPRISE_PLUGINS`: a JSON array of plugins, for example `[{"name": "memory", "repo": "sourceant/memory"}]`.
+3. Run the **Build Enterprise Image** workflow.
+
+It publishes to `ghcr.io/sourceant/sourceant-enterprise`.
+
 ### Commands
 
-| Command | Description |
+| Command | What it does |
 |---|---|
-| `sourceant db upgrade head` | Run database migrations |
-| `sourceant db --help` | Database command help |
-| `rq worker --url redis://redis:6379` | Start a background worker for Redis queue mode |
+| `sourceant db upgrade head` | Apply migrations |
+| `sourceant db --help` | Every database subcommand |
+| `rq worker --url redis://redis:6379` | Run a queue worker |
 
-### Enterprise Image
+### Checklist for a production instance
 
-The enterprise image includes additional plugins. To build:
-
-1. Add a repository secret `PLUGIN_REPO_TOKEN` (a PAT with repo access to clone private plugin repositories).
-2. Add a repository variable `ENTERPRISE_PLUGINS` with your plugin configuration.
-3. Run the **Build Enterprise Image** GitHub Action workflow.
-
-### Environment Overrides
-
-Copy `docker-compose.override.yml.example` to `docker-compose.override.yml` to customise ports, volumes, or environment variables for your deployment.
+- `DATABASE_URL` points at PostgreSQL, and migrations have been applied.
+- `GITHUB_SECRET` is set, and matches the secret on the webhook.
+- `JWT_SECRET` is set if anything uses the API.
+- `QUEUE_MODE=redis` with at least one worker running.
+- `LOG_DRIVER=console`, so your platform collects the logs.
+- `APP_ENV=production` and `DEBUG_MODE=false`.

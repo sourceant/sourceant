@@ -1,52 +1,68 @@
 ## GitHub App Setup
 
-Authentication is handled via a GitHub App, which provides secure, repository-level access.
+SourceAnt reaches a repository as a GitHub App: it receives events for the repositories it is installed on, and acts with the permissions you granted, per installation.
 
-### Cloud Users
+### Using SourceAnt Cloud
 
-If you are using the official SourceAnt cloud service, install the GitHub App directly:
+Install the app and pick your repositories:
 
 **[Install the SourceAnt GitHub App](https://github.com/apps/sourceant)**
 
-The app will request the necessary permissions and automatically send events to the hosted backend. No further configuration is needed.
+Events go to the cloud backend, and there is nothing further to configure.
 
-### Self-Hosted Users
+### Running your own
 
-If running your own instance, you must create your own GitHub App because the webhook URL must point to your server.
+A self-hosted instance needs its own app, because the webhook has to point at your server.
 
-#### 1. Create a GitHub App
+#### 1. Create the app
 
-Navigate to **GitHub Settings > Developer settings > GitHub Apps > New GitHub App**.
+**GitHub Settings > Developer settings > GitHub Apps > New GitHub App**.
 
-- **Webhook URL:** Set to your backend's webhook endpoint, for example `https://your-domain.com/api/github/webhooks`.
-- **Webhook Secret:** Generate a secure secret. This becomes your `GITHUB_SECRET` environment variable.
+- **Webhook URL:** your instance's webhook endpoint, `https://your-domain.com/api/prs/github-webhook`.
+- **Webhook secret:** generate one. This is the `GITHUB_SECRET` environment variable, and SourceAnt rejects a delivery whose signature does not match it.
 
-#### 2. Set Permissions
+#### 2. Grant permissions
 
-Under the **Permissions** tab, grant:
+| Permission | Access | Needed for |
+|---|---|---|
+| Contents | Read-only | Reading the diff and any manifests |
+| Pull requests | Read and write | Posting reviews and review comments |
+| Issues | Read and write | Issue comments and labels, used by triage and the repo manager |
+| Metadata | Read-only | Mandatory for every app |
 
-- **Repository permissions > Contents:** Read-only
-- **Repository permissions > Pull requests:** Read and write
+Issues access is only needed if you use [triage](triage.md) or the [repo manager](repo-management.md). Without it, code review still works.
 
-#### 3. Generate a Private Key
+#### 3. Subscribe to events
 
-At the bottom of the app settings page, generate a new private key (`.pem` file). Save it securely and note the file path for the `GITHUB_APP_PRIVATE_KEY_PATH` environment variable.
+Under **Subscribe to events**, select **Pull request** and **Issues**. SourceAnt acts on `opened`, `reopened`, `synchronize`, and `ready_for_review` for pull requests, and `opened` and `reopened` for issues. Nothing happens without these.
 
-#### 4. Configure Environment Variables
+#### 4. Generate a private key
+
+At the bottom of the app settings page, generate a private key and save the `.pem` file where your instance can read it.
+
+#### 5. Configure the instance
 
 ```env
 GITHUB_APP_ID=123456
+GITHUB_APP_CLIENT_ID=Iv23liOAxxxxxM88Sqy97
 GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
 GITHUB_SECRET=your_webhook_secret
 ```
 
-### Setting Up a Webhook
+The app id and client id are on the app's settings page. All three app values are required; SourceAnt refuses to start its GitHub integration without them.
 
-If you are not using the GitHub App flow, you can configure a webhook directly on a repository:
+#### 6. Install it
 
-1. Go to your repository **Settings > Webhooks > Add webhook**.
-2. **Payload URL:** Your server's `/webhook` endpoint.
+From the app's page, install it on the repositories you want reviewed. Opening a pull request on one of them should produce a review shortly after.
+
+### Repository webhook instead
+
+A single repository can be pointed at SourceAnt without an app, though the app credentials above are still needed to post anything back.
+
+1. Repository **Settings > Webhooks > Add webhook**.
+2. **Payload URL:** `https://your-domain.com/api/prs/github-webhook`.
 3. **Content type:** `application/json`.
-4. **Secret:** Your `GITHUB_SECRET`.
-5. **Events:** Select **Pull requests** and **Issues**.
-6. Save the webhook.
+4. **Secret:** the same value as `GITHUB_SECRET`.
+5. **Events:** select **Pull requests** and **Issues**.
+
+Repositories connected through GitHub OAuth deliver to `/api/prs/github-webhook-oauth` instead, which verifies against `GITHUB_OAUTH_SECRET`.
