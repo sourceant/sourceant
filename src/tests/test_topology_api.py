@@ -264,9 +264,15 @@ class TestTopologyApi(BaseTestCase):
         assert listing.status_code == 503
         assert traversal.status_code == 503
         # The caller is told which subsystem failed, never which host it is on.
+        # The literal is the wire contract, so it is spelled out rather than
+        # imported: renaming the constant should fail here, not pass quietly.
         assert listing.json()["detail"] == "Graph store unreachable"
         assert "memgraph:7687" not in listing.text
+        assert "memgraph:7687" not in traversal.text
+        # The reason survives where an operator can reach it, naming the call.
         assert "memgraph:7687" in caplog.text
+        assert "during search" in caplog.text
+        assert "during traversal" in caplog.text
 
     def test_a_query_the_caller_can_correct_is_still_rejected_as_invalid(self):
         response = self.client.post(
