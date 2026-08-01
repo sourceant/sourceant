@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 from unittest.mock import patch
 
 import pytest
@@ -14,7 +15,15 @@ def test_file_content_reports_non_utf8_content_as_unavailable():
     response._content = json.dumps(
         {"content": base64.b64encode(b"\xff").decode("ascii")}
     ).encode("utf-8")
-    github = GitHub()
+    with patch.dict(
+        os.environ,
+        {
+            "GITHUB_APP_ID": "123",
+            "GITHUB_APP_PRIVATE_KEY_PATH": "/path/to/key",
+            "GITHUB_APP_CLIENT_ID": "456",
+        },
+    ):
+        github = GitHub()
 
     with (
         patch.object(github, "get_installation_access_token", return_value="token"),
