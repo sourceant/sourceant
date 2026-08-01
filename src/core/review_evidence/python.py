@@ -4,15 +4,13 @@ import ast
 from collections.abc import Callable
 
 from .models import (
-    EvidenceDecision,
     FileEvidence,
-    ReviewClaim,
     StructuralFact,
     StructuralPredicate,
 )
 
 
-class CachedChangedFileEvidenceReader:
+class CachedPythonFileEvidenceReader:
     def __init__(
         self,
         read_content: Callable[[str], str | None],
@@ -149,27 +147,6 @@ def _collect_facts(
                     prefix=prefix,
                     conditional=True,
                 )
-
-
-class StructuralReviewEvidenceValidator:
-    def validate(
-        self,
-        claims: list[ReviewClaim],
-        evidence: FileEvidence | None,
-    ) -> EvidenceDecision:
-        if evidence is None or not claims:
-            return EvidenceDecision(False)
-        for claim in claims:
-            if claim.predicate not in evidence.supported_predicates:
-                continue
-            actual = StructuralFact(claim.subject, claim.predicate) in evidence.facts
-            if actual and not claim.expected:
-                return EvidenceDecision(
-                    True,
-                    "post-change structure contradicts a factual claim",
-                )
-
-        return EvidenceDecision(False)
 
 
 def _assignment_targets(node: ast.Assign | ast.AnnAssign | ast.NamedExpr) -> set[str]:

@@ -6,7 +6,10 @@ from .models import (
     StructuralFact,
     StructuralPredicate,
 )
-from .python import CachedChangedFileEvidenceReader, StructuralReviewEvidenceValidator
+from .structural import (
+    CachedChangedFileEvidenceReader,
+    StructuralReviewEvidenceValidator,
+)
 
 __all__ = [
     "CachedChangedFileEvidenceReader",

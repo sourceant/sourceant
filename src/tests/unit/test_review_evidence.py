@@ -1,3 +1,5 @@
+import pytest
+
 from src.core.review_evidence import (
     CachedChangedFileEvidenceReader,
     ReviewClaim,
@@ -5,6 +7,56 @@ from src.core.review_evidence import (
     StructuralPredicate,
     StructuralReviewEvidenceValidator,
 )
+
+
+@pytest.mark.parametrize(
+    ("path", "content", "import_name", "member_name"),
+    [
+        (
+            "service.js",
+            'import logger from "./logger.js";\n' "export class Service { run() {} }",
+            "logger",
+            "Service.run",
+        ),
+        (
+            "service.ts",
+            'import type { Logger as LogType } from "./logger";\n'
+            "export class Service { run(): void {} }",
+            "LogType",
+            "Service.run",
+        ),
+        (
+            "service.php",
+            "<?php\nuse App\\Logger;\nclass Service { "
+            "public function run(): void {} }",
+            "Logger",
+            "Service.run",
+        ),
+        (
+            "Service.java",
+            "import java.util.List; class Service { void run() {} }",
+            "List",
+            "Service.run",
+        ),
+    ],
+)
+def test_structure_verifies_common_language_imports_and_members(
+    path, content, import_name, member_name
+):
+    evidence = CachedChangedFileEvidenceReader(lambda candidate: content).read(path)
+    validator = StructuralReviewEvidenceValidator()
+
+    assert evidence is not None
+    for subject, predicate in (
+        (import_name, StructuralPredicate.IMPORTED),
+        (member_name, StructuralPredicate.DEFINED),
+    ):
+        decision = validator.validate(
+            [ReviewClaim(subject=subject, predicate=predicate, expected=False)],
+            evidence,
+        )
+
+        assert decision.contradicted is True
 
 
 def test_structure_rejects_when_any_factual_claim_is_contradicted():
