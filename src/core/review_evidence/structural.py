@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 
@@ -12,6 +13,9 @@ from .models import (
     StructuralFact,
     StructuralPredicate,
 )
+
+logger = logging.getLogger(__name__)
+_warned_languages: set[str] = set()
 
 
 class CachedChangedFileEvidenceReader:
@@ -48,7 +52,14 @@ class CachedChangedFileEvidenceReader:
             return None
         try:
             result = process(content, ProcessConfig(language=language))
-        except (Error, RuntimeError):
+        except (Error, RuntimeError) as error:
+            if language not in _warned_languages:
+                _warned_languages.add(language)
+                logger.warning(
+                    "Structural evidence is unavailable for %s: %s",
+                    language,
+                    error,
+                )
             return None
 
         facts: set[StructuralFact] = set()

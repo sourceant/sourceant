@@ -1,5 +1,6 @@
 import pytest
 
+from src.core.review_evidence import structural
 from src.core.review_evidence import (
     CachedChangedFileEvidenceReader,
     ReviewClaim,
@@ -295,6 +296,27 @@ def test_changed_file_evidence_failure_does_not_reject_a_claim():
     )
 
     assert decision.contradicted is False
+
+
+def test_unavailable_structural_evidence_warns_once_per_language(monkeypatch, caplog):
+    monkeypatch.setattr(structural, "detect_language", lambda path: "unavailable-test")
+
+    def fail_process(content, config):
+        raise RuntimeError("grammar unavailable")
+
+    monkeypatch.setattr(structural, "process", fail_process)
+
+    for path in ("first.test", "second.test"):
+        CachedChangedFileEvidenceReader(lambda candidate: "code").read(path)
+
+    messages = [
+        record.message
+        for record in caplog.records
+        if "Structural evidence is unavailable" in record.message
+    ]
+    assert messages == [
+        "Structural evidence is unavailable for unavailable-test: grammar unavailable"
+    ]
 
 
 def test_structure_keeps_suggestions_without_machine_checkable_claims():
