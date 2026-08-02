@@ -75,6 +75,60 @@ def test_structure_fallback_accepts_detected_languages_without_scip_indexers():
     assert StructuralPredicate.IMPORTED not in evidence.supported_predicates
 
 
+@pytest.mark.parametrize(
+    ("path", "content", "definition"),
+    [
+        (
+            "main.rs",
+            "pub struct Service; impl Service { pub fn run(&self) {} }",
+            "Service.run",
+        ),
+        (
+            "main.go",
+            "package main\ntype Service struct{}\nfunc (s Service) Run() {}",
+            "Run",
+        ),
+        (
+            "Main.cs",
+            "class Service { public void Run() {} }",
+            "Service.Run",
+        ),
+        (
+            "main.rb",
+            "class Service\n  def run\n  end\nend",
+            "Service.run",
+        ),
+        (
+            "Main.kt",
+            "class Service { fun run() {} }",
+            "Service",
+        ),
+    ],
+)
+def test_structure_extracts_definitions_from_systems_and_application_languages(
+    path, content, definition
+):
+    evidence = CachedChangedFileEvidenceReader(lambda candidate: content).read(path)
+
+    assert evidence is not None
+    assert StructuralPredicate.DEFINED in evidence.supported_predicates
+    assert any(fact.subject == definition for fact in evidence.facts)
+
+
+@pytest.mark.parametrize(
+    ("path", "content"),
+    [
+        ("main.c", "struct Service {}; void run(void) {}"),
+        ("main.cpp", "class Service { public: void run() {} };"),
+    ],
+)
+def test_structure_ignores_unnamed_parser_nodes(path, content):
+    evidence = CachedChangedFileEvidenceReader(lambda candidate: content).read(path)
+
+    assert evidence is not None
+    assert all(fact.subject for fact in evidence.facts)
+
+
 def test_structure_rejects_when_any_factual_claim_is_contradicted():
     reader = CachedChangedFileEvidenceReader(
         lambda path: "import logging\n\nlogger = logging.getLogger(__name__)\n"

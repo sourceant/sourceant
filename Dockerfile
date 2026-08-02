@@ -23,11 +23,14 @@ USER appuser
 
 ENV PATH="/home/appuser/.local/bin:${PATH}"
 ENV PYTHONPATH=/app
+ENV SOURCEANT_TREE_SITTER_CACHE=/home/appuser/.cache/sourceant/tree-sitter
 
 COPY --from=builder /app/wheels /wheels
 RUN pip install --no-cache /wheels/*
 
 COPY . .
+
+RUN python scripts/cache_tree_sitter_languages.py
 
 COPY --chown=appuser:appuser sourceant /home/appuser/.local/bin/sourceant
 RUN chmod +x /home/appuser/.local/bin/sourceant

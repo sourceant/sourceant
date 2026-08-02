@@ -4,8 +4,6 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from tree_sitter_language_pack import Error, ProcessConfig, detect_language, process
-
 from src.core.code_index import (
     CodeEdge,
     CodeIndexReader,
@@ -16,6 +14,7 @@ from src.core.code_index import (
     CodeTraversalResult,
     InMemoryCodeIndex,
 )
+from src.core.language_pack import Error, ProcessConfig, detect_language, process
 from src.core.scope import Scope
 
 
@@ -216,7 +215,7 @@ def build_changed_file_code_index(
             continue
         try:
             result = process(content, ProcessConfig(language=language))
-        except Error:
+        except (Error, RuntimeError):
             continue
         file_id = f"file:{path}"
         index.put_node(
@@ -256,6 +255,9 @@ def build_changed_file_code_index(
 
 def _put_structure(index, scope, path, parent_id, items) -> None:
     for position, item in enumerate(items):
+        if not item.name:
+            _put_structure(index, scope, path, parent_id, item.children)
+            continue
         symbol_id = f"symbol:{path}:{item.name}:{item.span.start_line}:{position}"
         index.put_node(
             scope,

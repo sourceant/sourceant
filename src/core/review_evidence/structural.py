@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from tree_sitter_language_pack import Error, ProcessConfig, detect_language, process
+from src.core.language_pack import Error, ProcessConfig, detect_language, process
 
 from .models import (
     EvidenceDecision,
@@ -48,7 +48,7 @@ class CachedChangedFileEvidenceReader:
             return None
         try:
             result = process(content, ProcessConfig(language=language))
-        except Error:
+        except (Error, RuntimeError):
             return None
 
         facts: set[StructuralFact] = set()
@@ -89,6 +89,9 @@ class StructuralReviewEvidenceValidator:
 
 def _collect_structure(items, facts: set[StructuralFact], prefix: str = "") -> None:
     for item in items:
+        if not item.name:
+            _collect_structure(item.children, facts, prefix)
+            continue
         name = f"{prefix}.{item.name}" if prefix else item.name
         facts.add(StructuralFact(name, StructuralPredicate.DEFINED))
         _collect_structure(item.children, facts, name)
