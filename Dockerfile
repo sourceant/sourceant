@@ -23,9 +23,13 @@ USER appuser
 
 ENV PATH="/home/appuser/.local/bin:${PATH}"
 ENV PYTHONPATH=/app
+ENV SOURCEANT_TREE_SITTER_CACHE=/home/appuser/.cache/sourceant/tree-sitter
 
 COPY --from=builder /app/wheels /wheels
 RUN pip install --no-cache /wheels/*
+
+COPY scripts/cache_tree_sitter_languages.py scripts/cache_tree_sitter_languages.py
+RUN python scripts/cache_tree_sitter_languages.py
 
 COPY . .
 

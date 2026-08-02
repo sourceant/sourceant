@@ -12,7 +12,12 @@ from sqlalchemy import create_engine
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from src.core.code_index import CodeNode, InMemoryCodeIndex
+from src.core.code_index import (
+    CodeEdge,
+    CodeNode,
+    InMemoryCodeIndex,
+    ResolvingCodeIndexReader,
+)
 from src.core.context import DefaultContextProvider
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
@@ -75,6 +80,8 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
         )
 
     assert {tool.name for tool in tools.tools} == {
+        "search_code",
+        "trace_code",
         "get_context",
         "put_knowledge",
         "put_knowledge_relationship",
@@ -90,6 +97,66 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
     }
     assert result.structuredContent["knowledge"]["items"][0]["summary"] == "Use one"
     assert result.structuredContent["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_mcp_discovers_code_from_a_reader_registered_after_server_creation():
+    fallback = InMemoryCodeIndex()
+    active = None
+
+    def resolve():
+        if active is None:
+            raise LookupError("not registered")
+        return active
+
+    code = ResolvingCodeIndexReader(resolve, fallback)
+    server = create_mcp_server(DefaultContextProvider(code=code), code=code)
+
+    supplied = InMemoryCodeIndex()
+    supplied.put_node(
+        PROJECT,
+        CodeNode("file:api.py", frozenset({"File"}), {"file_path": "api.py"}),
+    )
+    supplied.put_node(
+        PROJECT,
+        CodeNode(
+            "function:handle",
+            frozenset({"Function"}),
+            {"name": "handle", "file_path": "api.py"},
+        ),
+    )
+    supplied.put_edge(
+        PROJECT,
+        CodeEdge("defines", "file:api.py", "function:handle", "DEFINES"),
+    )
+    active = supplied
+
+    async with create_connected_server_and_client_session(server) as session:
+        search = await session.call_tool(
+            "search_code",
+            {
+                "scope": {"project": "one"},
+                "labels": ["Function"],
+                "properties": {"name": "handle"},
+            },
+        )
+        trace = await session.call_tool(
+            "trace_code",
+            {
+                "scope": {"project": "one"},
+                "node_ids": ["function:handle"],
+                "edge_types": ["DEFINES"],
+            },
+        )
+
+    assert search.isError is False
+    assert [node["id"] for node in search.structuredContent["nodes"]] == [
+        "function:handle"
+    ]
+    assert {node["id"] for node in trace.structuredContent["nodes"]} == {
+        "file:api.py",
+        "function:handle",
+    }
 
 
 @pytest.mark.asyncio

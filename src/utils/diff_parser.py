@@ -10,6 +10,7 @@ class ParsedDiff:
     def __init__(self, patched_file: PatchedFile):
         self._patched_file = patched_file
         self.file_path = patched_file.path
+        self.is_binary_file = patched_file.is_binary_file
         self.diff_text = str(patched_file)
         # (line_in_file, side) -> position_in_diff (global position across all hunks)
         self.line_to_position: Dict[Tuple[int, str], int] = {}

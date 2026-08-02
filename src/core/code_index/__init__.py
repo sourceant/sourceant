@@ -8,6 +8,8 @@ from .models import (
     CodeTraversal,
     CodeTraversalResult,
 )
+from .resolving import ResolvingCodeIndexReader
+from .scip import ScipImportLimits, ScipImportResult, ScipJsonImporter
 
 __all__ = [
     "CodeEdge",
@@ -20,4 +22,8 @@ __all__ = [
     "CodeTraversal",
     "CodeTraversalResult",
     "InMemoryCodeIndex",
+    "ResolvingCodeIndexReader",
+    "ScipImportLimits",
+    "ScipImportResult",
+    "ScipJsonImporter",
 ]

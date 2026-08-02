@@ -83,6 +83,21 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.structural_context_file_limit",
+        label="Structural context files",
+        description=(
+            "Maximum changed source files read to build temporary structural "
+            "review context. The complete diff remains available to the review."
+        ),
+        type=ConfigType.INT,
+        scopes=(REPOSITORY, ORGANIZATION),
+        default=20,
+        unit="files",
+        minimum=1,
+        maximum=100,
+        group="Review",
+    ),
+    Setting(
         key="initialization.candidate_limit",
         label="Maximum knowledge proposals",
         description="Maximum proposals considered during repository initialization.",

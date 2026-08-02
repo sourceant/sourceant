@@ -5,7 +5,11 @@ import os
 from mcp.server.auth.settings import AuthSettings
 
 from src.config.db import get_engine
-from src.core.code_index import InMemoryCodeIndex
+from src.core.code_index import (
+    CodeIndexReader,
+    InMemoryCodeIndex,
+    ResolvingCodeIndexReader,
+)
 from src.core.context import DefaultContextProvider
 from src.core.contracts import InMemoryContractRepository
 from src.core.knowledge import (
@@ -13,6 +17,7 @@ from src.core.knowledge import (
     SQLKnowledgeRepository,
 )
 from src.core.review_state import InMemoryReviewStateRepository
+from src.core.services import service_registry
 from src.core.topology import InMemoryTopologyRepository, SQLTopologyRepository
 
 from .auth import PrincipalScopeResolver, SourceAntTokenVerifier
@@ -31,8 +36,9 @@ def create_default_mcp_server():
         if engine is not None
         else InMemoryTopologyRepository()
     )
+    code = _resolving_code_index()
     provider = DefaultContextProvider(
-        code=InMemoryCodeIndex(),
+        code=code,
         knowledge=knowledge,
         topology=topology,
         contracts=InMemoryContractRepository(),
@@ -40,6 +46,7 @@ def create_default_mcp_server():
     )
     return create_mcp_server(
         provider,
+        code=code,
         knowledge=knowledge,
         topology=topology,
     )
@@ -76,8 +83,9 @@ def create_http_mcp_server():
         if engine is not None
         else InMemoryTopologyRepository()
     )
+    code = _resolving_code_index()
     provider = DefaultContextProvider(
-        code=InMemoryCodeIndex(),
+        code=code,
         knowledge=knowledge,
         topology=topology,
         contracts=InMemoryContractRepository(),
@@ -85,6 +93,7 @@ def create_http_mcp_server():
     )
     return create_mcp_server(
         provider,
+        code=code,
         knowledge=knowledge,
         topology=topology,
         scope_resolver=PrincipalScopeResolver(),
@@ -98,4 +107,11 @@ def create_http_mcp_server():
             audience=values["audience"],
             required_scopes=required_scopes,
         ),
+    )
+
+
+def _resolving_code_index() -> CodeIndexReader:
+    return ResolvingCodeIndexReader(
+        lambda: service_registry.resolve(CodeIndexReader),
+        InMemoryCodeIndex(),
     )

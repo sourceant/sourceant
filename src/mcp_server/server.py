@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict
-from typing import Any, Callable
+from typing import Any
 
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
-from src.core.code_index import CodeTraversal
+from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
 from src.core.context import ContextProvider, ContextRequest
 from src.core.contracts import ContractQuery
 from src.core.knowledge import (
@@ -31,6 +32,7 @@ from src.core.topology import (
 def create_mcp_server(
     provider: ContextProvider,
     *,
+    code: CodeIndexReader | None = None,
     knowledge: KnowledgeRepository | None = None,
     topology: TopologyRepository | None = None,
     scope_resolver: Callable[[Scope], Scope] | None = None,
@@ -47,6 +49,62 @@ def create_mcp_server(
         streamable_http_path="/",
     )
     resolve_scope = scope_resolver or (lambda scope: scope)
+
+    @server.tool(
+        name="search_code",
+        description="Search bounded structural code nodes by labels and exact properties.",
+        structured_output=True,
+    )
+    def search_code(
+        scope: dict[str, str],
+        labels: list[str] | None = None,
+        properties: dict[str, Any] | None = None,
+        node_ids: list[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        if not 1 <= limit <= 50:
+            raise ValueError("limit must be between 1 and 50")
+        result = _require_code(code).search(
+            CodeSearch(
+                resolve_scope(Scope.from_mapping(scope)),
+                labels=frozenset(labels or ()),
+                properties=properties or {},
+                node_ids=frozenset(node_ids or ()),
+                limit=limit,
+                offset=offset,
+            )
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="trace_code",
+        description="Traverse a bounded structural code neighborhood and its references.",
+        structured_output=True,
+    )
+    def trace_code(
+        scope: dict[str, str],
+        node_ids: list[str],
+        depth: int = 2,
+        edge_types: list[str] | None = None,
+        direction: str = "both",
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        if not 1 <= depth <= 3:
+            raise ValueError("depth must be between 1 and 3")
+        if not 1 <= limit <= 50:
+            raise ValueError("limit must be between 1 and 50")
+        result = _require_code(code).traverse(
+            CodeTraversal(
+                resolve_scope(Scope.from_mapping(scope)),
+                tuple(node_ids),
+                depth=depth,
+                edge_types=frozenset(edge_types or ()),
+                direction=direction,
+                node_limit=limit,
+            )
+        )
+        return asdict(result)
 
     @server.tool(
         name="get_context",
@@ -313,6 +371,12 @@ def _require_knowledge(
     if knowledge is None:
         raise ValueError("knowledge management is not configured")
     return knowledge
+
+
+def _require_code(code: CodeIndexReader | None) -> CodeIndexReader:
+    if code is None:
+        raise ValueError("code discovery is not configured")
+    return code
 
 
 def _require_topology(

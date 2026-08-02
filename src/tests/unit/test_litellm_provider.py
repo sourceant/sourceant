@@ -88,6 +88,22 @@ def test_generate_code_review_success(provider, mock_completion):
     mock_completion.completion.assert_called_once()
 
 
+def test_generate_code_review_includes_bounded_structural_context(
+    provider, mock_completion
+):
+    review = CodeReview(verdict=Verdict.COMMENT, code_suggestions=[])
+    mock_completion.completion.return_value = _make_completion_response(
+        review.model_dump_json()
+    )
+
+    provider.generate_code_review(
+        "+ changed", code_context='{"nodes":[{"id":"symbol:run"}]}'
+    )
+
+    messages = mock_completion.completion.call_args.kwargs["messages"]
+    assert '"id":"symbol:run"' in messages[1]["content"]
+
+
 def test_generate_code_review_preserves_llm_verdict(provider, mock_completion):
     review = CodeReview(
         summary=CodeReviewSummary(

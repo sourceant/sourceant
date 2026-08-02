@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import enum
 
+from src.core.review_evidence import ReviewClaim
+
 
 class Verdict(enum.Enum):
     """Represents the overall verdict of the code review."""
@@ -62,6 +64,10 @@ class CodeSuggestion(BaseModel):
     existing_code: Optional[str] = Field(
         None,
         description="The original code to be replaced. If provided, this is used to anchor the suggestion instead of line numbers.",
+    )
+    claims: List[ReviewClaim] = Field(
+        default_factory=list,
+        description="Machine-checkable factual claims that support the suggestion.",
     )
 
     def is_multiline(self) -> bool:
