@@ -20,13 +20,16 @@ class ScipImportLimits:
     relationship_limit: int = 5_000_000
 
     def __post_init__(self) -> None:
-        if min(
-            self.payload_byte_limit,
-            self.document_limit,
-            self.symbol_limit,
-            self.occurrence_limit,
-            self.relationship_limit,
-        ) < 1:
+        if (
+            min(
+                self.payload_byte_limit,
+                self.document_limit,
+                self.symbol_limit,
+                self.occurrence_limit,
+                self.relationship_limit,
+            )
+            < 1
+        ):
             raise ValueError("SCIP import limits must be positive")
 
 
@@ -53,9 +56,7 @@ class ScipJsonImporter:
 
     def import_json(self, scope: Scope, payload: str | bytes) -> ScipImportResult:
         size = (
-            len(payload.encode("utf-8"))
-            if isinstance(payload, str)
-            else len(payload)
+            len(payload.encode("utf-8")) if isinstance(payload, str) else len(payload)
         )
         if size > self._limits.payload_byte_limit:
             raise ValueError("SCIP payload limit exceeded")
@@ -219,9 +220,7 @@ class ScipJsonImporter:
                 ),
             },
         )
-        relationships = _sequence(
-            symbol_info.get("relationships", ()), "relationships"
-        )
+        relationships = _sequence(symbol_info.get("relationships", ()), "relationships")
         for relationship_index, raw_relationship in enumerate(relationships):
             relationship = _mapping(raw_relationship, "relationships[]")
             target_symbol = _required_string(

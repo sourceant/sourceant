@@ -15,14 +15,11 @@ from src.core.review_evidence import IndexedChangedFileEvidenceReader
 from src.core.review_evidence.models import StructuralFact, StructuralPredicate
 from src.core.scope import Scope
 
-
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "scip" / "index-v0.9.0.json"
 
 
 def test_imports_real_scip_index_into_scoped_code_graph():
-    scope = Scope.from_mapping(
-        {"repository": "example/service", "revision": "abc123"}
-    )
+    scope = Scope.from_mapping({"repository": "example/service", "revision": "abc123"})
     index = InMemoryCodeIndex()
 
     result = ScipJsonImporter(index).import_json(scope, FIXTURE.read_bytes())
@@ -63,18 +60,14 @@ def test_imports_real_scip_index_into_scoped_code_graph():
 
 def test_indexed_evidence_uses_only_the_requested_revision():
     payload = json.loads(FIXTURE.read_text())
-    scope = Scope.from_mapping(
-        {"repository": "example/service", "revision": "abc123"}
-    )
+    scope = Scope.from_mapping({"repository": "example/service", "revision": "abc123"})
     index = InMemoryCodeIndex()
     ScipJsonImporter(index).import_index(scope, payload)
 
     evidence = IndexedChangedFileEvidenceReader(index, scope).read("src/service.ts")
     stale = IndexedChangedFileEvidenceReader(
         index,
-        Scope.from_mapping(
-            {"repository": "example/service", "revision": "def456"}
-        ),
+        Scope.from_mapping({"repository": "example/service", "revision": "def456"}),
     ).read("src/service.ts")
 
     assert evidence is not None
@@ -86,9 +79,7 @@ def test_indexed_evidence_uses_only_the_requested_revision():
 
 def test_scip_import_validates_limits_before_replacing_existing_graph():
     payload = json.loads(FIXTURE.read_text())
-    scope = Scope.from_mapping(
-        {"repository": "example/service", "revision": "abc123"}
-    )
+    scope = Scope.from_mapping({"repository": "example/service", "revision": "abc123"})
     index = InMemoryCodeIndex()
     index.put_node(scope, CodeNode(id="existing"))
 
