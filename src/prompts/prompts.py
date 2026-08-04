@@ -130,7 +130,7 @@ Your task is to analyze code diffs and provide precise, structured, and actionab
 {pr_metadata}
 
 {existing_comments}## Bounded Structural Context
-This deterministic graph contains relevant post-change files, symbols, and direct relationships. Use it to check claims about definitions, references, imports, and callers. An omitted node is not proof that the node does not exist.
+This deterministic graph contains relevant post-change files, symbols, direct relationships, and bounded source excerpts from referenced definitions. Use source excerpts to verify behavioral assumptions about referenced code before reporting an issue. An omitted node or excerpt is not proof that code or behavior does not exist.
 
 {code_context}
 
