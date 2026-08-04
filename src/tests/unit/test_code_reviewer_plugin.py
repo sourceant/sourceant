@@ -12,6 +12,9 @@ from src.models.code_review import (
     Verdict,
 )
 from src.core.review_evidence import ReviewClaim, StructuralPredicate
+from src.core.code_index import CodeEdge, CodeIndexReader, CodeNode, InMemoryCodeIndex
+from src.core.scope import Scope
+from src.core.services import ServiceRegistry
 from src.models.repository import Repository
 from src.models.pull_request import PullRequest
 from src.core.responses import success_response
@@ -572,3 +575,106 @@ class TestPreviewResponseIsSerializable:
         mock_github.get_file_content.assert_called_once_with(
             "test_owner", "test_repo", "test.py", "head_sha_def"
         )
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    def test_review_receives_referenced_definition_source_from_durable_graph(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_value_of,
+        mock_get_sha,
+        mock_save_record,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        scope = Scope.from_mapping(
+            {"repository": "test_owner/test_repo", "revision": "head_sha_def"}
+        )
+        code = InMemoryCodeIndex()
+        changed = CodeNode(
+            "file:test.py", frozenset({"File"}), {"file_path": "test.py"}
+        )
+        definition = CodeNode(
+            "file:catalog.py",
+            frozenset({"File"}),
+            {"file_path": "catalog.py"},
+        )
+        symbol = CodeNode(
+            "symbol:builtin_list", frozenset({"Symbol"}), {"name": "builtin_list"}
+        )
+        for node in (changed, definition, symbol):
+            code.put_node(scope, node)
+        code.put_edge(scope, CodeEdge("reference", changed.id, symbol.id, "REFERENCES"))
+        code.put_edge(
+            scope,
+            CodeEdge(
+                "definition",
+                definition.id,
+                symbol.id,
+                "DEFINES",
+                {"file_path": "catalog.py", "range": [0, 0, 1, 40]},
+            ),
+        )
+        services = ServiceRegistry()
+        services.register(CodeIndexReader, code, "test")
+        plugin.bind_services(services)
+
+        mock_get_sha.return_value = None
+        mock_github = MagicMock()
+        mock_github_cls.return_value = mock_github
+        mock_github.get_diff.return_value = _DIFF
+        mock_github.get_existing_bot_review_comments.return_value = []
+        contents = {
+            "test.py": "def load(path):\n    return builtin_list()\n",
+            "catalog.py": (
+                "def builtin_list():\n" '    return ["infra/postgres", "welcome"]\n'
+            ),
+        }
+        mock_github.get_file_content.side_effect = (
+            lambda owner, repo, path, sha: contents.get(path)
+        )
+
+        mock_llm_instance = MagicMock()
+        mock_llm.return_value = mock_llm_instance
+        mock_llm_instance.count_tokens.return_value = 100
+        mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_code_review.return_value = CodeReview(
+            verdict=Verdict.COMMENT,
+            code_suggestions=[],
+        )
+
+        import asyncio
+
+        result = asyncio.get_event_loop().run_until_complete(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="test_owner/test_repo",
+                post=False,
+            )
+        )
+
+        assert result["status"] == "success"
+        context = json.loads(
+            mock_llm_instance.generate_code_review.call_args.kwargs["code_context"]
+        )
+        assert {node["id"] for node in context["nodes"]} >= {
+            "file:test.py",
+            "file:catalog.py",
+        }
+        excerpts = {
+            excerpt["file_path"]: excerpt for excerpt in context["source_excerpts"]
+        }
+        assert excerpts["catalog.py"] == {
+            "content": (
+                "def builtin_list():\n" '    return ["infra/postgres", "welcome"]'
+            ),
+            "end_line": 2,
+            "file_path": "catalog.py",
+            "start_line": 1,
+        }

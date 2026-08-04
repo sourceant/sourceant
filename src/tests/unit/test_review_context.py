@@ -5,9 +5,11 @@ import pytest
 from src.core.review_context import (
     DefaultReviewCodeContextPreparer,
     LazyChangedFileCodeIndex,
+    ReviewCodeContext,
     build_changed_file_code_index,
+    merge_review_code_contexts,
 )
-from src.core.code_index import CodeSearch
+from src.core.code_index import CodeEdge, CodeNode, CodeSearch, InMemoryCodeIndex
 from src.core.scope import Scope
 from src.utils.diff_parser import parse_diff
 
@@ -129,6 +131,99 @@ def test_review_context_character_limit_keeps_a_valid_bounded_graph():
         for edge in payload["edges"]
     )
     assert payload["truncated"] is True
+
+
+def test_durable_reference_graph_includes_definition_source():
+    scope = Scope.from_mapping({"repository": "flatrun/agent", "revision": "abc123"})
+    index = InMemoryCodeIndex()
+    changed = CodeNode(
+        "file:server.go", frozenset({"File"}), {"file_path": "server.go"}
+    )
+    definition = CodeNode(
+        "file:templates.go", frozenset({"File"}), {"file_path": "templates.go"}
+    )
+    symbol = CodeNode(
+        "symbol:templates.List",
+        frozenset({"Symbol"}),
+        {"name": "List"},
+    )
+    for node in (changed, definition, symbol):
+        index.put_node(scope, node)
+    index.put_edge(
+        scope,
+        CodeEdge("reference", changed.id, symbol.id, "REFERENCES"),
+    )
+    index.put_edge(
+        scope,
+        CodeEdge(
+            "definition",
+            definition.id,
+            symbol.id,
+            "DEFINES",
+            {"file_path": "templates.go", "range": [0, 0, 3, 1]},
+        ),
+    )
+    files = {
+        "templates.go": (
+            "func List() []string {\n"
+            '    return []string{"infra/postgres", "welcome"}\n'
+            "}\n"
+            "\n"
+        )
+    }
+
+    context = DefaultReviewCodeContextPreparer(index, read_content=files.get).prepare(
+        repository="flatrun/agent",
+        revision="abc123",
+        paths=["server.go"],
+    )
+
+    assert context is not None
+    excerpts = json.loads(context.content)["source_excerpts"]
+    assert excerpts == [
+        {
+            "content": (
+                "func List() []string {\n"
+                '    return []string{"infra/postgres", "welcome"}\n'
+                "}\n"
+            ),
+            "end_line": 4,
+            "file_path": "templates.go",
+            "start_line": 1,
+        }
+    ]
+
+
+def test_review_context_merges_durable_and_pr_head_evidence():
+    durable = ReviewCodeContext(
+        json.dumps(
+            {
+                "nodes": [{"id": "durable", "labels": [], "properties": {}}],
+                "edges": [],
+                "source_excerpts": [{"file_path": "dependency.go", "content": "body"}],
+                "truncated": False,
+            }
+        ),
+        False,
+    )
+    local = ReviewCodeContext(
+        json.dumps(
+            {
+                "nodes": [{"id": "local", "labels": [], "properties": {}}],
+                "edges": [],
+                "source_excerpts": [],
+                "truncated": False,
+            }
+        ),
+        False,
+    )
+
+    merged = merge_review_code_contexts([durable, local])
+
+    assert merged is not None
+    payload = json.loads(merged.content)
+    assert {node["id"] for node in payload["nodes"]} == {"durable", "local"}
+    assert payload["source_excerpts"][0]["file_path"] == "dependency.go"
 
 
 def test_changed_file_index_reads_files_only_when_queried():

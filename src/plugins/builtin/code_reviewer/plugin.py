@@ -16,6 +16,7 @@ from src.core.code_index import CodeIndexReader
 from src.core.review_context import (
     DefaultReviewCodeContextPreparer,
     LazyChangedFileCodeIndex,
+    merge_review_code_contexts,
 )
 from src.core.scope import Scope
 from src.core.settings.resolver import value_of
@@ -425,6 +426,7 @@ class CodeReviewerPlugin(BasePlugin):
                     existing_comments=existing_comments,
                     evidence=evidence,
                     code_readers=(durable_code, local_code),
+                    read_content=read_changed_file,
                     context_file_limit=context_file_limit,
                 )
             else:
@@ -439,6 +441,7 @@ class CodeReviewerPlugin(BasePlugin):
                     existing_comments=existing_comments,
                     evidence=evidence,
                     code_readers=(durable_code, local_code),
+                    read_content=read_changed_file,
                     context_file_limit=context_file_limit,
                 )
 
@@ -530,6 +533,7 @@ class CodeReviewerPlugin(BasePlugin):
         existing_comments: Optional[List[Dict[str, Any]]] = None,
         evidence: ChangedFileEvidenceReader | None = None,
         code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
+        read_content=None,
         context_file_limit: int = 20,
     ) -> CodeReview:
         """Generate review in a single pass for small diffs."""
@@ -539,6 +543,7 @@ class CodeReviewerPlugin(BasePlugin):
             repository.full_name or f"{repository.owner}/{repository.name}",
             pull_request.head_sha,
             [parsed_file.file_path for parsed_file in parsed_files],
+            read_content=read_content,
             file_limit=context_file_limit,
         )
 
@@ -591,6 +596,7 @@ class CodeReviewerPlugin(BasePlugin):
         existing_comments: Optional[List[Dict[str, Any]]] = None,
         evidence: ChangedFileEvidenceReader | None = None,
         code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
+        read_content=None,
         context_file_limit: int = 20,
     ) -> CodeReview:
         """Generate review file by file for large diffs."""
@@ -618,6 +624,7 @@ class CodeReviewerPlugin(BasePlugin):
                     repository.full_name or f"{repository.owner}/{repository.name}",
                     pull_request.head_sha,
                     [parsed_file.file_path],
+                    read_content=read_content,
                     file_limit=context_file_limit,
                 ),
             )
@@ -647,16 +654,19 @@ class CodeReviewerPlugin(BasePlugin):
         revision: str,
         paths: List[str],
         *,
+        read_content=None,
         file_limit: int = 20,
     ) -> str | None:
         if readers is None:
             return None
+        contexts = []
         for reader in readers:
             if reader is None:
                 continue
             try:
                 context = DefaultReviewCodeContextPreparer(
                     reader,
+                    read_content=read_content,
                     file_limit=file_limit,
                 ).prepare(
                     repository=repository,
@@ -666,8 +676,9 @@ class CodeReviewerPlugin(BasePlugin):
             except (OSError, RuntimeError, ValueError):
                 continue
             if context:
-                return context.content
-        return None
+                contexts.append(context)
+        merged = merge_review_code_contexts(contexts)
+        return merged.content if merged else None
 
     def _process_suggestions(
         self,
