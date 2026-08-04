@@ -177,12 +177,18 @@ class DefaultReviewCodeContextPreparer:
             if not isinstance(content, str):
                 continue
             source_lines = content.splitlines()
-            if not source_lines or start > len(source_lines):
+            if not source_lines or start < 1 or start > len(source_lines):
                 continue
             bounded_end = min(end, len(source_lines), start + 79)
             excerpt_lines = source_lines[start - 1 : bounded_end]
-            while len("\n".join(excerpt_lines)) > 2_000:
-                excerpt_lines.pop()
+            total_length = sum(len(line) for line in excerpt_lines) + max(
+                0, len(excerpt_lines) - 1
+            )
+            while total_length > 2_000 and excerpt_lines:
+                removed = excerpt_lines.pop()
+                total_length -= len(removed)
+                if excerpt_lines:
+                    total_length -= 1
             if not excerpt_lines:
                 continue
             bounded_end = start + len(excerpt_lines) - 1

@@ -226,6 +226,38 @@ def test_review_context_merges_durable_and_pr_head_evidence():
     assert payload["source_excerpts"][0]["file_path"] == "dependency.go"
 
 
+def test_review_context_skips_definition_with_invalid_start_line():
+    scope = Scope.from_mapping({"repository": "example/repo", "revision": "abc123"})
+    index = InMemoryCodeIndex()
+    file_node = CodeNode(
+        "file:service.py", frozenset({"File"}), {"file_path": "service.py"}
+    )
+    symbol = CodeNode("symbol:run", frozenset({"Symbol"}), {"name": "run"})
+    index.put_node(scope, file_node)
+    index.put_node(scope, symbol)
+    index.put_edge(
+        scope,
+        CodeEdge(
+            "definition",
+            file_node.id,
+            symbol.id,
+            "DEFINES",
+            {"file_path": "service.py", "range": [-2, 0, -1, 1]},
+        ),
+    )
+
+    context = DefaultReviewCodeContextPreparer(
+        index, read_content=lambda path: "def run(): pass\n"
+    ).prepare(
+        repository="example/repo",
+        revision="abc123",
+        paths=["service.py"],
+    )
+
+    assert context is not None
+    assert json.loads(context.content)["source_excerpts"] == []
+
+
 def test_changed_file_index_reads_files_only_when_queried():
     scope = Scope.from_mapping(
         {"repository": "sourceant/sourceant", "revision": "abc123"}
