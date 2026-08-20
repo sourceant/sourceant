@@ -52,10 +52,6 @@ make prod-push
 
 `IMAGE_NAME` and `IMAGE_TAG` override the target, which defaults to `ghcr.io/sourceant/sourceant:latest`.
 
-### Enterprise image
-
-The enterprise image is the same application with private plugins built in. It is built and published as `ghcr.io/sourceant/enterprise` from the `sourceant/enterprise` repository, which pins the core image and each plugin revision, and rebuilds on every merge to its main branch.
-
 ### Commands
 
 | Command | What it does |

@@ -262,9 +262,6 @@ The application supports different backend modes for processing background jobs,
 ### Base Image
 The base SourceAnt image is built automatically on merge to `main` and pushed to `ghcr.io/sourceant/sourceant`. You can also trigger a build manually via **Actions → Build Image → Run workflow**.
 
-### Enterprise Image
-The enterprise image is the same application with private plugins built in. It is built and published as `ghcr.io/sourceant/enterprise` from the [enterprise](https://github.com/sourceant/enterprise) repository, which pins the core image and each plugin revision.
-
 ### Local Builds
 ```bash
 make prod-build                              # Build with default tag (:latest)
