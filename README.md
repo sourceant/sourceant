@@ -263,19 +263,7 @@ The application supports different backend modes for processing background jobs,
 The base SourceAnt image is built automatically on merge to `main` and pushed to `ghcr.io/sourceant/sourceant`. You can also trigger a build manually via **Actions → Build Image → Run workflow**.
 
 ### Enterprise Image
-The enterprise image includes additional plugins and is built via manual dispatch.
-
-**Setup:**
-1. Add a repository secret named `PLUGIN_REPO_TOKEN` containing a PAT with access to clone private plugin repositories.
-2. Add a repository variable `ENTERPRISE_PLUGINS` with your plugin configuration:
-   ```json
-   [{"name": "analytics", "repo": "sourceant/analytics"}]
-   ```
-
-**Usage:**
-- Go to **Actions → Build Enterprise Image → Run workflow**.
-- Leave the `plugins` input empty to use the `ENTERPRISE_PLUGINS` variable, or override with a custom JSON array.
-- The image is pushed to `ghcr.io/sourceant/sourceant-enterprise:latest`.
+The enterprise image is the same application with private plugins built in. It is built and published as `ghcr.io/sourceant/enterprise` from the [enterprise](https://github.com/sourceant/enterprise) repository, which pins the core image and each plugin revision.
 
 ### Local Builds
 ```bash

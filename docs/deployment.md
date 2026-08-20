@@ -54,13 +54,7 @@ make prod-push
 
 ### Enterprise image
 
-The enterprise image is the same application with private plugins built in.
-
-1. Add a repository secret `PLUGIN_REPO_TOKEN`: a token with read access to the plugin repositories.
-2. Add a repository variable `ENTERPRISE_PLUGINS`: a JSON array of plugins, for example `[{"name": "memory", "repo": "sourceant/memory"}]`.
-3. Run the **Build Enterprise Image** workflow.
-
-It publishes to `ghcr.io/sourceant/sourceant-enterprise`.
+The enterprise image is the same application with private plugins built in. It is built and published as `ghcr.io/sourceant/enterprise` from the `sourceant/enterprise` repository, which pins the core image and each plugin revision, and rebuilds on every merge to its main branch.
 
 ### Commands
 
