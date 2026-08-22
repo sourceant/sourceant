@@ -15,6 +15,29 @@ def _get_jwt_secret() -> str:
     return secret
 
 
+def read_gateway_scope(authorization: str | None) -> dict | None:
+    """The workspace a gateway signed this call for, or None if it did not sign one.
+
+    Deliveries reach the agent through the gateway, which decides who is asking
+    and whether they may be reviewed. The scope is that decision, carried across.
+    """
+    if not authorization:
+        return None
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+    try:
+        payload = decode_access_token(authorization[7:])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    scope = payload.get("scope")
+    return scope if isinstance(scope, dict) else {}
+
+
 async def get_current_user(authorization: str = Header(...)) -> dict:
     try:
         if not authorization.startswith("Bearer "):
