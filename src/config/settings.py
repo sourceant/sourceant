@@ -6,6 +6,7 @@ load_dotenv()
 APP_ENV = os.getenv("APP_ENV", "production").lower()
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 STATELESS_MODE = os.getenv("STATELESS_MODE", "false").lower() == "true"
+REQUIRE_GATEWAY = os.getenv("REQUIRE_GATEWAY", "false").lower() == "true"
 QUEUE_MODE = os.getenv("QUEUE_MODE", "redis")
 VALID_QUEUE_MODES = ["redis", "request", "redislite"]
 if QUEUE_MODE not in VALID_QUEUE_MODES:
