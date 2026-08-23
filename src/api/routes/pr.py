@@ -44,9 +44,8 @@ class GitHubWebhookPayload(BaseModel):
 
 
 def verify_signature(payload: str, signature: str, secret: str) -> bool:
-    # With no secret configured there is nothing to verify against, which is how
-    # a self-hosted agent runs. Once one is configured, an unsigned delivery is a
-    # refusal: accepting it lets anyone who can reach this endpoint post events.
+    # Accepting everything with no secret is deliberate: a self-hosted agent runs
+    # without one, and there is nothing to verify against.
     if secret is None:
         return True
     if signature is None:
