@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/whilesmart/docs-kit/main/schema/docs.schema.json",
+  "name": "SourceAnt",
+  "description": "Open-source infrastructure for engineering knowledge and context, with code review, triage, and system topology built on it",
+  "icon": "bug",
+  "category": {
+    "language": "python",
+    "framework": "fastapi"
+  },
+  "sidebar": [
+    { "title": "Quick Start", "path": "docs/quick-start.md" },
+    { "title": "Code Review", "path": "docs/reviews.md" },
+    { "title": "Lens", "path": "docs/lens.md" },
+    { "title": "Triage", "path": "docs/triage.md" },
+    { "title": "Repo Management", "path": "docs/repo-management.md" },
+    { "title": "Systems", "path": "docs/systems.md" },
+    { "title": "Knowledge and Context", "path": "docs/context.md" },
+    { "title": "Configuration", "path": "docs/configuration.md" },
+    { "title": "GitHub App Setup", "path": "docs/github-app.md" },
+    { "title": "API", "path": "docs/api.md" },
+    { "title": "Deployment", "path": "docs/deployment.md" }
+  ]
+}

@@ -10,17 +10,19 @@ class PullRequest(BaseModel, table=True):
     provider: str = Field(..., index=True)
     number: int
     title: str
+    draft: bool = False
+    merged: bool = False
     body: Optional[str] = None
     url: str = Field(..., unique=True)
     state: str
     locked: bool
-    merged: bool
-    draft: bool
     created_at: str
     updated_at: str
     closed_at: Optional[str] = None
     merged_at: Optional[str] = None
     user: str
+    base_sha: str
+    head_sha: str
     head_ref: str
     base_ref: str
     commits: int

@@ -1,7 +1,8 @@
-version: "3.9"
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     container_name: sourceant
     ports:
       - "8000:8000"
@@ -14,6 +15,8 @@ services:
       - sourceant-network
     environment:
       - PYTHONDONTWRITEBYTECODE=1
+    env_file:
+      - .env
 
   db:
     image: postgres:13

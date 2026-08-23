@@ -9,14 +9,16 @@ from fastapi import (
 )
 from src.controllers.repository_event_controller import RepositoryEventController
 from src.events.dispatcher import bg_tasks_cv
-from src.config.settings import WEBHOOK_SECRET, REQUIRE_WEBHOOK_SECRET
+from src.auth import read_gateway_scope
+from src.config.settings import GITHUB_SECRET, GITHUB_OAUTH_SECRET, REQUIRE_GATEWAY
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 import hmac
 import hashlib
 
-
 router = APIRouter()
+
+
 class GitHubWebhookPayload(BaseModel):
     action: Optional[str] = None
     pull_request: Optional[dict] = None
@@ -42,6 +44,11 @@ class GitHubWebhookPayload(BaseModel):
 
 
 def verify_signature(payload: str, signature: str, secret: str) -> bool:
+    # With no secret configured there is nothing to verify against, which is how
+    # a self-hosted agent runs. Once one is configured, an unsigned delivery is a
+    # refusal: accepting it lets anyone who can reach this endpoint post events.
+    if secret is None:
+        return True
     if signature is None:
         return False
     hash_payload = hmac.new(secret.encode(), payload.encode(), hashlib.sha256)
@@ -53,42 +60,29 @@ def get_event(event: str = Header(None, alias="X-GitHub-Event")):
     return event
 
 
+def get_gateway_scope(authorization: str = Header(None)) -> dict:
+    scope = read_gateway_scope(authorization)
+
+    if scope is None and REQUIRE_GATEWAY:
+        raise HTTPException(status_code=401, detail="Gateway authorization required")
+
+    return scope or {}
+
+
 def get_provider_from_headers(headers: dict) -> Optional[str]:
-    """
-    Determines the provider based on the request headers (case-insensitive).
-    """
     for header_name in headers:
         if header_name.lower().startswith("x-github-"):
             return "GitHub"
     return None
 
 
-@router.post("/github-webhook")
-async def github_webhook(
+def process_github_webhook(
+    payload: GitHubWebhookPayload,
+    event: str,
     request: Request,
-    background_tasks: BackgroundTasks,
-    signature: str = Header(None, alias="X-Hub-Signature-256"),
-    event: str = Depends(get_event),
-    payload: GitHubWebhookPayload = Body(...),
+    auth_type: str = "github_app",
+    scope: dict | None = None,
 ):
-    if REQUIRE_WEBHOOK_SECRET:
-        if not signature:
-            raise HTTPException(
-                status_code=400, detail="X-Hub-Signature-256 header is required."
-            )
-        payload_data = await request.body()
-        if not verify_signature(payload_data.decode(), signature, WEBHOOK_SECRET):
-            raise HTTPException(status_code=400, detail="Invalid GitHub signature")
-
-    # Authorize the repository
-    repo = Repository.get_by_full_name(payload.repository["full_name"])
-    if not repo:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Repository '{payload.repository['full_name']}' is not authorized.",
-        )
-
-    # Handle both pull request and issue events
     url = (
         payload.pull_request["url"]
         if payload.pull_request
@@ -104,8 +98,9 @@ async def github_webhook(
 
     provider = get_provider_from_headers(request.headers)
 
-    # Set the background tasks in the context for the dispatcher to use
-    bg_tasks_cv.set(background_tasks)
+    enhanced_payload = payload.model_dump()
+    enhanced_payload["sourceant_auth_type"] = auth_type
+    enhanced_payload["sourceant_workspace_id"] = (scope or {}).get("workspace_id")
 
     return RepositoryEventController.create(
         action=payload.action,
@@ -114,6 +109,49 @@ async def github_webhook(
         title=title,
         repository_full_name=payload.repository["full_name"],
         number=number,
-        payload=payload.model_dump(),
+        payload=enhanced_payload,
         provider=provider,
+    )
+
+
+@router.post("/github-webhook")
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    signature: str = Header(None, alias="X-Hub-Signature-256"),
+    event: str = Depends(get_event),
+    scope: dict = Depends(get_gateway_scope),
+    payload: GitHubWebhookPayload = Body(...),
+):
+    payload_data = await request.body()
+    if not verify_signature(payload_data.decode(), signature, GITHUB_SECRET):
+        raise HTTPException(status_code=400, detail="Invalid GitHub signature")
+
+    bg_tasks_cv.set(background_tasks)
+
+    return process_github_webhook(
+        payload, event, request, auth_type="github_app", scope=scope
+    )
+
+
+@router.post("/github-webhook-oauth")
+async def github_oauth_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    signature: str = Header(None, alias="X-Hub-Signature-256"),
+    event: str = Depends(get_event),
+    scope: dict = Depends(get_gateway_scope),
+    payload: GitHubWebhookPayload = Body(...),
+):
+    if GITHUB_OAUTH_SECRET is None:
+        raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
+
+    payload_data = await request.body()
+    if not verify_signature(payload_data.decode(), signature, GITHUB_OAUTH_SECRET):
+        raise HTTPException(status_code=400, detail="Invalid GitHub OAuth signature")
+
+    bg_tasks_cv.set(background_tasks)
+
+    return process_github_webhook(
+        payload, event, request, auth_type="oauth", scope=scope
     )

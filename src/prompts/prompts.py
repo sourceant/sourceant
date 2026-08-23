@@ -1,44 +1,73 @@
 class Prompts:
     """
     A class to hold predefined prompt templates for LLM interactions.
+    Uses reusable components to avoid duplication.
     """
 
-    """
-    A class to hold predefined prompt templates for LLM interactions.
-    """
+    # Reusable prompt components
+    _EXPERT_REVIEWER_INTRO = """You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**."""
 
-    REVIEW_PROMPT = """
-    # 📌 **Comprehensive Code Review Request**
-
-    You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**.
-    Your task is to **analyze the code diff**, provide **precise, structured, and actionable feedback**.
-
-    ## 🔍 **Review Criteria**
+    _REVIEW_CRITERIA = """## Review Criteria
      - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
      - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.
      - **Performance** → Inefficiencies, better algorithms, unnecessary computations.
      - **Security** → Injection risks, authentication flaws, unsafe operations.
      - **Readability & Maintainability** → Clarity, modularity, inline documentation.
-     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible.
+     - **Actionable Fixes** → Provide **corrected code snippets** whenever possible."""
 
-    ---
+    _LINE_NUMBER_GUIDELINES = """## CRITICAL: Line Number Guidelines
 
-    ## 📝 **Feedback Format (JSON)**
-    Your response **must** be a single JSON object that conforms to the schema below.
-    **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**
+    **For EACH suggestion, you MUST provide `start_line` and `end_line`:**
+    - **Multi-Line Suggestions**: `start_line` is the first line of the block to be replaced, and `end_line` is the last.
+    - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
+    - **Line Number Source**: Each line in `__new hunk__` is prefixed with its exact file line number. Use these numbers directly as your `start_line` and `end_line`. Do NOT count from hunk headers.
+    - **CRITICAL: `existing_code`**: You **MUST** provide the **exact code snippet** from the diff that your suggestion targets. Copy it character-for-character from the diff, excluding the line number prefix, but including the `+` or `-` prefix. This is the primary anchor for placing your comment.
+    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
+    - **Only Comment on Changed Lines**: You can ONLY comment on lines that appear in the diff with `+` or `-` prefixes. Context lines (no prefix) cannot receive comments."""
 
-    ```json
+    _CODE_SUGGESTIONS_RULES = """**CRITICAL**: The `code_suggestions` array is **ONLY for actionable suggestions that propose specific code changes**.
+    - **NEVER** include positive affirmations, praise, or "good job" comments
+    - **NEVER** highlight existing good code without suggesting an improvement
+    - **NEVER** comment on code just to acknowledge it exists
+    - **NEVER** suggest code that is identical or substantially similar to existing code
+    - **NEVER** include a suggestion if no actionable improvement exists. Omit it entirely
+    - **ONLY** include suggestions that identify actual issues and propose fixes
+    - Each suggestion MUST include `suggested_code` that is meaningfully different and better than existing code
+    - Encode each structural fact that the issue depends on in `claims`
+    - A claim states the expected fact using `subject`, `predicate`, and `expected`
+    - Use `IMPORTED` for import presence and `DEFINED` for symbol definitions
+    - Qualify class members as `ClassName.member`; do not use an unqualified member name
+    - Claims are checked against post-change code. A contradicted suggestion is discarded
+    - Every assertion that an import or definition is present or absent MUST have a matching claim
+    - Leave `claims` empty only when the suggestion makes no assertion about imports or definitions
+    - Do not infer structural facts that are not established by the provided code
+    - If existing code is good enough, make NO comment about it at all
+
+    **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
+
+    _JSON_FORMAT_HEADER = """## Feedback Format (JSON)
+    Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**"""
+
+    _JSON_SCHEMA_EXAMPLE = """```json
     {{
         "code_quality": "<Markdown-formatted feedback on code quality and style.>",
         "code_suggestions": [
             {{
                 "file_name": "<path/to/file>",
-                "line": <line_number>,
-                "start_line": <start_line_number>,
-                "position": <position_in_diff>,
+                "start_line": <The first line of the code block to be replaced>,
+                "end_line": <The last line of the code block to be replaced. For single-line comments, this is the same as start_line>,
                 "side": "<LEFT|RIGHT>",
-                "comment": "<Detailed review comment.>",
-                "suggested_code": "<Corrected or improved code.>"
+                "comment": "<Detailed review comment explaining the issue and why it matters.>",
+                "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
+                "suggested_code": "<Corrected or improved code snippet.>",
+                "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>",
+                "claims": [
+                    {{
+                        "subject": "<The symbol whose state supports this issue>",
+                        "predicate": "<IMPORTED|DEFINED>",
+                        "expected": <true|false>
+                    }}
+                ]
             }}
         ],
         "documentation_suggestions": "<Markdown-formatted documentation suggestions.>",
@@ -48,7 +77,7 @@ class Prompts:
         "refactoring_suggestions": "<Markdown-formatted refactoring suggestions.>",
         "security": "<Markdown-formatted security vulnerability analysis.>",
         "summary": {{
-            "overview": "✨ <A high-level overview of the code changes and the review. Must be Markdown-formatted.>",
+            "overview": "<A high-level overview of the code changes and the review. Must be Markdown-formatted.>",
             "key_improvements": [
                 "<An improvement, can reference a file path. Must be Markdown-formatted.>"
             ],
@@ -68,28 +97,48 @@ class Prompts:
             "performance": "<Integer score from 1 to 10.>"
         }}
     }}
-    ```
+    ```"""
 
-    ---
+    _FINAL_NOTES = """**Final Notes:**
+    - **Ensure precision** → Always specify exact `line` numbers from the diff and `side`.
+    - **Line Number Accuracy** → Read line numbers directly from the prefixed numbers in `__new hunk__` lines.
+    - **Be specific** → Your suggestions should be easy to understand and implement.
+    - **Stay on topic** → Focus only on the provided code diff.
 
-    ## 🎯 **Code Diff for Review**
-    ```diff
-    {diff}
-    ```
+    **Deliver a precise review containing only findings supported by the available code.**"""
 
-    ## 📝 **Additional Context:**
-    {context}
+    REVIEW_SYSTEM_PROMPT = f"""{_EXPERT_REVIEWER_INTRO}
+Your task is to analyze code diffs and provide precise, structured, and actionable feedback.
 
-    ---
+{_REVIEW_CRITERIA}
 
-    📢 **Final Notes:**
-    - **Ensure precision** → Always specify `file`, `line`, `position`, and `side`.
-    - **Structured & Clear** → Use JSON format for easy automation and integration.
-    - **Be Constructive & Actionable** → Don't just point out problems—suggest improvements.
-    - **Follow Best Practices** → Use **proper coding standards, security guidelines, and optimization techniques**.
+{_LINE_NUMBER_GUIDELINES}
 
-    🚀 **Deliver a high-quality review that is structured, developer-friendly, and leaves no stone unturned!**
-    """
+---
+
+{_JSON_FORMAT_HEADER}
+
+{_CODE_SUGGESTIONS_RULES}
+{_JSON_SCHEMA_EXAMPLE}
+
+---
+
+{_FINAL_NOTES}
+"""
+
+    REVIEW_PROMPT = """## Pull Request Metadata
+{pr_metadata}
+
+{existing_comments}## Bounded Structural Context
+This deterministic graph contains relevant post-change files, symbols, direct relationships, and bounded source excerpts from referenced definitions. Use source excerpts to verify behavioral assumptions about referenced code before reporting an issue. An omitted node or excerpt is not proof that code or behavior does not exist.
+
+{code_context}
+
+## Code Diff for Review
+The diff below uses a decoupled format where removed and added code are shown in separate labeled blocks per file. `__old hunk__` shows removed lines and surrounding context, `__new hunk__` shows added lines and surrounding context.
+
+{diff}
+"""
 
     SUMMARIZE_PROMPT = """
     Please summarize the following code changes in a few sentences:
@@ -112,22 +161,34 @@ class Prompts:
     """
 
     SUMMARIZE_REVIEW_PROMPT = """
-    # 📝 **Code Review Summary**
+    #
 
-    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **GitHub-flavored Markdown**.
+    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **JSON format**, conforming to the `CodeReviewSummary` schema.
 
-    The summary should:
-    - Start with a general overview of the changes.
-    - Group related suggestions under appropriate headings (e.g., "Bug Fixes", "Style Improvements", "Security Concerns").
-    - Be easy to read and understand for the pull request author.
-    - Do NOT include the code snippets themselves, only the comments.
+    The JSON object should have the following structure:
+    ```json
+    {{
+        "overview": "✨ <A high-level overview of the code changes and the review.>",
+        "key_improvements": [
+            "<An improvement, can reference a file path.>"
+        ],
+        "minor_suggestions": [
+            "<A minor suggestion or potential enhancement.>"
+        ],
+        "critical_issues": [
+            "<A critical issue that must be addressed. Leave empty if none.>"
+        ]
+    }}
+    ```
+
+    The content within the `overview`, `key_improvements`, `minor_suggestions`, and `critical_issues` fields should be formatted using **GitHub-flavored Markdown**.
 
     Here is the list of suggestions:
     ```
     {suggestions}
     ```
 
-    **Please provide only the markdown summary.**
+    **Please provide only the JSON object.**
     """
 
     DOCUMENTATION_GENERATION_PROMPT = """
@@ -139,4 +200,35 @@ class Prompts:
     ```
 
     Please provide clear and concise documentation that explains the purpose and functionality of the code changes.
+    """
+
+    COMPARE_SUMMARIES_PROMPT = """
+    # Task: Compare two pull request summaries for semantic equivalence.
+
+    You will be given two summaries of a pull request, an "Old Summary" and a "New Summary".
+    Your task is to determine if the **meaning and core information** of the New Summary are substantively different from the Old Summary.
+
+    ## Criteria for "DIFFERENT":
+    - The New Summary introduces new information, suggestions, or warnings not present in the old one.
+    - The New Summary removes critical information that was in the old one.
+    - The tone or conclusion of the review has significantly changed (e.g., from approval to requesting changes).
+
+    ## Criteria for "SAME":
+    - The New Summary is just a rephrasing of the Old Summary without changing the core message.
+    - Minor stylistic or formatting changes.
+    - The order of points is different, but the substance is identical.
+
+    ## Input:
+    ### Old Summary:
+    ```markdown
+    {summary_a}
+    ```
+
+    ### New Summary:
+    ```markdown
+    {summary_b}
+    ```
+
+    ## Output:
+    Respond with a single word: **SAME** or **DIFFERENT**. Do not provide any other text or explanation.
     """

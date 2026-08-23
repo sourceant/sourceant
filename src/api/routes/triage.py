@@ -1,0 +1,180 @@
+from typing import Literal
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from src.auth import get_current_user
+from src.core.responses import success_response
+from src.utils.concurrency import gather_bounded
+from src.utils.pagination import Params, page_of
+from src.utils.provider_pages import fetch_all
+
+router = APIRouter()
+
+_GITHUB_API = "https://api.github.com"
+
+
+def _headers(token: str) -> dict:
+    return {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+
+class TriageAction(BaseModel):
+    repo: str
+    number: int
+    action: Literal["comment", "label", "close"]
+    comment: str | None = None
+    labels: list[str] | None = None
+
+
+@router.get("")
+async def list_triage(
+    repo: list[str] = Query(
+        ..., description="Repository full name, e.g. owner/name. May repeat."
+    ),
+    params: Params = Depends(),
+    user: dict = Depends(get_current_user),
+):
+    """One page of the open-issue triage queue across the given repositories."""
+    github_token = user.get("github_token")
+    if not github_token:
+        return success_response(page_of([], params))
+
+    async def _issues_of(client: httpx.AsyncClient, full_name: str):
+        issues, truncated = await fetch_all(
+            client,
+            f"{_GITHUB_API}/repos/{full_name}/issues",
+            _headers(github_token),
+            params={"state": "open", "sort": "updated"},
+        )
+        return full_name, issues, truncated
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        gathered = await gather_bounded(
+            [
+                lambda c=client, name=name: _issues_of(c, name)
+                for name in dict.fromkeys(repo)
+            ]
+        )
+
+    if all(truncated and not issues for _, issues, truncated in gathered):
+        raise HTTPException(status_code=502, detail="GitHub API error")
+
+    results = [
+        {
+            "repo": full_name,
+            "number": issue["number"],
+            "title": issue["title"],
+            "state": issue["state"],
+            "author": (issue.get("user") or {}).get("login"),
+            "labels": [label["name"] for label in issue.get("labels", [])],
+            "comments": issue.get("comments", 0),
+            "url": issue.get("html_url"),
+            "updated_at": issue.get("updated_at"),
+        }
+        for full_name, issues, _ in gathered
+        for issue in issues
+        # The provider answers pull requests from the issues endpoint too.
+        if "pull_request" not in issue
+    ]
+    results.sort(key=lambda item: item["updated_at"] or "", reverse=True)
+
+    return success_response(page_of(results, params))
+
+
+@router.get("/detail")
+async def triage_detail(
+    repo: str = Query(...),
+    number: int = Query(...),
+    user: dict = Depends(get_current_user),
+):
+    """A single issue with its body and comments, from live GitHub."""
+    github_token = user.get("github_token")
+    if not github_token:
+        raise HTTPException(status_code=400, detail="No GitHub token available")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        issue_resp = await client.get(
+            f"{_GITHUB_API}/repos/{repo}/issues/{number}",
+            headers=_headers(github_token),
+        )
+        if issue_resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="GitHub API error")
+        issue = issue_resp.json()
+
+        comments_resp = await client.get(
+            f"{_GITHUB_API}/repos/{repo}/issues/{number}/comments",
+            headers=_headers(github_token),
+            params={"per_page": 50},
+        )
+        comments = comments_resp.json() if comments_resp.status_code == 200 else []
+
+    return success_response(
+        {
+            "number": issue["number"],
+            "title": issue["title"],
+            "body": issue.get("body") or "",
+            "state": issue["state"],
+            "author": (issue.get("user") or {}).get("login"),
+            "labels": [label["name"] for label in issue.get("labels", [])],
+            "url": issue.get("html_url"),
+            "comments": [
+                {
+                    "author": (c.get("user") or {}).get("login"),
+                    "body": c.get("body") or "",
+                    "created_at": c.get("created_at"),
+                }
+                for c in comments
+            ],
+        }
+    )
+
+
+@router.post("/action")
+async def triage_action(
+    data: TriageAction,
+    user: dict = Depends(get_current_user),
+):
+    """Take an action on an issue: comment, add labels, or close."""
+    github_token = user.get("github_token")
+    if not github_token:
+        raise HTTPException(status_code=400, detail="No GitHub token available")
+
+    base = f"{_GITHUB_API}/repos/{data.repo}/issues/{data.number}"
+    async with httpx.AsyncClient(timeout=10) as client:
+        if data.action == "comment":
+            if not data.comment:
+                raise HTTPException(status_code=400, detail="Comment body is required")
+            resp = await client.post(
+                f"{base}/comments",
+                headers=_headers(github_token),
+                json={"body": data.comment},
+            )
+        elif data.action == "label":
+            if not data.labels:
+                raise HTTPException(
+                    status_code=400, detail="At least one label is required"
+                )
+            resp = await client.post(
+                f"{base}/labels",
+                headers=_headers(github_token),
+                json={"labels": data.labels},
+            )
+        elif data.action == "close":
+            resp = await client.patch(
+                base,
+                headers=_headers(github_token),
+                json={"state": "closed"},
+            )
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unknown action: {data.action}"
+            )
+
+    if resp.status_code >= 300:
+        raise HTTPException(status_code=502, detail="GitHub rejected the action")
+
+    return success_response({"ok": True})

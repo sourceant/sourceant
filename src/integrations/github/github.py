@@ -1,16 +1,23 @@
 import jwt
+import re
 import time
 import requests
 import os
-from typing import Dict, Any, Optional
+import base64
+import binascii
+from typing import Any, BinaryIO, Dict, List, Optional
+from dateutil.parser import isoparse
 from ..provider_adapter import ProviderAdapter
 from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
 from src.models.repository import Repository
+
+from src.utils.line_mapper import LineMapper
 from src.models.pull_request import PullRequest
 from src.utils.logger import logger
-
+from src.llms.llm_factory import llm
 
 COMMENT_MARKER = "<!-- SOURCEANT_REVIEW_SUMMARY -->"
+FALLBACK_COMMENT_MARKER = "<!-- SOURCEANT_FALLBACK_REVIEW -->"
 
 
 class GitHub(ProviderAdapter):
@@ -30,20 +37,12 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # Cache for installation access tokens
         # Cache for installation access tokens with expiration
         self._access_tokens: Dict[str, Dict[str, Any]] = {}
         self._app_slug: Optional[str] = None
 
     def generate_jwt(self) -> str:
-        """Generate a JWT token for GitHub App authentication.
-
-        Returns:
-            str: JWT token for GitHub API authentication
-
-        Raises:
-            ValueError: If there's an issue generating the JWT token
-        """
+        """Generate a JWT token for GitHub App authentication."""
         try:
             with open(self.app_private_key_path, "r") as f:
                 private_key = f.read()
@@ -66,18 +65,7 @@ class GitHub(ProviderAdapter):
             raise ValueError(error_msg)
 
     def get_installation_id(self, owner: str, repo: str) -> int:
-        """Get the installation ID for a GitHub repository.
-
-        Args:
-            owner: Repository owner/organization
-            repo: Repository name
-
-        Returns:
-            int: Installation ID for the repository
-
-        Raises:
-            ValueError: If the installation ID cannot be retrieved
-        """
+        """Get the installation ID for a GitHub repository."""
         try:
             jwt_token = self.generate_jwt()
             headers = {
@@ -89,6 +77,7 @@ class GitHub(ProviderAdapter):
             response = requests.get(
                 f"https://api.github.com/repos/{owner}/{repo}/installation",
                 headers=headers,
+                timeout=30,
             )
             response.raise_for_status()
 
@@ -106,38 +95,35 @@ class GitHub(ProviderAdapter):
             raise ValueError(error_msg)
 
     def get_installation_access_token(self, owner: str, repo: str) -> str:
-        """Get an installation access token for a repository, with caching.
+        """Get an installation access token for a repository, with caching."""
+        repo_key = f"{owner}/{repo}"
+        logger.info(f"Attempting to get installation access token for {repo_key}")
 
-        Args:
-            owner: Repository owner/organization
-            repo: Repository name
-
-        Returns:
-            str: Installation access token
-
-        Raises:
-            ValueError: If the token cannot be retrieved
-        """
-        repo_full_name = f"{owner}/{repo}"
-        now = time.time()
-
-        # Check cache for a valid token
-        if repo_full_name in self._access_tokens:
-            token_data = self._access_tokens[repo_full_name]
-            if now < token_data.get("expires_at", 0):
+        # Check cache first
+        if repo_key in self._access_tokens:
+            token_data = self._access_tokens[repo_key]
+            if time.time() < token_data["expires_at"] - 300:
+                logger.info(
+                    f"Using cached token for {repo_key}. Expires at: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(token_data['expires_at']))}"
+                )
                 return token_data["token"]
+            else:
+                logger.info(
+                    f"Cached token for {repo_key} has expired. Fetching a new one."
+                )
+        else:
+            logger.info(f"No cached token found for {repo_key}. Fetching a new one.")
 
-        # If no valid token, generate a new one
         try:
             installation_id = self.get_installation_id(owner, repo)
             jwt_token = self.generate_jwt()
-
             headers = {
                 "Authorization": f"Bearer {jwt_token}",
                 "Accept": "application/vnd.github.v3+json",
                 "X-GitHub-Api-Version": "2022-11-28",
             }
 
+            logger.info(f"Requesting new installation access token for {repo_key}")
             response = requests.post(
                 f"https://api.github.com/app/installations/{installation_id}/access_tokens",
                 headers=headers,
@@ -145,27 +131,65 @@ class GitHub(ProviderAdapter):
             )
             response.raise_for_status()
 
-            token_data = response.json()
-            access_token = token_data.get("token")
-            if not access_token:
-                raise ValueError("No access token found in response")
+            response_data = response.json()
+            new_token = response_data.get("token")
+            expires_at_str = response_data.get("expires_at")
 
-            # Cache the new token with its expiration time (GitHub tokens last 1 hour)
-            self._access_tokens[repo_full_name] = {
-                "token": access_token,
-                "expires_at": now + 3540,  # 59 minutes
+            if not new_token or not expires_at_str:
+                raise ValueError("Token or expiration not found in response")
+
+            new_expires_at = isoparse(expires_at_str).timestamp()
+
+            logger.info(f"Successfully fetched new token for {repo_key}. Caching it.")
+            self._access_tokens[repo_key] = {
+                "token": new_token,
+                "expires_at": new_expires_at,
             }
 
-            return access_token
+            return new_token
 
         except requests.exceptions.RequestException as e:
             error_msg = (
-                f"Failed to get installation access token for {owner}/{repo}: {e}"
+                f"Failed to get installation access token for {owner}/{repo}: {str(e)}"
             )
-            if e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 error_msg += f" - Response: {e.response.text}"
             logger.error(error_msg)
             raise ValueError(error_msg)
+
+    def download_repository_archive(
+        self,
+        owner: str,
+        repo: str,
+        revision: str,
+        destination: BinaryIO,
+        *,
+        byte_limit: int = 500_000_000,
+    ) -> None:
+        access_token = self.get_installation_access_token(owner, repo)
+        response = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/tarball/{revision}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            allow_redirects=True,
+            stream=True,
+            timeout=60,
+        )
+        response.raise_for_status()
+        written = 0
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if not chunk:
+                continue
+            written += len(chunk)
+            if written > byte_limit:
+                raise ValueError(
+                    f"repository archive exceeds the {byte_limit}-byte download limit"
+                )
+            destination.write(chunk)
+        destination.seek(0)
 
     def get_app_slug(self) -> str:
         """Get the slug of the GitHub App."""
@@ -199,12 +223,98 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+    def has_existing_bot_approval(self, owner: str, repo: str, pr_number: int) -> bool:
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            app_slug = self.get_app_slug()
+            bot_login = f"{app_slug}[bot]"
+            latest_bot_state = None
+            page = 1
+            per_page = 100
+            max_pages = 10
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+                    headers=headers,
+                    params={"page": page, "per_page": per_page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                reviews = response.json()
+                for review in reviews:
+                    user = review.get("user", {})
+                    if user.get("login") == bot_login:
+                        latest_bot_state = review.get("state")
+                if len(reviews) < per_page:
+                    break
+                page += 1
+            return latest_bot_state == "APPROVED"
+        except Exception as e:
+            logger.warning(f"Could not check for existing approvals: {e}")
+            return False
+
+    def get_existing_bot_review_comments(
+        self, owner: str, repo: str, pr_number: int
+    ) -> List[Dict[str, Any]]:
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            app_slug = self.get_app_slug()
+            bot_login = f"{app_slug}[bot]"
+
+            bot_comments = []
+            page = 1
+            per_page = 100
+            max_pages = 10
+
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+                    headers=headers,
+                    params={"page": page, "per_page": per_page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                comments = response.json()
+
+                for comment in comments:
+                    user = comment.get("user", {})
+                    if user.get("login") == bot_login:
+                        bot_comments.append(
+                            {
+                                "path": comment.get("path"),
+                                "body": comment.get("body", ""),
+                                "line": comment.get("line"),
+                                "start_line": comment.get("start_line"),
+                            }
+                        )
+
+                if len(comments) < per_page:
+                    break
+                page += 1
+
+            logger.info(
+                f"Found {len(bot_comments)} existing bot review comments on PR #{pr_number}"
+            )
+            return bot_comments
+        except Exception as e:
+            logger.warning(f"Could not fetch existing bot review comments: {e}")
+            return []
+
     def _find_overview_comment(
         self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]
-    ) -> Optional[int]:
+    ) -> Optional[Dict[str, Any]]:
         """Find the bot's overview comment on a PR."""
         try:
-            # We use the issues endpoint as PRs are issues
             response = requests.get(
                 f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
                 headers=headers,
@@ -218,13 +328,40 @@ class GitHub(ProviderAdapter):
                     logger.info(
                         f"Found previous overview comment with ID: {comment['id']}"
                     )
-                    return comment["id"]
+                    return comment
 
             logger.info("No previous overview comment found.")
             return None
 
         except (requests.exceptions.RequestException, ValueError) as e:
             logger.warning(f"Could not search for previous overview comment: {e}")
+            return None
+
+    def _find_fallback_comment(
+        self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]
+    ) -> Optional[Dict[str, Any]]:
+        """Find the bot's fallback review comment on a PR."""
+        try:
+            response = requests.get(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            comments = response.json()
+
+            for comment in comments:
+                if FALLBACK_COMMENT_MARKER in comment.get("body", ""):
+                    logger.info(
+                        f"Found previous fallback comment with ID: {comment['id']}"
+                    )
+                    return comment
+
+            logger.info("No previous fallback comment found.")
+            return None
+
+        except (requests.exceptions.RequestException, ValueError) as e:
+            logger.warning(f"Could not search for previous fallback comment: {e}")
             return None
 
     def _create_or_update_overview_comment(
@@ -236,20 +373,19 @@ class GitHub(ProviderAdapter):
         headers: Dict[str, str],
     ) -> None:
         """Create or update the main summary comment on a PR."""
-        comment_id = self._find_overview_comment(owner, repo, pr_number, headers)
+        existing_comment = self._find_overview_comment(owner, repo, pr_number, headers)
 
         body = f"{summary}\n\n{COMMENT_MARKER}"
 
         try:
-            if comment_id:
-                # Update existing comment
+            if existing_comment:
+                comment_id = existing_comment["id"]
                 logger.info(f"Updating overview comment {comment_id}...")
                 url = f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{comment_id}"
                 response = requests.patch(
                     url, headers=headers, json={"body": body}, timeout=30
                 )
             else:
-                # Create new comment
                 logger.info("Creating new overview comment...")
                 url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
                 response = requests.post(
@@ -263,7 +399,6 @@ class GitHub(ProviderAdapter):
             logger.error(f"Failed to create or update overview comment: {e}")
             if hasattr(e, "response") and e.response is not None:
                 logger.error(f"Response: {e.response.text}")
-            # Don't raise, as this is not a fatal error for the whole review process
 
     def _format_summary(self, summary: CodeReviewSummary) -> str:
         """Formats the structured summary into a markdown string."""
@@ -291,10 +426,194 @@ class GitHub(ProviderAdapter):
 
         return "".join(parts)
 
+    def _post_review_as_fallback_comment(
+        self,
+        repository: Repository,
+        pull_request: PullRequest,
+        code_review: CodeReview,
+        headers: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Posts or updates actionable code review as a regular PR comment."""
+        try:
+            comment_body = "## 🔍 Code Review\n\n"
+
+            # Add code suggestions in expandable, collapsed sections
+            if code_review.code_suggestions:
+                for i, suggestion in enumerate(code_review.code_suggestions, 1):
+                    if not suggestion.file_name:
+                        continue
+
+                    # Create expandable section for each suggestion
+                    file_location = f"**{suggestion.file_name}**"
+                    if suggestion.start_line == suggestion.end_line:
+                        file_location += f" (Line {suggestion.start_line})"
+                    else:
+                        file_location += (
+                            f" (Lines {suggestion.start_line}-{suggestion.end_line})"
+                        )
+
+                    # Collapsed by default with clear title
+                    comment_body += f"<details>\n<summary>💡 {i}. {file_location}"
+                    if hasattr(suggestion, "category") and suggestion.category:
+                        comment_body += f" - {suggestion.category.value}"
+                    comment_body += "</summary>\n\n"
+
+                    if suggestion.comment:
+                        comment_body += f"{suggestion.comment}\n\n"
+
+                    if suggestion.suggested_code:
+                        comment_body += f"**Suggested Code:**\n```suggestion\n{suggestion.suggested_code}\n```\n\n"
+
+                    if suggestion.existing_code:
+                        comment_body += f"**Current Code:**\n```python\n{suggestion.existing_code}\n```\n\n"
+
+                    comment_body += "</details>\n\n"
+
+            # Add other review sections as collapsed expandable sections if present
+            sections = [
+                ("🐛 Potential Bugs", code_review.potential_bugs),
+                ("⚡ Performance", code_review.performance),
+                ("🛡️ Security", code_review.security),
+                ("📖 Readability", code_review.readability),
+                ("🔧 Refactoring", code_review.refactoring_suggestions),
+                ("📚 Documentation", code_review.documentation_suggestions),
+            ]
+
+            for title, content in sections:
+                if content and content.strip():
+                    comment_body += f"<details>\n<summary>{title}</summary>\n\n{content}\n\n</details>\n\n"
+
+            comment_body += f"**Verdict:** {code_review.verdict.value}\n\n"
+            comment_body += f"*Posted as a comment because posting a review failed.*\n\n{FALLBACK_COMMENT_MARKER}"
+
+            # Check for existing fallback comment to update
+            existing_comment = self._find_fallback_comment(
+                repository.owner, repository.name, pull_request.number, headers
+            )
+
+            if existing_comment:
+                comment_id = existing_comment["id"]
+                logger.info(f"Updating existing fallback comment {comment_id}...")
+                url = f"https://api.github.com/repos/{repository.owner}/{repository.name}/issues/comments/{comment_id}"
+                response = requests.patch(
+                    url, headers=headers, json={"body": comment_body}, timeout=30
+                )
+            else:
+                logger.info("Creating new fallback comment...")
+                url = f"https://api.github.com/repos/{repository.owner}/{repository.name}/issues/{pull_request.number}/comments"
+                response = requests.post(
+                    url, headers=headers, json={"body": comment_body}, timeout=30
+                )
+
+            response.raise_for_status()
+            comment_data = response.json()
+            logger.info(
+                f"Successfully posted/updated fallback comment with ID: {comment_data.get('id')}"
+            )
+
+            return {
+                "status": "success",
+                "comment_id": comment_data.get("id"),
+                "message": "Review posted as fallback comment",
+            }
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to post fallback comment: {e}"
+            if hasattr(e, "response") and e.response is not None:
+                error_msg += f" - Response: {e.response.text}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+        except Exception as e:
+            error_msg = f"Unexpected error in fallback comment: {e}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+
+    def _identify_invalid_comments(
+        self, error_body: Dict[str, Any], comments: List[Dict]
+    ) -> List[int]:
+        indices = set()
+        for error in error_body.get("errors", []):
+            if isinstance(error, str):
+                continue
+            field = error.get("field", "")
+            match = re.search(r"comments\[(\d+)\]", field)
+            if match:
+                indices.add(int(match.group(1)))
+            message = error.get("message", "")
+            match = re.search(r"comments\[(\d+)\]", message)
+            if match:
+                indices.add(int(match.group(1)))
+        return sorted(indices)
+
+    def _post_review_with_retry(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        review_payload: Dict[str, Any],
+        headers: Dict[str, str],
+        max_retries: int = 3,
+    ) -> Dict[str, Any]:
+        payload = review_payload
+        for attempt in range(max_retries + 1):
+            response = requests.post(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+                headers=headers,
+                json=payload,
+                timeout=60,
+            )
+
+            if response.status_code != 422:
+                response.raise_for_status()
+                return response.json()
+
+            error_body = response.json()
+            comments = payload.get("comments", [])
+            invalid_indices = self._identify_invalid_comments(error_body, comments)
+
+            if not invalid_indices or not comments:
+                logger.warning(
+                    f"422 error but could not identify invalid comments: {error_body}"
+                )
+                response.raise_for_status()
+
+            logger.warning(
+                f"Attempt {attempt + 1}: Removing {len(invalid_indices)} invalid comment(s) "
+                f"at indices {invalid_indices} and retrying."
+            )
+            remaining = [
+                c for i, c in enumerate(comments) if i not in set(invalid_indices)
+            ]
+
+            if not remaining:
+                logger.warning(
+                    "All comments were invalid. Posting review without comments."
+                )
+                payload = {**payload, "comments": []}
+                continue
+
+            payload = {**payload, "comments": remaining}
+
+        response.raise_for_status()
+        return response.json()
+
     def post_review(
-        self, repository: Repository, pull_request: PullRequest, code_review: CodeReview
+        self,
+        repository: Repository,
+        pull_request: PullRequest,
+        code_review: CodeReview,
+        line_mapper: LineMapper,
     ) -> Dict[str, Any]:
         """Orchestrates posting a complete code review to a GitHub pull request."""
+        if pull_request.number is None:
+            error_msg = "Cannot post review without a valid pull request number."
+            logger.error(error_msg)
+            return {
+                "status": "error",
+                "message": error_msg,
+                "error_type": "missing_pr_number",
+            }
+
         try:
             access_token = self.get_installation_access_token(
                 repository.owner, repository.name
@@ -305,18 +624,28 @@ class GitHub(ProviderAdapter):
                 "X-GitHub-Api-Version": "2022-11-28",
             }
 
-            # 1. Create or update the persistent overview comment
             if code_review.summary:
                 formatted_summary = self._format_summary(code_review.summary)
-                self._create_or_update_overview_comment(
-                    repository.owner,
-                    repository.name,
-                    pull_request.number,
-                    formatted_summary,
-                    headers,
-                )
 
-            # 3. Post the new formal review with suggestions and verdict
+                existing_comment = self._find_overview_comment(
+                    repository.owner, repository.name, pull_request.number, headers
+                )
+                if existing_comment and not llm().is_summary_different(
+                    summary_a=existing_comment["body"],
+                    summary_b=formatted_summary,
+                ):
+                    logger.info(
+                        f"PR #{pull_request.number} summary is semantically unchanged. Skipping update."
+                    )
+                else:
+                    self._create_or_update_overview_comment(
+                        repository.owner,
+                        repository.name,
+                        pull_request.number,
+                        formatted_summary,
+                        headers,
+                    )
+
             comments = []
             if code_review.code_suggestions:
                 for suggestion in code_review.code_suggestions:
@@ -332,20 +661,21 @@ class GitHub(ProviderAdapter):
                     comment = {
                         "path": suggestion.file_name,
                         "body": comment_body,
-                        "line": suggestion.line or 1,
-                        "side": (
-                            suggestion.side.value
-                            if hasattr(suggestion, "side") and suggestion.side
-                            else "RIGHT"
-                        ),
                     }
+
+                    side = suggestion.side.value if suggestion.side else "RIGHT"
                     if (
                         suggestion.start_line
-                        and suggestion.line
-                        and suggestion.start_line < suggestion.line
+                        and suggestion.end_line
+                        and suggestion.start_line < suggestion.end_line
                     ):
                         comment["start_line"] = suggestion.start_line
-                        comment["line"] = suggestion.line
+                        comment["line"] = suggestion.end_line
+                        comment["side"] = side
+                        comment["start_side"] = side
+                    else:
+                        comment["line"] = suggestion.end_line
+                        comment["side"] = side
 
                     comments.append(comment)
 
@@ -355,6 +685,7 @@ class GitHub(ProviderAdapter):
                 review_body = "Review complete. No specific code suggestions were generated. See the overview comment for a summary."
 
             review_payload = {
+                "commit_id": pull_request.head_sha,
                 "body": review_body,
                 "event": code_review.verdict.value,
                 "comments": comments,
@@ -362,14 +693,13 @@ class GitHub(ProviderAdapter):
 
             review_response_data = {}
             if comments or code_review.verdict != Verdict.COMMENT:
-                response = requests.post(
-                    f"https://api.github.com/repos/{repository.owner}/{repository.name}/pulls/{pull_request.number}/reviews",
-                    headers=headers,
-                    json=review_payload,
-                    timeout=60,
+                review_response_data = self._post_review_with_retry(
+                    repository.owner,
+                    repository.name,
+                    pull_request.number,
+                    review_payload,
+                    headers,
                 )
-                response.raise_for_status()
-                review_response_data = response.json()
             else:
                 logger.info(
                     "No suggestions to post and verdict is COMMENT. Skipping formal review submission."
@@ -387,16 +717,420 @@ class GitHub(ProviderAdapter):
             if hasattr(e, "response") and e.response is not None:
                 error_msg += f" - Response: {e.response.text}"
             logger.error(error_msg)
-            return {
-                "status": "error",
-                "message": error_msg,
-                "error_type": "github_api_error",
-            }
+
+            # Fallback: Post review content as a comment when API review posting fails
+            logger.info(
+                "Attempting fallback: posting review as comment instead of formal review"
+            )
+
+            # Always update the overview comment even when fallback is used
+            if code_review.summary:
+                formatted_summary = self._format_summary(code_review.summary)
+                existing_comment = self._find_overview_comment(
+                    repository.owner, repository.name, pull_request.number, headers
+                )
+                if not existing_comment or llm().is_summary_different(
+                    summary_a=existing_comment["body"],
+                    summary_b=formatted_summary,
+                ):
+                    self._create_or_update_overview_comment(
+                        repository.owner,
+                        repository.name,
+                        pull_request.number,
+                        formatted_summary,
+                        headers,
+                    )
+
+            fallback_result = self._post_review_as_fallback_comment(
+                repository, pull_request, code_review, headers
+            )
+            if fallback_result["status"] == "success":
+                return {
+                    "status": "partial_success",
+                    "message": f"Review API failed, but posted as comment: {error_msg}",
+                    "error_type": "github_api_error_with_fallback",
+                    "fallback_comment_id": fallback_result.get("comment_id"),
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"{error_msg}. Fallback comment also failed: {fallback_result['message']}",
+                    "error_type": "github_api_error",
+                }
         except Exception as e:
             error_msg = f"An unexpected error occurred: {e}"
             logger.exception(error_msg)
+
+            # Fallback for unexpected errors too
+            try:
+                logger.info(
+                    "Attempting fallback after unexpected error: posting review as comment"
+                )
+                fallback_result = self._post_review_as_fallback_comment(
+                    repository, pull_request, code_review, headers
+                )
+                if fallback_result["status"] == "success":
+                    return {
+                        "status": "partial_success",
+                        "message": f"Unexpected error occurred, but posted as comment: {error_msg}",
+                        "error_type": "unexpected_error_with_fallback",
+                        "fallback_comment_id": fallback_result.get("comment_id"),
+                    }
+            except Exception as fallback_e:
+                logger.error(f"Fallback comment posting also failed: {fallback_e}")
+
             return {
                 "status": "error",
                 "message": error_msg,
                 "error_type": "unexpected_error",
             }
+
+    def list_open_pull_requests(
+        self, owner: str, repo: str, max_pages: int = 10
+    ) -> List[Dict[str, Any]]:
+        """List open pull requests for a repository with pagination."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            all_prs = []
+            page = 1
+            per_page = 100
+
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls",
+                    headers=headers,
+                    params={"state": "open", "per_page": per_page, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                prs = response.json()
+                all_prs.extend(prs)
+                if len(prs) < per_page:
+                    break
+                page += 1
+
+            return all_prs
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to list open PRs for {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def list_open_issues(
+        self, owner: str, repo: str, max_pages: int = 10
+    ) -> List[Dict[str, Any]]:
+        """List open issues (excluding pull requests) for a repository.
+
+        Uses the Search API with type:issue to avoid fetching PRs,
+        which is more efficient for repos where PRs outnumber issues.
+        """
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            all_issues = []
+            page = 1
+            per_page = 100
+
+            while page <= max_pages:
+                response = requests.get(
+                    "https://api.github.com/search/issues",
+                    headers=headers,
+                    params={
+                        "q": f"repo:{owner}/{repo} is:issue is:open",
+                        "per_page": per_page,
+                        "page": page,
+                    },
+                    timeout=30,
+                )
+                response.raise_for_status()
+                data = response.json()
+                issues = data.get("items", [])
+                all_issues.extend(issues)
+                if len(issues) < per_page:
+                    break
+                page += 1
+
+            return all_issues
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to list open issues for {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def list_labels(
+        self, owner: str, repo: str, max_pages: int = 5
+    ) -> List[Dict[str, Any]]:
+        """List all labels for a repository with pagination."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            all_labels = []
+            per_page = 100
+            page = 1
+
+            while page <= max_pages:
+                response = requests.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/labels",
+                    headers=headers,
+                    params={"per_page": per_page, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                labels = response.json()
+                all_labels.extend(labels)
+
+                if len(labels) < per_page:
+                    break
+                page += 1
+
+            return all_labels
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to list labels for {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def add_labels(
+        self, owner: str, repo: str, issue_number: int, labels: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Add labels to an issue or pull request."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.post(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/labels",
+                headers=headers,
+                json={"labels": labels},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to add labels to {owner}/{repo}#{issue_number}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def post_issue_comment(
+        self, owner: str, repo: str, issue_number: int, body: str
+    ) -> Dict[str, Any]:
+        """Post a comment on an issue or pull request."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.post(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                headers=headers,
+                json={"body": body},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to post comment on {owner}/{repo}#{issue_number}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def find_comment_with_marker(
+        self, owner: str, repo: str, issue_number: int, marker: str
+    ) -> Optional[Dict[str, Any]]:
+        """Find an existing comment containing a specific marker."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.get(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            comments = response.json()
+
+            for comment in comments:
+                if marker in comment.get("body", ""):
+                    return comment
+
+            return None
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(
+                f"Could not search for comment with marker on {owner}/{repo}#{issue_number}: {e}"
+            )
+            return None
+
+    def update_comment(
+        self, owner: str, repo: str, comment_id: int, body: str
+    ) -> Dict[str, Any]:
+        """Update an existing comment."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            response = requests.patch(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{comment_id}",
+                headers=headers,
+                json={"body": body},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to update comment {comment_id} on {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def get_diff(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        base_sha: Optional[str] = None,
+        head_sha: Optional[str] = None,
+    ) -> str:
+        """Get the diff for a pull request.
+
+        If base_sha and head_sha are provided, it fetches the diff by comparing them.
+        Otherwise, it falls back to fetching the diff by the pull request number.
+        """
+        if base_sha and head_sha:
+            logger.info(
+                f"Fetching diff for {owner}/{repo} between {base_sha} and {head_sha}"
+            )
+            return self.get_diff_between_shas(owner, repo, base_sha, head_sha)
+
+        logger.info(f"Fetching diff for PR #{pr_number} from {owner}/{repo}")
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3.diff",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            api_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+            logger.info(f"Requesting diff from API URL: {api_url}")
+            response = requests.get(
+                api_url,
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.RequestException as e:
+            error_msg = (
+                f"Failed to get diff for PR #{pr_number} from {owner}/{repo}: {e}"
+            )
+            if hasattr(e, "response") and e.response is not None:
+                error_msg += f" - Response: {e.response.text}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def get_diff_between_shas(
+        self, owner: str, repo: str, base_sha: str, head_sha: str
+    ) -> str:
+        """Get the diff between two SHAs by calling the compare API endpoint."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3.diff",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            # Construct the correct API URL for comparing commits
+            api_compare_url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"
+            response = requests.get(api_compare_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to get diff for {owner}/{repo} between {base_sha} and {head_sha}: {e}"
+            if hasattr(e, "response") and e.response is not None:
+                error_msg += f" - Response: {e.response.text}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def get_file_content(
+        self, owner: str, repo: str, file_path: str, sha: str
+    ) -> Optional[str]:
+        """Get the raw content of a file from a repository at a specific commit SHA."""
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+
+            api_url = (
+                f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
+            )
+            params = {"ref": sha}
+
+            logger.info(f"Requesting file content from {api_url} at ref {sha}")
+
+            response = requests.get(
+                api_url,
+                headers=headers,
+                params=params,
+                timeout=30,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            if "content" not in data:
+                logger.error(f"No 'content' field in response for {file_path}")
+                return None
+
+            # Content is Base64 encoded
+            encoded_content = data["content"]
+            decoded_content = base64.b64decode(encoded_content).decode("utf-8")
+
+            return decoded_content
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                logger.warning(f"File not found: {file_path} at SHA {sha}.")
+                return None
+            error_msg = (
+                f"Failed to get file content for {file_path}: {e} - {e.response.text}"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        except (binascii.Error, UnicodeDecodeError) as e:
+            error_msg = f"Failed to decode file content for {file_path}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)

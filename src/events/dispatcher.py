@@ -1,5 +1,5 @@
 from contextvars import ContextVar
-from typing import List, Optional
+from typing import Optional, Dict, Any
 
 import redis
 from redislite import Redis as RedisLite
@@ -7,20 +7,19 @@ from redislite import Redis as RedisLite
 from fastapi import BackgroundTasks
 from rq import Queue
 
-from src.config.settings import QUEUE_MODE, REDIS_HOST, REDIS_PORT
+from src.config.settings import (
+    QUEUE_MODE,
+    REDIS_HOST,
+    REDIS_PORT,
+)
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
-from src.integrations.github.github import GitHub
-from src.llms.llm_factory import llm
-from src.models.code_review import CodeReview, CodeSuggestion, Verdict
-from src.models.pull_request import PullRequest
-from src.models.repository import Repository
+from src.integrations.github.github_webhook_parser import GitHubWebhookParser
+from src.core.plugins import event_hooks
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
-from src.utils.diff import get_diff
-from src.utils.diff_parser import parse_diff, ParsedDiff
+
 from src.utils.logger import logger
 
-# Context variable to hold the BackgroundTasks object for the current request
 bg_tasks_cv: ContextVar[Optional[BackgroundTasks]] = ContextVar(
     "bg_tasks", default=None
 )
@@ -32,27 +31,26 @@ if QUEUE_MODE == "redis":
     q = Queue(connection=redis_conn)
 elif QUEUE_MODE == "redislite":
     logger.info("Using RedisLite for event queue.")
-    # RedisLite uses a file-based Redis instance, no host/port needed.
     redis_conn = RedisLite()
     q = Queue(connection=redis_conn)
 elif QUEUE_MODE == "request":
     logger.info("Using request-scoped background tasks for event processing.")
 else:
-    # This case should ideally not be reached if QUEUE_MODE is validated on startup,
-    # but as a safeguard:
     logger.info("No queue mode configured. Events will not be dispatched.")
 
 
 class EventDispatcher:
-    """Dispatches events to the queue."""
 
     def dispatch(self, event: Event):
-        """Dispatches an event to the configured queue or background task runner."""
+        if not isinstance(event, RepositoryEvent):
+            logger.info(f"Skipping non-repository event: {event}")
+            return
+
         logger.info(f"Dispatching event: {event} (mode: {QUEUE_MODE})")
         if QUEUE_MODE in ["redis", "redislite"]:
             if not q:
                 raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
-            q.enqueue(self._process_event, event)
+            q.enqueue(self._process_event_sync, event)
 
         elif QUEUE_MODE == "request":
             background_tasks = bg_tasks_cv.get()
@@ -60,144 +58,170 @@ class EventDispatcher:
                 raise RuntimeError(
                     "FastAPI BackgroundTasks not found in context. Is the endpoint setting it?"
                 )
-            background_tasks.add_task(self._process_event, event)
+            background_tasks.add_task(self._process_event_sync, event)
         else:
             raise ValueError(
                 f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be 'redis', 'redislite', or 'request'."
             )
 
-    def _process_event(self, event: Event):
-        if isinstance(event, RepositoryEvent):
-            logger.info(f"Processing repository event: {event}")
-            repository_event: RepositoryEventModel = event.data
-            if not repository_event or not isinstance(
-                repository_event, RepositoryEventModel
-            ):
-                logger.error("Invalid event data. Cannot process event.")
-                return
-            repository: Repository = Repository(
-                name=repository_event.repository_full_name.split("/")[1],
-                owner=repository_event.repository_full_name.split("/")[0],
-            )
-            pull_request: PullRequest = PullRequest(
-                number=repository_event.number, title=repository_event.title
-            )
-            try:
-                if repository_event.type in ("pull_request", "push"):
-                    raw_diff = get_diff(repository_event)
-                    if not raw_diff:
-                        logger.info("No diff computed.")
-                        return
-
-                    # Dynamic Review Logic
-                    total_tokens = llm().count_tokens(raw_diff)
-                    logger.info(f"Total tokens in diff: {total_tokens}")
-
-                    parsed_files: List[ParsedDiff] = parse_diff(raw_diff)
-                    all_suggestions: List[CodeSuggestion] = []
-
-                    if total_tokens < llm().token_limit:
-                        logger.info("Diff is small enough for a single-pass review.")
-                        # Send the full diff for a holistic review
-                        full_review = llm().generate_code_review(diff=raw_diff)
-                        if full_review and full_review.code_suggestions:
-                            # Validate and enrich suggestions
-                            for suggestion in full_review.code_suggestions:
-                                for parsed_file in parsed_files:
-                                    if suggestion.file_name == parsed_file.file_path:
-                                        line = suggestion.line
-                                        side = (
-                                            suggestion.side.value
-                                            if suggestion.side
-                                            else "RIGHT"
-                                        )
-                                        if (
-                                            line,
-                                            side,
-                                        ) in parsed_file.commentable_lines:
-                                            position = parsed_file.line_to_position[
-                                                (line, side)
-                                            ]
-                                            suggestion.position = position
-                                            all_suggestions.append(suggestion)
-                                        else:
-                                            logger.warning(
-                                                f"LLM hallucinated a suggestion for an un-changed line: {suggestion.file_name}:{line}"
-                                            )
-                                        break  # Move to the next suggestion
-                        summary = full_review.summary if full_review else ""
-                    else:
-                        logger.info(
-                            "Diff is too large. Performing file-by-file review."
-                        )
-                        # Generate a global summary to use as context for each file
-                        global_summary_prompt = f"Provide a brief, one-paragraph summary of the following code changes:\n\n{raw_diff}"
-                        global_context = llm().generate_text(global_summary_prompt)
-
-                        for parsed_file in parsed_files:
-                            logger.info(f"Reviewing file: {parsed_file.file_path}")
-                            context = f"**Overall PR Context:**\n{global_context}\n\n**Current File:** `{parsed_file.file_path}`\nFocus only on the changes in this file."
-                            review_for_file = llm().generate_code_review(
-                                diff=parsed_file.diff_text, context=context
-                            )
-
-                            if (
-                                not review_for_file
-                                or not review_for_file.code_suggestions
-                            ):
-                                continue
-
-                            for suggestion in review_for_file.code_suggestions:
-                                line = suggestion.line
-                                side = (
-                                    suggestion.side.value
-                                    if suggestion.side
-                                    else "RIGHT"
-                                )
-                                if (line, side) in parsed_file.commentable_lines:
-                                    position = parsed_file.line_to_position[
-                                        (line, side)
-                                    ]
-                                    suggestion.position = position
-                                    suggestion.file_name = parsed_file.file_path
-                                    all_suggestions.append(suggestion)
-                                else:
-                                    logger.warning(
-                                        f"LLM hallucinated a suggestion for an un-changed line: {parsed_file.file_path}:{line}"
-                                    )
-                        summary = llm().generate_summary(all_suggestions)
-
-                    # Determine final verdict and create the review object
-                    verdict = (
-                        Verdict.REQUEST_CHANGES if all_suggestions else Verdict.APPROVE
-                    )
-
-                    final_review = CodeReview(
-                        summary=summary,
-                        verdict=verdict,
-                        code_suggestions=all_suggestions,
-                    )
-
-                    logger.info("Scheduling review posting.")
-                    if QUEUE_MODE == "redis":
-                        if not q:
-                            raise RuntimeError("Redis queue not initialized.")
-                        q.enqueue(
-                            self._post_review, repository, pull_request, final_review
-                        )
-                    else:  # In fastapi mode, this runs in the same background task.
-                        self._post_review(repository, pull_request, final_review)
-
-            except Exception as e:
-                logger.exception(f"An error occurred while processing event: {e}")
-
-        else:
+    async def _process_event(self, event: Event):
+        if not isinstance(event, RepositoryEvent):
             logger.error(f"Unhandled event type: {event}")
+            return
 
-    def _post_review(
-        self, repository: Repository, pull_request: PullRequest, review: CodeReview
-    ):
-        """Posts the review to the repository."""
-        GitHub().post_review(
-            repository=repository, pull_request=pull_request, code_review=review
+        repository_event: RepositoryEventModel = event.data
+        logger.info(
+            f"Broadcasting repository event: {repository_event.type} on {repository_event.repository_full_name}"
         )
+
+        await self._broadcast_event_to_subscribers(repository_event)
+
+    async def _broadcast_event_to_subscribers(
+        self, repository_event: RepositoryEventModel
+    ):
+        try:
+            if repository_event.action:
+                event_type = f"{repository_event.type}.{repository_event.action}"
+            else:
+                event_type = repository_event.type
+
+            auth_type = repository_event.payload.get(
+                "sourceant_auth_type", "github_app"
+            )
+
+            if auth_type == "oauth":
+                webhook_parser = GitHubWebhookParser()
+                user_context = webhook_parser.get_user_info_from_webhook(
+                    repository_event.payload
+                )
+                repository_context = webhook_parser.get_repository_info_from_webhook(
+                    repository_event.payload
+                )
+                activity_data = webhook_parser.extract_activity_data(
+                    repository_event.payload, repository_event.type
+                )
+            else:
+                user_context = self._extract_user_context_github_app(
+                    repository_event.payload
+                )
+                repository_context = self._extract_repository_context_github_app(
+                    repository_event.payload
+                )
+                activity_data = None
+
+            event_data = {
+                "event_type": event_type,
+                "auth_type": auth_type,
+                "user_context": user_context,
+                "repository_context": repository_context,
+                "repository_event": {
+                    "type": repository_event.type,
+                    "action": repository_event.action,
+                    "number": repository_event.number,
+                    "title": repository_event.title,
+                    "url": repository_event.url,
+                    "repository_full_name": repository_event.repository_full_name,
+                    "provider": repository_event.provider,
+                },
+                "payload": repository_event.payload,
+                "activity_data": activity_data,
+                "timestamp": (
+                    repository_event.created_at.isoformat()
+                    if repository_event.created_at
+                    else None
+                ),
+            }
+
+            logger.info(
+                f"Broadcasting {event_type} event from {auth_type} to all subscribers"
+            )
+
+            broadcast_results = await event_hooks.broadcast_event(
+                event_type=event_type,
+                event_data=event_data,
+                source_plugin="sourceant_core",
+            )
+
+            logger.debug(f"Event broadcast results: {list(broadcast_results.keys())}")
+
+        except Exception as e:
+            logger.error(f"Error broadcasting event to subscribers: {e}", exc_info=True)
+
+    def _extract_user_context_github_app(
+        self, payload: Dict
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            user_info = None
+
+            if "sender" in payload:
+                user_info = payload["sender"]
+            elif "pull_request" in payload and "user" in payload["pull_request"]:
+                user_info = payload["pull_request"]["user"]
+
+            if user_info:
+                return {
+                    "github_id": user_info.get("id"),
+                    "username": user_info.get("login"),
+                    "avatar_url": user_info.get("avatar_url"),
+                    "type": user_info.get("type"),
+                }
+
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting user context from GitHub App payload: {e}")
+            return None
+
+    def _extract_repository_context_github_app(
+        self, payload: Dict
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            repo_info = payload.get("repository")
+            if not repo_info:
+                return None
+
+            return {
+                "github_repo_id": repo_info.get("id"),
+                "full_name": repo_info.get("full_name"),
+                "name": repo_info.get("name"),
+                "owner": repo_info.get("owner", {}).get("login"),
+                "private": repo_info.get("private", False),
+            }
+        except Exception as e:
+            logger.error(
+                f"Error extracting repository context from GitHub App payload: {e}"
+            )
+            return None
+
+    async def _ensure_plugins_loaded(self):
+        """Bootstrap the plugin system when running outside FastAPI (e.g. RQ worker)."""
+        if event_hooks._event_subscribers:
+            return
+
+        from pathlib import Path
+        from src.core.plugins import plugin_manager
+        from src.llms.llm_factory import llm
+        from src.utils.logger import setup_logger
+
+        setup_logger()
+        llm()
+
+        plugins_dir = Path(__file__).parent.parent / "plugins"
+        plugin_manager.add_plugin_directory(plugins_dir)
+        await plugin_manager.load_all_plugins()
+        await plugin_manager.initialize_plugins()
+        await plugin_manager.start_plugins()
+
+    def _process_event_sync(self, event: Event):
+        import asyncio
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        if loop.is_running():
+            asyncio.create_task(self._process_event(event))
+        else:
+            loop.run_until_complete(self._ensure_plugins_loaded())
+            loop.run_until_complete(self._process_event(event))

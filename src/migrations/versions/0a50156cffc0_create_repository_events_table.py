@@ -10,7 +10,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql import func
 
 # revision identifiers, used by Alembic.
@@ -24,14 +23,14 @@ def upgrade() -> None:
     op.create_table(
         "repository_events",
         sa.Column("id", sa.Integer, primary_key=True, index=True),
-        sa.Column("provider", sa.String, index=True),
-        sa.Column("type", sa.String),
-        sa.Column("action", sa.String),
+        sa.Column("provider", sa.String(50), index=True),
+        sa.Column("type", sa.String(100)),
+        sa.Column("action", sa.String(100)),
         sa.Column("number", sa.Integer),
-        sa.Column("repository_full_name", sa.String),
-        sa.Column("url", sa.String),
-        sa.Column("title", sa.String),
-        sa.Column("payload", postgresql.JSON),
+        sa.Column("repository_full_name", sa.String(255)),
+        sa.Column("url", sa.String(500)),
+        sa.Column("title", sa.String(500)),
+        sa.Column("payload", sa.JSON),
         sa.Column(
             "created_at", sa.DateTime(), server_default=func.now(), nullable=False
         ),

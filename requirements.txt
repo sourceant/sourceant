@@ -1,16 +1,25 @@
 alembic
 click
+cryptography # Required by pyjwt
 fastapi
+fastapi-pagination
 google-genai
 httpx
+litellm==1.97.0
 Mako
+mcp==1.28.1
 psycopg2
-pyjwt
+pymysql==1.1.2
+PyJWT==2.10.1
+python-dateutil==2.8.2
 python-dotenv
+rapidfuzz
 redis==5.0.4
 redislite
-requests
+requests==2.31.0
 rq
 sqlmodel
+tree-sitter-language-pack==1.13.2
 unidiff
 uvicorn
+vaderSentiment

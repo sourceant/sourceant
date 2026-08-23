@@ -1,17 +1,39 @@
-FROM python:3.9-slim
+FROM python:3.10-slim-bookworm AS builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    libpq-dev gcc python3-dev sqlite3 && \
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev python3-dev && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
+
+FROM python:3.10-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl git && \
     rm -rf /var/lib/apt/lists/*
 
-COPY . /app/
-RUN python -m pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then PKG_ARCH="x86_64-unknown-linux-gnu"; elif [ "$ARCH" = "aarch64" ]; then PKG_ARCH="aarch64-unknown-linux-gnu"; fi && \
+    curl -fsSL -L "https://github.com/mohsen1/yek/releases/latest/download/yek-${PKG_ARCH}.tar.gz" \
+    | tar xz --strip-components=1 -C /usr/local/bin
 
-RUN ln -s /app/sourceant /usr/local/bin/sourceant
+WORKDIR /app
 
-EXPOSE 8000
+RUN useradd --create-home appuser
+USER appuser
 
-CMD ["/app/start.sh"]
+ENV PATH="/home/appuser/.local/bin:${PATH}"
+ENV PYTHONPATH=/app
+ENV SOURCEANT_TREE_SITTER_CACHE=/home/appuser/.cache/sourceant/tree-sitter
+
+COPY --from=builder /app/wheels /wheels
+RUN pip install --no-cache /wheels/*
+
+COPY scripts/cache_tree_sitter_languages.py scripts/cache_tree_sitter_languages.py
+RUN python scripts/cache_tree_sitter_languages.py
+
+COPY . .
+
+COPY --chown=appuser:appuser sourceant /home/appuser/.local/bin/sourceant
+RUN chmod +x /home/appuser/.local/bin/sourceant
+
+ENTRYPOINT ["/app/start.prod.sh"]
