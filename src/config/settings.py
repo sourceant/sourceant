@@ -28,6 +28,7 @@ DEFAULT_TOKEN_LIMIT = 131072
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini/gemini-2.5-flash")
 LLM_TOKEN_LIMIT = int(os.getenv("LLM_TOKEN_LIMIT", DEFAULT_TOKEN_LIMIT))
 LOG_DRIVER: str = os.getenv("LOG_DRIVER", "console")
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")
 GITHUB_SECRET = os.getenv("GITHUB_SECRET")
 GITHUB_OAUTH_CLIENT_ID = os.getenv("GITHUB_OAUTH_CLIENT_ID")

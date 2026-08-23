@@ -4,6 +4,14 @@ from logging.handlers import RotatingFileHandler, SysLogHandler
 
 from src.config import settings
 
+LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
 
 class LevelFilter(logging.Filter):
     def __init__(self, min_level, max_level):
@@ -25,7 +33,11 @@ def setup_logger():
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(LEVELS.get(settings.LOG_LEVEL, logging.INFO))
+
+    # These emit request and response bodies at DEBUG, including credentials.
+    for noisy in ("litellm", "LiteLLM", "httpx", "httpcore", "urllib3", "sqlalchemy"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     log_driver = settings.LOG_DRIVER
 

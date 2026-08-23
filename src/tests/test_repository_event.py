@@ -1,10 +1,30 @@
+import os
+import time
+
+import jwt
 import pytest
 from unittest.mock import patch
 from src.models.repository_event import RepositoryEvent
 from src.tests.base_test import BaseTestCase
 
+TEST_JWT_SECRET = "repository-event-test-secret"
+
+
+def _auth_header() -> dict:
+    token = jwt.encode(
+        {"sub": "1", "username": "octocat", "exp": int(time.time()) + 300},
+        os.environ["JWT_SECRET"],
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
 
 class TestRepositoryEvents(BaseTestCase):
+
+    @pytest.fixture(autouse=True)
+    def signing_secret(self, monkeypatch):
+        monkeypatch.setenv("JWT_SECRET", TEST_JWT_SECRET)
+
     @pytest.mark.parametrize("stateless_mode", [True, False])
     def test_github_webhook(self, stateless_mode):
         with patch("src.config.db.STATELESS_MODE", stateless_mode), patch(
@@ -70,7 +90,7 @@ class TestRepositoryEvents(BaseTestCase):
                     payload={},
                 )
 
-            response = self.client.get("/repository-events")
+            response = self.client.get("/repository-events", headers=_auth_header())
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "success"
@@ -151,6 +171,22 @@ class TestRepositoryEvents(BaseTestCase):
         assert data["status"] == "success"
         assert data["data"]["type"] == event_type
 
+    def test_listing_events_refuses_an_unauthenticated_caller(self):
+        assert self.client.get("/repository-events").status_code == 422
+
+    def test_listing_events_refuses_a_token_this_agent_did_not_sign(self):
+        forged = jwt.encode(
+            {"sub": "1", "exp": int(time.time()) + 300},
+            "not-the-secret",
+            algorithm="HS256",
+        )
+
+        response = self.client.get(
+            "/repository-events", headers={"Authorization": f"Bearer {forged}"}
+        )
+
+        assert response.status_code == 401
+
     def test_get_multiple_repository_events(self):
         with patch("src.config.db.STATELESS_MODE", False), patch(
             "src.controllers.repository_event_controller.STATELESS_MODE", False
@@ -166,7 +202,7 @@ class TestRepositoryEvents(BaseTestCase):
                     payload={},
                 )
 
-            response = self.client.get("/repository-events")
+            response = self.client.get("/repository-events", headers=_auth_header())
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "success"

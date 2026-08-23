@@ -25,6 +25,8 @@ from src.core.topology import (
 
 router = APIRouter()
 
+STORE_UNAVAILABLE = "The topology store is unavailable"
+
 _fallback: TopologyRepository | None = None
 
 
@@ -283,7 +285,7 @@ async def search_entities(
         )
     except ValueError as error:
         logger.exception("Topology store unreachable during search")
-        raise HTTPException(status_code=503, detail=str(error))
+        raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
     return success_response(
         {
             **asdict(result),
@@ -320,5 +322,5 @@ async def traverse(
         result = repository.traverse(traversal)
     except ValueError as error:
         logger.exception("Topology store unreachable during traversal")
-        raise HTTPException(status_code=503, detail=str(error))
+        raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
     return success_response(asdict(result))
