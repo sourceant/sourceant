@@ -263,8 +263,10 @@ class TestTopologyApi(BaseTestCase):
 
         assert listing.status_code == 503
         assert traversal.status_code == 503
-        assert "Cannot resolve address" in listing.json()["detail"]
-        assert "Cannot resolve address" in traversal.json()["detail"]
+        assert "memgraph" not in listing.json()["detail"]
+        assert "memgraph" not in traversal.json()["detail"]
+        assert listing.json()["detail"] == "The topology store is unavailable"
+        assert traversal.json()["detail"] == "The topology store is unavailable"
         assert "memgraph:7687" in caplog.text
         assert "during search" in caplog.text
         assert "during traversal" in caplog.text

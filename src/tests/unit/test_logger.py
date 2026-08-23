@@ -8,6 +8,7 @@ from src.utils.logger import logger, setup_logger
 
 
 @patch("src.config.settings.LOG_DRIVER", "console")
+@patch("src.config.settings.LOG_LEVEL", "DEBUG")
 def test_console_driver(capsys):
     """Test that the console driver routes logs to stdout and stderr correctly."""
     setup_logger()
@@ -24,6 +25,19 @@ def test_console_driver(capsys):
     assert "This is a warning message" in captured.err
     assert "This is an error message" in captured.err
     assert "This is a critical message" in captured.err
+
+
+@patch("src.config.settings.LOG_DRIVER", "console")
+@patch("src.config.settings.LOG_LEVEL", "INFO")
+def test_the_default_level_keeps_debug_out_of_the_logs(capsys):
+    setup_logger()
+
+    logger.debug("This is a debug message")
+    logger.info("This is an info message")
+
+    captured = capsys.readouterr()
+    assert "This is a debug message" not in captured.out
+    assert "This is an info message" in captured.out
 
 
 @patch("src.config.settings.LOG_DRIVER", "file")

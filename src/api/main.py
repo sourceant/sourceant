@@ -3,7 +3,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from src.api.routes import pr as pr_endpoints
 from src.api.routes import app as app_endpoints
+from src.api.routes import health as health_endpoints
 
+from src.auth import require_jwt_secret
 from src.llms.llm_factory import llm
 from src.utils.logger import setup_logger, logger
 from src.core.plugins import plugin_manager
@@ -28,6 +30,9 @@ async def lifespan(app: FastAPI):
             await stack.enter_async_context(mcp_server.session_manager.run())
         setup_logger()
         logger.info("Starting up...")
+
+        require_jwt_secret()
+
         llm()
 
         try:
@@ -65,6 +70,7 @@ from src.api.routes import settings as settings_endpoints
 from src.api.routes import topology as topology_endpoints
 from src.api.routes import triage as triage_endpoints
 
+app.include_router(health_endpoints.router, tags=["health"])
 app.include_router(app_endpoints.router, tags=["general"])
 app.include_router(pr_endpoints.router, prefix="/api/prs", tags=["pull_requests"])
 app.include_router(repo_endpoints.router, prefix="/api/repos", tags=["repositories"])

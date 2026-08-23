@@ -15,6 +15,10 @@ def _get_jwt_secret() -> str:
     return secret
 
 
+def require_jwt_secret() -> None:
+    _get_jwt_secret()
+
+
 def read_gateway_scope(authorization: str | None) -> dict | None:
     """The workspace a gateway signed this call for, or None if it did not sign one.
 

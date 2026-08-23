@@ -1,6 +1,5 @@
 from src.models.repository_event import RepositoryEvent as RepositoryEventModel
 from src.controllers.base_controller import BaseController
-import traceback
 
 from src.events.dispatcher import EventDispatcher
 from src.events.repository_event import RepositoryEvent
@@ -22,8 +21,9 @@ class RepositoryEventController(BaseController):
             events = [event.dict() for event in events]
             return cls().success(events)
         except Exception:
+            logger.exception("Failed to retrieve repository events")
             return cls().failure(
-                error=traceback.format_exc(),
+                error="internal_error",
                 message="An error occurred while retrieving repository events",
                 status_code=500,
             )
@@ -38,10 +38,11 @@ class RepositoryEventController(BaseController):
                 return cls().failure("Event not found", status_code=404)
             return cls().success(event)
         except Exception:
+            logger.exception("Failed to retrieve repository event %s", event_id)
             return cls().failure(
                 message="An error occurred while retrieving the repository event",
                 status_code=500,
-                error=traceback.format_exc(),
+                error="internal_error",
             )
 
     @classmethod
@@ -82,11 +83,11 @@ class RepositoryEventController(BaseController):
                 event_model.dict(), "Repository event processed.", status_code=201
             )
         except Exception:
-            logger.error(traceback.format_exc())
+            logger.exception("Failed to create repository event")
             return cls().failure(
                 message="An error occurred while creating a repository event",
                 status_code=500,
-                error=traceback.format_exc(),
+                error="internal_error",
             )
 
     @classmethod
@@ -100,8 +101,9 @@ class RepositoryEventController(BaseController):
             event.delete()
             return cls().success({"message": "Event deleted"})
         except Exception:
+            logger.exception("Failed to delete repository event %s", event_id)
             return cls().failure(
                 message="An error occurred while deleting the repository event",
                 status_code=500,
-                error=traceback.format_exc(),
+                error="internal_error",
             )
