@@ -44,8 +44,12 @@ class GitHubWebhookPayload(BaseModel):
 
 
 def verify_signature(payload: str, signature: str, secret: str) -> bool:
-    if secret is None or signature is None:
+    # Accepting everything with no secret is deliberate: a self-hosted agent runs
+    # without one, and there is nothing to verify against.
+    if secret is None:
         return True
+    if signature is None:
+        return False
     hash_payload = hmac.new(secret.encode(), payload.encode(), hashlib.sha256)
     expected_signature = f"sha256={hash_payload.hexdigest()}"
     return hmac.compare_digest(expected_signature, signature)
