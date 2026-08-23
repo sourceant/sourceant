@@ -10,12 +10,16 @@ def resolve_version_locations() -> List[str]:
     dirs += globmod.glob("src/plugins/*/migrations")
     try:
         from importlib.metadata import entry_points
-        import importlib.resources
+        import importlib.util
 
         for ep in entry_points(group="sourceant.migrations"):
-            mod = ep.load()
-            path = str(importlib.resources.files(mod.__name__))
-            if os.path.isdir(path):
+            # Locate the module rather than loading it. Importing a plugin to read
+            # its migrations directory also starts it, and a plugin that leaves a
+            # thread running keeps the migration process alive after it is done.
+            spec = importlib.util.find_spec(ep.value.split(":")[0])
+            locations = list(getattr(spec, "submodule_search_locations", None) or [])
+            path = locations[0] if locations else os.path.dirname(spec.origin or "")
+            if path and os.path.isdir(path):
                 dirs.append(path)
     except Exception as e:
         logger.warning(f"Could not discover entrypoint migrations: {e}")
