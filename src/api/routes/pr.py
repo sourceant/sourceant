@@ -44,9 +44,8 @@ class GitHubWebhookPayload(BaseModel):
 
 
 def verify_signature(payload: str, signature: str, secret: str) -> bool:
-    # Accepting everything with no secret is deliberate: a self-hosted agent runs
-    # without one, and there is nothing to verify against.
-    if secret is None:
+    # Deliberate: with no secret there is nothing to verify against.
+    if not secret:
         return True
     if signature is None:
         return False

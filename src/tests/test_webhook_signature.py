@@ -61,3 +61,10 @@ class TestWebhookSignature(BaseTestCase):
         monkeypatch.setattr("src.api.routes.pr.GITHUB_SECRET", None)
 
         assert self.deliver(body).status_code == 201
+
+    def test_it_accepts_an_unsigned_delivery_when_the_secret_is_empty(
+        self, monkeypatch, body
+    ):
+        monkeypatch.setattr("src.api.routes.pr.GITHUB_SECRET", "")
+
+        assert self.deliver(body).status_code == 201
