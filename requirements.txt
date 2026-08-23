@@ -5,7 +5,7 @@ fastapi
 fastapi-pagination
 google-genai
 httpx
-litellm==1.97.0
+litellm==1.96.0
 Mako
 mcp==1.28.1
 psycopg2
