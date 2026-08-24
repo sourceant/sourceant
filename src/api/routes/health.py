@@ -116,11 +116,24 @@ _pool = ThreadPoolExecutor(max_workers=len(CHECKS) * 2, thread_name_prefix="heal
 
 def _run(name: str, probe: Callable[[], tuple[str, str | None]]) -> Check:
     started = perf_counter()
-    try:
-        status, detail = probe()
-    except Exception as error:
-        logger.warning(f"Readiness check '{name}' failed: {error}", exc_info=True)
-        status, detail = FAILED, str(error)
+    status, detail = FAILED, None
+
+    # After a redeploy the first call can fail on a pooled connection to the
+    # container that was just replaced, and the driver opens a new one for the
+    # call after it. Retry once so that is not reported as the dependency
+    # being down.
+    for remaining in (True, False):
+        try:
+            status, detail = probe()
+            break
+        except Exception as error:
+            detail = str(error)
+            if remaining:
+                logger.debug(f"Readiness check '{name}' failed, retrying: {error}")
+                continue
+            logger.warning(f"Readiness check '{name}' failed: {error}", exc_info=True)
+            status = FAILED
+
     elapsed = int((perf_counter() - started) * 1000)
     return Check(name=name, status=status, duration_ms=elapsed, detail=detail)
 
