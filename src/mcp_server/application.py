@@ -20,7 +20,11 @@ from src.core.review_state import InMemoryReviewStateRepository
 from src.core.services import service_registry
 from src.core.topology import InMemoryTopologyRepository, SQLTopologyRepository
 
-from .auth import PrincipalScopeResolver, SourceAntTokenVerifier
+from .auth import (
+    EntitledScopeResolver,
+    SourceAntTokenVerifier,
+    connected_repository_entitlement,
+)
 from .server import create_mcp_server
 
 
@@ -96,7 +100,7 @@ def create_http_mcp_server():
         code=code,
         knowledge=knowledge,
         topology=topology,
-        scope_resolver=PrincipalScopeResolver(),
+        scope_resolver=EntitledScopeResolver(connected_repository_entitlement(engine)),
         auth=AuthSettings(
             issuer_url=values["issuer"],
             resource_server_url=values["resource"],

@@ -28,7 +28,7 @@ from src.core.scope import Scope
 from src.core.topology import SQLTopologyRepository
 from src.mcp_server import create_mcp_server
 from src.mcp_server.application import create_http_mcp_server
-from src.mcp_server.auth import PrincipalScopeResolver, SourceAntTokenVerifier
+from src.mcp_server.auth import EntitledScopeResolver, SourceAntTokenVerifier
 
 PROJECT = Scope.from_mapping({"project": "one"})
 OTHER_PROJECT = Scope.from_mapping({"project": "two"})
@@ -350,7 +350,7 @@ async def test_mcp_topology_tools_are_unavailable_without_a_repository():
 
 
 @pytest.mark.asyncio
-async def test_streamable_http_authenticates_and_isolates_principals(
+async def test_streamable_http_serves_what_the_caller_is_entitled_to(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("JWT_SECRET", "test-secret-value-with-at-least-32-bytes")
@@ -358,10 +358,26 @@ async def test_streamable_http_authenticates_and_isolates_principals(
         create_engine(f"sqlite:///{tmp_path / 'knowledge.db'}"),
         create_schema=True,
     )
+
+    # Written the way a review or an initialization writes it: under the
+    # repository, with no idea who will read it back.
+    knowledge.put(
+        Scope.from_mapping({"provider": "github", "repository": "acme/shop"}),
+        Knowledge(
+            id="signed-requests",
+            kind="decision",
+            status="approved",
+            summary="Use signed requests",
+        ),
+    )
+
+    entitlements = {("one", "acme/shop"): "github"}
     server = create_mcp_server(
         DefaultContextProvider(knowledge=knowledge),
         knowledge=knowledge,
-        scope_resolver=PrincipalScopeResolver(),
+        scope_resolver=EntitledScopeResolver(
+            lambda principal, repository: entitlements.get((principal, repository))
+        ),
         auth=AuthSettings(
             issuer_url="https://issuer.example.com",
             resource_server_url="https://sourceant.example.com/mcp",
@@ -407,29 +423,38 @@ async def test_streamable_http_authenticates_and_isolates_principals(
                     await session.initialize()
                     return await action(session)
 
-    async def put(session):
-        return await session.call_tool(
-            "put_knowledge",
-            {
-                "scope": {"repository": "shop"},
-                "id": "decision",
-                "kind": "decision",
-                "status": "approved",
-                "summary": "Use signed requests",
-            },
-        )
-
     async def search(session):
         return await session.call_tool(
             "search_knowledge",
-            {"scope": {"repository": "shop"}},
+            {"scope": {"repository": "acme/shop"}},
+        )
+
+    async def search_elsewhere(session):
+        return await session.call_tool(
+            "search_knowledge",
+            {"scope": {"repository": "someone/else"}},
+        )
+
+    async def search_without_a_repository(session):
+        return await session.call_tool(
+            "search_knowledge",
+            {"scope": {"workspace": "acme"}},
         )
 
     async with app.router.lifespan_context(app):
-        stored = await use_client("one", put)
-        owner_result = await use_client("one", search)
-        other_result = await use_client("two", search)
+        entitled = await use_client("one", search)
+        elsewhere = await use_client("one", search_elsewhere)
+        unscoped = await use_client("one", search_without_a_repository)
+        stranger = await use_client("two", search)
 
-    assert stored.isError is False
-    assert owner_result.structuredContent["total"] == 1
-    assert other_result.structuredContent["total"] == 0
+    # The whole point: knowledge captured by SourceAnt is readable over MCP.
+    assert entitled.structuredContent["total"] == 1
+
+    assert elsewhere.isError is True
+    assert "not entitled to someone/else" in elsewhere.content[0].text
+
+    assert unscoped.isError is True
+    assert "scope must name a repository" in unscoped.content[0].text
+
+    assert stranger.isError is True
+    assert "not entitled to acme/shop" in stranger.content[0].text
