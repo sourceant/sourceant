@@ -55,10 +55,14 @@ def test_a_repository_nobody_connected_is_not_reachable(tmp_path):
     assert entitled("7", "acme/other") is None
 
 
-def test_a_subject_that_is_not_a_user_is_refused(tmp_path):
+def test_a_subject_that_is_not_a_user_cannot_borrow_that_number(tmp_path):
+    """User 7 connected this repository. Installation 7 is a different thing."""
     entitled = connected_repository_entitlement(store(tmp_path))
 
-    assert entitled("installation:42", "acme/shop") is None
+    assert entitled("7", "acme/shop") == "github"
+    assert entitled("installation:7", "acme/shop") is None
+    assert entitled("workspace:7", "acme/shop") is None
+    assert entitled("client:7", "acme/shop") is None
 
 
 def test_without_a_database_nothing_is_reachable():

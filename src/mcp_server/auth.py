@@ -111,9 +111,17 @@ def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]
         # the answer is no rather than an unchecked yes.
         if engine is None:
             return None
-        user_id = principal.split(":")[-1]
-        if not user_id.isdigit():
+
+        # Subjects are written either bare or as kind:id, and the kinds share a
+        # numbering. Reading the id off the end would let installation 7 be
+        # answered as though it were user 7, so anything that is not a person is
+        # refused rather than reinterpreted.
+        kind, _, identity = principal.rpartition(":")
+        if kind not in ("", "user"):
             return None
+        if not identity.isdigit():
+            return None
+        user_id = identity
         with Session(engine) as session:
             row = session.exec(
                 select(Repository)
