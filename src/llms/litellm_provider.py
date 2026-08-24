@@ -2,6 +2,7 @@ from typing import Optional, List, Union
 
 import litellm
 
+from src.llms.errors import LLMError
 from src.llms.llm_interface import LLMInterface
 from src.prompts.prompts import Prompts
 from src.utils.diff_parser import ParsedDiff
@@ -167,7 +168,7 @@ class LiteLLMProvider(LLMInterface):
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"An error occurred during text generation: {e}")
-            return ""
+            raise LLMError.wrapping("Text generation", e) from e
 
     def is_summary_different(self, summary_a: str, summary_b: str) -> bool:
         prompt = Prompts.COMPARE_SUMMARIES_PROMPT.format(

@@ -1,4 +1,6 @@
 import pytest
+
+from src.llms.errors import LLMError
 from unittest.mock import patch, MagicMock
 
 from src.llms.litellm_provider import LiteLLMProvider
@@ -180,10 +182,27 @@ def test_generate_text_success(provider, mock_completion):
     assert result == "Hello there"
 
 
-def test_generate_text_error(provider, mock_completion):
+def test_generate_text_names_the_provider_failure(provider, mock_completion):
+    class AuthenticationError(Exception):
+        pass
+
+    mock_completion.completion.side_effect = AuthenticationError(
+        "API key not valid. Please pass a valid API key."
+    )
+
+    with pytest.raises(LLMError) as raised:
+        provider.generate_text("Say hello")
+
+    assert "AuthenticationError" in str(raised.value)
+    assert "API key not valid" in str(raised.value)
+    assert isinstance(raised.value.cause, AuthenticationError)
+
+
+def test_generate_text_does_not_answer_with_an_empty_string(provider, mock_completion):
     mock_completion.completion.side_effect = Exception("fail")
-    result = provider.generate_text("Say hello")
-    assert result == ""
+
+    with pytest.raises(LLMError):
+        provider.generate_text("Say hello")
 
 
 def test_is_summary_different_returns_true(provider, mock_completion):
