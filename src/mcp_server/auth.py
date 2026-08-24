@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable, Protocol
+
 import jwt
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
@@ -52,9 +54,86 @@ class SourceAntTokenVerifier:
         return frozenset()
 
 
-class PrincipalScopeResolver:
+class RepositoryEntitlement(Protocol):
+    """Answers whether a principal may reach a repository, and who hosts it.
+
+    Returning the provider is what lets the resolver name the repository the way
+    the writers name it, from a request that gave only its full name.
+    """
+
+    def __call__(self, principal: str, repository: str) -> str | None: ...
+
+
+class EntitledScopeResolver:
+    """Check the caller against what they may reach, and leave the scope alone.
+
+    The principal used to be added to the scope, and the scope is the key the
+    graph is partitioned by, so a caller could only ever read back what that same
+    caller had written through this server. Everything SourceAnt captures for
+    itself is written without a principal, which put all of it in a partition no
+    token could name.
+
+    Isolation is now the entitlement rather than the partition, which is where it
+    belongs: the tenant is read from a verified claim on the token and enforced
+    on every call, and the data stays under the repository it is about.
+    """
+
+    def __init__(self, entitlement: RepositoryEntitlement) -> None:
+        self._entitlement = entitlement
+
     def __call__(self, scope: Scope) -> Scope:
         token = get_access_token()
         if token is None or token.subject is None:
             raise ValueError("authenticated principal is required")
-        return scope.extend({"principal": token.subject})
+
+        repository = scope.get("repository")
+        if not repository:
+            raise ValueError("scope must name a repository")
+
+        provider = self._entitlement(token.subject, repository)
+        if provider is None:
+            raise ValueError(f"not entitled to {repository}")
+
+        # A caller who named only the repository is asking about the same thing
+        # as the writers, which name the provider too.
+        return scope if scope.get("provider") else scope.extend({"provider": provider})
+
+
+def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]:
+    """Entitlement as the rest of the API already means it: what you connected."""
+    from sqlmodel import Session, select
+
+    from src.models.connected_repository import ConnectedRepository
+    from src.models.repository import Repository
+
+    def entitled(principal: str, repository: str) -> str | None:
+        # Without a database there is nothing to check an entitlement against, so
+        # the answer is no rather than an unchecked yes.
+        if engine is None:
+            return None
+
+        # Subjects are written either bare or as kind:id, and the kinds share a
+        # numbering. Reading the id off the end would let installation 7 be
+        # answered as though it were user 7, so anything that is not a person is
+        # refused rather than reinterpreted.
+        kind, _, identity = principal.rpartition(":")
+        if kind not in ("", "user"):
+            return None
+        if not identity.isdigit():
+            return None
+        user_id = identity
+        with Session(engine) as session:
+            row = session.exec(
+                select(Repository)
+                .join(
+                    ConnectedRepository,
+                    ConnectedRepository.repository_id == Repository.id,
+                )
+                .where(
+                    Repository.full_name == repository,
+                    ConnectedRepository.user_id == int(user_id),
+                )
+            ).first()
+        return row.provider if row else None
+
+    return entitled
