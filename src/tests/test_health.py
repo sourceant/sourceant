@@ -45,6 +45,38 @@ class TestReadiness:
         assert response.json()["status"] == "failed"
         assert response.json()["checks"]["queue"]["status"] == "failed"
 
+    def test_a_connection_replaced_under_it_is_not_a_failure(self, client, monkeypatch):
+        attempts = []
+
+        def stale_once():
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise OSError("No data")
+            return health.OK, "reconnected"
+
+        monkeypatch.setitem(health.CHECKS, "graph", stale_once)
+
+        response = client.get("/health/ready")
+
+        assert attempts == [1, 1]
+        assert response.status_code == 200
+        assert response.json()["checks"]["graph"]["status"] == "ok"
+
+    def test_a_dependency_that_stays_down_is_still_a_failure(self, client, monkeypatch):
+        attempts = []
+
+        def always_down():
+            attempts.append(1)
+            raise ConnectionError("Error 111 connecting to memgraph:7687")
+
+        monkeypatch.setitem(health.CHECKS, "graph", always_down)
+
+        response = client.get("/health/ready")
+
+        assert attempts == [1, 1]
+        assert response.status_code == 503
+        assert response.json()["checks"]["graph"]["status"] == "failed"
+
     def test_a_failure_does_not_hide_the_checks_that_passed(self, client, monkeypatch):
         monkeypatch.setitem(
             health.CHECKS, "graph", lambda: (_ for _ in ()).throw(ValueError("down"))
