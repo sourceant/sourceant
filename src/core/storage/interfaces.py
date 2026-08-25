@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 from typing import BinaryIO, Protocol, runtime_checkable
 
 from src.core.scope import Scope
@@ -40,6 +41,15 @@ class ArtifactStore(ArtifactReader, ArtifactWriter, Protocol):
 @runtime_checkable
 class WorkingAreaStore(Protocol):
     def provision(self, request: WorkingAreaRequest) -> WorkingArea: ...
+
+    def path(self, request: WorkingAreaRequest) -> Path:
+        """Where an area would be, whether or not it is there.
+
+        A tool that names what it indexes after the path it was given has to be
+        asked the same name later, by something that is not holding the area
+        open. Answering that needs the path without provisioning anything.
+        """
+        ...
 
     def get(self, request: WorkingAreaRequest) -> WorkingArea | None: ...
 
