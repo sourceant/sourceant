@@ -74,3 +74,32 @@ class CodeSearchResult:
     nodes: tuple[CodeNode, ...]
     total: int
     has_more: bool
+
+
+# A neighbourhood is asked for a hundred at a time because a person reads a
+# neighbourhood. A drawing is a different question: what a whole scope looks like,
+# and how it clusters, cannot be answered from a hundred of several thousand.
+MAX_GRAPH_NODES = 5000
+
+
+@dataclass(frozen=True)
+class CodeGraphQuery:
+    """Everything in a scope, for drawing rather than for reading."""
+
+    scope: Scope
+    labels: frozenset[str] = field(default_factory=frozenset)
+    edge_types: frozenset[str] = field(default_factory=frozenset)
+    path_prefix: str = ""
+    include_tests: bool = False
+    node_limit: int = MAX_GRAPH_NODES
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.node_limit <= MAX_GRAPH_NODES:
+            raise ValueError(f"node_limit must be between 1 and {MAX_GRAPH_NODES}")
+
+
+@dataclass(frozen=True)
+class CodeGraphResult:
+    nodes: tuple[CodeNode, ...]
+    edges: tuple[CodeEdge, ...]
+    truncated: bool

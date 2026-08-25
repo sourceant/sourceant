@@ -1,7 +1,15 @@
-from .interfaces import CodeIndexReader, CodeIndexRepository, CodeIndexWriter
+from .interfaces import (
+    CodeGraphReader,
+    CodeIndexReader,
+    CodeIndexRepository,
+    CodeIndexWriter,
+)
 from .memory import InMemoryCodeIndex
 from .models import (
+    MAX_GRAPH_NODES,
     CodeEdge,
+    CodeGraphQuery,
+    CodeGraphResult,
     CodeNode,
     CodeSearch,
     CodeSearchResult,
@@ -12,7 +20,11 @@ from .resolving import ResolvingCodeIndexReader
 from .scip import ScipImportLimits, ScipImportResult, ScipJsonImporter
 
 __all__ = [
+    "MAX_GRAPH_NODES",
     "CodeEdge",
+    "CodeGraphQuery",
+    "CodeGraphReader",
+    "CodeGraphResult",
     "CodeIndexReader",
     "CodeIndexRepository",
     "CodeIndexWriter",
