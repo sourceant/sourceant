@@ -376,7 +376,7 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
         DefaultContextProvider(knowledge=knowledge),
         knowledge=knowledge,
         scope_resolver=EntitledScopeResolver(
-            lambda principal, repository: entitlements.get((principal, repository))
+            lambda workspace, repository: entitlements.get((workspace, repository))
         ),
         auth=AuthSettings(
             issuer_url="https://issuer.example.com",
@@ -398,10 +398,12 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
 
     app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=lifespan)
 
-    async def use_client(subject, action):
+    async def use_client(workspace, action):
         token = jwt.encode(
             {
-                "sub": subject,
+                "sub": f"user:1",
+                # The workspace is a claim, never something sent with a request.
+                "workspace": workspace,
                 "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
                 "iss": "https://issuer.example.com",
                 "aud": "sourceant-mcp",
@@ -458,3 +460,12 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
 
     assert stranger.isError is True
     assert "not entitled to acme/shop" in stranger.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_a_token_that_names_no_workspace_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "test-secret-value-with-at-least-32-bytes")
+    resolver = EntitledScopeResolver(lambda workspace, repository: "github")
+
+    with pytest.raises(ValueError, match="authenticated principal is required"):
+        resolver(Scope.from_mapping({"repository": "acme/shop"}))

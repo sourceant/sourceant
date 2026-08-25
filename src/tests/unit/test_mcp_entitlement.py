@@ -26,24 +26,20 @@ def store(tmp_path):
         session.add(repository)
         session.commit()
         session.refresh(repository)
-        session.add(ConnectedRepository(user_id=7, repository_id=repository.id))
+        session.add(ConnectedRepository(workspace_id="7", repository_id=repository.id))
         session.commit()
     return engine
 
 
-def test_a_connected_repository_is_reachable_and_names_its_provider(tmp_path):
+def test_a_repository_the_workspace_connected_is_reachable(tmp_path):
     entitled = connected_repository_entitlement(store(tmp_path))
 
     assert entitled("7", "acme/shop") == "github"
 
 
-def test_a_subject_written_as_a_pair_is_read_as_the_user(tmp_path):
-    entitled = connected_repository_entitlement(store(tmp_path))
-
-    assert entitled("user:7", "acme/shop") == "github"
-
-
-def test_somebody_else_cannot_reach_it(tmp_path):
+def test_another_workspace_cannot_reach_it(tmp_path):
+    """The same person in two workspaces reaches two different sets, which is
+    the whole reason connecting belongs to the workspace."""
     entitled = connected_repository_entitlement(store(tmp_path))
 
     assert entitled("8", "acme/shop") is None
@@ -55,14 +51,10 @@ def test_a_repository_nobody_connected_is_not_reachable(tmp_path):
     assert entitled("7", "acme/other") is None
 
 
-def test_a_subject_that_is_not_a_user_cannot_borrow_that_number(tmp_path):
-    """User 7 connected this repository. Installation 7 is a different thing."""
+def test_a_token_naming_no_workspace_reaches_nothing(tmp_path):
     entitled = connected_repository_entitlement(store(tmp_path))
 
-    assert entitled("7", "acme/shop") == "github"
-    assert entitled("installation:7", "acme/shop") is None
-    assert entitled("workspace:7", "acme/shop") is None
-    assert entitled("client:7", "acme/shop") is None
+    assert entitled("", "acme/shop") is None
 
 
 def test_without_a_database_nothing_is_reachable():

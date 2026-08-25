@@ -33,6 +33,22 @@ class ConnectRepoRequest(BaseModel):
     url: str
 
 
+def workspace_of(user: dict) -> str:
+    """The workspace this call is acting in.
+
+    Connecting belongs to a workspace, and the gateway is what decides which one,
+    so a call that arrives without one cannot be answered rather than being
+    answered about somebody's whole account.
+    """
+    workspace = (user.get("scope") or {}).get("workspace_id")
+    if not workspace:
+        raise HTTPException(
+            status_code=400,
+            detail="No workspace on this request",
+        )
+    return str(workspace)
+
+
 @router.get("")
 async def list_repos(
     q: str = Query("", description="Match against the name or description"),
@@ -58,9 +74,9 @@ async def list_repos(
     if not github_repos and truncated:
         raise HTTPException(status_code=502, detail="GitHub API error")
 
-    user_id = user["user_id"]
+    workspace = workspace_of(user)
     connected_rows = session.exec(
-        select(ConnectedRepository).where(ConnectedRepository.user_id == user_id)
+        select(ConnectedRepository).where(ConnectedRepository.workspace_id == workspace)
     ).all()
     connected_ids = {row.repository_id for row in connected_rows}
 
@@ -102,9 +118,9 @@ async def list_connected_repos(
     user: dict = Depends(get_current_user),
 ):
     """One page of the user's connected repositories, from the DB cache."""
-    user_id = user["user_id"]
+    workspace = workspace_of(user)
     connected_rows = session.exec(
-        select(ConnectedRepository).where(ConnectedRepository.user_id == user_id)
+        select(ConnectedRepository).where(ConnectedRepository.workspace_id == workspace)
     ).all()
 
     if not connected_rows:
@@ -154,7 +170,7 @@ async def connect_repo(
     user: dict = Depends(get_current_user),
 ):
     """Connect a GitHub repository for the current user."""
-    user_id = user["user_id"]
+    workspace = workspace_of(user)
 
     repo = session.exec(
         select(Repository).where(Repository.full_name == data.full_name)
@@ -181,7 +197,7 @@ async def connect_repo(
 
     existing = session.exec(
         select(ConnectedRepository).where(
-            ConnectedRepository.user_id == user_id,
+            ConnectedRepository.workspace_id == workspace,
             ConnectedRepository.repository_id == repo.id,
         )
     ).first()
@@ -192,7 +208,7 @@ async def connect_repo(
         )
 
     connection = ConnectedRepository(
-        user_id=user_id,
+        workspace_id=workspace,
         repository_id=repo.id,
     )
     session.add(connection)
@@ -212,11 +228,11 @@ async def disconnect_repo(
     user: dict = Depends(get_current_user),
 ):
     """Disconnect a repository for the current user."""
-    user_id = user["user_id"]
+    workspace = workspace_of(user)
 
     connection = session.exec(
         select(ConnectedRepository).where(
-            ConnectedRepository.user_id == user_id,
+            ConnectedRepository.workspace_id == workspace,
             ConnectedRepository.repository_id == repo_id,
         )
     ).first()

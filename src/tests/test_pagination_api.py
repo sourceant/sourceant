@@ -113,7 +113,9 @@ class TestPagedEndpoints:
             self.session.add(repo)
             self.session.commit()
             self.session.refresh(repo)
-            self.session.add(ConnectedRepository(user_id=1, repository_id=repo.id))
+            self.session.add(
+                ConnectedRepository(workspace_id="w1", repository_id=repo.id)
+            )
         self.session.commit()
 
     def triage(self, **params) -> dict:

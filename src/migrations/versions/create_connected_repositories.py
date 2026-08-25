@@ -20,7 +20,7 @@ def upgrade() -> None:
     op.create_table(
         "connected_repositories",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("user_id", sa.Integer, nullable=False, index=True),
+        sa.Column("workspace_id", sa.String(255), nullable=False, index=True),
         sa.Column(
             "repository_id",
             sa.Integer,
@@ -31,7 +31,9 @@ def upgrade() -> None:
         sa.Column(
             "connected_at", sa.DateTime(), server_default=func.now(), nullable=False
         ),
-        sa.UniqueConstraint("user_id", "repository_id", name="uq_user_repository"),
+        sa.UniqueConstraint(
+            "workspace_id", "repository_id", name="uq_workspace_repository"
+        ),
     )
 
 

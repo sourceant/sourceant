@@ -86,11 +86,17 @@ class EntitledScopeResolver:
         if token is None or token.subject is None:
             raise ValueError("authenticated principal is required")
 
+        # The workspace is a claim on the token, never something the caller sends
+        # alongside a request, which is what keeps one from asking as another.
+        workspace = (token.claims or {}).get("workspace")
+        if not workspace:
+            raise ValueError("this token names no workspace")
+
         repository = scope.get("repository")
         if not repository:
             raise ValueError("scope must name a repository")
 
-        provider = self._entitlement(token.subject, repository)
+        provider = self._entitlement(str(workspace), repository)
         if provider is None:
             raise ValueError(f"not entitled to {repository}")
 
@@ -100,28 +106,24 @@ class EntitledScopeResolver:
 
 
 def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]:
-    """Entitlement as the rest of the API already means it: what you connected."""
+    """Entitlement as the rest of the API already means it: what the workspace
+    connected.
+
+    Connecting belongs to a workspace, so a token acts for a workspace. It is
+    read from the token's own claim rather than from anything the caller sends
+    with a request.
+    """
     from sqlmodel import Session, select
 
     from src.models.connected_repository import ConnectedRepository
     from src.models.repository import Repository
 
-    def entitled(principal: str, repository: str) -> str | None:
+    def entitled(workspace: str, repository: str) -> str | None:
         # Without a database there is nothing to check an entitlement against, so
         # the answer is no rather than an unchecked yes.
-        if engine is None:
+        if engine is None or not workspace:
             return None
 
-        # Subjects are written either bare or as kind:id, and the kinds share a
-        # numbering. Reading the id off the end would let installation 7 be
-        # answered as though it were user 7, so anything that is not a person is
-        # refused rather than reinterpreted.
-        kind, _, identity = principal.rpartition(":")
-        if kind not in ("", "user"):
-            return None
-        if not identity.isdigit():
-            return None
-        user_id = identity
         with Session(engine) as session:
             row = session.exec(
                 select(Repository)
@@ -131,7 +133,7 @@ def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]
                 )
                 .where(
                     Repository.full_name == repository,
-                    ConnectedRepository.user_id == int(user_id),
+                    ConnectedRepository.workspace_id == str(workspace),
                 )
             ).first()
         return row.provider if row else None
