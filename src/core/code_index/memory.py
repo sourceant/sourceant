@@ -9,6 +9,7 @@ from .models import (
     CodeGraphQuery,
     CodeGraphResult,
     CodeNode,
+    is_test_path,
     CodeSearch,
     CodeSearchResult,
     CodeTraversal,
@@ -160,6 +161,6 @@ def _drawable(node: CodeNode, query: CodeGraphQuery) -> bool:
         isinstance(path, str) and path.startswith(query.path_prefix)
     ):
         return False
-    if not query.include_tests and properties.get("is_test"):
+    if not query.include_tests and (properties.get("is_test") or is_test_path(path)):
         return False
     return True

@@ -103,3 +103,32 @@ class CodeGraphResult:
     nodes: tuple[CodeNode, ...]
     edges: tuple[CodeEdge, ...]
     truncated: bool
+
+
+TEST_DIRECTORIES = ("/tests/", "/test/", "/spec/", "__tests__")
+TEST_PREFIXES = ("tests/", "test/", "spec/")
+
+
+def is_test_path(path: object) -> bool:
+    """Whether a file is a test, read from where it sits.
+
+    An index may carry a flag for this and may leave it unset for whole
+    languages and layouts, so trusting the flag alone puts a repository's test
+    suite in every drawing of it. Every index has to answer this the same way or
+    two of them would draw two different repositories, so the rule lives here
+    rather than in any one of them.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    lowered = path.lower()
+    if any(part in lowered for part in TEST_DIRECTORIES):
+        return True
+    if lowered.startswith(TEST_PREFIXES):
+        return True
+    name = lowered.rsplit("/", 1)[-1]
+    return (
+        name.startswith(("test_", "test."))
+        or "_test." in name
+        or ".test." in name
+        or ".spec." in name
+    )
