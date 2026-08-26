@@ -141,16 +141,18 @@ class InMemoryCodeIndex:
         kept = wanted[: query.node_limit]
         included = {node.id for node in kept}
 
-        edges = tuple(
-            edge
-            for (edge_scope, _), edge in sorted(
-                self._edges.items(), key=lambda i: i[0][1]
-            )
+        # Narrowed before it is ordered. Sorting every edge in the store to
+        # answer about one scope costs the whole store on every call.
+        wanted_edges = [
+            (edge_id, edge)
+            for (edge_scope, edge_id), edge in self._edges.items()
             if edge_scope == scope
             and edge.source_id in included
             and edge.target_id in included
             and (not query.edge_types or edge.type in query.edge_types)
-        )
+        ]
+        wanted_edges.sort(key=lambda pair: pair[0])
+        edges = tuple(edge for _, edge in wanted_edges)
         return CodeGraphResult(nodes=tuple(kept), edges=edges, truncated=truncated)
 
 
