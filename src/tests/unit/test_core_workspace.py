@@ -170,3 +170,36 @@ class TestWhatAWorkspaceHasTakenOn:
 
             held = session.exec(select(ConnectedRepository)).one()
             assert held.workspace_id == mine.id
+
+
+class TestLeavingTheTransactionToTheCaller:
+    def test_a_workspace_it_records_is_not_settled_on_its_own(self, tmp_path):
+        """Recording one is half of connecting a repository to it. Committing
+        here settles a workspace whose reason for existing has not been written
+        yet, and leaves it behind if the rest fails."""
+        engine = store(tmp_path)
+        with Session(engine) as session:
+            remember(session, "w42")
+            session.rollback()
+
+        with Session(engine) as session:
+            assert session.exec(select(Workspace)).all() == []
+
+    def test_it_still_hands_back_an_id_to_point_at(self, tmp_path):
+        with Session(store(tmp_path)) as session:
+            assert remember(session, "w42").id is not None
+
+    def test_what_the_caller_commits_arrives_together(self, tmp_path):
+        engine = store(tmp_path)
+        with Session(engine) as session:
+            repository_id = a_repository(session, "acme/ours").id
+            session.add(
+                ConnectedRepository(
+                    workspace_id=remember(session, "w42").id,
+                    repository_id=repository_id,
+                )
+            )
+            session.commit()
+
+        with Session(engine) as session:
+            assert repositories_of(session, "w42") == [repository_id]

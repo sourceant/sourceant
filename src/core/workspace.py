@@ -55,7 +55,10 @@ def remember(session: Session, workspace: str) -> Workspace:
 
     known = Workspace(external_id=workspace)
     session.add(known)
-    session.commit()
+    # Flushed rather than committed: the row gets its id, and whatever the
+    # caller is doing stays one transaction. Committing here would settle a
+    # workspace whose reason for existing had not been written yet.
+    session.flush()
     session.refresh(known)
     return known
 

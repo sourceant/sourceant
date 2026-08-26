@@ -196,7 +196,7 @@ async def connect_repo(
     session.add(connection)
     session.commit()
 
-    _sync_repository(session, data)
+    _sync_repository(session, repo, data)
 
     return success_response(
         data={"id": repo.id}, message="Repository connected", status_code=201
@@ -223,15 +223,10 @@ async def disconnect_repo(
     return success_response(data=None, message="Repository disconnected")
 
 
-def _sync_repository(session: Session, data: ConnectRepoRequest) -> None:
+def _sync_repository(
+    session: Session, repo: Repository, data: ConnectRepoRequest
+) -> None:
     """Sync repository metadata from the connect request."""
-    repo = session.exec(
-        select(Repository).where(Repository.full_name == data.full_name)
-    ).first()
-
-    if not repo:
-        return
-
     repo.description = data.description
     repo.private = data.private
     repo.language = data.language
