@@ -143,7 +143,9 @@ class InMemoryCodeIndex:
 
         edges = tuple(
             edge
-            for (edge_scope, _), edge in sorted(self._edges.items(), key=lambda i: i[0][1])
+            for (edge_scope, _), edge in sorted(
+                self._edges.items(), key=lambda i: i[0][1]
+            )
             if edge_scope == scope
             and edge.source_id in included
             and edge.target_id in included
