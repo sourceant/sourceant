@@ -3,6 +3,8 @@ name: Build Image
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -34,6 +36,7 @@ jobs:
           tags: |
             type=sha
             type=ref,event=branch
+            type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push
