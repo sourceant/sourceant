@@ -1,7 +1,7 @@
 """Create connected_repositories table
 
 Revision ID: connected_repos_001
-Revises: repositories_001
+Revises: workspaces_001
 Create Date: 2026-02-12 00:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.sql import func
 
 revision = "connected_repos_001"
-down_revision = "repositories_001"
+down_revision = "workspaces_001"
 branch_labels = None
 depends_on = None
 
@@ -20,7 +20,13 @@ def upgrade() -> None:
     op.create_table(
         "connected_repositories",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("workspace_id", sa.String(255), nullable=False, index=True),
+        sa.Column(
+            "workspace_id",
+            sa.Integer,
+            sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
         sa.Column(
             "repository_id",
             sa.Integer,

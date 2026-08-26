@@ -8,6 +8,7 @@ from mcp.server.auth.provider import AccessToken
 
 from src.auth import decode_access_token
 from src.core.scope import Scope
+from src.core.workspace import workspace_in
 
 
 class SourceAntTokenVerifier:
@@ -88,7 +89,7 @@ class EntitledScopeResolver:
 
         # The workspace is a claim on the token, never something the caller sends
         # alongside a request, which is what keeps one from asking as another.
-        workspace = (token.claims or {}).get("workspace")
+        workspace = workspace_in(token.claims or {})
         if not workspace:
             raise ValueError("this token names no workspace")
 
@@ -96,7 +97,7 @@ class EntitledScopeResolver:
         if not repository:
             raise ValueError("scope must name a repository")
 
-        provider = self._entitlement(str(workspace), repository)
+        provider = self._entitlement(workspace, repository)
         if provider is None:
             raise ValueError(f"not entitled to {repository}")
 
@@ -117,6 +118,7 @@ def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]
 
     from src.models.connected_repository import ConnectedRepository
     from src.models.repository import Repository
+    from src.models.workspace import Workspace
 
     def entitled(workspace: str, repository: str) -> str | None:
         # Without a database there is nothing to check an entitlement against, so
@@ -131,9 +133,10 @@ def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]
                     ConnectedRepository,
                     ConnectedRepository.repository_id == Repository.id,
                 )
+                .join(Workspace, ConnectedRepository.workspace_id == Workspace.id)
                 .where(
                     Repository.full_name == repository,
-                    ConnectedRepository.workspace_id == str(workspace),
+                    Workspace.external_id == workspace,
                 )
             ).first()
         return row.provider if row else None

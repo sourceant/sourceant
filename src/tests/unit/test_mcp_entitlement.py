@@ -5,6 +5,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from src.mcp_server.auth import connected_repository_entitlement
 from src.models.connected_repository import ConnectedRepository
 from src.models.repository import Repository
+from src.models.workspace import Workspace
 
 
 def store(tmp_path):
@@ -26,7 +27,13 @@ def store(tmp_path):
         session.add(repository)
         session.commit()
         session.refresh(repository)
-        session.add(ConnectedRepository(workspace_id="7", repository_id=repository.id))
+        workspace = Workspace(external_id="7")
+        session.add(workspace)
+        session.commit()
+        session.refresh(workspace)
+        session.add(
+            ConnectedRepository(workspace_id=workspace.id, repository_id=repository.id)
+        )
         session.commit()
     return engine
 

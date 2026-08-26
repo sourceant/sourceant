@@ -15,6 +15,7 @@ from src.config.db import get_session
 from src.models.connected_repository import ConnectedRepository
 from src.models.repository import Repository
 from src.models.review_record import ReviewRecord
+from src.models.workspace import Workspace
 
 TEST_JWT_SECRET = "pagination-api-test-secret"
 GITHUB_TOKEN = "gho_test-token"
@@ -96,6 +97,11 @@ class TestPagedEndpoints:
         monkeypatch.setattr(httpx, "AsyncClient", factory)
 
     def connect(self, full_names: list[str]) -> None:
+        workspace = Workspace(external_id="w1")
+        self.session.add(workspace)
+        self.session.commit()
+        self.session.refresh(workspace)
+
         for full_name in full_names:
             owner, _, name = full_name.partition("/")
             repo = Repository(
@@ -114,7 +120,7 @@ class TestPagedEndpoints:
             self.session.commit()
             self.session.refresh(repo)
             self.session.add(
-                ConnectedRepository(workspace_id="w1", repository_id=repo.id)
+                ConnectedRepository(workspace_id=workspace.id, repository_id=repo.id)
             )
         self.session.commit()
 
