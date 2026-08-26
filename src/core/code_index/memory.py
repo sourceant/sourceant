@@ -6,7 +6,10 @@ from src.core.scope import Scope
 
 from .models import (
     CodeEdge,
+    CodeGraphQuery,
+    CodeGraphResult,
     CodeNode,
+    is_test_path,
     CodeSearch,
     CodeSearchResult,
     CodeTraversal,
@@ -124,3 +127,42 @@ class InMemoryCodeIndex:
             edges=packed_edges,
             truncated=truncated or len(packed_edges) != len(edges),
         )
+
+    def graph(self, query: CodeGraphQuery) -> CodeGraphResult:
+        """Everything in the scope, for drawing rather than for reading."""
+        scope = query.scope
+        wanted = [
+            node
+            for (node_scope, _), node in self._nodes.items()
+            if node_scope == scope and _drawable(node, query)
+        ]
+        wanted.sort(key=lambda node: node.id)
+        truncated = len(wanted) > query.node_limit
+        kept = wanted[: query.node_limit]
+        included = {node.id for node in kept}
+
+        edges = tuple(
+            edge
+            for (edge_scope, _), edge in sorted(
+                self._edges.items(), key=lambda i: i[0][1]
+            )
+            if edge_scope == scope
+            and edge.source_id in included
+            and edge.target_id in included
+            and (not query.edge_types or edge.type in query.edge_types)
+        )
+        return CodeGraphResult(nodes=tuple(kept), edges=edges, truncated=truncated)
+
+
+def _drawable(node: CodeNode, query: CodeGraphQuery) -> bool:
+    if query.labels and not (node.labels & query.labels):
+        return False
+    properties = node.properties or {}
+    path = properties.get("file_path")
+    if query.path_prefix and not (
+        isinstance(path, str) and path.startswith(query.path_prefix)
+    ):
+        return False
+    if not query.include_tests and (properties.get("is_test") or is_test_path(path)):
+        return False
+    return True

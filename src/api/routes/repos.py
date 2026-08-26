@@ -11,6 +11,12 @@ from sqlmodel import Session, select
 from src.auth import get_current_user
 from src.config.db import get_session
 from src.core.responses import success_response
+from src.core.workspace import (
+    connection_of,
+    connections_of,
+    remember,
+    workspace_of,
+)
 from src.models.repository import Repository
 from src.models.connected_repository import ConnectedRepository
 from src.utils.pagination import Params, as_data, page_of, page_of_query
@@ -58,11 +64,8 @@ async def list_repos(
     if not github_repos and truncated:
         raise HTTPException(status_code=502, detail="GitHub API error")
 
-    user_id = user["user_id"]
-    connected_rows = session.exec(
-        select(ConnectedRepository).where(ConnectedRepository.user_id == user_id)
-    ).all()
-    connected_ids = {row.repository_id for row in connected_rows}
+    workspace = workspace_of(user)
+    connected_ids = {row.repository_id for row in connections_of(session, workspace)}
 
     # Only the repositories the provider just named, rather than every row in
     # the table, which grows with every account on the platform.
@@ -102,10 +105,8 @@ async def list_connected_repos(
     user: dict = Depends(get_current_user),
 ):
     """One page of the user's connected repositories, from the DB cache."""
-    user_id = user["user_id"]
-    connected_rows = session.exec(
-        select(ConnectedRepository).where(ConnectedRepository.user_id == user_id)
-    ).all()
+    workspace = workspace_of(user)
+    connected_rows = connections_of(session, workspace)
 
     if not connected_rows:
         return success_response(page_of([], params))
@@ -154,7 +155,7 @@ async def connect_repo(
     user: dict = Depends(get_current_user),
 ):
     """Connect a GitHub repository for the current user."""
-    user_id = user["user_id"]
+    workspace = workspace_of(user)
 
     repo = session.exec(
         select(Repository).where(Repository.full_name == data.full_name)
@@ -179,20 +180,17 @@ async def connect_repo(
         session.commit()
         session.refresh(repo)
 
-    existing = session.exec(
-        select(ConnectedRepository).where(
-            ConnectedRepository.user_id == user_id,
-            ConnectedRepository.repository_id == repo.id,
-        )
-    ).first()
+    existing = connection_of(session, workspace, repo.id)
 
     if existing:
         return success_response(
             data={"id": repo.id}, message="Repository already connected"
         )
 
+    # The workspace has to exist before anything can belong to it, and what
+    # belongs to it points at the row rather than at the name on the token.
     connection = ConnectedRepository(
-        user_id=user_id,
+        workspace_id=remember(session, workspace).id,
         repository_id=repo.id,
     )
     session.add(connection)
@@ -212,14 +210,9 @@ async def disconnect_repo(
     user: dict = Depends(get_current_user),
 ):
     """Disconnect a repository for the current user."""
-    user_id = user["user_id"]
+    workspace = workspace_of(user)
 
-    connection = session.exec(
-        select(ConnectedRepository).where(
-            ConnectedRepository.user_id == user_id,
-            ConnectedRepository.repository_id == repo_id,
-        )
-    ).first()
+    connection = connection_of(session, workspace, repo_id)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")

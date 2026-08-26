@@ -7,9 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Everything below is the first stable release. It is staged rather than tagged: rename
-this heading to the version and date, set `VERSION` to match, then tag and run the
-`Create Release` workflow, which is manual on purpose.
+## [1.0.0-beta.1] - 2026-08-26
 
 ### Added
 

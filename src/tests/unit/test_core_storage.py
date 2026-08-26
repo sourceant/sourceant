@@ -90,3 +90,28 @@ def test_storage_identifiers_cannot_escape_the_storage_root(tmp_path):
 def test_filesystem_implementations_satisfy_storage_protocols(tmp_path):
     assert isinstance(FileSystemArtifactStore(tmp_path / "artifacts"), ArtifactStore)
     assert isinstance(FileSystemWorkingAreaStore(tmp_path / "areas"), WorkingAreaStore)
+
+
+def test_an_area_can_be_located_without_being_created(tmp_path):
+    """A tool that names what it indexes after the path it was given has to be
+    asked that name again later, by something not holding the area open."""
+    store = FileSystemWorkingAreaStore(tmp_path)
+    request = WorkingAreaRequest(PROJECT, "initialization", "repository")
+
+    where = store.path(request)
+
+    assert not where.exists()
+    assert store.get(request) is None
+    assert store.provision(request).path == where
+    assert store.path(request) == where
+
+
+def test_the_same_request_always_names_the_same_place(tmp_path):
+    store = FileSystemWorkingAreaStore(tmp_path)
+    request = WorkingAreaRequest(PROJECT, "initialization", "repository")
+
+    first = store.path(request)
+    store.provision(request)
+    store.remove(request)
+
+    assert store.path(request) == first

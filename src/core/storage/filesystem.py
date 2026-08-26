@@ -155,6 +155,9 @@ class FileSystemWorkingAreaStore:
         area.path.mkdir(parents=True, exist_ok=True)
         return area
 
+    def path(self, request: WorkingAreaRequest) -> Path:
+        return self._area(request).path
+
     def get(self, request: WorkingAreaRequest) -> WorkingArea | None:
         area = self._area(request)
         return area if area.path.is_dir() else None

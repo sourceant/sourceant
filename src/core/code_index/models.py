@@ -74,3 +74,61 @@ class CodeSearchResult:
     nodes: tuple[CodeNode, ...]
     total: int
     has_more: bool
+
+
+# A neighbourhood is asked for a hundred at a time because a person reads a
+# neighbourhood. A drawing is a different question: what a whole scope looks like,
+# and how it clusters, cannot be answered from a hundred of several thousand.
+MAX_GRAPH_NODES = 5000
+
+
+@dataclass(frozen=True)
+class CodeGraphQuery:
+    """Everything in a scope, for drawing rather than for reading."""
+
+    scope: Scope
+    labels: frozenset[str] = field(default_factory=frozenset)
+    edge_types: frozenset[str] = field(default_factory=frozenset)
+    path_prefix: str = ""
+    include_tests: bool = False
+    node_limit: int = MAX_GRAPH_NODES
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.node_limit <= MAX_GRAPH_NODES:
+            raise ValueError(f"node_limit must be between 1 and {MAX_GRAPH_NODES}")
+
+
+@dataclass(frozen=True)
+class CodeGraphResult:
+    nodes: tuple[CodeNode, ...]
+    edges: tuple[CodeEdge, ...]
+    truncated: bool
+
+
+TEST_DIRECTORIES = ("/tests/", "/test/", "/spec/", "__tests__")
+TEST_PREFIXES = ("tests/", "test/", "spec/")
+
+
+def is_test_path(path: object) -> bool:
+    """Whether a file is a test, read from where it sits.
+
+    An index may carry a flag for this and may leave it unset for whole
+    languages and layouts, so trusting the flag alone puts a repository's test
+    suite in every drawing of it. Every index has to answer this the same way or
+    two of them would draw two different repositories, so the rule lives here
+    rather than in any one of them.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    lowered = path.lower()
+    if any(part in lowered for part in TEST_DIRECTORIES):
+        return True
+    if lowered.startswith(TEST_PREFIXES):
+        return True
+    name = lowered.rsplit("/", 1)[-1]
+    return (
+        name.startswith(("test_", "test."))
+        or "_test." in name
+        or ".test." in name
+        or ".spec." in name
+    )
