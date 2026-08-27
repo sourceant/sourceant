@@ -152,7 +152,7 @@ SETTINGS: tuple[Setting, ...] = (
         label="Paths left out of the index",
         description=(
             "Path patterns the index does not report. A pattern matches a whole "
-            "path segment, so \".github\" also leaves everything under it out. "
+            'path segment, so ".github" also leaves everything under it out. '
             "The index still holds them; what reads the index stops seeing them."
         ),
         type=ConfigType.JSON,
