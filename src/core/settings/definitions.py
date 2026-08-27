@@ -135,7 +135,7 @@ SETTINGS: tuple[Setting, ...] = (
         key="initialization.community_limit",
         label="Maximum parts read separately",
         description=(
-            "How many clusters of related code a large repository is read in. "
+            "How many parts of related code a large repository is read in. "
             "Each is given the whole evidence budget and read on its own, so "
             "raising this reads more of the repository and costs proportionally "
             "more. One reads the repository as a single piece."
