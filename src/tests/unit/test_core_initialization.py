@@ -254,5 +254,5 @@ def test_initialization_limits_are_exposed_as_settings():
     assert candidate_limit.default == 20
     assert candidate_limit.scopes == ("repository", "organization")
     assert get("initialization.evidence_limit").maximum == 100
-    assert get("initialization.evidence_character_limit").default == 20_000
+    assert get("initialization.evidence_character_limit").default == 60_000
     assert get("initialization.investigation_limit").minimum == 0

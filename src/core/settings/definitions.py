@@ -124,7 +124,7 @@ SETTINGS: tuple[Setting, ...] = (
         label="Evidence character budget",
         description="Maximum evidence characters supplied in one initialization stage.",
         type=ConfigType.INT,
-        default=20_000,
+        default=60_000,
         unit="characters",
         minimum=1_000,
         maximum=100_000,
@@ -141,7 +141,7 @@ SETTINGS: tuple[Setting, ...] = (
             "more. One reads the repository as a single piece."
         ),
         type=ConfigType.INT,
-        default=10,
+        default=25,
         minimum=1,
         maximum=100,
         scopes=(REPOSITORY, ORGANIZATION),
