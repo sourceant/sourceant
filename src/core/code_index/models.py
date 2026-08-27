@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from src.core.scope import Scope
 
@@ -91,6 +91,7 @@ class CodeGraphQuery:
     edge_types: frozenset[str] = field(default_factory=frozenset)
     path_prefix: str = ""
     include_tests: bool = False
+    excluded_paths: frozenset[str] = field(default_factory=frozenset)
     node_limit: int = MAX_GRAPH_NODES
 
     def __post_init__(self) -> None:
@@ -107,6 +108,20 @@ class CodeGraphResult:
 
 TEST_DIRECTORIES = ("/tests/", "/test/", "/spec/", "__tests__")
 TEST_PREFIXES = ("tests/", "test/", "spec/")
+
+
+def is_excluded_path(path: object, excluded: Iterable[str]) -> bool:
+    """Whether a file sits under a path somebody asked to be left out.
+
+    Matching is by whole segment, so ".github" leaves that directory and
+    everything under it out without also taking ".github-actions-notes". Every
+    index has to answer this the same way, for the same reason is_test_path
+    lives here.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    segments = [segment for segment in path.replace("\\", "/").split("/") if segment]
+    return any(pattern and pattern in segments for pattern in excluded)
 
 
 def is_test_path(path: object) -> bool:

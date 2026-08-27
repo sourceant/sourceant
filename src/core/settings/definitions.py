@@ -148,6 +148,19 @@ SETTINGS: tuple[Setting, ...] = (
         group="Knowledge initialization",
     ),
     Setting(
+        key="initialization.excluded_paths",
+        label="Paths left out of the index",
+        description=(
+            "Path patterns the index does not report. A pattern matches a whole "
+            "path segment, so \".github\" also leaves everything under it out. "
+            "The index still holds them; what reads the index stops seeing them."
+        ),
+        type=ConfigType.JSON,
+        default=(".github", ".codebase-memory"),
+        scopes=(REPOSITORY, ORGANIZATION),
+        group="Knowledge initialization",
+    ),
+    Setting(
         key="initialization.investigation_limit",
         label="Maximum follow-up investigations",
         description="Maximum graph identities investigated after initial retrieval.",
