@@ -124,7 +124,7 @@ SETTINGS: tuple[Setting, ...] = (
         label="Evidence character budget",
         description="Maximum evidence characters supplied in one initialization stage.",
         type=ConfigType.INT,
-        default=20_000,
+        default=60_000,
         unit="characters",
         minimum=1_000,
         maximum=100_000,
@@ -135,15 +135,28 @@ SETTINGS: tuple[Setting, ...] = (
         key="initialization.community_limit",
         label="Maximum parts read separately",
         description=(
-            "How many clusters of related code a large repository is read in. "
+            "How many parts of related code a large repository is read in. "
             "Each is given the whole evidence budget and read on its own, so "
             "raising this reads more of the repository and costs proportionally "
             "more. One reads the repository as a single piece."
         ),
         type=ConfigType.INT,
-        default=10,
+        default=25,
         minimum=1,
         maximum=100,
+        scopes=(REPOSITORY, ORGANIZATION),
+        group="Knowledge initialization",
+    ),
+    Setting(
+        key="initialization.excluded_paths",
+        label="Paths left out of the index",
+        description=(
+            "Path patterns the index does not report. A pattern matches a whole "
+            'path segment, so ".github" also leaves everything under it out. '
+            "The index still holds them; what reads the index stops seeing them."
+        ),
+        type=ConfigType.JSON,
+        default=(".github", ".codebase-memory"),
         scopes=(REPOSITORY, ORGANIZATION),
         group="Knowledge initialization",
     ),

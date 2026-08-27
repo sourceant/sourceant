@@ -9,6 +9,7 @@ from .models import (
     CodeGraphQuery,
     CodeGraphResult,
     CodeNode,
+    is_excluded_path,
     is_test_path,
     CodeSearch,
     CodeSearchResult,
@@ -166,5 +167,7 @@ def _drawable(node: CodeNode, query: CodeGraphQuery) -> bool:
     ):
         return False
     if not query.include_tests and (properties.get("is_test") or is_test_path(path)):
+        return False
+    if query.excluded_paths and is_excluded_path(path, query.excluded_paths):
         return False
     return True
