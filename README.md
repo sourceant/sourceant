@@ -5,11 +5,40 @@
   </picture>
 </p>
 
-<p align="center"><strong>An indexed graph of your codebase and the decisions behind it, served to any AI tool over MCP.</strong></p>
+<p align="center"><strong>Software intelligence for you and your coding agents.</strong></p>
 
-SourceAnt reads your repositories into a durable graph of files, symbols, imports, and definitions, and keeps the decisions, rules, API contracts, and system topology that explain them alongside it. Any MCP client can search that graph, walk it, and write to it, so what your team knows outlives the session that learned it.
+AI is writing code faster than you and your team can understand it. SourceAnt helps you stay ahead. It shows you what is being built, checks changes against your decisions and requirements, and keeps your system architecture visible as the code moves.
 
-It runs on a laptop with nothing configured and no account. Code review, issue triage, and system mapping are applications built on the graph, not the product.
+You can let agents move quickly without giving up control of where your software is going.
+
+It runs on a laptop with nothing configured and no account.
+
+## How it works
+
+SourceAnt tracks four connected views of your software:
+
+1. **Code graph:** A map of your files, symbols and the relationships between them.
+2. **Knowledge graph:** What you know, or should know, about the code. This includes decisions, rules, constraints and conventions.
+3. **Requirements graph:** A specialized part of the knowledge graph that records what the software is supposed to do and links it to the code and tests that carry it.
+4. **System graph:** Living architecture documentation that shows how services, components, repositories and datastores connect.
+
+SourceAnt uses this information to review code with your intent in view. It also gives you and your agents the architecture and context needed to understand how the system fits together.
+
+This helps you answer two questions:
+
+1. Do I understand what is being built and where it is taking the system?
+2. Are my agents still respecting the decisions and requirements that matter?
+
+## Use SourceAnt locally
+
+Install SourceAnt to get:
+
+- One local code index for all your repositories.
+- Local knowledge and requirements that persist between sessions.
+- Local code reviews before a change reaches your colleagues.
+- Context over MCP for the coding tools you already use.
+
+Catch context-blind changes early. Keep the useful knowledge they uncover. Stay in control of what ships.
 
 ## Start here
 
@@ -23,7 +52,7 @@ pip install -r requirements.txt
 ./sourceant index ~/code/your-project
 ```
 
-That parses every file the repository does not ignore and stores the result. Index a second repository and it goes into the same store rather than its own artifact, filed under its own scope. A query names one scope, so asking across two repositories at once is not something the core does yet.
+That parses every file the repository does not ignore. Index a second repository and it goes into the same store, under its own scope, rather than leaving an artifact in the folder.
 
 Running it again reparses only what changed:
 
@@ -31,7 +60,7 @@ Running it again reparses only what changed:
 ./sourceant index ~/code/your-project --update
 ```
 
-Point an MCP client at the knowledge server and it can use all of it:
+Point an MCP client at the server and it reads your code, knowledge, requirements and system context:
 
 ```bash
 python -m src.mcp_server
@@ -39,20 +68,39 @@ python -m src.mcp_server
 
 See [Local index](docs/local-index.md) for the whole command set, and [Knowledge and context](docs/context.md) for what the server exposes.
 
-## What the graph holds
+## How the graphs behave
 
-| Part | What it is | Where it is kept |
-|---|---|---|
-| Code structure | Files, symbols, imports, definitions, references | Your database, from `sourceant index` or a SCIP index |
-| Knowledge | Decisions, rules, constraints, conventions, and how they relate | Your database |
-| Requirements | What the software is meant to do, and what carries it | Your database |
-| Topology | Systems, services, components, and their dependencies | Your database |
-| Contracts | API surfaces and what changed between versions | In-memory in the core; a plugin makes it durable |
-| Review findings | What a review raised and what became of it | In-memory in the core; a plugin makes it durable |
+### Code graph
 
-Everything is filed under a **scope**, an open map of key-value pairs you choose. A personal project can use `{"project": "shop"}`. An integration can use `{"organization": "acme", "repository": "acme/billing"}`. Nothing in the core needs to know which keys you picked.
+Files, symbols, imports and definitions. Built by `sourceant index`, or loaded from a SCIP index another tool produced. A local index describes the working tree. Code used in a review is pinned to the reviewed commit, so it cannot cite uncommitted work.
 
-## Knowledge over MCP
+### Knowledge graph
+
+What the team decided and why. Every item has a kind: decision, rule, constraint, convention. A **requirement** is a kind within this graph, so what the software is meant to do sits beside the reasoning behind it and answers the same searches.
+
+Requirements form a specialized subgraph with their own links and coverage queries.
+
+Knowledge is filed against the repository, not a commit. A decision recorded once keeps applying to every later change.
+
+Items link to each other, and to the files they govern. That link is what lets a review of one file find the decision that constrains it.
+
+In a local installation, this knowledge is used only by reviews run on that same local instance.
+
+### System graph
+
+Living documentation of how your software fits together and how that architecture changes. It shows you where code is pushing the system, so you can decide whether to allow that direction. It gives your agents the connections between services, components, repositories and datastores before they change code.
+
+The graph is independent of repository layout, so one system can span several repositories and one repository can hold several systems.
+
+Two more stores answer the same interfaces but keep nothing in the core: **contracts**, the API surfaces and what changed between versions, and **review findings**, what a review raised and what became of it. A plugin makes either durable.
+
+### Separate lifecycles, shared context
+
+A scope is an open map of key-value pairs you choose. A personal project can use `{"project": "shop"}`. An integration can use `{"organization": "acme", "repository": "acme/billing"}`. Nothing in the core needs to know which keys you picked.
+
+Scope lets an application join related records without pretending they age together. Local code follows the working tree, review code follows a revision, knowledge belongs to a repository, and system records describe architecture across repository boundaries. A query names one scope, so asking across two repository scopes at once is not something the core does yet.
+
+## Over MCP
 
 | Tool | Purpose |
 |---|---|
@@ -82,14 +130,13 @@ Get the approved knowledge related to the signed webhook decision before changin
 
 Storage is replaceable. Inject another `KnowledgeRepository`, `TopologyRepository`, or `CodeIndexRepository` and the same tools keep working against it.
 
-## Built on the graph
+## Applications
 
 - **[Code review](docs/reviews.md)** reads the graph for structure around a change before it comments.
 - **[Issue triage](docs/triage.md)** finds duplicates and labels what comes in.
-- **[Systems](docs/systems.md)** maps services and dependencies independently of repository layout.
 - **[Repo management](docs/repo-management.md)** automates the housekeeping around both.
 
-These need model access and, for GitHub, an app. Both are optional; the graph is not.
+These need model access and, for GitHub, an app.
 
 ## Documentation
 
@@ -109,7 +156,7 @@ Models come through [LiteLLM](https://docs.litellm.ai/docs/providers), so Gemini
 
 ## SourceAnt Cloud
 
-The core is MIT licensed and self-hostable in full. [SourceAnt Cloud](https://app.sourceant.ai) runs the same engine with a managed layer on top: memory your team curates, contract analysis and structural indexing at scale, the explorable graph, workspaces and roles, and analytics.
+The core is MIT licensed and self-hostable in full. [SourceAnt Cloud](https://app.sourceant.ai) runs the same engine with a managed layer on top: memory your team curates, contract analysis, continuous indexing at scale, the explorable graph, workspaces and roles, and analytics.
 
 ## Contributing
 
