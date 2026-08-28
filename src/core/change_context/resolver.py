@@ -68,7 +68,7 @@ class DefaultChangeContextResolver:
             return (
                 self._code.traverse(
                     CodeTraversal(
-                        scope=changes.scope,
+                        scope=changes.code_scope,
                         node_ids=tuple(dict.fromkeys(seeds))[:100],
                         depth=changes.depth,
                         node_limit=changes.limit,

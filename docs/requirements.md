@@ -52,6 +52,12 @@ It reports two lists directly: `uncovered`, requirements nothing implements, and
 
 Whether a requirement is genuinely satisfied is a judgement rather than arithmetic, and is not something the open core claims to answer.
 
+### Where they are filed
+
+A requirement belongs to a repository, not to a commit, so it is stored under a scope of `{"repository": "acme/billing"}` with no revision. Code structure is the opposite: it is pinned to the revision it was read at, because it changes with every commit.
+
+A review reads both, each at its own scope. That is why a requirement recorded once keeps applying to every later change.
+
 ### In a review
 
 A review is handed the requirements a change is answerable to, and judges the change against them. Deciding which requirements those are is a separate job, behind `RequirementSelector`.
@@ -62,6 +68,15 @@ Reading intent out of a change, rather than following links somebody drew, is a 
 
 ### From GitHub issues
 
-Teams that already write requirements as issues can read them in. Issues carrying a `requirement` or `acceptance-criteria` label become requirements, closed issues arrive as `met`, and the issue URL is kept as the `external_ref`. Nothing is written back, so the issue stays the place the team edits it.
+Teams that already write requirements as issues can read them in:
+
+```bash
+./sourceant requirements import acme/billing --dry-run
+./sourceant requirements import acme/billing
+```
+
+Issues carrying a `requirement` or `acceptance-criteria` label become requirements, closed issues arrive as `met`, and the issue URL is kept as the `external_ref`. Pass `--label` to choose different ones. Nothing is written back, so the issue stays the place the team edits it.
+
+Each import replaces what it previously read for the same issue, so running it again is safe.
 
 Adapters for other trackers, continuous sync, and judged satisfaction are part of [SourceAnt Cloud](https://app.sourceant.ai).

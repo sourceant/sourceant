@@ -9,7 +9,12 @@ from src.utils.logger import logger
 from src.utils.migration_paths import resolve_version_locations
 from alembic.config import Config, CommandLine
 
-from src.cli.index_commands import index_command, repo_group, serve_command
+from src.cli.index_commands import (
+    index_command,
+    repo_group,
+    requirements_group,
+    serve_command,
+)
 
 
 @click.group()
@@ -83,6 +88,7 @@ code_group.add_command(lint_fix_command)
 cli.add_command(code_group)
 cli.add_command(repo_group)
 cli.add_command(index_command)
+cli.add_command(requirements_group)
 cli.add_command(serve_command)
 
 if __name__ == "__main__":

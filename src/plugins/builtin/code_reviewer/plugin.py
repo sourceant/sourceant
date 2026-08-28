@@ -432,7 +432,7 @@ class CodeReviewerPlugin(BasePlugin):
             if changed_files:
                 known = self._change_context_resolver(durable_code).resolve(
                     ChangeSet(
-                        scope=code_scope,
+                        scope=Scope.from_mapping({"repository": repo_full_name}),
                         files=changed_files,
                         revision=pull_request.head_sha or "",
                         base_revision=pull_request.base_sha or "",

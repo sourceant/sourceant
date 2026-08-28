@@ -81,8 +81,10 @@ The HTTP server serves the same thing, plus the REST API:
 
 ### What a local index is not
 
-A local index describes your working tree, which moves with every edit, so it is filed under the repository alone with no revision.
+This applies to code structure only.
 
-A review is about a pinned commit, and is filed under that repository and revision together. The two do not meet, and that is deliberate: a review that read the local index could cite a symbol from work you have not committed.
+A local index describes your working tree, which moves with every edit, so it is filed under the repository alone. A review reads code at the commit it is reviewing, filed under that repository and revision together. The two do not meet, and that is deliberate: a review that read your working tree could cite a symbol from work you have not committed.
 
-Connecting a local graph to a hosted one is an explicit step, not something that happens because both wrote to the same database.
+Decisions and requirements are different. They belong to the repository rather than to a commit, so they are filed with no revision and every later review reads them. Recording a decision once is enough.
+
+Connecting a local code graph to a hosted one is an explicit step, not something that happens because both wrote to the same database.

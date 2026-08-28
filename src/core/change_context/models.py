@@ -48,6 +48,17 @@ class ChangeSet:
     def paths(self) -> tuple[str, ...]:
         return tuple(item.path for item in self.files)
 
+    @property
+    def code_scope(self) -> Scope:
+        """Where code structure is filed.
+
+        Code is pinned to the commit it was read at. Knowledge and requirements
+        are not, because a decision outlives the commit it was recorded on.
+        """
+        if not self.revision:
+            return self.scope
+        return self.scope.extend({"revision": self.revision})
+
     def code_references(self) -> tuple[ChangedCodeReference, ...]:
         if not self.revision:
             return ()

@@ -14,16 +14,21 @@ from src.cli.local_index import (
 )
 
 
-def _store():
+def _engine():
     from src.config.db import get_engine
-    from src.core.code_index.sql import SQLCodeIndexRepository
 
     engine = get_engine()
     if engine is None:
         raise click.ClickException(
-            "Indexing needs somewhere to keep the graph. Turn off stateless mode."
+            "This needs somewhere to keep what it reads. Turn off stateless mode."
         )
-    return SQLCodeIndexRepository(engine)
+    return engine
+
+
+def _store():
+    from src.core.code_index.sql import SQLCodeIndexRepository
+
+    return SQLCodeIndexRepository(_engine())
 
 
 @click.group(name="repo")
@@ -128,6 +133,64 @@ def _excluded_paths(repository: str) -> frozenset[str]:
     if isinstance(configured, (list, tuple)):
         return frozenset(item for item in configured if isinstance(item, str) and item)
     return frozenset()
+
+
+@click.group(name="requirements")
+def requirements_group():
+    """Bring in what the software is meant to do."""
+
+
+@requirements_group.command(name="import")
+@click.argument("repository")
+@click.option(
+    "--label",
+    "labels",
+    multiple=True,
+    help="Only issues carrying one of these labels. Repeatable.",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be stored, store nothing."
+)
+def requirements_import_command(repository, labels, dry_run):
+    """Read a GitHub repository's issues in as requirements."""
+    from src.core.knowledge import SQLKnowledgeRepository
+    from src.core.requirements import (
+        DEFAULT_LABELS,
+        GitHubIssueRequirements,
+        KnowledgeBackedRequirements,
+        SQLRequirementsRepository,
+    )
+    from src.core.scope import Scope
+    from src.integrations.github.github import GitHub
+
+    if "/" not in repository:
+        raise click.ClickException("Name the repository as owner/name")
+    owner, name = repository.split("/", 1)
+
+    engine = _engine()
+    github = GitHub()
+    source = GitHubIssueRequirements(
+        lambda _repository, wanted: github.list_open_issues(owner, name),
+        labels=labels or DEFAULT_LABELS,
+    )
+    scope = Scope.from_mapping({"repository": repository})
+    found = source.sync(scope)
+    if not found:
+        click.echo(f"{repository}  nothing to import")
+        return
+
+    if dry_run:
+        for item in found:
+            click.echo(f"{item.id}  ({item.status})  {item.summary}")
+        click.echo(f"{repository}  {len(found)} would be imported")
+        return
+
+    store = KnowledgeBackedRequirements(
+        SQLRequirementsRepository(engine), SQLKnowledgeRepository(engine)
+    )
+    for item in found:
+        store.put(scope, item)
+    click.echo(f"{repository}  imported {len(found)}")
 
 
 @click.command(name="serve")

@@ -36,9 +36,10 @@ index 1234567..89abcde 100644
      return builtin_list()
 """
 
-SCOPE = Scope.from_mapping(
-    {"repository": "test_owner/test_repo", "revision": "head_sha_def"}
-)
+# Knowledge and requirements are recorded against the repository, not against
+# whichever commit happened to be current when somebody wrote them down.
+SCOPE = Scope.from_mapping({"repository": "test_owner/test_repo"})
+CODE_SCOPE = SCOPE.extend({"revision": "head_sha_def"})
 
 
 @pytest.fixture
@@ -542,3 +543,24 @@ def test_what_a_change_reaches_is_carried_into_the_review(
     assert "The mobile client calls this endpoint" in section
     assert "system:mobile-client" in section
     assert "uncertain" in section
+
+
+def test_code_is_pinned_to_a_commit_and_knowledge_is_not():
+    from src.core.change_context import ChangedFile, ChangeSet
+
+    changes = ChangeSet(
+        scope=SCOPE, files=(ChangedFile(path="a.py"),), revision="head_sha_def"
+    )
+
+    assert changes.scope == SCOPE
+    assert changes.code_scope == CODE_SCOPE
+    assert changes.code_scope.get("revision") == "head_sha_def"
+    assert changes.scope.get("revision") is None
+
+
+def test_without_a_commit_code_is_filed_with_everything_else():
+    from src.core.change_context import ChangedFile, ChangeSet
+
+    changes = ChangeSet(scope=SCOPE, files=(ChangedFile(path="a.py"),))
+
+    assert changes.code_scope == SCOPE

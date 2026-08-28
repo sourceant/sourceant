@@ -1,4 +1,4 @@
-from .github import GitHubIssueRequirements
+from .github import DEFAULT_LABELS, GitHubIssueRequirements
 from .interfaces import (
     RequirementSelector,
     RequirementsReader,
@@ -27,6 +27,7 @@ from .sql import SQLRequirementsRepository
 
 __all__ = [
     "CODE",
+    "DEFAULT_LABELS",
     "KNOWLEDGE",
     "TARGET_KINDS",
     "TEST",
