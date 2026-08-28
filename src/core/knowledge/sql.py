@@ -20,6 +20,7 @@ from src.core.scope import Scope
 
 from .memory import InMemoryKnowledgeRepository
 from .models import (
+    KnowledgeLink,
     KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
@@ -40,6 +41,17 @@ knowledge_table = Table(
     Column("summary", Text, nullable=False),
     Column("properties", Text, nullable=False),
 )
+link_table = Table(
+    "knowledge_links",
+    metadata,
+    Column("scope", scope_type, primary_key=True),
+    Column("id", String(255), primary_key=True),
+    Column("knowledge_id", String(255), nullable=False),
+    Column("target_kind", String(64), nullable=False),
+    Column("target_id", String(500), nullable=False),
+    Column("properties", Text, nullable=False),
+)
+
 relationship_table = Table(
     "knowledge_relationships",
     metadata,
@@ -106,6 +118,76 @@ class SQLKnowledgeRepository:
                 )
                 connection.execute(relationship_table.insert().values(**values))
             self._refresh()
+
+    def put_link(self, scope: Scope, link: KnowledgeLink) -> None:
+        key = self._scope_key(scope)
+        with self._lock:
+            with self._engine.begin() as connection:
+                known = connection.execute(
+                    select(knowledge_table.c.id).where(
+                        knowledge_table.c.scope == key,
+                        knowledge_table.c.id == link.knowledge_id,
+                    )
+                ).first()
+                if known is None:
+                    raise ValueError(
+                        "a link needs a knowledge object in the same scope"
+                    )
+                connection.execute(
+                    delete(link_table).where(
+                        link_table.c.scope == key, link_table.c.id == link.id
+                    )
+                )
+                connection.execute(
+                    link_table.insert().values(
+                        scope=key,
+                        id=link.id,
+                        knowledge_id=link.knowledge_id,
+                        target_kind=link.target_kind,
+                        target_id=link.target_id,
+                        properties=self._encode(link.properties),
+                    )
+                )
+
+    def get_links(
+        self, scope: Scope, knowledge_ids: frozenset[str]
+    ) -> tuple[KnowledgeLink, ...]:
+        key = self._scope_key(scope)
+        statement = select(link_table).where(link_table.c.scope == key)
+        if knowledge_ids:
+            statement = statement.where(
+                link_table.c.knowledge_id.in_(sorted(knowledge_ids))
+            )
+        with self._engine.connect() as connection:
+            return tuple(
+                KnowledgeLink(
+                    id=row["id"],
+                    knowledge_id=row["knowledge_id"],
+                    target_kind=row["target_kind"],
+                    target_id=row["target_id"],
+                    properties=json.loads(row["properties"]),
+                )
+                for row in connection.execute(
+                    statement.order_by(link_table.c.id)
+                ).mappings()
+            )
+
+    def knowledge_ids_for_paths(
+        self, scope: Scope, paths: frozenset[str]
+    ) -> frozenset[str]:
+        if not paths:
+            return frozenset()
+        key = self._scope_key(scope)
+        with self._engine.connect() as connection:
+            return frozenset(
+                row[0]
+                for row in connection.execute(
+                    select(link_table.c.knowledge_id).where(
+                        link_table.c.scope == key,
+                        link_table.c.target_id.in_(sorted(paths)),
+                    )
+                )
+            )
 
     def search(self, query: KnowledgeQuery) -> KnowledgeResult:
         with self._lock:

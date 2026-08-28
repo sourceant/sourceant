@@ -12,6 +12,8 @@ from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
 from src.core.context import ContextProvider, ContextRequest
 from src.core.contracts import ContractQuery
 from src.core.knowledge import (
+    KnowledgeLink,
+    KnowledgeLinkWriter,
     KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
@@ -256,6 +258,29 @@ def create_mcp_server(
             resolve_scope(Scope.from_mapping(scope)), relationship
         )
         return asdict(relationship)
+
+    @server.tool(
+        name="link_knowledge",
+        description=(
+            "Attach a knowledge object to the code, test, or system it governs, "
+            "so a change to those files is judged against it."
+        ),
+        structured_output=True,
+    )
+    def link_knowledge(
+        scope: dict[str, str],
+        id: str,
+        knowledge_id: str,
+        target_kind: str,
+        target_id: str,
+        properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        repository = _require_knowledge(knowledge)
+        if not isinstance(repository, KnowledgeLinkWriter):
+            raise ValueError("the configured knowledge store does not hold links")
+        link = KnowledgeLink(id, knowledge_id, target_kind, target_id, properties or {})
+        repository.put_link(resolve_scope(Scope.from_mapping(scope)), link)
+        return asdict(link)
 
     @server.tool(
         name="search_knowledge",

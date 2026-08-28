@@ -93,6 +93,7 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
         "link_requirement",
         "search_requirements",
         "get_requirement_coverage",
+        "link_knowledge",
     }
     assert result.isError is False
     assert result.structuredContent["scope"] == {"project": "one"}

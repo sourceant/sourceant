@@ -15,6 +15,12 @@ from src.core.plugins import event_hooks, HookPriority
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.code_index import CodeIndexReader, SQLCodeIndexRepository
+from src.core.knowledge import (
+    KnowledgeReader,
+    KnowledgeSelection,
+    KnowledgeSelector,
+    LinkedKnowledgeSelector,
+)
 from src.core.requirements import (
     LinkedRequirementSelector,
     RequirementSelection,
@@ -424,6 +430,18 @@ class CodeReviewerPlugin(BasePlugin):
                     description=pull_request.body or "",
                 )
             )
+            knowledge_section = self._prepare_knowledge(
+                KnowledgeSelection(
+                    scope=code_scope,
+                    paths=tuple(
+                        parsed_file.file_path
+                        for parsed_file in parsed_files
+                        if not parsed_file.is_binary_file
+                    ),
+                    title=pull_request.title or "",
+                    description=pull_request.body or "",
+                )
+            )
             local_evidence = CachedChangedFileEvidenceReader(read_changed_file)
             evidence: ChangedFileEvidenceReader = local_evidence
             if durable_code is not None:
@@ -449,6 +467,7 @@ class CodeReviewerPlugin(BasePlugin):
                     read_content=read_changed_file,
                     context_file_limit=context_file_limit,
                     requirements=requirements_section,
+                    knowledge=knowledge_section,
                 )
             else:
                 logger.info("Diff is too large. Performing file-by-file review.")
@@ -465,6 +484,7 @@ class CodeReviewerPlugin(BasePlugin):
                     read_content=read_changed_file,
                     context_file_limit=context_file_limit,
                     requirements=requirements_section,
+                    knowledge=knowledge_section,
                 )
 
             if existing_comments and final_review.code_suggestions:
@@ -558,6 +578,7 @@ class CodeReviewerPlugin(BasePlugin):
         read_content=None,
         context_file_limit: int = 20,
         requirements: Optional[str] = None,
+        knowledge: Optional[str] = None,
     ) -> CodeReview:
         """Generate review in a single pass for small diffs."""
         suggestion_filter = SuggestionFilter()
@@ -577,6 +598,7 @@ class CodeReviewerPlugin(BasePlugin):
             existing_comments=existing_comments,
             code_context=code_context,
             requirements=requirements,
+            knowledge=knowledge,
         )
 
         all_suggestions = []
@@ -623,6 +645,7 @@ class CodeReviewerPlugin(BasePlugin):
         read_content=None,
         context_file_limit: int = 20,
         requirements: Optional[str] = None,
+        knowledge: Optional[str] = None,
     ) -> CodeReview:
         """Generate review file by file for large diffs."""
         suggestion_filter = SuggestionFilter()
@@ -653,6 +676,7 @@ class CodeReviewerPlugin(BasePlugin):
                     file_limit=context_file_limit,
                 ),
                 requirements=requirements,
+                knowledge=knowledge,
             )
 
             if review_for_file and review_for_file.code_suggestions:
@@ -694,6 +718,39 @@ class CodeReviewerPlugin(BasePlugin):
             lines.append(f"- {item.id} ({item.status}): {item.summary}")
         lines.append("")
         return "\n".join(lines)
+
+    def _prepare_knowledge(self, selection: KnowledgeSelection) -> Optional[str]:
+        selector = self._knowledge_selector()
+        if selector is None:
+            return None
+        try:
+            found = selector.select(selection)
+        except SQLAlchemyError:
+            logger.warning("Knowledge is unavailable; reviewing without it.")
+            return None
+        if not found:
+            return None
+        lines = [
+            "## Decisions And Rules Governing This Code",
+            "Recorded by the team and still standing. A change that breaks one of "
+            "these is a defect even when the code reads correctly.",
+            "",
+        ]
+        for item in found:
+            lines.append(f"- {item.id} ({item.kind}, {item.status}): {item.summary}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _knowledge_selector(self):
+        try:
+            return self.services.resolve(KnowledgeSelector)
+        except LookupError:
+            pass
+        try:
+            reader = self.services.resolve(KnowledgeReader)
+        except LookupError:
+            reader = _core_knowledge()
+        return LinkedKnowledgeSelector(reader) if reader is not None else None
 
     def _requirement_selector(self):
         try:
@@ -938,6 +995,14 @@ class CodeReviewerPlugin(BasePlugin):
                 return True
 
         return False
+
+
+def _core_knowledge():
+    from src.config.db import get_engine
+    from src.core.knowledge import SQLKnowledgeRepository
+
+    engine = get_engine()
+    return SQLKnowledgeRepository(engine) if engine is not None else None
 
 
 def _core_requirements():

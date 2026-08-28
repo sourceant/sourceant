@@ -12,6 +12,13 @@ from src.core.requirements import (
     RequirementsReader,
     SQLRequirementsRepository,
 )
+from src.core.knowledge import (
+    KnowledgeLink,
+    KnowledgeObject,
+    KnowledgeReader,
+    KnowledgeSelector,
+    SQLKnowledgeRepository,
+)
 from src.core.scope import Scope
 from src.core.services import ServiceRegistry
 from src.models.code_review import CodeReview, Verdict
@@ -271,3 +278,156 @@ def test_a_selector_is_told_what_the_change_is(
     assert selector.seen.paths == ("test.py",)
     assert selector.seen.title == "Add retries"
     assert selector.seen.scope == SCOPE
+
+
+def _knowledge(tmp_path, *, linked_path="test.py"):
+    engine = create_engine(f"sqlite:///{tmp_path / 'knowledge.db'}")
+    store = SQLKnowledgeRepository(engine, create_schema=True)
+    store.put(
+        SCOPE,
+        KnowledgeObject(
+            id="d1",
+            kind="decision",
+            status="approved",
+            summary="Retries are capped at three attempts",
+        ),
+    )
+    store.put_link(
+        SCOPE,
+        KnowledgeLink(
+            id="kl1", knowledge_id="d1", target_kind="code", target_id=linked_path
+        ),
+    )
+    return store
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_a_decision_governing_a_changed_file_reaches_the_review(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    services = ServiceRegistry()
+    services.register(KnowledgeReader, _knowledge(tmp_path), "test")
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    assert result["status"] == "success"
+    section = instance.generate_code_review.call_args.kwargs["knowledge"]
+    assert "Retries are capped at three attempts" in section
+    assert "d1 (decision, approved)" in section
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_a_decision_on_an_untouched_file_stays_out_of_the_review(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    services = ServiceRegistry()
+    services.register(
+        KnowledgeReader, _knowledge(tmp_path, linked_path="other.py"), "test"
+    )
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    assert result["status"] == "success"
+    assert instance.generate_code_review.call_args.kwargs["knowledge"] is None
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_a_store_that_holds_no_links_reviews_without_knowledge(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    from src.core.knowledge import InMemoryKnowledgeRepository
+
+    services = ServiceRegistry()
+    services.register(KnowledgeReader, InMemoryKnowledgeRepository(), "test")
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    assert result["status"] == "success"
+    assert instance.generate_code_review.call_args.kwargs["knowledge"] is None
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_a_registered_knowledge_selector_decides_instead_of_the_links(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    class _Selector:
+        def select(self, selection):
+            return (
+                KnowledgeObject(
+                    id="d9",
+                    kind="constraint",
+                    status="approved",
+                    summary="Nothing links this to the change",
+                ),
+            )
+
+    services = ServiceRegistry()
+    services.register(KnowledgeReader, _knowledge(tmp_path), "test")
+    services.register(KnowledgeSelector, _Selector(), "test")
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    assert result["status"] == "success"
+    section = instance.generate_code_review.call_args.kwargs["knowledge"]
+    assert "Nothing links this to the change" in section
+    assert "Retries are capped" not in section
