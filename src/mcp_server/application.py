@@ -53,6 +53,7 @@ def create_default_mcp_server():
         topology=topology,
         contracts=InMemoryContractRepository(),
         review_state=InMemoryReviewStateRepository(),
+        requirements=requirements,
     )
     return create_mcp_server(
         provider,
@@ -102,6 +103,7 @@ def create_http_mcp_server():
         topology=topology,
         contracts=InMemoryContractRepository(),
         review_state=InMemoryReviewStateRepository(),
+        requirements=requirements,
     )
     return create_mcp_server(
         provider,

@@ -124,8 +124,8 @@ def create_mcp_server(
     @server.tool(
         name="get_context",
         description=(
-            "Retrieve a bounded context pack from configured code, knowledge, topology, "
-            "contract, and review state sources."
+            "Retrieve a bounded context pack from configured code, knowledge, "
+            "topology, contract, requirement, and review state sources."
         ),
         structured_output=True,
     )
@@ -136,6 +136,7 @@ def create_mcp_server(
         topology_entity_ids: list[str] | None = None,
         contract_document_ids: list[str] | None = None,
         finding_states: list[str] | None = None,
+        requirement_ids: list[str] | None = None,
         depth: int = 2,
         limit: int = 50,
     ) -> dict[str, Any]:
@@ -192,6 +193,15 @@ def create_mcp_server(
                     limit=limit,
                 )
                 if finding_states
+                else None
+            ),
+            requirements=(
+                RequirementQuery(
+                    active_scope,
+                    ids=frozenset(requirement_ids),
+                    limit=limit,
+                )
+                if requirement_ids
                 else None
             ),
         )

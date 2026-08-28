@@ -22,6 +22,7 @@ class LLMInterface(ABC):
         pr_metadata: Optional[dict] = None,
         existing_comments: Optional[List[dict]] = None,
         code_context: Optional[str] = None,
+        requirements: Optional[str] = None,
     ) -> Optional[CodeReview]:
         pass
 

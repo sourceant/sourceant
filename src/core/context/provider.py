@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.core.code_index import CodeIndexReader
 from src.core.contracts import ContractReader
 from src.core.knowledge import KnowledgeReader
+from src.core.requirements import RequirementsReader
 from src.core.review_state import ReviewStateReader
 from src.core.topology import TopologyReader
 
@@ -18,12 +19,14 @@ class DefaultContextProvider:
         topology: TopologyReader | None = None,
         contracts: ContractReader | None = None,
         review_state: ReviewStateReader | None = None,
+        requirements: RequirementsReader | None = None,
     ) -> None:
         self._code = code
         self._knowledge = knowledge
         self._topology = topology
         self._contracts = contracts
         self._review_state = review_state
+        self._requirements = requirements
 
     def get_context(self, request: ContextRequest) -> ContextPack:
         return ContextPack(
@@ -53,6 +56,13 @@ class DefaultContextProvider:
                     request.findings
                 )
                 if request.findings
+                else None
+            ),
+            requirements=(
+                self._require("requirements", self._requirements).search(
+                    request.requirements
+                )
+                if request.requirements
                 else None
             ),
         )

@@ -87,6 +87,7 @@ class LiteLLMProvider(LLMInterface):
         pr_metadata: Optional[dict] = None,
         existing_comments: Optional[list] = None,
         code_context: Optional[str] = None,
+        requirements: Optional[str] = None,
     ) -> Optional[CodeReview]:
         decoupled_diff = diff
         if parsed_files:
@@ -100,6 +101,7 @@ class LiteLLMProvider(LLMInterface):
             pr_metadata=metadata_str,
             existing_comments=existing_comments_str,
             code_context=code_context or "No structural context is available.",
+            requirements=requirements or "",
         )
 
         try:
