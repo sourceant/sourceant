@@ -632,3 +632,38 @@ def test_code_recorded_at_another_revision_is_not_found(tmp_path):
     )
 
     assert known.code is None
+
+
+def test_knowledge_survives_a_change_touching_thousands_of_files(tmp_path):
+    from sqlalchemy import create_engine
+
+    from src.core.knowledge import (
+        KnowledgeLink,
+        KnowledgeObject,
+        LinkedKnowledgeSelector,
+        SQLKnowledgeRepository,
+    )
+    from src.core.knowledge.models import KnowledgeSelection
+
+    store = SQLKnowledgeRepository(
+        create_engine(f"sqlite:///{tmp_path / 'many.db'}"), create_schema=True
+    )
+    store.put(
+        SCOPE,
+        KnowledgeObject(id="d1", kind="decision", status="approved", summary="Use UTC"),
+    )
+    store.put_link(
+        SCOPE,
+        KnowledgeLink(
+            id="kl1", knowledge_id="d1", target_kind="code", target_id="src/clock.py"
+        ),
+    )
+    many = tuple(
+        [f"src/generated/file_{index}.py" for index in range(3000)] + ["src/clock.py"]
+    )
+
+    found = LinkedKnowledgeSelector(store).select(
+        KnowledgeSelection(scope=SCOPE, paths=many)
+    )
+
+    assert [item.id for item in found] == ["d1"]

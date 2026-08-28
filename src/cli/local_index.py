@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,6 +11,10 @@ from src.config.paths import ensure_data_dir
 from src.core.scope import Scope
 
 REGISTRY_NAME = "repositories.json"
+
+
+class RegistryError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -61,10 +67,13 @@ def list_repositories() -> list[RegisteredRepository]:
         return []
     try:
         payload = json.loads(location.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
+    except (OSError, json.JSONDecodeError) as error:
+        raise RegistryError(
+            f"{location} could not be read, so the registered repositories are "
+            f"unknown. Move it aside to start again: {error}"
+        ) from error
     if not isinstance(payload, list):
-        return []
+        raise RegistryError(f"{location} does not hold a list of repositories")
     entries = []
     for item in payload:
         if not isinstance(item, dict):
@@ -88,9 +97,19 @@ def _write(entries: list[RegisteredRepository]) -> None:
         {"name": entry.name, "path": entry.path}
         for entry in sorted(entries, key=lambda item: item.path)
     ]
-    registry_path().write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    target = registry_path()
+    # Written beside the registry and moved over it, so a failure part way
+    # through leaves the previous list intact rather than a half a file.
+    handle, temporary = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def _git_remote(path: Path) -> str:

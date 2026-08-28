@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 
 from src.cli.local_index import (
+    RegistryError,
     add_repository,
     find_repository,
     list_repositories,
@@ -31,7 +32,15 @@ def _store():
     return SQLCodeIndexRepository(_engine())
 
 
-@click.group(name="repo")
+class _Registry(click.Group):
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except RegistryError as error:
+            raise click.ClickException(str(error)) from error
+
+
+@click.group(name="repo", cls=_Registry)
 def repo_group():
     """Choose which repositories the local graph covers."""
 

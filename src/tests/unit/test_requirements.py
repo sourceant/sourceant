@@ -246,6 +246,23 @@ def test_removing_a_requirement_takes_its_knowledge_copy(store, tmp_path):
     )
 
 
+def test_coverage_survives_a_change_touching_thousands_of_files(store):
+    store.put(SCOPE, _requirement())
+    store.put_link(
+        SCOPE,
+        RequirementLink(
+            id="l1", requirement_id="r1", target_kind=CODE, target_id="src/refund.py"
+        ),
+    )
+    many = frozenset(
+        [f"src/generated/file_{index}.py" for index in range(3000)] + ["src/refund.py"]
+    )
+
+    report = store.coverage(CoverageQuery(scope=SCOPE, paths=many))
+
+    assert [item.requirement_id for item in report.items] == ["r1"]
+
+
 def test_a_requirement_is_also_an_ordinary_knowledge_item(store):
     knowledge = InMemoryKnowledgeRepository()
     requirements = KnowledgeBackedRequirements(store, knowledge)

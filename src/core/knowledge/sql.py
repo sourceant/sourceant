@@ -203,16 +203,17 @@ class SQLKnowledgeRepository:
         if not paths:
             return frozenset()
         key = self._scope_key(scope)
+        found: set[str] = set()
         with self._engine.connect() as connection:
-            return frozenset(
-                row[0]
+            for chunk in _chunked(sorted(paths)):
                 for row in connection.execute(
                     select(link_table.c.knowledge_id).where(
                         link_table.c.scope == key,
-                        link_table.c.target_id.in_(sorted(paths)),
+                        link_table.c.target_id.in_(chunk),
                     )
-                )
-            )
+                ):
+                    found.add(row[0])
+        return frozenset(found)
 
     def search(self, query: KnowledgeQuery) -> KnowledgeResult:
         with self._lock:
@@ -273,3 +274,10 @@ class SQLKnowledgeRepository:
     @staticmethod
     def _encode(value: Mapping[str, Any]) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _chunked(values: list[str], size: int = 500):
+    # SQLite caps bound parameters per statement, and a change set is only as
+    # small as the pull request.
+    for start in range(0, len(values), size):
+        yield values[start : start + size]

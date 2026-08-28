@@ -192,13 +192,14 @@ class SQLRequirementsRepository:
         requirement_ids = set(query.requirement_ids)
         if query.paths:
             with self._engine.connect() as connection:
-                for row in connection.execute(
-                    select(link_table.c.requirement_id).where(
-                        link_table.c.scope == key,
-                        link_table.c.target_id.in_(sorted(query.paths)),
-                    )
-                ):
-                    requirement_ids.add(row[0])
+                for chunk in _chunked(sorted(query.paths)):
+                    for row in connection.execute(
+                        select(link_table.c.requirement_id).where(
+                            link_table.c.scope == key,
+                            link_table.c.target_id.in_(chunk),
+                        )
+                    ):
+                        requirement_ids.add(row[0])
             if not requirement_ids:
                 return CoverageReport(items=(), truncated=False)
 
@@ -256,6 +257,13 @@ def _link_from_row(row: Mapping[str, Any]) -> RequirementLink:
         target_id=row["target_id"],
         properties=json.loads(row["properties"]),
     )
+
+
+def _chunked(values: list[str], size: int = 500):
+    # SQLite caps bound parameters per statement, and a change set is only as
+    # small as the pull request.
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
 
 
 def _scope_key(scope: Scope) -> str:
