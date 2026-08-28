@@ -1,0 +1,458 @@
+from __future__ import annotations
+
+import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from threading import RLock
+from typing import Any, Mapping
+
+from sqlalchemy import (
+    Column,
+    Engine,
+    Index,
+    MetaData,
+    String,
+    Table,
+    Text,
+    delete,
+    func,
+    or_,
+    select,
+)
+
+from src.core.scope import Scope
+
+from .models import (
+    CodeEdge,
+    CodeGraphQuery,
+    CodeGraphResult,
+    CodeNode,
+    CodeSearch,
+    CodeSearchResult,
+    CodeTraversal,
+    CodeTraversalResult,
+    is_excluded_path,
+    is_test_path,
+)
+
+metadata = MetaData()
+scope_key_type = String(500)
+
+node_table = Table(
+    "code_nodes",
+    metadata,
+    Column("scope", scope_key_type, primary_key=True),
+    Column("id", String(500), primary_key=True),
+    Column("file_path", String(500), nullable=True),
+    Column("properties", Text, nullable=False),
+    Index("ix_code_nodes_scope_file_path", "scope", "file_path"),
+)
+
+label_table = Table(
+    "code_node_labels",
+    metadata,
+    Column("scope", scope_key_type, primary_key=True),
+    Column("node_id", String(500), primary_key=True),
+    Column("label", String(255), primary_key=True),
+    Index("ix_code_node_labels_scope_label", "scope", "label"),
+)
+
+edge_table = Table(
+    "code_edges",
+    metadata,
+    Column("scope", scope_key_type, primary_key=True),
+    Column("id", String(500), primary_key=True),
+    Column("source_id", String(500), nullable=False),
+    Column("target_id", String(500), nullable=False),
+    Column("type", String(255), nullable=False),
+    Column("properties", Text, nullable=False),
+    Index("ix_code_edges_scope_source", "scope", "source_id"),
+    Index("ix_code_edges_scope_target", "scope", "target_id"),
+)
+
+
+class SQLCodeIndexRepository:
+    def __init__(self, engine: Engine, *, create_schema: bool = False) -> None:
+        self._engine = engine
+        self._lock = RLock()
+        self._buffer: dict[str, list] | None = None
+        if create_schema:
+            metadata.create_all(engine)
+
+    @contextmanager
+    def bulk_writes(self) -> Iterator[None]:
+        with self._lock:
+            if self._buffer is not None:
+                yield
+                return
+            self._buffer = {"nodes": [], "edges": []}
+            try:
+                yield
+                self._flush()
+            finally:
+                self._buffer = None
+
+    def put_node(self, scope: Scope, node: CodeNode) -> None:
+        with self._lock:
+            if self._buffer is not None:
+                self._buffer["nodes"].append((scope, node))
+                return
+            with self._engine.begin() as connection:
+                self._write_nodes(connection, [(scope, node)])
+
+    def put_edge(self, scope: Scope, edge: CodeEdge) -> None:
+        with self._lock:
+            if self._buffer is not None:
+                self._buffer["edges"].append((scope, edge))
+                return
+            with self._engine.begin() as connection:
+                self._require_endpoints(connection, [(scope, edge)])
+                self._write_edges(connection, [(scope, edge)])
+
+    def clear(self, scope: Scope) -> None:
+        key = _scope_key(scope)
+        with self._lock:
+            with self._engine.begin() as connection:
+                for table in (node_table, label_table, edge_table):
+                    connection.execute(delete(table).where(table.c.scope == key))
+
+    def search(self, query: CodeSearch) -> CodeSearchResult:
+        key = _scope_key(query.scope)
+        statement = select(node_table).where(node_table.c.scope == key)
+        if query.node_ids:
+            statement = statement.where(node_table.c.id.in_(sorted(query.node_ids)))
+        path = query.properties.get("file_path")
+        if isinstance(path, str):
+            statement = statement.where(node_table.c.file_path == path)
+        for label in sorted(query.labels):
+            statement = statement.where(
+                select(func.count())
+                .select_from(label_table)
+                .where(
+                    label_table.c.scope == key,
+                    label_table.c.node_id == node_table.c.id,
+                    label_table.c.label == label,
+                )
+                .scalar_subquery()
+                > 0
+            )
+        statement = statement.order_by(node_table.c.id)
+
+        remaining = {
+            name: value
+            for name, value in query.properties.items()
+            if name != "file_path" or not isinstance(value, str)
+        }
+        matches: list[CodeNode] = []
+        with self._engine.connect() as connection:
+            labels = self._labels_for_scope(connection, key)
+            for row in connection.execute(statement).mappings():
+                node = _node_from_row(row, labels.get(row["id"], frozenset()))
+                if not query.labels.issubset(node.labels):
+                    continue
+                if any(
+                    node.properties.get(name) != value
+                    for name, value in remaining.items()
+                ):
+                    continue
+                matches.append(node)
+        nodes = tuple(matches[query.offset : query.offset + query.limit])
+        return CodeSearchResult(
+            nodes=nodes,
+            total=len(matches),
+            has_more=query.offset + len(nodes) < len(matches),
+        )
+
+    def traverse(self, traversal: CodeTraversal) -> CodeTraversalResult:
+        key = _scope_key(traversal.scope)
+        nodes: list[CodeNode] = []
+        edges: dict[str, CodeEdge] = {}
+        visited: set[str] = set()
+        truncated = False
+
+        with self._engine.connect() as connection:
+            labels = self._labels_for_scope(connection, key)
+            frontier = [
+                node_id
+                for node_id in traversal.node_ids
+                if self._node(connection, key, node_id, labels) is not None
+            ]
+            distance = 0
+            while frontier:
+                fetched = []
+                for node_id in frontier:
+                    if node_id in visited:
+                        continue
+                    node = self._node(connection, key, node_id, labels)
+                    if node is None:
+                        continue
+                    if len(nodes) >= traversal.node_limit:
+                        truncated = True
+                        continue
+                    visited.add(node_id)
+                    nodes.append(node)
+                    fetched.append(node_id)
+                if distance == traversal.depth or not fetched:
+                    break
+                next_frontier: list[str] = []
+                for edge in self._edges_touching(connection, key, fetched, traversal):
+                    edges[edge.id] = edge
+                    for candidate in (edge.source_id, edge.target_id):
+                        if candidate not in visited:
+                            next_frontier.append(candidate)
+                frontier = list(dict.fromkeys(next_frontier))
+                distance += 1
+
+        included = {node.id for node in nodes}
+        packed = tuple(
+            edge
+            for edge in edges.values()
+            if edge.source_id in included and edge.target_id in included
+        )
+        return CodeTraversalResult(
+            nodes=tuple(nodes),
+            edges=packed,
+            truncated=truncated or len(packed) != len(edges),
+        )
+
+    def graph(self, query: CodeGraphQuery) -> CodeGraphResult:
+        key = _scope_key(query.scope)
+        statement = select(node_table).where(node_table.c.scope == key)
+        if query.path_prefix:
+            statement = statement.where(
+                node_table.c.file_path.like(
+                    f"{_escape_like(query.path_prefix)}%", escape="\\"
+                )
+            )
+        statement = statement.order_by(node_table.c.id)
+
+        kept: list[CodeNode] = []
+        truncated = False
+        with self._engine.connect() as connection:
+            labels = self._labels_for_scope(connection, key)
+            result = connection.execution_options(stream_results=True).execute(
+                statement
+            )
+            for row in result.mappings():
+                node = _node_from_row(row, labels.get(row["id"], frozenset()))
+                if not _drawable(node, query):
+                    continue
+                if len(kept) >= query.node_limit:
+                    truncated = True
+                    break
+                kept.append(node)
+            result.close()
+
+            included = {node.id for node in kept}
+            edges = self._edges_between(connection, key, included, query.edge_types)
+        return CodeGraphResult(nodes=tuple(kept), edges=edges, truncated=truncated)
+
+    def _flush(self) -> None:
+        buffered = self._buffer or {"nodes": [], "edges": []}
+        if not buffered["nodes"] and not buffered["edges"]:
+            return
+        with self._engine.begin() as connection:
+            if buffered["nodes"]:
+                self._write_nodes(connection, buffered["nodes"])
+            if buffered["edges"]:
+                self._require_endpoints(connection, buffered["edges"])
+                self._write_edges(connection, buffered["edges"])
+
+    def _write_nodes(self, connection, entries) -> None:
+        by_key: dict[tuple[str, str], tuple[Scope, CodeNode]] = {}
+        for scope, node in entries:
+            by_key[(_scope_key(scope), node.id)] = (scope, node)
+        for scope_key, node_id in by_key:
+            connection.execute(
+                delete(node_table).where(
+                    node_table.c.scope == scope_key, node_table.c.id == node_id
+                )
+            )
+            connection.execute(
+                delete(label_table).where(
+                    label_table.c.scope == scope_key,
+                    label_table.c.node_id == node_id,
+                )
+            )
+        node_rows = []
+        label_rows = []
+        for (scope_key, node_id), (_, node) in by_key.items():
+            path = node.properties.get("file_path")
+            node_rows.append(
+                {
+                    "scope": scope_key,
+                    "id": node_id,
+                    "file_path": path if isinstance(path, str) else None,
+                    "properties": _encode(node.properties),
+                }
+            )
+            for label in sorted(node.labels):
+                label_rows.append(
+                    {"scope": scope_key, "node_id": node_id, "label": label}
+                )
+        connection.execute(node_table.insert(), node_rows)
+        if label_rows:
+            connection.execute(label_table.insert(), label_rows)
+
+    def _write_edges(self, connection, entries) -> None:
+        by_key: dict[tuple[str, str], tuple[Scope, CodeEdge]] = {}
+        for scope, edge in entries:
+            by_key[(_scope_key(scope), edge.id)] = (scope, edge)
+        for scope_key, edge_id in by_key:
+            connection.execute(
+                delete(edge_table).where(
+                    edge_table.c.scope == scope_key, edge_table.c.id == edge_id
+                )
+            )
+        connection.execute(
+            edge_table.insert(),
+            [
+                {
+                    "scope": scope_key,
+                    "id": edge_id,
+                    "source_id": edge.source_id,
+                    "target_id": edge.target_id,
+                    "type": edge.type,
+                    "properties": _encode(edge.properties),
+                }
+                for (scope_key, edge_id), (_, edge) in by_key.items()
+            ],
+        )
+
+    def _require_endpoints(self, connection, entries) -> None:
+        wanted: dict[str, set[str]] = {}
+        for scope, edge in entries:
+            wanted.setdefault(_scope_key(scope), set()).update(
+                (edge.source_id, edge.target_id)
+            )
+        pending = {scope_key: set(ids) for scope_key, ids in wanted.items() if ids}
+        if self._buffer is not None:
+            for scope, node in self._buffer["nodes"]:
+                pending.get(_scope_key(scope), set()).discard(node.id)
+        for scope_key, ids in pending.items():
+            if not ids:
+                continue
+            found = {
+                row[0]
+                for row in connection.execute(
+                    select(node_table.c.id).where(
+                        node_table.c.scope == scope_key,
+                        node_table.c.id.in_(sorted(ids)),
+                    )
+                )
+            }
+            if ids - found:
+                raise ValueError("edge endpoints must exist in the same scope")
+
+    def _labels_for_scope(
+        self, connection, scope_key: str
+    ) -> dict[str, frozenset[str]]:
+        grouped: dict[str, set[str]] = {}
+        for row in connection.execute(
+            select(label_table.c.node_id, label_table.c.label).where(
+                label_table.c.scope == scope_key
+            )
+        ):
+            grouped.setdefault(row[0], set()).add(row[1])
+        return {node_id: frozenset(values) for node_id, values in grouped.items()}
+
+    def _node(self, connection, scope_key, node_id, labels) -> CodeNode | None:
+        row = (
+            connection.execute(
+                select(node_table).where(
+                    node_table.c.scope == scope_key, node_table.c.id == node_id
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return None
+        return _node_from_row(row, labels.get(node_id, frozenset()))
+
+    def _edges_touching(
+        self, connection, scope_key, node_ids, traversal: CodeTraversal
+    ) -> list[CodeEdge]:
+        if not node_ids:
+            return []
+        statement = select(edge_table).where(edge_table.c.scope == scope_key)
+        if traversal.direction == "outbound":
+            statement = statement.where(edge_table.c.source_id.in_(node_ids))
+        elif traversal.direction == "inbound":
+            statement = statement.where(edge_table.c.target_id.in_(node_ids))
+        else:
+            statement = statement.where(
+                or_(
+                    edge_table.c.source_id.in_(node_ids),
+                    edge_table.c.target_id.in_(node_ids),
+                )
+            )
+        if traversal.edge_types:
+            statement = statement.where(
+                edge_table.c.type.in_(sorted(traversal.edge_types))
+            )
+        statement = statement.order_by(edge_table.c.id)
+        return [_edge_from_row(row) for row in connection.execute(statement).mappings()]
+
+    def _edges_between(
+        self, connection, scope_key, node_ids: set[str], edge_types
+    ) -> tuple[CodeEdge, ...]:
+        if not node_ids:
+            return ()
+        statement = select(edge_table).where(
+            edge_table.c.scope == scope_key,
+            edge_table.c.source_id.in_(sorted(node_ids)),
+            edge_table.c.target_id.in_(sorted(node_ids)),
+        )
+        if edge_types:
+            statement = statement.where(edge_table.c.type.in_(sorted(edge_types)))
+        statement = statement.order_by(edge_table.c.id)
+        return tuple(
+            _edge_from_row(row) for row in connection.execute(statement).mappings()
+        )
+
+
+def _drawable(node: CodeNode, query: CodeGraphQuery) -> bool:
+    if query.labels and not (node.labels & query.labels):
+        return False
+    properties = node.properties or {}
+    path = properties.get("file_path")
+    if query.path_prefix and not (
+        isinstance(path, str) and path.startswith(query.path_prefix)
+    ):
+        return False
+    if not query.include_tests and (properties.get("is_test") or is_test_path(path)):
+        return False
+    if query.excluded_paths and is_excluded_path(path, query.excluded_paths):
+        return False
+    return True
+
+
+def _node_from_row(row: Mapping[str, Any], labels: frozenset[str]) -> CodeNode:
+    return CodeNode(
+        id=row["id"],
+        labels=labels,
+        properties=json.loads(row["properties"]),
+    )
+
+
+def _edge_from_row(row: Mapping[str, Any]) -> CodeEdge:
+    return CodeEdge(
+        id=row["id"],
+        source_id=row["source_id"],
+        target_id=row["target_id"],
+        type=row["type"],
+        properties=json.loads(row["properties"]),
+    )
+
+
+def _scope_key(scope: Scope) -> str:
+    return json.dumps(scope.values, separators=(",", ":"))
+
+
+def _encode(value: Mapping[str, Any]) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
