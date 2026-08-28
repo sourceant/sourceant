@@ -161,6 +161,28 @@ def test_the_whole_scope_can_be_drawn_after_indexing(repository, durable):
     assert any(edge.type == "IMPORTS" for edge in drawing.edges)
 
 
+def test_indexing_remains_complete_across_buffer_checkpoints(
+    repository, durable, monkeypatch
+):
+    monkeypatch.setattr("src.core.code_index.sql.CHECKPOINT", 2)
+    checkpoints = []
+    checkpoint = durable.checkpoint
+
+    def tracked_checkpoint():
+        flushed = checkpoint()
+        checkpoints.append(flushed)
+        return flushed
+
+    monkeypatch.setattr(durable, "checkpoint", tracked_checkpoint)
+
+    RepositoryIndexer(durable).index(SCOPE, repository)
+
+    assert sum(checkpoints) >= 2
+    assert _paths(durable) == ["README.md", "src/charge.py", "src/refund.py"]
+    drawing = durable.graph(CodeGraphQuery(scope=SCOPE, include_tests=True))
+    assert any(edge.type == "IMPORTS" for edge in drawing.edges)
+
+
 def test_it_works_against_an_index_that_only_writes(repository):
     result = RepositoryIndexer(InMemoryCodeIndex()).index(SCOPE, repository)
 

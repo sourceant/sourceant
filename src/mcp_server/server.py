@@ -510,6 +510,7 @@ def create_mcp_server(
             "items": [asdict(item) for item in report.items],
             "uncovered": list(report.uncovered),
             "untested": list(report.untested),
+            "truncated": report.truncated,
         }
 
     return server

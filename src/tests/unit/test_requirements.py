@@ -225,6 +225,20 @@ def test_coverage_that_fits_is_not_marked_short(store):
     assert store.coverage(CoverageQuery(scope=SCOPE)).truncated is False
 
 
+def test_coverage_applies_its_limit_after_missing_ids_are_removed(store):
+    store.put(SCOPE, _requirement("z-present"))
+    requested = frozenset(
+        [f"a-missing-{index:03}" for index in range(100)] + ["z-present"]
+    )
+
+    report = store.coverage(
+        CoverageQuery(scope=SCOPE, requirement_ids=requested, limit=100)
+    )
+
+    assert [item.requirement_id for item in report.items] == ["z-present"]
+    assert report.truncated is False
+
+
 def test_removing_a_requirement_takes_its_knowledge_copy(store, tmp_path):
     from sqlalchemy import create_engine
 

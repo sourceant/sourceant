@@ -24,6 +24,7 @@ from src.core.knowledge import (
     KnowledgeObject,
     SQLKnowledgeRepository,
 )
+from src.core.requirements import Requirement, SQLRequirementsRepository
 from src.core.scope import Scope
 from src.core.topology import SQLTopologyRepository
 from src.mcp_server import create_mcp_server
@@ -259,6 +260,38 @@ async def test_mcp_manages_durable_knowledge_through_protocol_boundary(tmp_path)
         "decision",
         "constraint",
     ]
+
+
+@pytest.mark.asyncio
+async def test_mcp_requirement_coverage_exposes_truncation(tmp_path):
+    requirements = SQLRequirementsRepository(
+        create_engine(f"sqlite:///{tmp_path / 'requirements.db'}"),
+        create_schema=True,
+    )
+    for index in range(101):
+        requirements.put(
+            PROJECT,
+            Requirement(
+                id=f"r{index:03}",
+                kind="requirement",
+                status="open",
+                summary="Keep the behavior",
+            ),
+        )
+    server = create_mcp_server(
+        DefaultContextProvider(requirements=requirements),
+        requirements=requirements,
+    )
+
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "get_requirement_coverage",
+            {"scope": {"project": "one"}},
+        )
+
+    assert result.isError is False
+    assert len(result.structuredContent["items"]) == 100
+    assert result.structuredContent["truncated"] is True
 
 
 @pytest.mark.asyncio

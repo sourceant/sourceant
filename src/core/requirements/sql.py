@@ -217,24 +217,35 @@ class SQLRequirementsRepository:
             if not requirement_ids:
                 return CoverageReport(items=(), truncated=False)
 
-        # Only as many as the report will carry, plus one to notice there were
-        # more, so the identity list never outgrows what a statement can bind.
-        ordered = sorted(requirement_ids)[: query.limit + 1]
-        overflowed = len(ordered) > query.limit
-        found = self.search(
-            RequirementQuery(
-                scope=query.scope,
-                ids=frozenset(ordered[: query.limit]),
-                limit=query.limit,
+        if requirement_ids:
+            with self._engine.connect() as connection:
+                rows = rows_for(
+                    requirement_ids,
+                    lambda chunk: connection.execute(
+                        select(requirement_table).where(
+                            requirement_table.c.scope == key,
+                            requirement_table.c.id.in_(chunk),
+                        )
+                    ).mappings(),
+                )
+            matching = tuple(
+                _requirement_from_row(row)
+                for row in sorted(rows, key=lambda row: row["id"])
             )
-        )
-        links = self.get_links(query.scope, frozenset(item.id for item in found.items))
+            requirements = matching[: query.limit]
+            truncated = len(matching) > query.limit
+        else:
+            found = self.search(RequirementQuery(scope=query.scope, limit=query.limit))
+            requirements = found.items
+            truncated = found.has_more
+
+        links = self.get_links(query.scope, frozenset(item.id for item in requirements))
         grouped: dict[str, list[RequirementLink]] = {}
         for link in links:
             grouped.setdefault(link.requirement_id, []).append(link)
 
         items = []
-        for requirement in found.items:
+        for requirement in requirements:
             related = grouped.get(requirement.id, [])
             items.append(
                 RequirementCoverage(
@@ -253,9 +264,7 @@ class SQLRequirementsRepository:
                     ),
                 )
             )
-        return CoverageReport(
-            items=tuple(items), truncated=found.has_more or overflowed
-        )
+        return CoverageReport(items=tuple(items), truncated=truncated)
 
 
 def _requirement_from_row(row: Mapping[str, Any]) -> Requirement:

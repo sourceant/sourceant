@@ -40,6 +40,14 @@ class _Registry(click.Group):
             raise click.ClickException(str(error)) from error
 
 
+class _RegistryCommand(click.Command):
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except RegistryError as error:
+            raise click.ClickException(str(error)) from error
+
+
 @click.group(name="repo", cls=_Registry)
 def repo_group():
     """Choose which repositories the local graph covers."""
@@ -74,7 +82,7 @@ def repo_list_command():
         click.echo(f"{entry.name}  {entry.path}")
 
 
-@click.command(name="index")
+@click.command(name="index", cls=_RegistryCommand)
 @click.argument("path", type=click.Path(exists=True), required=False)
 @click.option(
     "--all", "index_all", is_flag=True, help="Index every registered repository."

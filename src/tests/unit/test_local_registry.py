@@ -1,7 +1,9 @@
 import json
 
 import pytest
+from click.testing import CliRunner
 
+from src.cli.index_commands import index_command
 from src.cli.local_index import (
     RegistryError,
     add_repository,
@@ -45,6 +47,17 @@ def test_a_half_written_registry_is_not_silently_forgotten(home):
 
     with pytest.raises(RegistryError):
         list_repositories()
+
+
+def test_index_reports_an_unreadable_registry_without_a_traceback(home, monkeypatch):
+    registry_path().write_text('[{"name": "acme/bil', encoding="utf-8")
+    monkeypatch.setattr("src.cli.index_commands._store", lambda: object())
+
+    result = CliRunner().invoke(index_command, ["--all"])
+
+    assert result.exit_code == 1
+    assert "could not be read" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_a_failed_write_leaves_the_previous_list_intact(home, monkeypatch):
