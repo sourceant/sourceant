@@ -1,5 +1,6 @@
 from .github import GitHubIssueRequirements
 from .interfaces import (
+    RequirementSelector,
     RequirementsReader,
     RequirementsRepository,
     RequirementsSource,
@@ -19,7 +20,9 @@ from .models import (
     RequirementLink,
     RequirementQuery,
     RequirementResult,
+    RequirementSelection,
 )
+from .selection import LinkedRequirementSelector
 from .sql import SQLRequirementsRepository
 
 __all__ = [
@@ -32,11 +35,14 @@ __all__ = [
     "CoverageReport",
     "GitHubIssueRequirements",
     "KnowledgeBackedRequirements",
+    "LinkedRequirementSelector",
     "Requirement",
     "RequirementCoverage",
     "RequirementLink",
     "RequirementQuery",
     "RequirementResult",
+    "RequirementSelection",
+    "RequirementSelector",
     "RequirementsReader",
     "RequirementsRepository",
     "RequirementsSource",

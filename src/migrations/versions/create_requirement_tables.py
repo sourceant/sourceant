@@ -4,7 +4,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "requirements_001"
-down_revision = "workspaces_002"
+down_revision = "code_index_001"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

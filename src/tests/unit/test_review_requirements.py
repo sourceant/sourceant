@@ -8,6 +8,7 @@ from src.core.requirements import (
     CODE,
     Requirement,
     RequirementLink,
+    RequirementSelector,
     RequirementsReader,
     SQLRequirementsRepository,
 )
@@ -132,7 +133,7 @@ def test_a_requirement_on_a_changed_file_reaches_the_review(
     assert result["status"] == "success"
     section = instance.generate_code_review.call_args.kwargs["requirements"]
     assert "Loading retries on a transient failure" in section
-    assert "no linked test" in section
+    assert "r1 (open)" in section
 
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
@@ -192,3 +193,81 @@ def test_a_review_still_runs_when_the_requirement_tables_are_missing(
 
     assert result["status"] == "success"
     assert instance.generate_code_review.call_args.kwargs["requirements"] is None
+
+
+class _IntentSelector:
+    """Stands in for a selector that reads intent rather than following links."""
+
+    def __init__(self):
+        self.seen = None
+
+    def select(self, selection):
+        self.seen = selection
+        return (
+            Requirement(
+                id="r9",
+                kind="requirement",
+                status="open",
+                summary="Nothing links this to the change",
+            ),
+        )
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_a_registered_selector_decides_instead_of_the_links(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    selector = _IntentSelector()
+    services = ServiceRegistry()
+    services.register(RequirementsReader, _requirements(tmp_path), "test")
+    services.register(RequirementSelector, selector, "test")
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    assert result["status"] == "success"
+    section = instance.generate_code_review.call_args.kwargs["requirements"]
+    assert "Nothing links this to the change" in section
+    assert "Loading retries on a transient failure" not in section
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_a_selector_is_told_what_the_change_is(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    selector = _IntentSelector()
+    services = ServiceRegistry()
+    services.register(RequirementSelector, selector, "test")
+    plugin.bind_services(services)
+
+    _run(plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha)
+
+    assert selector.seen.paths == ("test.py",)
+    assert selector.seen.title == "Add retries"
+    assert selector.seen.scope == SCOPE

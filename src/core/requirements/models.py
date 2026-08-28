@@ -83,6 +83,22 @@ class CoverageQuery:
 
 
 @dataclass(frozen=True)
+class RequirementSelection:
+    scope: Scope
+    paths: tuple[str, ...] = ()
+    title: str = ""
+    description: str = ""
+    diff: str = ""
+    limit: int = 20
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if any(not path for path in self.paths):
+            raise ValueError("paths must not contain empty values")
+
+
+@dataclass(frozen=True)
 class RequirementCoverage:
     requirement_id: str
     status: str

@@ -54,7 +54,11 @@ Whether a requirement is genuinely satisfied is a judgement rather than arithmet
 
 ### In a review
 
-When a change touches files linked to a requirement, that requirement is named in the review prompt along with its status and whether anything tests it. A change touching nothing tracked reads exactly as it did before.
+A review is handed the requirements a change is answerable to, and judges the change against them. Deciding which requirements those are is a separate job, behind `RequirementSelector`.
+
+The core ships one selector, which returns the requirements linked to the files the change touches. It is exact and shallow: a requirement nobody linked to those files is not returned, however clearly the change addresses it. A change touching nothing tracked reads exactly as it did before.
+
+Reading intent out of a change, rather than following links somebody drew, is a different problem. An installation that can do it registers its own selector and the review uses that instead. The selector is told the scope, the changed paths, and the title and description of the change.
 
 ### From GitHub issues
 

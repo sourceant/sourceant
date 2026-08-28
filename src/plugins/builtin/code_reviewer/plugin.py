@@ -16,8 +16,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.code_index import CodeIndexReader, SQLCodeIndexRepository
 from src.core.requirements import (
-    CoverageQuery,
-    RequirementQuery,
+    LinkedRequirementSelector,
+    RequirementSelection,
+    RequirementSelector,
     RequirementsReader,
 )
 from src.core.review_context import (
@@ -412,12 +413,16 @@ class CodeReviewerPlugin(BasePlugin):
             except LookupError:
                 durable_code = _core_code_index()
             requirements_section = self._prepare_requirements(
-                code_scope,
-                [
-                    parsed_file.file_path
-                    for parsed_file in parsed_files
-                    if not parsed_file.is_binary_file
-                ],
+                RequirementSelection(
+                    scope=code_scope,
+                    paths=tuple(
+                        parsed_file.file_path
+                        for parsed_file in parsed_files
+                        if not parsed_file.is_binary_file
+                    ),
+                    title=pull_request.title or "",
+                    description=pull_request.body or "",
+                )
             )
             local_evidence = CachedChangedFileEvidenceReader(read_changed_file)
             evidence: ChangedFileEvidenceReader = local_evidence
@@ -668,46 +673,38 @@ class CodeReviewerPlugin(BasePlugin):
             code_suggestions=all_suggestions,
         )
 
-    def _prepare_requirements(self, scope, paths) -> Optional[str]:
-        try:
-            requirements = self.services.resolve(RequirementsReader)
-        except LookupError:
-            requirements = _core_requirements()
-        if requirements is None or not paths:
+    def _prepare_requirements(self, selection: RequirementSelection) -> Optional[str]:
+        selector = self._requirement_selector()
+        if selector is None:
             return None
         try:
-            report = requirements.coverage(
-                CoverageQuery(scope=scope, paths=frozenset(paths))
-            )
-            if not report.items:
-                return None
-            found = requirements.search(
-                RequirementQuery(
-                    scope=scope,
-                    ids=frozenset(item.requirement_id for item in report.items),
-                    limit=100,
-                )
-            )
+            found = selector.select(selection)
         except SQLAlchemyError:
             # A deployment that has the code but not yet the tables still reviews.
             logger.warning("Requirements are unavailable; reviewing without them.")
             return None
-        summaries = {item.id: item.summary for item in found.items}
+        if not found:
+            return None
         lines = [
-            "## Requirements This Change Touches",
-            "These are recorded requirements linked to the files below. Judge the "
-            "change against them as well as against how it is written. A "
-            "requirement listed as having no test is not itself a defect.",
+            "## Requirements This Change Is Answerable To",
+            "Judge the change against these as well as against how it is written.",
             "",
         ]
-        for item in report.items:
-            summary = summaries.get(item.requirement_id, "")
-            tested = "tested" if item.tested else "no linked test"
-            lines.append(
-                f"- {item.requirement_id} ({item.status}, {tested}): {summary}"
-            )
+        for item in found:
+            lines.append(f"- {item.id} ({item.status}): {item.summary}")
         lines.append("")
         return "\n".join(lines)
+
+    def _requirement_selector(self):
+        try:
+            return self.services.resolve(RequirementSelector)
+        except LookupError:
+            pass
+        try:
+            reader = self.services.resolve(RequirementsReader)
+        except LookupError:
+            reader = _core_requirements()
+        return LinkedRequirementSelector(reader) if reader is not None else None
 
     @staticmethod
     def _prepare_code_context(

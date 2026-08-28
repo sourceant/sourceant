@@ -11,6 +11,7 @@ from .models import (
     RequirementLink,
     RequirementQuery,
     RequirementResult,
+    RequirementSelection,
 )
 
 
@@ -37,6 +38,18 @@ class RequirementsWriter(Protocol):
 @runtime_checkable
 class RequirementsRepository(RequirementsReader, RequirementsWriter, Protocol):
     pass
+
+
+@runtime_checkable
+class RequirementSelector(Protocol):
+    """Which recorded requirements a change is answerable to.
+
+    The core answers this from the links it holds, which is exact and shallow.
+    Reading intent out of a change is a different problem, and an installation
+    that can do it registers its own selector here.
+    """
+
+    def select(self, selection: RequirementSelection) -> tuple[Requirement, ...]: ...
 
 
 @runtime_checkable
