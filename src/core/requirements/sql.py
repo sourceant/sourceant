@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 
 from src.core.scope import Scope
+from src.core.sql_support import rows_for
 
 from .models import (
     CODE,
@@ -176,37 +177,54 @@ class SQLRequirementsRepository:
         self, scope: Scope, requirement_ids: frozenset[str]
     ) -> tuple[RequirementLink, ...]:
         key = _scope_key(scope)
-        statement = select(link_table).where(link_table.c.scope == key)
-        if requirement_ids:
-            statement = statement.where(
-                link_table.c.requirement_id.in_(sorted(requirement_ids)),
-            )
-        statement = statement.order_by(link_table.c.id)
         with self._engine.connect() as connection:
-            return tuple(
-                _link_from_row(row) for row in connection.execute(statement).mappings()
-            )
+            if not requirement_ids:
+                rows = list(
+                    connection.execute(
+                        select(link_table)
+                        .where(link_table.c.scope == key)
+                        .order_by(link_table.c.id)
+                    ).mappings()
+                )
+            else:
+                rows = rows_for(
+                    requirement_ids,
+                    lambda chunk: connection.execute(
+                        select(link_table).where(
+                            link_table.c.scope == key,
+                            link_table.c.requirement_id.in_(chunk),
+                        )
+                    ).mappings(),
+                )
+        found = {row["id"]: _link_from_row(row) for row in rows}
+        return tuple(found[key] for key in sorted(found))
 
     def coverage(self, query: CoverageQuery) -> CoverageReport:
         key = _scope_key(query.scope)
         requirement_ids = set(query.requirement_ids)
         if query.paths:
             with self._engine.connect() as connection:
-                for chunk in _chunked(sorted(query.paths)):
-                    for row in connection.execute(
+                for row in rows_for(
+                    query.paths,
+                    lambda chunk: connection.execute(
                         select(link_table.c.requirement_id).where(
                             link_table.c.scope == key,
                             link_table.c.target_id.in_(chunk),
                         )
-                    ):
-                        requirement_ids.add(row[0])
+                    ),
+                ):
+                    requirement_ids.add(row[0])
             if not requirement_ids:
                 return CoverageReport(items=(), truncated=False)
 
+        # Only as many as the report will carry, plus one to notice there were
+        # more, so the identity list never outgrows what a statement can bind.
+        ordered = sorted(requirement_ids)[: query.limit + 1]
+        overflowed = len(ordered) > query.limit
         found = self.search(
             RequirementQuery(
                 scope=query.scope,
-                ids=frozenset(requirement_ids),
+                ids=frozenset(ordered[: query.limit]),
                 limit=query.limit,
             )
         )
@@ -235,7 +253,9 @@ class SQLRequirementsRepository:
                     ),
                 )
             )
-        return CoverageReport(items=tuple(items), truncated=found.has_more)
+        return CoverageReport(
+            items=tuple(items), truncated=found.has_more or overflowed
+        )
 
 
 def _requirement_from_row(row: Mapping[str, Any]) -> Requirement:
@@ -257,13 +277,6 @@ def _link_from_row(row: Mapping[str, Any]) -> RequirementLink:
         target_id=row["target_id"],
         properties=json.loads(row["properties"]),
     )
-
-
-def _chunked(values: list[str], size: int = 500):
-    # SQLite caps bound parameters per statement, and a change set is only as
-    # small as the pull request.
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
 
 
 def _scope_key(scope: Scope) -> str:

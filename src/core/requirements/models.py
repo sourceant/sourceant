@@ -62,6 +62,14 @@ class RequirementQuery:
             raise ValueError("limit must be between 1 and 100")
         if self.offset < 0:
             raise ValueError("offset must not be negative")
+        for name, values in (
+            ("ids", self.ids),
+            ("kinds", self.kinds),
+            ("statuses", self.statuses),
+            ("external_refs", self.external_refs),
+        ):
+            if len(values) > 100:
+                raise ValueError(f"{name} must contain at most 100 values")
 
 
 @dataclass(frozen=True)

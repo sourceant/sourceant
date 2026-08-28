@@ -66,7 +66,12 @@ class CodeIndexDigestReader(Protocol):
 
 @runtime_checkable
 class BulkCodeIndexWriter(Protocol):
-    """Grouping many writes into one commit while a repository is indexed."""
+    """Grouping many writes while a repository is indexed.
+
+    What it yields answers checkpoint(), which the caller invokes wherever a
+    flush would be safe. A repository too large to hold is committed in pieces
+    at those points rather than all at the end.
+    """
 
     def bulk_writes(self): ...
 

@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 
 from src.core.scope import Scope
+from src.core.sql_support import rows_for
 
 from .memory import InMemoryKnowledgeRepository
 from .models import (
@@ -178,24 +179,36 @@ class SQLKnowledgeRepository:
         self, scope: Scope, knowledge_ids: frozenset[str]
     ) -> tuple[KnowledgeLink, ...]:
         key = self._scope_key(scope)
-        statement = select(link_table).where(link_table.c.scope == key)
-        if knowledge_ids:
-            statement = statement.where(
-                link_table.c.knowledge_id.in_(sorted(knowledge_ids))
-            )
         with self._engine.connect() as connection:
-            return tuple(
-                KnowledgeLink(
-                    id=row["id"],
-                    knowledge_id=row["knowledge_id"],
-                    target_kind=row["target_kind"],
-                    target_id=row["target_id"],
-                    properties=json.loads(row["properties"]),
+            if not knowledge_ids:
+                rows = list(
+                    connection.execute(
+                        select(link_table)
+                        .where(link_table.c.scope == key)
+                        .order_by(link_table.c.id)
+                    ).mappings()
                 )
-                for row in connection.execute(
-                    statement.order_by(link_table.c.id)
-                ).mappings()
+            else:
+                rows = rows_for(
+                    knowledge_ids,
+                    lambda chunk: connection.execute(
+                        select(link_table).where(
+                            link_table.c.scope == key,
+                            link_table.c.knowledge_id.in_(chunk),
+                        )
+                    ).mappings(),
+                )
+        found = {
+            row["id"]: KnowledgeLink(
+                id=row["id"],
+                knowledge_id=row["knowledge_id"],
+                target_kind=row["target_kind"],
+                target_id=row["target_id"],
+                properties=json.loads(row["properties"]),
             )
+            for row in rows
+        }
+        return tuple(found[key] for key in sorted(found))
 
     def knowledge_ids_for_paths(
         self, scope: Scope, paths: frozenset[str]
@@ -203,17 +216,19 @@ class SQLKnowledgeRepository:
         if not paths:
             return frozenset()
         key = self._scope_key(scope)
-        found: set[str] = set()
         with self._engine.connect() as connection:
-            for chunk in _chunked(sorted(paths)):
-                for row in connection.execute(
-                    select(link_table.c.knowledge_id).where(
-                        link_table.c.scope == key,
-                        link_table.c.target_id.in_(chunk),
-                    )
-                ):
-                    found.add(row[0])
-        return frozenset(found)
+            return frozenset(
+                row[0]
+                for row in rows_for(
+                    paths,
+                    lambda chunk: connection.execute(
+                        select(link_table.c.knowledge_id).where(
+                            link_table.c.scope == key,
+                            link_table.c.target_id.in_(chunk),
+                        )
+                    ),
+                )
+            )
 
     def search(self, query: KnowledgeQuery) -> KnowledgeResult:
         with self._lock:
@@ -274,10 +289,3 @@ class SQLKnowledgeRepository:
     @staticmethod
     def _encode(value: Mapping[str, Any]) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
-def _chunked(values: list[str], size: int = 500):
-    # SQLite caps bound parameters per statement, and a change set is only as
-    # small as the pull request.
-    for start in range(0, len(values), size):
-        yield values[start : start + size]

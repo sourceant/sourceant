@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
-from contextlib import nullcontext
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,7 +75,7 @@ class RepositoryIndexer:
 
         indexed = unchanged = skipped = 0
         seen: set[str] = set()
-        with self._batch():
+        with self._batch() as batch:
             for path in paths:
                 content = _read(root / path)
                 if content is None:
@@ -99,6 +99,10 @@ class RepositoryIndexer:
                     indexed += 1
                 else:
                     skipped += 1
+                # Every edge a file produces joins that file's own nodes, so
+                # nothing is half written between one file and the next.
+                if batch is not None:
+                    batch.checkpoint()
 
         removed = 0
         if update:
@@ -109,10 +113,13 @@ class RepositoryIndexer:
             indexed=indexed, unchanged=unchanged, removed=removed, skipped=skipped
         )
 
+    @contextmanager
     def _batch(self):
         if isinstance(self._writer, BulkCodeIndexWriter):
-            return self._writer.bulk_writes()
-        return nullcontext()
+            with self._writer.bulk_writes() as batch:
+                yield batch
+            return
+        yield None
 
     def _known_digests(self, scope: Scope) -> dict[str, str]:
         if isinstance(self._writer, CodeIndexDigestReader):

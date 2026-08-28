@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 
 from src.core.scope import Scope
+from src.core.sql_support import rows_for
 from src.core.topology import TopologyEvidence
 
 from .models import (
@@ -108,16 +109,25 @@ class SQLImpactSeedRepository:
         if not changes:
             return ()
         key = _scope_key(scope)
+        # Grouped by kind and revision, which a single change set almost always
+        # shares, so this asks once rather than once per changed file.
+        grouped: dict[tuple[str, str], set[str]] = {}
+        for change in changes:
+            grouped.setdefault((change.kind, change.revision), set()).add(change.id)
+
         found: set[str] = set()
         with self._engine.connect() as connection:
-            for change in changes:
-                for row in connection.execute(
-                    select(mapping_table.c.entity_id).where(
-                        mapping_table.c.scope == key,
-                        mapping_table.c.change_kind == change.kind,
-                        mapping_table.c.change_id == change.id,
-                        mapping_table.c.revision == change.revision,
-                    )
+            for (kind, revision), identities in grouped.items():
+                for row in rows_for(
+                    identities,
+                    lambda chunk, kind=kind, revision=revision: connection.execute(
+                        select(mapping_table.c.entity_id).where(
+                            mapping_table.c.scope == key,
+                            mapping_table.c.change_kind == kind,
+                            mapping_table.c.revision == revision,
+                            mapping_table.c.change_id.in_(chunk),
+                        )
+                    ),
                 ):
                     found.add(row[0])
         return tuple(sorted(found))

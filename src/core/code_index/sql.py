@@ -21,6 +21,7 @@ from sqlalchemy import (
 )
 
 from src.core.scope import Scope
+from src.core.sql_support import chunked, rows_for
 
 from .models import (
     CodeEdge,
@@ -37,6 +38,11 @@ from .models import (
 
 metadata = MetaData()
 scope_key_type = String(500)
+
+# How much of a repository the writer holds before committing what it has. A
+# whole one does not fit: fifty thousand files come to some hundreds of
+# thousands of nodes.
+CHECKPOINT = 20_000
 
 node_table = Table(
     "code_nodes",
@@ -71,26 +77,57 @@ edge_table = Table(
 )
 
 
+class BulkWrite:
+    def __init__(self, store: "SQLCodeIndexRepository") -> None:
+        self._store = store
+
+    def checkpoint(self) -> bool:
+        return self._store.checkpoint()
+
+
 class SQLCodeIndexRepository:
     def __init__(self, engine: Engine, *, create_schema: bool = False) -> None:
         self._engine = engine
         self._lock = RLock()
         self._buffer: dict[str, list] | None = None
+        self._checkpoint_every = CHECKPOINT
         if create_schema:
             metadata.create_all(engine)
 
     @contextmanager
-    def bulk_writes(self) -> Iterator[None]:
+    def bulk_writes(self, checkpoint_every: int | None = None) -> Iterator["BulkWrite"]:
+        """Group writes, flushing whenever the caller says it is safe to.
+
+        An edge is only written after the nodes it joins, so the store cannot
+        decide on its own when a half written file is on the buffer. The caller
+        marks the points where nothing is partial, and the store flushes at one
+        of them once it is holding more than it should.
+        """
         with self._lock:
             if self._buffer is not None:
-                yield
+                yield BulkWrite(self)
                 return
             self._buffer = {"nodes": [], "edges": []}
+            self._checkpoint_every = max(
+                1, CHECKPOINT if checkpoint_every is None else checkpoint_every
+            )
             try:
-                yield
+                yield BulkWrite(self)
                 self._flush()
             finally:
                 self._buffer = None
+
+    def checkpoint(self) -> bool:
+        """Flush if the buffer has grown past what should be held in memory."""
+        with self._lock:
+            if self._buffer is None:
+                return False
+            held = len(self._buffer["nodes"]) + len(self._buffer["edges"])
+            if held < self._checkpoint_every:
+                return False
+            self._flush()
+            self._buffer = {"nodes": [], "edges": []}
+            return True
 
     def put_node(self, scope: Scope, node: CodeNode) -> None:
         with self._lock:
@@ -131,26 +168,27 @@ class SQLCodeIndexRepository:
                 ]
                 if not ids:
                     return
-                connection.execute(
-                    delete(edge_table).where(
-                        edge_table.c.scope == key,
-                        or_(
-                            edge_table.c.source_id.in_(ids),
-                            edge_table.c.target_id.in_(ids),
-                        ),
+                for chunk in chunked(ids):
+                    connection.execute(
+                        delete(edge_table).where(
+                            edge_table.c.scope == key,
+                            or_(
+                                edge_table.c.source_id.in_(chunk),
+                                edge_table.c.target_id.in_(chunk),
+                            ),
+                        )
                     )
-                )
-                connection.execute(
-                    delete(label_table).where(
-                        label_table.c.scope == key,
-                        label_table.c.node_id.in_(ids),
+                    connection.execute(
+                        delete(label_table).where(
+                            label_table.c.scope == key,
+                            label_table.c.node_id.in_(chunk),
+                        )
                     )
-                )
-                connection.execute(
-                    delete(node_table).where(
-                        node_table.c.scope == key, node_table.c.id.in_(ids)
+                    connection.execute(
+                        delete(node_table).where(
+                            node_table.c.scope == key, node_table.c.id.in_(chunk)
+                        )
                     )
-                )
 
     def file_digests(self, scope: Scope) -> dict[str, str]:
         key = _scope_key(scope)
@@ -344,7 +382,7 @@ class SQLCodeIndexRepository:
         for scope_key, node_id in by_key:
             by_scope.setdefault(scope_key, []).append(node_id)
         for scope_key, node_ids in by_scope.items():
-            for chunk in _chunked(sorted(node_ids)):
+            for chunk in chunked(node_ids):
                 connection.execute(
                     delete(node_table).where(
                         node_table.c.scope == scope_key,
@@ -385,7 +423,7 @@ class SQLCodeIndexRepository:
         for scope_key, edge_id in by_key:
             by_scope.setdefault(scope_key, []).append(edge_id)
         for scope_key, edge_ids in by_scope.items():
-            for chunk in _chunked(sorted(edge_ids)):
+            for chunk in chunked(edge_ids):
                 connection.execute(
                     delete(edge_table).where(
                         edge_table.c.scope == scope_key,
@@ -439,31 +477,31 @@ class SQLCodeIndexRepository:
     def _labels_for(
         self, connection, scope_key: str, node_ids
     ) -> dict[str, frozenset[str]]:
-        wanted = sorted({node_id for node_id in node_ids if node_id})
-        if not wanted:
-            return {}
         grouped: dict[str, set[str]] = {}
-        for row in connection.execute(
-            select(label_table.c.node_id, label_table.c.label).where(
-                label_table.c.scope == scope_key,
-                label_table.c.node_id.in_(wanted),
-            )
+        for row in rows_for(
+            node_ids,
+            lambda chunk: connection.execute(
+                select(label_table.c.node_id, label_table.c.label).where(
+                    label_table.c.scope == scope_key,
+                    label_table.c.node_id.in_(chunk),
+                )
+            ),
         ):
             grouped.setdefault(row[0], set()).add(row[1])
         return {node_id: frozenset(values) for node_id, values in grouped.items()}
 
     def _node_rows(self, connection, scope_key, node_ids) -> dict:
-        wanted = sorted({node_id for node_id in node_ids if node_id})
-        if not wanted:
-            return {}
         return {
             row["id"]: row
-            for row in connection.execute(
-                select(node_table).where(
-                    node_table.c.scope == scope_key,
-                    node_table.c.id.in_(wanted),
-                )
-            ).mappings()
+            for row in rows_for(
+                node_ids,
+                lambda chunk: connection.execute(
+                    select(node_table).where(
+                        node_table.c.scope == scope_key,
+                        node_table.c.id.in_(chunk),
+                    )
+                ).mappings(),
+            )
         }
 
     def _edges_touching(
@@ -495,17 +533,23 @@ class SQLCodeIndexRepository:
     ) -> tuple[CodeEdge, ...]:
         if not node_ids:
             return ()
-        statement = select(edge_table).where(
-            edge_table.c.scope == scope_key,
-            edge_table.c.source_id.in_(sorted(node_ids)),
-            edge_table.c.target_id.in_(sorted(node_ids)),
-        )
-        if edge_types:
-            statement = statement.where(edge_table.c.type.in_(sorted(edge_types)))
-        statement = statement.order_by(edge_table.c.id)
-        return tuple(
-            _edge_from_row(row) for row in connection.execute(statement).mappings()
-        )
+
+        def _for(chunk):
+            statement = select(edge_table).where(
+                edge_table.c.scope == scope_key,
+                edge_table.c.source_id.in_(chunk),
+            )
+            if edge_types:
+                statement = statement.where(edge_table.c.type.in_(sorted(edge_types)))
+            return connection.execute(statement).mappings()
+
+        wanted = set(node_ids)
+        found = {
+            row["id"]: _edge_from_row(row)
+            for row in rows_for(node_ids, _for)
+            if row["target_id"] in wanted
+        }
+        return tuple(found[key] for key in sorted(found))
 
 
 def _with_labels(statement, scope_key: str, labels, id_column):
@@ -565,13 +609,6 @@ def _edge_from_row(row: Mapping[str, Any]) -> CodeEdge:
         type=row["type"],
         properties=json.loads(row["properties"]),
     )
-
-
-def _chunked(values: list[str], size: int = 500):
-    # SQLite caps bound parameters per statement, so a whole repository cannot
-    # go into one IN clause.
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
 
 
 def _scope_key(scope: Scope) -> str:
