@@ -44,13 +44,15 @@ See [GitHub App Setup](github-app.md) for creating the app.
 
 ### API tokens
 
-Required for every `/api/` route other than the webhooks:
+Required for every `/api/` route other than the webhooks and the local code index:
 
 ```env
 JWT_SECRET=your_signing_secret
 ```
 
 Tokens are HS256 JWTs signed with this secret. See [API](api.md#authentication).
+
+Left unset, one is generated on first start and kept in the data directory, which is what lets a laptop run with nothing configured. Set it whenever something else signs the tokens this instance verifies: a generated secret would reject them all. Setting `REQUIRE_GATEWAY=true` says exactly that, and refuses to start without one rather than failing later on every request.
 
 ### Database
 

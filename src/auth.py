@@ -5,14 +5,23 @@ import os
 import jwt
 from fastapi import Header, HTTPException
 
+from src.config.paths import local_jwt_secret
+from src.config.settings import REQUIRE_GATEWAY
+
 JWT_ALGORITHM = "HS256"
 
 
 def _get_jwt_secret() -> str:
     secret = os.environ.get("JWT_SECRET")
-    if not secret:
-        raise RuntimeError("JWT_SECRET environment variable is not set")
-    return secret
+    if secret:
+        return secret
+    if REQUIRE_GATEWAY:
+        raise RuntimeError(
+            "JWT_SECRET is not set, and REQUIRE_GATEWAY says a gateway signs the "
+            "tokens this verifies. Generating one here would reject every token "
+            "the gateway sends."
+        )
+    return local_jwt_secret()
 
 
 def require_jwt_secret() -> None:

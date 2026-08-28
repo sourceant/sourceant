@@ -219,4 +219,12 @@ def serve_command(host, port):
     """Run the HTTP server, including the MCP endpoint."""
     import uvicorn
 
+    from src.config import settings
+
+    # Being the local command is what opens the routes that change what this
+    # machine indexes. Set on the module rather than read from the environment
+    # here, because settings was imported before this ran and uvicorn does not
+    # re-execute an imported module. Deployments run uvicorn directly and leave
+    # it off; an operator who means to sets SOURCEANT_LOCAL.
+    settings.LOCAL_MODE = True
     uvicorn.run("src.api.main:app", host=host, port=port)

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import create_engine
 
 from src.core.code_index import CodeGraphQuery, CodeSearch, InMemoryCodeIndex
-from src.core.code_index.indexer import RepositoryIndexer
+from src.core.code_index.indexer import RepositoryIndexer, is_generated
 from src.core.code_index.sql import SQLCodeIndexRepository
 from src.core.scope import Scope
 
@@ -192,3 +192,38 @@ def test_it_works_against_an_index_that_only_writes(repository):
 def test_it_refuses_a_path_that_is_not_a_directory(repository, durable):
     with pytest.raises(ValueError):
         RepositoryIndexer(durable).index(SCOPE, repository / "README.md")
+
+
+class TestGeneratedFiles:
+    """A build's output is not code somebody wrote, and reads as noise.
+
+    A minified bundle names everything with single letters, so parsing one puts
+    hundreds of symbols called `q` and `eo` into the graph and they crowd out
+    the repository around them.
+    """
+
+    def test_a_minified_bundle_is_left_out(self):
+        assert is_generated("force-graph.min.js", "var a=1\n")
+
+    def test_a_source_map_is_left_out(self):
+        assert is_generated("app.js.map", '{"version":3}\n')
+
+    def test_one_enormous_line_is_a_build_whatever_it_is_called(self):
+        assert is_generated("index-BqUe1JKj.js", "!function(){" + "e=1;" * 400 + "}()")
+
+    def test_ordinary_code_is_read(self):
+        assert not is_generated(
+            "charge.py", "import decimal\n\n\ndef charge(amount):\n    return amount\n"
+        )
+
+    def test_a_long_line_further_down_does_not_condemn_a_file(self):
+        """Data at the bottom of a real file is not a build."""
+        content = (
+            "def charge(amount):\n    return amount\n"
+            + "\n" * 60
+            + "x = '"
+            + "y" * 900
+            + "'\n"
+        )
+
+        assert not is_generated("charge.py", content)

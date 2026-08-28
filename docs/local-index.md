@@ -79,6 +79,24 @@ The HTTP server serves the same thing, plus the REST API:
 ./sourceant serve
 ```
 
+It starts with nothing configured. A signing secret is made once and kept in the data directory beside the database, so tokens survive a restart.
+
+### Reading the index over HTTP
+
+Three routes serve what a client needs to draw the index. They carry no token, and take no scope: a repository is readable only once `repo add` has registered it on this machine, so a deployment nobody registered anything on serves nothing here.
+
+```bash
+curl localhost:8000/api/code/repositories
+curl 'localhost:8000/api/code/graph?repository=acme/billing'
+curl 'localhost:8000/api/code/nodes?repository=acme/billing&file_path=app/charge.py'
+```
+
+`graph` returns a whole scope at once, as `nodes` and `links`, capped at five thousand nodes and reporting `truncated` when it hit the cap. Each node carries `labels` for what it is and `kind` for the language or symbol type, which is the difference between a Python file and a Python function. `path_prefix` narrows it to a directory and `include_tests` puts the test suite back in.
+
+`nodes` pages what the index can filter without reading the scope: label and file path. A substring search over names is not offered, because answering one would read every node.
+
+`serve` binds to `127.0.0.1` by default. These routes are for the machine the index is on; binding it wider publishes them.
+
 ### What a local index is not
 
 This applies to code structure only.
