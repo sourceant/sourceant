@@ -9,6 +9,7 @@ from src.core.code_index import (
     CodeIndexReader,
     InMemoryCodeIndex,
     ResolvingCodeIndexReader,
+    SQLCodeIndexRepository,
 )
 from src.core.context import DefaultContextProvider
 from src.core.contracts import InMemoryContractRepository
@@ -40,7 +41,7 @@ def create_default_mcp_server():
         if engine is not None
         else InMemoryTopologyRepository()
     )
-    code = _resolving_code_index()
+    code = _resolving_code_index(engine)
     provider = DefaultContextProvider(
         code=code,
         knowledge=knowledge,
@@ -87,7 +88,7 @@ def create_http_mcp_server():
         if engine is not None
         else InMemoryTopologyRepository()
     )
-    code = _resolving_code_index()
+    code = _resolving_code_index(engine)
     provider = DefaultContextProvider(
         code=code,
         knowledge=knowledge,
@@ -114,8 +115,8 @@ def create_http_mcp_server():
     )
 
 
-def _resolving_code_index() -> CodeIndexReader:
+def _resolving_code_index(engine) -> CodeIndexReader:
     return ResolvingCodeIndexReader(
         lambda: service_registry.resolve(CodeIndexReader),
-        InMemoryCodeIndex(),
+        (SQLCodeIndexRepository(engine) if engine is not None else InMemoryCodeIndex()),
     )

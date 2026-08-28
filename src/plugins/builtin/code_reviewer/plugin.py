@@ -12,7 +12,7 @@ from rapidfuzz import fuzz
 
 from src.core.plugins import BasePlugin, PluginMetadata, PluginType
 from src.core.plugins import event_hooks, HookPriority
-from src.core.code_index import CodeIndexReader
+from src.core.code_index import CodeIndexReader, SQLCodeIndexRepository
 from src.core.review_context import (
     DefaultReviewCodeContextPreparer,
     LazyChangedFileCodeIndex,
@@ -403,7 +403,7 @@ class CodeReviewerPlugin(BasePlugin):
             try:
                 durable_code = self.services.resolve(CodeIndexReader)
             except LookupError:
-                durable_code = None
+                durable_code = _core_code_index()
             local_evidence = CachedChangedFileEvidenceReader(read_changed_file)
             evidence: ChangedFileEvidenceReader = local_evidence
             if durable_code is not None:
@@ -879,3 +879,10 @@ class CodeReviewerPlugin(BasePlugin):
                 return True
 
         return False
+
+
+def _core_code_index():
+    from src.config.db import get_engine
+
+    engine = get_engine()
+    return SQLCodeIndexRepository(engine) if engine is not None else None
