@@ -20,6 +20,7 @@ from .models import (
 )
 from .resolving import ResolvingCodeIndexReader
 from .scip import ScipImportLimits, ScipImportResult, ScipJsonImporter
+from .sql import SQLCodeIndexRepository
 
 __all__ = [
     "MAX_GRAPH_NODES",
@@ -39,6 +40,7 @@ __all__ = [
     "CodeTraversalResult",
     "InMemoryCodeIndex",
     "ResolvingCodeIndexReader",
+    "SQLCodeIndexRepository",
     "ScipImportLimits",
     "ScipImportResult",
     "ScipJsonImporter",

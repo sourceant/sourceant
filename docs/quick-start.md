@@ -1,6 +1,8 @@
 ## Quick Start
 
-SourceAnt reviews pull requests, triages issues, and holds the engineering context behind both. This walkthrough gets a local instance running and answering GitHub events.
+SourceAnt holds an indexed graph of your codebase and the decisions behind it. Review and triage are built on that graph.
+
+To index repositories on your own machine with nothing configured, start at [Local index](local-index.md). This walkthrough gets a full instance running and answering GitHub events.
 
 ### Prerequisites
 

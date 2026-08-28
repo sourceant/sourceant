@@ -1,7 +1,6 @@
-import os
 from sqlmodel import create_engine, Session
 from src.utils.logger import logger
-from src.config.settings import STATELESS_MODE, DEBUG_MODE
+from src.config.settings import DATABASE_URL, STATELESS_MODE, DEBUG_MODE
 
 engine = None
 
@@ -16,7 +15,6 @@ def get_engine():
 
     if engine is None:
         logger.info("Database engine is not initialized. Creating a new one.")
-        DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sourceant.db")
         connect_args = {}
         if DATABASE_URL.startswith("sqlite"):
             logger.info("Using SQLite database.")

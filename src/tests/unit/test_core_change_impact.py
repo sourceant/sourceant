@@ -1,16 +1,16 @@
 import pytest
 
-from src.core.review_impact import (
+from src.core.impact import (
     ChangedCodeReference,
-    CompatibilityEvidence,
-    CompatibilityEvidenceQuery,
-    CompatibilityEvidenceRepository,
-    DefaultReviewImpactPreparer,
+    CompatibilityCheck,
+    CompatibilityCheckQuery,
+    CompatibilityCheckRepository,
+    DefaultChangeImpactResolver,
     ImpactFinding,
     ImpactSeedRepository,
-    InMemoryCompatibilityEvidenceReader,
+    InMemoryCompatibilityCheckReader,
     InMemoryImpactSeedResolver,
-    ReviewImpactRequest,
+    ChangeImpactRequest,
 )
 from src.core.scope import Scope
 from src.core.topology import (
@@ -31,8 +31,8 @@ PROVENANCE = TopologyEvidence(
 def build_preparer():
     seeds = InMemoryImpactSeedResolver()
     topology = InMemoryTopologyRepository()
-    compatibility = InMemoryCompatibilityEvidenceReader()
-    preparer = DefaultReviewImpactPreparer(
+    compatibility = InMemoryCompatibilityCheckReader()
+    preparer = DefaultChangeImpactResolver(
         seeds=seeds,
         topology=topology,
         compatibility=compatibility,
@@ -44,7 +44,7 @@ def test_in_memory_repositories_implement_read_and_write_contracts():
     _, seeds, _, compatibility = build_preparer()
 
     assert isinstance(seeds, ImpactSeedRepository)
-    assert isinstance(compatibility, CompatibilityEvidenceRepository)
+    assert isinstance(compatibility, CompatibilityCheckRepository)
 
 
 def add_topology(seeds, topology, scope=PRODUCT):
@@ -77,7 +77,7 @@ def evidence(**values):
         "evidence": (PROVENANCE,),
     }
     defaults.update(values)
-    return CompatibilityEvidence(**defaults)
+    return CompatibilityCheck(**defaults)
 
 
 def test_prepares_deterministic_incompatible_impact_with_provenance():
@@ -85,8 +85,8 @@ def test_prepares_deterministic_incompatible_impact_with_provenance():
     add_topology(seeds, topology)
     compatibility.put_evidence(PRODUCT, evidence())
 
-    first = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
-    second = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
+    first = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
+    second = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
 
     assert first == second
     assert tuple(entity.id for entity in first.topology.entities) == (
@@ -106,7 +106,7 @@ def test_keeps_uncertain_evidence_out_of_certain_findings():
     add_topology(seeds, topology)
     compatibility.put_evidence(PRODUCT, evidence(compatible=None))
 
-    result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
+    result = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
 
     assert result.findings[0].state == "uncertain"
     assert result.findings[0].certain is False
@@ -123,7 +123,7 @@ def test_ignores_compatible_stale_pending_and_weak_evidence():
     ):
         compatibility.put_evidence(PRODUCT, item)
 
-    result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
+    result = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
 
     assert tuple(item.id for item in result.compatibility) == ("compatible",)
     assert result.findings == ()
@@ -140,7 +140,7 @@ def test_filters_evidence_before_applying_the_result_limit():
     ):
         compatibility.put_evidence(PRODUCT, item)
 
-    result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,), entity_limit=2))
+    result = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,), entity_limit=2))
 
     assert tuple(item.id for item in result.compatibility) == ("z-valid",)
     assert tuple(item.compatibility_evidence_id for item in result.findings) == (
@@ -153,7 +153,7 @@ def test_preserves_scope_and_returns_empty_when_code_has_no_mapping():
     add_topology(seeds, topology, OTHER)
     compatibility.put_evidence(OTHER, evidence())
 
-    result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
+    result = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
 
     assert result.topology.entities == ()
     assert result.compatibility == ()
@@ -164,7 +164,7 @@ def test_returns_empty_when_mapped_topology_entity_does_not_exist():
     preparer, seeds, _, _ = build_preparer()
     seeds.put_mapping(PRODUCT, CHANGE, ("missing",))
 
-    result = preparer.prepare(ReviewImpactRequest(PRODUCT, (CHANGE,)))
+    result = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
 
     assert result.topology.entities == ()
     assert result.compatibility == ()
@@ -188,11 +188,11 @@ def test_rejects_impact_findings_without_traceable_evidence():
 
 
 def test_compatibility_query_accepts_limits_independent_of_review_defaults():
-    query = CompatibilityEvidenceQuery(PRODUCT, frozenset({"provider"}), limit=500)
+    query = CompatibilityCheckQuery(PRODUCT, frozenset({"provider"}), limit=500)
 
     assert query.limit == 500
 
 
 def test_compatibility_query_requires_a_positive_limit():
     with pytest.raises(ValueError, match="limit must be positive"):
-        CompatibilityEvidenceQuery(PRODUCT, frozenset({"provider"}), limit=0)
+        CompatibilityCheckQuery(PRODUCT, frozenset({"provider"}), limit=0)

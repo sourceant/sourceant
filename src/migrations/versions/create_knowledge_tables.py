@@ -11,7 +11,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.create_table(
-        "knowledge",
+        "knowledge_objects",
         sa.Column(
             "scope",
             sa.Text().with_variant(sa.String(length=500), "mysql"),
@@ -43,4 +43,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("knowledge_relationships")
-    op.drop_table("knowledge")
+    op.drop_table("knowledge_objects")

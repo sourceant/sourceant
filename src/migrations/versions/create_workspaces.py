@@ -23,7 +23,7 @@ def upgrade() -> None:
         # The identity everything outside this deployment uses, and what a token
         # names. Unique, so what belongs to a workspace can point straight at it.
         sa.Column(
-            "external_id", sa.String(255), nullable=False, unique=True, index=True
+            "external_ref", sa.String(255), nullable=False, unique=True, index=True
         ),
         sa.Column(
             "created_at",

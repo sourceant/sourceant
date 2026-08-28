@@ -9,12 +9,17 @@ from src.core.code_index import (
     CodeIndexReader,
     InMemoryCodeIndex,
     ResolvingCodeIndexReader,
+    SQLCodeIndexRepository,
 )
 from src.core.context import DefaultContextProvider
 from src.core.contracts import InMemoryContractRepository
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
     SQLKnowledgeRepository,
+)
+from src.core.requirements import (
+    KnowledgeBackedRequirements,
+    SQLRequirementsRepository,
 )
 from src.core.review_state import InMemoryReviewStateRepository
 from src.core.services import service_registry
@@ -40,19 +45,22 @@ def create_default_mcp_server():
         if engine is not None
         else InMemoryTopologyRepository()
     )
-    code = _resolving_code_index()
+    code = _resolving_code_index(engine)
+    requirements = _requirements(engine, knowledge)
     provider = DefaultContextProvider(
         code=code,
         knowledge=knowledge,
         topology=topology,
         contracts=InMemoryContractRepository(),
         review_state=InMemoryReviewStateRepository(),
+        requirements=requirements,
     )
     return create_mcp_server(
         provider,
         code=code,
         knowledge=knowledge,
         topology=topology,
+        requirements=requirements,
     )
 
 
@@ -87,19 +95,22 @@ def create_http_mcp_server():
         if engine is not None
         else InMemoryTopologyRepository()
     )
-    code = _resolving_code_index()
+    code = _resolving_code_index(engine)
+    requirements = _requirements(engine, knowledge)
     provider = DefaultContextProvider(
         code=code,
         knowledge=knowledge,
         topology=topology,
         contracts=InMemoryContractRepository(),
         review_state=InMemoryReviewStateRepository(),
+        requirements=requirements,
     )
     return create_mcp_server(
         provider,
         code=code,
         knowledge=knowledge,
         topology=topology,
+        requirements=requirements,
         scope_resolver=EntitledScopeResolver(connected_repository_entitlement(engine)),
         auth=AuthSettings(
             issuer_url=values["issuer"],
@@ -114,8 +125,14 @@ def create_http_mcp_server():
     )
 
 
-def _resolving_code_index() -> CodeIndexReader:
+def _requirements(engine, knowledge):
+    if engine is None:
+        return None
+    return KnowledgeBackedRequirements(SQLRequirementsRepository(engine), knowledge)
+
+
+def _resolving_code_index(engine) -> CodeIndexReader:
     return ResolvingCodeIndexReader(
         lambda: service_registry.resolve(CodeIndexReader),
-        InMemoryCodeIndex(),
+        (SQLCodeIndexRepository(engine) if engine is not None else InMemoryCodeIndex()),
     )

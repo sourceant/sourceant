@@ -4,7 +4,7 @@ from src.core.code_index import CodeNode, CodeTraversal, InMemoryCodeIndex
 from src.core.context import ContextRequest, DefaultContextProvider
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
-    Knowledge,
+    KnowledgeObject,
     KnowledgeTraversal,
 )
 from src.core.scope import Scope
@@ -18,7 +18,9 @@ def test_context_provider_combines_bounded_sources_inside_scope():
     knowledge = InMemoryKnowledgeRepository()
     for scope in (PROJECT, OTHER_PROJECT):
         code.put_node(scope, CodeNode("handler", frozenset({"Function"})))
-        knowledge.put(scope, Knowledge("rule", "rule", "approved", "Validate input"))
+        knowledge.put(
+            scope, KnowledgeObject("rule", "rule", "approved", "Validate input")
+        )
 
     result = DefaultContextProvider(code=code, knowledge=knowledge).get_context(
         ContextRequest(

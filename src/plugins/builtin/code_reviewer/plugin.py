@@ -12,7 +12,26 @@ from rapidfuzz import fuzz
 
 from src.core.plugins import BasePlugin, PluginMetadata, PluginType
 from src.core.plugins import event_hooks, HookPriority
-from src.core.code_index import CodeIndexReader
+from sqlalchemy.exc import SQLAlchemyError
+
+from src.core.code_index import CodeIndexReader, SQLCodeIndexRepository
+from src.core.change_context import (
+    ChangeContextResolver,
+    ChangedFile,
+    ChangeSet,
+    DefaultChangeContextResolver,
+)
+from src.core.knowledge import (
+    KnowledgeReader,
+    KnowledgeSelector,
+    LinkedKnowledgeSelector,
+)
+from src.core.impact import ChangeImpactResolver
+from src.core.requirements import (
+    LinkedRequirementSelector,
+    RequirementSelector,
+    RequirementsReader,
+)
 from src.core.review_context import (
     DefaultReviewCodeContextPreparer,
     LazyChangedFileCodeIndex,
@@ -403,7 +422,27 @@ class CodeReviewerPlugin(BasePlugin):
             try:
                 durable_code = self.services.resolve(CodeIndexReader)
             except LookupError:
-                durable_code = None
+                durable_code = _core_code_index()
+            changed_files = tuple(
+                ChangedFile(path=parsed_file.file_path)
+                for parsed_file in parsed_files
+                if not parsed_file.is_binary_file and parsed_file.file_path
+            )
+            known = None
+            if changed_files:
+                known = self._change_context_resolver(durable_code).resolve(
+                    ChangeSet(
+                        scope=Scope.from_mapping({"repository": repo_full_name}),
+                        files=changed_files,
+                        revision=pull_request.head_sha or "",
+                        base_revision=pull_request.base_sha or "",
+                        title=pull_request.title or "",
+                        description=getattr(pull_request, "body", "") or "",
+                    )
+                )
+            requirements_section = _requirements_section(known)
+            knowledge_section = _knowledge_section(known)
+            impact_section = _impact_section(known)
             local_evidence = CachedChangedFileEvidenceReader(read_changed_file)
             evidence: ChangedFileEvidenceReader = local_evidence
             if durable_code is not None:
@@ -428,6 +467,9 @@ class CodeReviewerPlugin(BasePlugin):
                     code_readers=(durable_code, local_code),
                     read_content=read_changed_file,
                     context_file_limit=context_file_limit,
+                    requirements=requirements_section,
+                    knowledge=knowledge_section,
+                    impact=impact_section,
                 )
             else:
                 logger.info("Diff is too large. Performing file-by-file review.")
@@ -443,6 +485,9 @@ class CodeReviewerPlugin(BasePlugin):
                     code_readers=(durable_code, local_code),
                     read_content=read_changed_file,
                     context_file_limit=context_file_limit,
+                    requirements=requirements_section,
+                    knowledge=knowledge_section,
+                    impact=impact_section,
                 )
 
             if existing_comments and final_review.code_suggestions:
@@ -535,6 +580,9 @@ class CodeReviewerPlugin(BasePlugin):
         code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
         read_content=None,
         context_file_limit: int = 20,
+        requirements: Optional[str] = None,
+        knowledge: Optional[str] = None,
+        impact: Optional[str] = None,
     ) -> CodeReview:
         """Generate review in a single pass for small diffs."""
         suggestion_filter = SuggestionFilter()
@@ -553,6 +601,9 @@ class CodeReviewerPlugin(BasePlugin):
             pr_metadata=pr_metadata,
             existing_comments=existing_comments,
             code_context=code_context,
+            requirements=requirements,
+            knowledge=knowledge,
+            impact=impact,
         )
 
         all_suggestions = []
@@ -598,6 +649,9 @@ class CodeReviewerPlugin(BasePlugin):
         code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
         read_content=None,
         context_file_limit: int = 20,
+        requirements: Optional[str] = None,
+        knowledge: Optional[str] = None,
+        impact: Optional[str] = None,
     ) -> CodeReview:
         """Generate review file by file for large diffs."""
         suggestion_filter = SuggestionFilter()
@@ -627,6 +681,9 @@ class CodeReviewerPlugin(BasePlugin):
                     read_content=read_content,
                     file_limit=context_file_limit,
                 ),
+                requirements=requirements,
+                knowledge=knowledge,
+                impact=impact,
             )
 
             if review_for_file and review_for_file.code_suggestions:
@@ -646,6 +703,46 @@ class CodeReviewerPlugin(BasePlugin):
             verdict=verdict,
             code_suggestions=all_suggestions,
         )
+
+    def _change_context_resolver(self, durable_code):
+        try:
+            return self.services.resolve(ChangeContextResolver)
+        except LookupError:
+            pass
+        return DefaultChangeContextResolver(
+            code=durable_code,
+            knowledge=self._knowledge_selector(),
+            requirements=self._requirement_selector(),
+            impact=self._impact_preparer(),
+        )
+
+    def _knowledge_selector(self):
+        try:
+            return self.services.resolve(KnowledgeSelector)
+        except LookupError:
+            pass
+        try:
+            reader = self.services.resolve(KnowledgeReader)
+        except LookupError:
+            reader = _core_knowledge()
+        return LinkedKnowledgeSelector(reader) if reader is not None else None
+
+    def _requirement_selector(self):
+        try:
+            return self.services.resolve(RequirementSelector)
+        except LookupError:
+            pass
+        try:
+            reader = self.services.resolve(RequirementsReader)
+        except LookupError:
+            reader = _core_requirements()
+        return LinkedRequirementSelector(reader) if reader is not None else None
+
+    def _impact_preparer(self):
+        try:
+            return self.services.resolve(ChangeImpactResolver)
+        except LookupError:
+            return _core_impact_preparer(self.services)
 
     @staticmethod
     def _prepare_code_context(
@@ -879,3 +976,95 @@ class CodeReviewerPlugin(BasePlugin):
                 return True
 
         return False
+
+
+def _requirements_section(known) -> Optional[str]:
+    if known is None or not known.requirements:
+        return None
+    lines = [
+        "## Requirements This Change Is Answerable To",
+        "Judge the change against these as well as against how it is written.",
+        "",
+    ]
+    for item in known.requirements:
+        lines.append(f"- {item.id} ({item.status}): {item.summary}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _knowledge_section(known) -> Optional[str]:
+    if known is None or not known.knowledge:
+        return None
+    lines = [
+        "## Decisions And Rules Governing This Code",
+        "Recorded by the team and still standing. A change that breaks one of "
+        "these is a defect even when the code reads correctly.",
+        "",
+    ]
+    for item in known.knowledge:
+        lines.append(f"- {item.id} ({item.kind}, {item.status}): {item.summary}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _impact_section(known) -> Optional[str]:
+    if known is None or known.impact is None or not known.impact.findings:
+        return None
+    lines = [
+        "## What This Change Reaches",
+        "Parts of the wider system that depend on what is being changed. A "
+        "finding marked uncertain is a question to raise, not a fact to assert.",
+        "",
+    ]
+    for finding in known.impact.findings:
+        certainty = "certain" if finding.certain else "uncertain"
+        reached = ", ".join(finding.topology_entity_ids)
+        lines.append(f"- {finding.summary} ({certainty}, reaches {reached})")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _core_impact_preparer(services):
+    from src.config.db import get_engine
+    from src.core.impact import (
+        DefaultChangeImpactResolver,
+        SQLCompatibilityCheckRepository,
+        SQLImpactSeedRepository,
+    )
+    from src.core.topology import SQLTopologyRepository, TopologyReader
+
+    engine = get_engine()
+    if engine is None:
+        return None
+    try:
+        topology = services.resolve(TopologyReader)
+    except LookupError:
+        topology = SQLTopologyRepository(engine)
+    return DefaultChangeImpactResolver(
+        seeds=SQLImpactSeedRepository(engine),
+        topology=topology,
+        compatibility=SQLCompatibilityCheckRepository(engine),
+    )
+
+
+def _core_knowledge():
+    from src.config.db import get_engine
+    from src.core.knowledge import SQLKnowledgeRepository
+
+    engine = get_engine()
+    return SQLKnowledgeRepository(engine) if engine is not None else None
+
+
+def _core_requirements():
+    from src.config.db import get_engine
+    from src.core.requirements import SQLRequirementsRepository
+
+    engine = get_engine()
+    return SQLRequirementsRepository(engine) if engine is not None else None
+
+
+def _core_code_index():
+    from src.config.db import get_engine
+
+    engine = get_engine()
+    return SQLCodeIndexRepository(engine) if engine is not None else None

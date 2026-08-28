@@ -27,7 +27,7 @@ def store(tmp_path):
         session.add(repository)
         session.commit()
         session.refresh(repository)
-        workspace = Workspace(external_id="7")
+        workspace = Workspace(external_ref="7")
         session.add(workspace)
         session.commit()
         session.refresh(workspace)

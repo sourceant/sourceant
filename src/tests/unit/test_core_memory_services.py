@@ -12,7 +12,7 @@ from src.core.code_index import (
 )
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
-    Knowledge,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeTraversal,
@@ -127,10 +127,12 @@ def test_code_index_replaces_edge_endpoints_and_obeys_direction():
 
 def test_knowledge_queries_open_kinds_statuses_properties_and_pages():
     knowledge = InMemoryKnowledgeRepository()
-    knowledge.put(PROJECT, Knowledge("one", "decision", "approved", "One"))
+    knowledge.put(PROJECT, KnowledgeObject("one", "decision", "approved", "One"))
     knowledge.put(
         PROJECT,
-        Knowledge("two", "custom-kind", "accepted", "Two", {"language": "python"}),
+        KnowledgeObject(
+            "two", "custom-kind", "accepted", "Two", {"language": "python"}
+        ),
     )
 
     result = knowledge.search(
@@ -148,8 +150,8 @@ def test_knowledge_queries_open_kinds_statuses_properties_and_pages():
 
 def test_knowledge_relationships_remain_inside_scope():
     knowledge = InMemoryKnowledgeRepository()
-    knowledge.put(PROJECT, Knowledge("one", "rule", "approved", "One"))
-    knowledge.put(PROJECT, Knowledge("two", "rule", "approved", "Two"))
+    knowledge.put(PROJECT, KnowledgeObject("one", "rule", "approved", "One"))
+    knowledge.put(PROJECT, KnowledgeObject("two", "rule", "approved", "Two"))
     knowledge.put_relationship(
         PROJECT,
         KnowledgeRelationship("edge", "one", "two", "CUSTOM", "accepted"),
@@ -170,7 +172,7 @@ def test_knowledge_traversal_is_bounded_filtered_and_scope_isolated():
         for identifier in ("a", "b", "c"):
             knowledge.put(
                 scope,
-                Knowledge(identifier, "decision", "approved", identifier),
+                KnowledgeObject(identifier, "decision", "approved", identifier),
             )
     knowledge.put_relationship(
         PROJECT,
@@ -201,7 +203,7 @@ def test_knowledge_traversal_handles_cycles_directions_and_limits():
     for identifier in ("a", "b", "c"):
         knowledge.put(
             PROJECT,
-            Knowledge(identifier, "decision", "approved", identifier),
+            KnowledgeObject(identifier, "decision", "approved", identifier),
         )
     for source, target in (("a", "b"), ("b", "c"), ("c", "a")):
         knowledge.put_relationship(
@@ -224,10 +226,10 @@ def test_knowledge_traversal_handles_cycles_directions_and_limits():
 
 def test_knowledge_traversal_filters_seed_and_connected_node_statuses():
     knowledge = InMemoryKnowledgeRepository()
-    knowledge.put(PROJECT, Knowledge("active", "decision", "active", "Active"))
+    knowledge.put(PROJECT, KnowledgeObject("active", "decision", "active", "Active"))
     knowledge.put(
         PROJECT,
-        Knowledge("superseded", "decision", "superseded", "Superseded"),
+        KnowledgeObject("superseded", "decision", "superseded", "Superseded"),
     )
     knowledge.put_relationship(
         PROJECT,

@@ -5,7 +5,7 @@ from src.core.scope import Scope
 
 
 @dataclass(frozen=True)
-class Knowledge:
+class KnowledgeObject:
     id: str
     kind: str
     status: str
@@ -21,6 +21,45 @@ class KnowledgeRelationship:
     type: str
     status: str = ""
     properties: Mapping[str, Any] = field(default_factory=dict)
+
+
+CODE = "code"
+TEST = "test"
+TOPOLOGY = "topology"
+LINK_TARGET_KINDS = frozenset({CODE, TEST, TOPOLOGY})
+
+
+@dataclass(frozen=True)
+class KnowledgeLink:
+    id: str
+    knowledge_id: str
+    target_kind: str
+    target_id: str
+    properties: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.id or not self.knowledge_id or not self.target_id:
+            raise ValueError("a link needs an id, a knowledge object, and a target")
+        if self.target_kind not in LINK_TARGET_KINDS:
+            raise ValueError(
+                f"target_kind must be one of {', '.join(sorted(LINK_TARGET_KINDS))}"
+            )
+
+
+@dataclass(frozen=True)
+class KnowledgeSelection:
+    scope: Scope
+    paths: tuple[str, ...] = ()
+    title: str = ""
+    description: str = ""
+    diff: str = ""
+    limit: int = 20
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if any(not path for path in self.paths):
+            raise ValueError("paths must not contain empty values")
 
 
 @dataclass(frozen=True)
@@ -42,7 +81,7 @@ class KnowledgeQuery:
 
 @dataclass(frozen=True)
 class KnowledgeResult:
-    items: tuple[Knowledge, ...]
+    items: tuple[KnowledgeObject, ...]
     total: int
     has_more: bool
 
@@ -76,6 +115,6 @@ class KnowledgeTraversal:
 
 @dataclass(frozen=True)
 class KnowledgeSubgraph:
-    items: tuple[Knowledge, ...]
+    items: tuple[KnowledgeObject, ...]
     relationships: tuple[KnowledgeRelationship, ...]
     truncated: bool

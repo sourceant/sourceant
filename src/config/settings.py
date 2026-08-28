@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+from src.config.paths import default_database_url
+
 load_dotenv()
 
 APP_ENV = os.getenv("APP_ENV", "production").lower()
@@ -16,9 +18,7 @@ if QUEUE_MODE not in VALID_QUEUE_MODES:
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not STATELESS_MODE and DATABASE_URL is None:
-    raise ValueError(
-        "DATABASE_URL environment variable must be set when not in STATELESS_MODE."
-    )
+    DATABASE_URL = default_database_url()
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))

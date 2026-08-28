@@ -3,7 +3,7 @@ from collections import defaultdict, deque
 from src.core.scope import Scope
 
 from .models import (
-    Knowledge,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
@@ -14,11 +14,11 @@ from .models import (
 
 class InMemoryKnowledgeRepository:
     def __init__(self) -> None:
-        self._knowledge: dict[tuple[Scope, str], Knowledge] = {}
+        self._knowledge: dict[tuple[Scope, str], KnowledgeObject] = {}
         self._relationships: dict[tuple[Scope, str], KnowledgeRelationship] = {}
         self._adjacency: dict[tuple[Scope, str], set[str]] = defaultdict(set)
 
-    def put(self, scope: Scope, knowledge: Knowledge) -> None:
+    def put(self, scope: Scope, knowledge: KnowledgeObject) -> None:
         self._knowledge[(scope, knowledge.id)] = knowledge
 
     def put_relationship(
@@ -86,7 +86,7 @@ class InMemoryKnowledgeRepository:
         )
         queued = {item.id for item, _ in queue}
         visited: set[str] = set()
-        items: list[Knowledge] = []
+        items: list[KnowledgeObject] = []
         relationships: dict[str, KnowledgeRelationship] = {}
         truncated = False
 

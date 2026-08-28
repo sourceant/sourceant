@@ -19,4 +19,4 @@ class Workspace(BaseModel, table=True):
 
     #: What the gateway calls this workspace, and what its tokens name. Unique,
     #: because it is the identity everything outside this deployment uses.
-    external_id: str = Field(unique=True, index=True, max_length=255)
+    external_ref: str = Field(unique=True, index=True, max_length=255)

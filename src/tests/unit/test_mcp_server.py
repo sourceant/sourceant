@@ -21,9 +21,10 @@ from src.core.code_index import (
 from src.core.context import DefaultContextProvider
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
-    Knowledge,
+    KnowledgeObject,
     SQLKnowledgeRepository,
 )
+from src.core.requirements import Requirement, SQLRequirementsRepository
 from src.core.scope import Scope
 from src.core.topology import SQLTopologyRepository
 from src.mcp_server import create_mcp_server
@@ -65,7 +66,7 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
             scope,
             CodeNode("handler", frozenset({"Function"}), {"scope": summary}),
         )
-        knowledge.put(scope, Knowledge("rule", "rule", "approved", summary))
+        knowledge.put(scope, KnowledgeObject("rule", "rule", "approved", summary))
 
     server = create_mcp_server(DefaultContextProvider(code=code, knowledge=knowledge))
     async with create_connected_server_and_client_session(server) as session:
@@ -89,6 +90,11 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
         "put_topology_entity",
         "put_topology_relationship",
         "traverse_topology",
+        "put_requirement",
+        "link_requirement",
+        "search_requirements",
+        "get_requirement_coverage",
+        "link_knowledge",
     }
     assert result.isError is False
     assert result.structuredContent["scope"] == {"project": "one"}
@@ -257,6 +263,38 @@ async def test_mcp_manages_durable_knowledge_through_protocol_boundary(tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_mcp_requirement_coverage_exposes_truncation(tmp_path):
+    requirements = SQLRequirementsRepository(
+        create_engine(f"sqlite:///{tmp_path / 'requirements.db'}"),
+        create_schema=True,
+    )
+    for index in range(101):
+        requirements.put(
+            PROJECT,
+            Requirement(
+                id=f"r{index:03}",
+                kind="requirement",
+                status="open",
+                summary="Keep the behavior",
+            ),
+        )
+    server = create_mcp_server(
+        DefaultContextProvider(requirements=requirements),
+        requirements=requirements,
+    )
+
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "get_requirement_coverage",
+            {"scope": {"project": "one"}},
+        )
+
+    assert result.isError is False
+    assert len(result.structuredContent["items"]) == 100
+    assert result.structuredContent["truncated"] is True
+
+
+@pytest.mark.asyncio
 async def test_mcp_manages_durable_topology_through_protocol_boundary(tmp_path):
     topology = SQLTopologyRepository(
         create_engine(f"sqlite:///{tmp_path / 'topology.db'}"),
@@ -363,7 +401,7 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
     # repository, with no idea who will read it back.
     knowledge.put(
         Scope.from_mapping({"provider": "github", "repository": "acme/shop"}),
-        Knowledge(
+        KnowledgeObject(
             id="signed-requests",
             kind="decision",
             status="approved",

@@ -3,7 +3,7 @@ from sqlalchemy.dialects import mysql, postgresql
 from sqlalchemy.schema import CreateTable
 
 from src.core.knowledge import (
-    Knowledge,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeTraversal,
@@ -29,8 +29,10 @@ def test_sql_knowledge_survives_restart_and_preserves_scope(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'knowledge.db'}")
     repository = SQLKnowledgeRepository(engine, create_schema=True)
     for scope, summary in ((PROJECT, "Use one"), (OTHER_PROJECT, "Use two")):
-        repository.put(scope, Knowledge("decision", "decision", "approved", summary))
-        repository.put(scope, Knowledge("rule", "rule", "approved", summary))
+        repository.put(
+            scope, KnowledgeObject("decision", "decision", "approved", summary)
+        )
+        repository.put(scope, KnowledgeObject("rule", "rule", "approved", summary))
         repository.put_relationship(
             scope,
             KnowledgeRelationship(
@@ -56,13 +58,13 @@ def test_sql_knowledge_updates_items_and_relationships(tmp_path):
     for identifier in ("one", "two", "three"):
         repository.put(
             PROJECT,
-            Knowledge(identifier, "decision", "approved", identifier),
+            KnowledgeObject(identifier, "decision", "approved", identifier),
         )
     repository.put_relationship(
         PROJECT,
         KnowledgeRelationship("edge", "one", "two", "supports"),
     )
-    repository.put(PROJECT, Knowledge("one", "rule", "active", "Updated"))
+    repository.put(PROJECT, KnowledgeObject("one", "rule", "active", "Updated"))
     repository.put_relationship(
         PROJECT,
         KnowledgeRelationship("edge", "one", "three", "depends_on"),
@@ -70,7 +72,7 @@ def test_sql_knowledge_updates_items_and_relationships(tmp_path):
 
     result = repository.traverse(KnowledgeTraversal(PROJECT, ("one",)))
 
-    assert result.items[0] == Knowledge("one", "rule", "active", "Updated")
+    assert result.items[0] == KnowledgeObject("one", "rule", "active", "Updated")
     assert [item.id for item in result.items] == ["one", "three"]
     assert [edge.type for edge in result.relationships] == ["depends_on"]
 
@@ -82,7 +84,7 @@ def test_sql_knowledge_reads_writes_from_another_repository_instance(tmp_path):
 
     writer.put(
         PROJECT,
-        Knowledge("decision", "decision", "approved", "Use signed requests"),
+        KnowledgeObject("decision", "decision", "approved", "Use signed requests"),
     )
 
     result = reader.search(KnowledgeQuery(PROJECT))

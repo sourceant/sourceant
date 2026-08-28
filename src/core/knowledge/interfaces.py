@@ -5,7 +5,9 @@ from typing import Protocol, runtime_checkable
 from src.core.scope import Scope
 
 from .models import (
-    Knowledge,
+    KnowledgeLink,
+    KnowledgeSelection,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
@@ -30,7 +32,7 @@ class KnowledgeReader(Protocol):
 
 @runtime_checkable
 class KnowledgeWriter(Protocol):
-    def put(self, scope: Scope, knowledge: Knowledge) -> None: ...
+    def put(self, scope: Scope, knowledge: KnowledgeObject) -> None: ...
 
     def put_relationship(
         self, scope: Scope, relationship: KnowledgeRelationship
@@ -40,3 +42,48 @@ class KnowledgeWriter(Protocol):
 @runtime_checkable
 class KnowledgeRepository(KnowledgeReader, KnowledgeWriter, Protocol):
     pass
+
+
+@runtime_checkable
+class KnowledgeRemover(Protocol):
+    """Deleting a knowledge object.
+
+    Separate from KnowledgeWriter because a store that only ever appends is
+    still a usable store. A caller asks with isinstance.
+    """
+
+    def remove(self, scope: Scope, knowledge_id: str) -> None: ...
+
+
+@runtime_checkable
+class KnowledgeLinkReader(Protocol):
+    """What a knowledge object is attached to in the code.
+
+    Separate from KnowledgeReader because a store is free not to hold links.
+    A caller asks with isinstance and does without when the answer is no.
+    """
+
+    def get_links(
+        self, scope: Scope, knowledge_ids: frozenset[str]
+    ) -> tuple[KnowledgeLink, ...]: ...
+
+    def knowledge_ids_for_paths(
+        self, scope: Scope, paths: frozenset[str]
+    ) -> frozenset[str]: ...
+
+
+@runtime_checkable
+class KnowledgeLinkWriter(Protocol):
+    def put_link(self, scope: Scope, link: KnowledgeLink) -> None: ...
+
+
+@runtime_checkable
+class KnowledgeSelector(Protocol):
+    """Which recorded knowledge a change should be judged against.
+
+    The core answers this from the links it holds, which is exact and shallow.
+    Reading intent out of a change is a different problem, and an installation
+    that can do it registers its own selector here.
+    """
+
+    def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]: ...

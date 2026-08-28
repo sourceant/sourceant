@@ -59,7 +59,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="🐜 SourceAnt 🐜",
-    description="Engineering knowledge and context infrastructure",
+    description=(
+        "An indexed graph of your codebase and the decisions behind it, "
+        "served over MCP"
+    ),
     version=_read_version(),
     lifespan=lifespan,
 )
