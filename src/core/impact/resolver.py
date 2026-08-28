@@ -2,32 +2,32 @@ from __future__ import annotations
 
 from src.core.topology import TopologyReader, TopologySubgraph, TopologyTraversal
 
-from .interfaces import CompatibilityEvidenceReader, ImpactSeedResolver
+from .interfaces import CompatibilityCheckReader, ImpactSeedResolver
 from .models import (
-    CompatibilityEvidence,
-    CompatibilityEvidenceQuery,
+    CompatibilityCheck,
+    CompatibilityCheckQuery,
     ImpactFinding,
-    ReviewImpact,
-    ReviewImpactRequest,
+    ChangeImpact,
+    ChangeImpactRequest,
 )
 
 
-class DefaultReviewImpactPreparer:
+class DefaultChangeImpactResolver:
     def __init__(
         self,
         *,
         seeds: ImpactSeedResolver,
         topology: TopologyReader,
-        compatibility: CompatibilityEvidenceReader,
+        compatibility: CompatibilityCheckReader,
     ) -> None:
         self._seeds = seeds
         self._topology = topology
         self._compatibility = compatibility
 
-    def prepare(self, request: ReviewImpactRequest) -> ReviewImpact:
+    def resolve(self, request: ChangeImpactRequest) -> ChangeImpact:
         seed_ids = self._seeds.resolve(request.scope, request.changes)
         if not seed_ids:
-            return ReviewImpact(TopologySubgraph((), (), False), (), (), False)
+            return ChangeImpact(TopologySubgraph((), (), False), (), (), False)
         seed_truncated = len(seed_ids) > request.entity_limit
         seed_ids = seed_ids[: request.entity_limit]
         topology = self._topology.traverse(
@@ -42,10 +42,10 @@ class DefaultReviewImpactPreparer:
             )
         )
         if not topology.entities:
-            return ReviewImpact(topology, (), (), topology.truncated or seed_truncated)
+            return ChangeImpact(topology, (), (), topology.truncated or seed_truncated)
         entity_ids = frozenset(entity.id for entity in topology.entities)
         evidence = self._compatibility.read(
-            CompatibilityEvidenceQuery(
+            CompatibilityCheckQuery(
                 scope=request.scope,
                 entity_ids=entity_ids,
                 statuses=frozenset({"approved"}),
@@ -60,7 +60,7 @@ class DefaultReviewImpactPreparer:
             for item in accepted
             if item.compatible is not True
         )
-        return ReviewImpact(
+        return ChangeImpact(
             topology,
             accepted,
             findings,
@@ -69,7 +69,7 @@ class DefaultReviewImpactPreparer:
 
     @staticmethod
     def _finding(
-        request: ReviewImpactRequest, evidence: CompatibilityEvidence
+        request: ChangeImpactRequest, evidence: CompatibilityCheck
     ) -> ImpactFinding:
         certain = evidence.compatible is False
         return ImpactFinding(

@@ -6,10 +6,10 @@ from src.core.scope import Scope
 
 from .models import (
     ChangedCodeReference,
-    CompatibilityEvidence,
-    CompatibilityEvidenceQuery,
-    ReviewImpact,
-    ReviewImpactRequest,
+    CompatibilityCheck,
+    CompatibilityCheckQuery,
+    ChangeImpact,
+    ChangeImpactRequest,
 )
 
 
@@ -36,26 +36,26 @@ class ImpactSeedRepository(ImpactSeedResolver, ImpactCodeMappingWriter, Protocol
 
 
 @runtime_checkable
-class CompatibilityEvidenceReader(Protocol):
+class CompatibilityCheckReader(Protocol):
     """Read deterministically ordered evidence after filtering, up to the limit."""
 
     def read(
-        self, query: CompatibilityEvidenceQuery
-    ) -> tuple[CompatibilityEvidence, ...]: ...
+        self, query: CompatibilityCheckQuery
+    ) -> tuple[CompatibilityCheck, ...]: ...
 
 
 @runtime_checkable
-class CompatibilityEvidenceWriter(Protocol):
-    def put_evidence(self, scope: Scope, evidence: CompatibilityEvidence) -> None: ...
+class CompatibilityCheckWriter(Protocol):
+    def put_evidence(self, scope: Scope, evidence: CompatibilityCheck) -> None: ...
 
 
 @runtime_checkable
-class CompatibilityEvidenceRepository(
-    CompatibilityEvidenceReader, CompatibilityEvidenceWriter, Protocol
+class CompatibilityCheckRepository(
+    CompatibilityCheckReader, CompatibilityCheckWriter, Protocol
 ):
     pass
 
 
 @runtime_checkable
-class ReviewImpactPreparer(Protocol):
-    def prepare(self, request: ReviewImpactRequest) -> ReviewImpact: ...
+class ChangeImpactResolver(Protocol):
+    def resolve(self, request: ChangeImpactRequest) -> ChangeImpact: ...

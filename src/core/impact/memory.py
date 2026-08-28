@@ -4,8 +4,8 @@ from src.core.scope import Scope
 
 from .models import (
     ChangedCodeReference,
-    CompatibilityEvidence,
-    CompatibilityEvidenceQuery,
+    CompatibilityCheck,
+    CompatibilityCheckQuery,
 )
 
 
@@ -40,16 +40,14 @@ class InMemoryImpactSeedResolver:
         )
 
 
-class InMemoryCompatibilityEvidenceReader:
+class InMemoryCompatibilityCheckReader:
     def __init__(self) -> None:
-        self._items: dict[tuple[Scope, str], CompatibilityEvidence] = {}
+        self._items: dict[tuple[Scope, str], CompatibilityCheck] = {}
 
-    def put_evidence(self, scope: Scope, evidence: CompatibilityEvidence) -> None:
+    def put_evidence(self, scope: Scope, evidence: CompatibilityCheck) -> None:
         self._items[(scope, evidence.id)] = evidence
 
-    def read(
-        self, query: CompatibilityEvidenceQuery
-    ) -> tuple[CompatibilityEvidence, ...]:
+    def read(self, query: CompatibilityCheckQuery) -> tuple[CompatibilityCheck, ...]:
         matches = sorted(
             (
                 item

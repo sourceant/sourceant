@@ -21,7 +21,7 @@ class ChangedCodeReference:
 
 
 @dataclass(frozen=True)
-class CompatibilityEvidence:
+class CompatibilityCheck:
     id: str
     provider_entity_id: str
     consumer_entity_id: str
@@ -47,7 +47,7 @@ class CompatibilityEvidence:
 
 
 @dataclass(frozen=True)
-class CompatibilityEvidenceQuery:
+class CompatibilityCheckQuery:
     scope: Scope
     entity_ids: frozenset[str]
     statuses: frozenset[str] = field(default_factory=frozenset)
@@ -65,7 +65,7 @@ class CompatibilityEvidenceQuery:
 
 
 @dataclass(frozen=True)
-class ReviewImpactRequest:
+class ChangeImpactRequest:
     scope: Scope
     changes: tuple[ChangedCodeReference, ...]
     depth: int = 2
@@ -114,8 +114,8 @@ class ImpactFinding:
 
 
 @dataclass(frozen=True)
-class ReviewImpact:
+class ChangeImpact:
     topology: TopologySubgraph
-    compatibility: tuple[CompatibilityEvidence, ...]
+    compatibility: tuple[CompatibilityCheck, ...]
     findings: tuple[ImpactFinding, ...]
     truncated: bool

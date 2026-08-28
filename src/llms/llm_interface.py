@@ -24,6 +24,7 @@ class LLMInterface(ABC):
         code_context: Optional[str] = None,
         requirements: Optional[str] = None,
         knowledge: Optional[str] = None,
+        impact: Optional[str] = None,
     ) -> Optional[CodeReview]:
         pass
 

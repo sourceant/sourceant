@@ -431,3 +431,114 @@ def test_a_registered_knowledge_selector_decides_instead_of_the_links(
     section = instance.generate_code_review.call_args.kwargs["knowledge"]
     assert "Nothing links this to the change" in section
     assert "Retries are capped" not in section
+
+
+_BINARY_DIFF = """diff --git a/logo.png b/logo.png
+index 1234567..89abcde 100644
+Binary files a/logo.png and b/logo.png differ
+"""
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_a_change_with_nothing_readable_still_reviews(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    services = ServiceRegistry()
+    services.register(RequirementsReader, _requirements(tmp_path), "test")
+    plugin.bind_services(services)
+
+    mock_get_sha.return_value = None
+    mock_github = MagicMock()
+    mock_github_cls.return_value = mock_github
+    mock_github.get_diff.return_value = _BINARY_DIFF
+    mock_github.get_existing_bot_review_comments.return_value = []
+    mock_github.get_file_content.side_effect = lambda owner, repo, path, sha: None
+
+    instance = MagicMock()
+    mock_llm.return_value = instance
+    instance.count_tokens.return_value = 10
+    instance.token_limit = 1000000
+    instance.generate_code_review.return_value = CodeReview(
+        verdict=Verdict.COMMENT, code_suggestions=[]
+    )
+
+    result = asyncio.get_event_loop().run_until_complete(
+        plugin.generate_review(
+            repository,
+            pull_request,
+            repository_full_name="test_owner/test_repo",
+            post=False,
+        )
+    )
+
+    assert result["status"] == "success"
+    assert instance.generate_code_review.call_args.kwargs["requirements"] is None
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.llm")
+def test_what_a_change_reaches_is_carried_into_the_review(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    from src.core.impact import (
+        ChangeImpact,
+        ChangeImpactResolver,
+        ImpactFinding,
+    )
+    from src.core.topology import TopologySubgraph
+
+    class _Reaches:
+        def resolve(self, request):
+            return ChangeImpact(
+                topology=TopologySubgraph((), (), False),
+                compatibility=(),
+                findings=(
+                    ImpactFinding(
+                        id="f1",
+                        state="open",
+                        summary="The mobile client calls this endpoint",
+                        changed_code_ids=("file:test.py",),
+                        topology_entity_ids=("system:mobile-client",),
+                        compatibility_evidence_id="c1",
+                        certain=False,
+                    ),
+                ),
+                truncated=False,
+            )
+
+    services = ServiceRegistry()
+    services.register(ChangeImpactResolver, _Reaches(), "test")
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    assert result["status"] == "success"
+    section = instance.generate_code_review.call_args.kwargs["impact"]
+    assert "The mobile client calls this endpoint" in section
+    assert "system:mobile-client" in section
+    assert "uncertain" in section
