@@ -38,11 +38,13 @@ def test_changed_file_graph_exposes_symbols_and_imports():
 
     assert context is not None
     payload = json.loads(context.content)
+    # An import is named for the module it names, not for the line it was
+    # written on: the statement matches nothing anybody would look up.
     assert {node["properties"].get("name") for node in payload["nodes"]} == {
         "service.py",
         "helper",
         "run",
-        "import logging",
+        "logging",
     }
     assert any(edge["type"] == "IMPORTS" for edge in payload["edges"])
 

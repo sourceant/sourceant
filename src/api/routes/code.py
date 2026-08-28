@@ -4,7 +4,7 @@ The registry is the authorization for reading. A scope is never taken from the
 query string: the caller names a repository, and it is served only when that
 name was registered on this machine by ``sourceant repo add``. A deployment
 nobody registered a repository on therefore answers nothing here, which is what
-keeps routes that carry no token from reaching a hosted scope.
+keeps routes that carry no token from reaching a scope somebody else owns.
 
 Registering is a different matter, because whoever can register a path can then
 read it, and the registry cannot vouch for a route that fills the registry. So
@@ -32,6 +32,7 @@ from src.config.db import get_engine
 from src.config.settings import LOCAL_MODE
 from src.core.code_index import (
     MAX_GRAPH_NODES,
+    CodeEdge,
     CodeGraphQuery,
     CodeGraphReader,
     CodeIndexReader,
@@ -42,6 +43,7 @@ from src.core.code_index import (
     SQLCodeIndexRepository,
 )
 from src.core.code_index.clustering import Modularity, degrees
+from src.core.code_index.linking import index_directories, index_paths, resolve
 from src.core.responses import success_response
 from src.core.services import service_registry
 
@@ -129,6 +131,69 @@ def node_payload(node: CodeNode) -> dict[str, Any]:
     return payload
 
 
+def joined(nodes, edges):
+    """The graph with its files joined to the files they import.
+
+    An import is stored as the text somebody wrote, so on its own it joins a
+    file to a name and nothing else: a repository drawn from that is one island
+    per file, which is a picture of a directory listing rather than of code. The
+    connections between files are most of what anybody is looking for.
+
+    An import that resolves becomes the edge between the two files and its own
+    node goes: it stood for a file, and now the file is there.
+
+    One that does not resolve names something outside the repository, and it
+    goes too. It has nothing on the far side of it, so it draws as a spur off
+    the file that wrote it, and a hundred of those is a picture of a package
+    manifest rather than of the code. The index keeps them either way; this is
+    only about what is drawn.
+    """
+    paths = {}
+    imports = {}
+    for node in nodes:
+        labels = {label.lower() for label in node.labels}
+        if "file" in labels:
+            paths[node.properties.get("file_path", "")] = node.id
+        elif "import" in labels:
+            imports[node.id] = node
+
+    if not imports:
+        return nodes, edges
+
+    named = [name for name in paths if name]
+    by_name = index_paths(named)
+    inside = index_directories(named)
+
+    resolved: dict[str, tuple[str, ...]] = {}
+    for node_id, node in imports.items():
+        importer = str(node.properties.get("file_path", ""))
+        found = resolve(by_name, importer, str(node.properties.get("name", "")), inside)
+        reached = tuple(paths[path] for path in found if path in paths)
+        if reached:
+            resolved[node_id] = reached
+
+    kept_nodes = tuple(node for node in nodes if node.id not in imports)
+    kept_edges = []
+    seen: set[tuple[str, str]] = set()
+    for edge in edges:
+        if edge.source_id not in imports and edge.target_id not in imports:
+            kept_edges.append(edge)
+            continue
+        if edge.source_id in imports and edge.source_id not in resolved:
+            continue
+        if edge.target_id in imports and edge.target_id not in resolved:
+            continue
+        for source in resolved.get(edge.source_id, (edge.source_id,)):
+            for target in resolved.get(edge.target_id, (edge.target_id,)):
+                if source == target or (source, target) in seen:
+                    continue
+                seen.add((source, target))
+                kept_edges.append(
+                    CodeEdge(f"imports:{source}:{target}", source, target, "IMPORTS")
+                )
+    return kept_nodes, tuple(kept_edges)
+
+
 @router.get("/repositories")
 def read_repositories():
     """Every repository registered on this machine, for a client drawing all of them."""
@@ -160,29 +225,32 @@ def read_graph(
             node_limit=node_limit,
         )
     )
+    nodes, edges = joined(result.nodes, result.edges)
+
     # How busy a node is decides how it is drawn, and which part it belongs to
     # decides its colour. Both are about the graph rather than any one node, so
-    # neither can be answered while building one.
-    met = degrees(result.nodes, result.edges)
-    grouped = Modularity().cluster(result.nodes, result.edges)
+    # neither can be answered while building one, and both have to be answered
+    # after the files have been joined or every file is its own part.
+    met = degrees(nodes, edges)
+    grouped = Modularity().cluster(nodes, edges)
 
-    nodes = []
-    for node in result.nodes:
+    drawn = []
+    for node in nodes:
         payload = node_payload(node)
         payload["degree"] = met.get(node.id, 0)
         payload["community"] = grouped.of.get(node.id)
-        nodes.append(payload)
+        drawn.append(payload)
 
     return success_response(
         {
-            "nodes": nodes,
+            "nodes": drawn,
             "links": [
                 {
                     "source": edge.source_id,
                     "target": edge.target_id,
                     "type": edge.type.lower(),
                 }
-                for edge in result.edges
+                for edge in edges
             ],
             "communities": [
                 {"id": part.id, "name": part.name, "size": part.size}

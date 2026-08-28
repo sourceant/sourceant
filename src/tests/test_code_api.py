@@ -47,11 +47,16 @@ class TestCodeApi(BaseTestCase):
     @pytest.fixture(autouse=True)
     def indexed_repository(self, tmp_path, monkeypatch):
         monkeypatch.setenv("SOURCEANT_HOME", str(tmp_path / "home"))
-        source = tmp_path / "billing"
+        self.source = tmp_path / "billing"
+        source = self.source
         (source / "app").mkdir(parents=True)
         (source / "tests").mkdir()
         (source / "app" / "charge.py").write_text(
             "import decimal\n\n\ndef charge(amount):\n    return amount\n",
+            encoding="utf-8",
+        )
+        (source / "app" / "ledger.py").write_text(
+            "from app.charge import charge\n\n\ndef post(n):\n    return charge(n)\n",
             encoding="utf-8",
         )
         (source / "tests" / "test_charge.py").write_text(
@@ -110,13 +115,39 @@ class TestCodeApi(BaseTestCase):
         ).json()["data"]
 
         by_name = {node["name"]: node for node in body["nodes"]}
-        assert by_name["charge.py"]["degree"] >= 2
+        assert by_name["charge.py"]["degree"] >= 2  # its function, and its importer
         assert all("community" in node for node in body["nodes"])
 
-        # Everything here is one file's worth of code, so it is one part, and it
-        # is named for where it lives rather than for a number.
-        assert [part["name"] for part in body["communities"]] == ["app"]
-        assert body["communities"][0]["size"] == len(body["nodes"])
+        # Parts are named for where they live or what they are built around,
+        # never for a number.
+        named = [part["name"] for part in body["communities"]]
+        assert named and all(name and not name.isdigit() for name in named)
+        assert sum(part["size"] for part in body["communities"]) == len(body["nodes"])
+
+    def test_files_are_joined_to_the_files_they_import(self):
+        """Left as written, an import joins a file to a name and nothing else,
+        so a repository draws as one island per file."""
+        body = self.client.get(
+            "/api/code/graph", params={"repository": "acme/billing"}
+        ).json()["data"]
+
+        by_id = {node["id"]: node for node in body["nodes"]}
+        joined = [
+            (by_id[link["source"]]["path"], by_id[link["target"]]["path"])
+            for link in body["links"]
+            if by_id[link["source"]]["kind"] == "file"
+            and by_id[link["target"]]["kind"] == "file"
+        ]
+        assert ("app/ledger.py", "app/charge.py") in joined
+
+    def test_a_package_nobody_here_wrote_is_not_drawn(self):
+        """An import of something outside the repository has nothing on the far
+        side of it, so it draws as a spur and says nothing."""
+        body = self.client.get(
+            "/api/code/graph", params={"repository": "acme/billing"}
+        ).json()["data"]
+
+        assert not [node for node in body["nodes"] if node["kind"] == "import"]
 
     def test_it_leaves_tests_out_of_a_drawing_unless_they_are_asked_for(self):
         without = self.client.get(
