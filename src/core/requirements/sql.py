@@ -13,6 +13,7 @@ from sqlalchemy import (
     Table,
     Text,
     delete,
+    func,
     select,
 )
 
@@ -153,15 +154,22 @@ class SQLRequirementsRepository:
             statement = statement.where(
                 requirement_table.c.external_ref.in_(sorted(query.external_refs)),
             )
-        statement = statement.order_by(requirement_table.c.id)
         with self._engine.connect() as connection:
-            rows = list(connection.execute(statement).mappings())
-        matches = [_requirement_from_row(row) for row in rows]
-        items = tuple(matches[query.offset : query.offset + query.limit])
+            total = connection.execute(
+                select(func.count()).select_from(statement.subquery())
+            ).scalar_one()
+            rows = list(
+                connection.execute(
+                    statement.order_by(requirement_table.c.id)
+                    .limit(query.limit)
+                    .offset(query.offset)
+                ).mappings()
+            )
+        items = tuple(_requirement_from_row(row) for row in rows)
         return RequirementResult(
             items=items,
-            total=len(matches),
-            has_more=query.offset + len(items) < len(matches),
+            total=total,
+            has_more=query.offset + len(items) < total,
         )
 
     def get_links(

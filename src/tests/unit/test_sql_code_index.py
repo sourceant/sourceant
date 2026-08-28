@@ -155,6 +155,27 @@ def test_drawing_the_scope_leaves_tests_out_like_the_reference_index(stores):
     assert _edge_ids(actual) == _edge_ids(expected)
 
 
+def test_drawing_keeps_a_node_matching_any_requested_label(stores):
+    reference, durable = stores
+    query = CodeGraphQuery(scope=SCOPE, labels=frozenset({"File", "function"}))
+
+    expected = reference.graph(query)
+    actual = durable.graph(query)
+
+    assert _ids(actual) == _ids(expected)
+    assert len(actual.nodes) > 1
+
+
+def test_searching_requires_every_requested_label(stores):
+    reference, durable = stores
+    query = CodeSearch(scope=SCOPE, labels=frozenset({"File", "function"}))
+
+    expected = reference.search(query)
+    actual = durable.search(query)
+
+    assert _ids(actual) == _ids(expected) == []
+
+
 def test_drawing_can_be_narrowed_to_a_path(stores):
     reference, durable = stores
     query = CodeGraphQuery(scope=SCOPE, path_prefix="src/b")

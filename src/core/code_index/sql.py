@@ -179,43 +179,61 @@ class SQLCodeIndexRepository:
         path = query.properties.get("file_path")
         if isinstance(path, str):
             statement = statement.where(node_table.c.file_path == path)
-        for label in sorted(query.labels):
-            statement = statement.where(
-                select(func.count())
-                .select_from(label_table)
-                .where(
-                    label_table.c.scope == key,
-                    label_table.c.node_id == node_table.c.id,
-                    label_table.c.label == label,
-                )
-                .scalar_subquery()
-                > 0
-            )
-        statement = statement.order_by(node_table.c.id)
+        statement = _with_labels(statement, key, query.labels, node_table.c.id)
 
         remaining = {
             name: value
             for name, value in query.properties.items()
             if name != "file_path" or not isinstance(value, str)
         }
-        matches: list[CodeNode] = []
         with self._engine.connect() as connection:
-            labels = self._labels_for_scope(connection, key)
-            for row in connection.execute(statement).mappings():
-                node = _node_from_row(row, labels.get(row["id"], frozenset()))
-                if not query.labels.issubset(node.labels):
-                    continue
-                if any(
-                    node.properties.get(name) != value
-                    for name, value in remaining.items()
-                ):
-                    continue
-                matches.append(node)
-        nodes = tuple(matches[query.offset : query.offset + query.limit])
+            if not remaining:
+                return self._paged_in_sql(connection, key, statement, query)
+            return self._paged_in_python(connection, key, statement, query, remaining)
+
+    def _paged_in_sql(self, connection, key, statement, query) -> CodeSearchResult:
+        total = connection.execute(
+            select(func.count()).select_from(statement.subquery())
+        ).scalar_one()
+        rows = list(
+            connection.execute(
+                statement.order_by(node_table.c.id)
+                .limit(query.limit)
+                .offset(query.offset)
+            ).mappings()
+        )
+        labels = self._labels_for(connection, key, [row["id"] for row in rows])
+        nodes = tuple(
+            _node_from_row(row, labels.get(row["id"], frozenset())) for row in rows
+        )
         return CodeSearchResult(
             nodes=nodes,
-            total=len(matches),
-            has_more=query.offset + len(nodes) < len(matches),
+            total=total,
+            has_more=query.offset + len(nodes) < total,
+        )
+
+    def _paged_in_python(
+        self, connection, key, statement, query, remaining
+    ) -> CodeSearchResult:
+        rows = [
+            row
+            for row in connection.execute(
+                statement.order_by(node_table.c.id)
+            ).mappings()
+            if all(
+                json.loads(row["properties"]).get(name) == value
+                for name, value in remaining.items()
+            )
+        ]
+        page = rows[query.offset : query.offset + query.limit]
+        labels = self._labels_for(connection, key, [row["id"] for row in page])
+        nodes = tuple(
+            _node_from_row(row, labels.get(row["id"], frozenset())) for row in page
+        )
+        return CodeSearchResult(
+            nodes=nodes,
+            total=len(rows),
+            has_more=query.offset + len(nodes) < len(rows),
         )
 
     def traverse(self, traversal: CodeTraversal) -> CodeTraversalResult:
@@ -225,27 +243,24 @@ class SQLCodeIndexRepository:
         visited: set[str] = set()
         truncated = False
 
+        rows: list = []
         with self._engine.connect() as connection:
-            labels = self._labels_for_scope(connection, key)
-            frontier = [
-                node_id
-                for node_id in traversal.node_ids
-                if self._node(connection, key, node_id, labels) is not None
-            ]
+            frontier = list(traversal.node_ids)
             distance = 0
             while frontier:
                 fetched = []
+                found = self._node_rows(connection, key, frontier)
                 for node_id in frontier:
                     if node_id in visited:
                         continue
-                    node = self._node(connection, key, node_id, labels)
-                    if node is None:
+                    row = found.get(node_id)
+                    if row is None:
                         continue
-                    if len(nodes) >= traversal.node_limit:
+                    if len(rows) >= traversal.node_limit:
                         truncated = True
                         continue
                     visited.add(node_id)
-                    nodes.append(node)
+                    rows.append(row)
                     fetched.append(node_id)
                 if distance == traversal.depth or not fetched:
                     break
@@ -257,6 +272,11 @@ class SQLCodeIndexRepository:
                             next_frontier.append(candidate)
                 frontier = list(dict.fromkeys(next_frontier))
                 distance += 1
+
+            labels = self._labels_for(connection, key, [row["id"] for row in rows])
+            nodes = [
+                _node_from_row(row, labels.get(row["id"], frozenset())) for row in rows
+            ]
 
         included = {node.id for node in nodes}
         packed = tuple(
@@ -279,28 +299,31 @@ class SQLCodeIndexRepository:
                     f"{_escape_like(query.path_prefix)}%", escape="\\"
                 )
             )
+        statement = _with_any_label(statement, key, query.labels, node_table.c.id)
         statement = statement.order_by(node_table.c.id)
 
-        kept: list[CodeNode] = []
+        rows: list = []
         truncated = False
         with self._engine.connect() as connection:
-            labels = self._labels_for_scope(connection, key)
             result = connection.execution_options(stream_results=True).execute(
                 statement
             )
             for row in result.mappings():
-                node = _node_from_row(row, labels.get(row["id"], frozenset()))
-                if not _drawable(node, query):
+                if not _drawable_row(json.loads(row["properties"]), query):
                     continue
-                if len(kept) >= query.node_limit:
+                if len(rows) >= query.node_limit:
                     truncated = True
                     break
-                kept.append(node)
+                rows.append(row)
             result.close()
 
+            labels = self._labels_for(connection, key, [row["id"] for row in rows])
+            kept = tuple(
+                _node_from_row(row, labels.get(row["id"], frozenset())) for row in rows
+            )
             included = {node.id for node in kept}
             edges = self._edges_between(connection, key, included, query.edge_types)
-        return CodeGraphResult(nodes=tuple(kept), edges=edges, truncated=truncated)
+        return CodeGraphResult(nodes=kept, edges=edges, truncated=truncated)
 
     def _flush(self) -> None:
         buffered = self._buffer or {"nodes": [], "edges": []}
@@ -396,34 +419,42 @@ class SQLCodeIndexRepository:
                     )
                 )
             }
-            if ids - found:
-                raise ValueError("edge endpoints must exist in the same scope")
+            missing = ids - found
+            if missing:
+                raise ValueError(
+                    "edge endpoints must exist in the same scope: "
+                    + ", ".join(sorted(missing))
+                )
 
-    def _labels_for_scope(
-        self, connection, scope_key: str
+    def _labels_for(
+        self, connection, scope_key: str, node_ids
     ) -> dict[str, frozenset[str]]:
+        wanted = sorted({node_id for node_id in node_ids if node_id})
+        if not wanted:
+            return {}
         grouped: dict[str, set[str]] = {}
         for row in connection.execute(
             select(label_table.c.node_id, label_table.c.label).where(
-                label_table.c.scope == scope_key
+                label_table.c.scope == scope_key,
+                label_table.c.node_id.in_(wanted),
             )
         ):
             grouped.setdefault(row[0], set()).add(row[1])
         return {node_id: frozenset(values) for node_id, values in grouped.items()}
 
-    def _node(self, connection, scope_key, node_id, labels) -> CodeNode | None:
-        row = (
-            connection.execute(
+    def _node_rows(self, connection, scope_key, node_ids) -> dict:
+        wanted = sorted({node_id for node_id in node_ids if node_id})
+        if not wanted:
+            return {}
+        return {
+            row["id"]: row
+            for row in connection.execute(
                 select(node_table).where(
-                    node_table.c.scope == scope_key, node_table.c.id == node_id
+                    node_table.c.scope == scope_key,
+                    node_table.c.id.in_(wanted),
                 )
-            )
-            .mappings()
-            .first()
-        )
-        if row is None:
-            return None
-        return _node_from_row(row, labels.get(node_id, frozenset()))
+            ).mappings()
+        }
 
     def _edges_touching(
         self, connection, scope_key, node_ids, traversal: CodeTraversal
@@ -467,10 +498,35 @@ class SQLCodeIndexRepository:
         )
 
 
-def _drawable(node: CodeNode, query: CodeGraphQuery) -> bool:
-    if query.labels and not (node.labels & query.labels):
-        return False
-    properties = node.properties or {}
+def _with_labels(statement, scope_key: str, labels, id_column):
+    for label in sorted(labels):
+        statement = statement.where(
+            select(label_table.c.label)
+            .where(
+                label_table.c.scope == scope_key,
+                label_table.c.node_id == id_column,
+                label_table.c.label == label,
+            )
+            .exists()
+        )
+    return statement
+
+
+def _with_any_label(statement, scope_key: str, labels, id_column):
+    if not labels:
+        return statement
+    return statement.where(
+        select(label_table.c.label)
+        .where(
+            label_table.c.scope == scope_key,
+            label_table.c.node_id == id_column,
+            label_table.c.label.in_(sorted(labels)),
+        )
+        .exists()
+    )
+
+
+def _drawable_row(properties: Mapping[str, Any], query: CodeGraphQuery) -> bool:
     path = properties.get("file_path")
     if query.path_prefix and not (
         isinstance(path, str) and path.startswith(query.path_prefix)
