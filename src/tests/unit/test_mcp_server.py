@@ -89,6 +89,10 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
         "put_topology_entity",
         "put_topology_relationship",
         "traverse_topology",
+        "put_requirement",
+        "link_requirement",
+        "search_requirements",
+        "get_requirement_coverage",
     }
     assert result.isError is False
     assert result.structuredContent["scope"] == {"project": "one"}

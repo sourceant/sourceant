@@ -18,6 +18,13 @@ from src.core.knowledge import (
     KnowledgeRepository,
     KnowledgeTraversal,
 )
+from src.core.requirements import (
+    CoverageQuery,
+    Requirement,
+    RequirementLink,
+    RequirementQuery,
+    RequirementsRepository,
+)
 from src.core.review_state import FindingQuery
 from src.core.scope import Scope
 from src.core.topology import (
@@ -35,6 +42,7 @@ def create_mcp_server(
     code: CodeIndexReader | None = None,
     knowledge: KnowledgeRepository | None = None,
     topology: TopologyRepository | None = None,
+    requirements: RequirementsRepository | None = None,
     scope_resolver: Callable[[Scope], Scope] | None = None,
     auth: AuthSettings | None = None,
     token_verifier: TokenVerifier | None = None,
@@ -369,7 +377,115 @@ def create_mcp_server(
         )
         return asdict(result)
 
+    @server.tool(
+        name="put_requirement",
+        description=(
+            "Create or update a scoped requirement. Also stored as knowledge of "
+            "kind requirement, so the knowledge tools find it too."
+        ),
+        structured_output=True,
+    )
+    def put_requirement(
+        scope: dict[str, str],
+        id: str,
+        summary: str,
+        kind: str = "requirement",
+        status: str = "open",
+        external_ref: str = "",
+        properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        repository = _require_requirements(requirements)
+        item = Requirement(id, kind, status, summary, external_ref, properties or {})
+        repository.put(resolve_scope(Scope.from_mapping(scope)), item)
+        return asdict(item)
+
+    @server.tool(
+        name="link_requirement",
+        description=(
+            "Point a requirement at the code, test, knowledge, or topology that "
+            "carries it."
+        ),
+        structured_output=True,
+    )
+    def link_requirement(
+        scope: dict[str, str],
+        id: str,
+        requirement_id: str,
+        target_kind: str,
+        target_id: str,
+        properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        repository = _require_requirements(requirements)
+        link = RequirementLink(
+            id, requirement_id, target_kind, target_id, properties or {}
+        )
+        repository.put_link(resolve_scope(Scope.from_mapping(scope)), link)
+        return asdict(link)
+
+    @server.tool(
+        name="search_requirements",
+        description="Search scoped requirements by identity, kind, status, or origin.",
+        structured_output=True,
+    )
+    def search_requirements(
+        scope: dict[str, str],
+        ids: list[str] | None = None,
+        kinds: list[str] | None = None,
+        statuses: list[str] | None = None,
+        external_refs: list[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        repository = _require_requirements(requirements)
+        result = repository.search(
+            RequirementQuery(
+                scope=resolve_scope(Scope.from_mapping(scope)),
+                ids=frozenset(ids or ()),
+                kinds=frozenset(kinds or ()),
+                statuses=frozenset(statuses or ()),
+                external_refs=frozenset(external_refs or ()),
+                limit=limit,
+                offset=offset,
+            )
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="get_requirement_coverage",
+        description=(
+            "Which requirements have code, which have tests, and which of them "
+            "a set of changed files touches."
+        ),
+        structured_output=True,
+    )
+    def get_requirement_coverage(
+        scope: dict[str, str],
+        requirement_ids: list[str] | None = None,
+        paths: list[str] | None = None,
+    ) -> dict[str, Any]:
+        repository = _require_requirements(requirements)
+        report = repository.coverage(
+            CoverageQuery(
+                scope=resolve_scope(Scope.from_mapping(scope)),
+                requirement_ids=frozenset(requirement_ids or ()),
+                paths=frozenset(paths or ()),
+            )
+        )
+        return {
+            "items": [asdict(item) for item in report.items],
+            "uncovered": list(report.uncovered),
+            "untested": list(report.untested),
+        }
+
     return server
+
+
+def _require_requirements(
+    requirements: RequirementsRepository | None,
+) -> RequirementsRepository:
+    if requirements is None:
+        raise ValueError("requirements are not configured")
+    return requirements
 
 
 def _require_knowledge(
