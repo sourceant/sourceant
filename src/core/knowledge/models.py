@@ -5,7 +5,7 @@ from src.core.scope import Scope
 
 
 @dataclass(frozen=True)
-class Knowledge:
+class KnowledgeObject:
     id: str
     kind: str
     status: str
@@ -42,7 +42,7 @@ class KnowledgeQuery:
 
 @dataclass(frozen=True)
 class KnowledgeResult:
-    items: tuple[Knowledge, ...]
+    items: tuple[KnowledgeObject, ...]
     total: int
     has_more: bool
 
@@ -76,6 +76,6 @@ class KnowledgeTraversal:
 
 @dataclass(frozen=True)
 class KnowledgeSubgraph:
-    items: tuple[Knowledge, ...]
+    items: tuple[KnowledgeObject, ...]
     relationships: tuple[KnowledgeRelationship, ...]
     truncated: bool

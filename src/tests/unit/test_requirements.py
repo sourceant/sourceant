@@ -1,7 +1,11 @@
 import pytest
 from sqlalchemy import create_engine
 
-from src.core.knowledge import Knowledge, InMemoryKnowledgeRepository, KnowledgeQuery
+from src.core.knowledge import (
+    KnowledgeObject,
+    InMemoryKnowledgeRepository,
+    KnowledgeQuery,
+)
 from src.core.requirements import (
     CODE,
     KNOWLEDGE,
@@ -212,7 +216,7 @@ def test_linking_a_requirement_to_knowledge_connects_them(store):
     requirements.put(SCOPE, _requirement())
     knowledge.put(
         SCOPE,
-        Knowledge(
+        KnowledgeObject(
             id="decision:1", kind="decision", status="approved", summary="Use UTC"
         ),
     )

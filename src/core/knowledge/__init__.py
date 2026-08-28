@@ -1,7 +1,7 @@
 from .interfaces import KnowledgeReader, KnowledgeRepository, KnowledgeWriter
 from .memory import InMemoryKnowledgeRepository
 from .models import (
-    Knowledge,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
@@ -12,7 +12,7 @@ from .sql import SQLKnowledgeRepository
 
 __all__ = [
     "InMemoryKnowledgeRepository",
-    "Knowledge",
+    "KnowledgeObject",
     "KnowledgeQuery",
     "KnowledgeReader",
     "KnowledgeRelationship",

@@ -5,7 +5,7 @@ from typing import Protocol, runtime_checkable
 from src.core.scope import Scope
 
 from .models import (
-    Knowledge,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
@@ -30,7 +30,7 @@ class KnowledgeReader(Protocol):
 
 @runtime_checkable
 class KnowledgeWriter(Protocol):
-    def put(self, scope: Scope, knowledge: Knowledge) -> None: ...
+    def put(self, scope: Scope, knowledge: KnowledgeObject) -> None: ...
 
     def put_relationship(
         self, scope: Scope, relationship: KnowledgeRelationship

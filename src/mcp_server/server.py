@@ -12,7 +12,7 @@ from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
 from src.core.context import ContextProvider, ContextRequest
 from src.core.contracts import ContractQuery
 from src.core.knowledge import (
-    Knowledge,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeRepository,
@@ -225,7 +225,7 @@ def create_mcp_server(
         properties: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         repository = _require_knowledge(knowledge)
-        item = Knowledge(id, kind, status, summary, properties or {})
+        item = KnowledgeObject(id, kind, status, summary, properties or {})
         repository.put(resolve_scope(Scope.from_mapping(scope)), item)
         return asdict(item)
 

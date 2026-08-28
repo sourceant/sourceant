@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.core.knowledge import Knowledge, KnowledgeRelationship, KnowledgeWriter
+from src.core.knowledge import KnowledgeObject, KnowledgeRelationship, KnowledgeWriter
 from src.core.scope import Scope
 
 from .models import CODE, KNOWLEDGE, TEST, TOPOLOGY, Requirement, RequirementLink
@@ -15,12 +15,12 @@ RELATIONSHIP_TYPES = {
 }
 
 
-def as_knowledge(requirement: Requirement) -> Knowledge:
+def as_knowledge(requirement: Requirement) -> KnowledgeObject:
     properties = dict(requirement.properties)
     properties["requirement_kind"] = requirement.kind
     if requirement.external_ref:
         properties["external_ref"] = requirement.external_ref
-    return Knowledge(
+    return KnowledgeObject(
         id=knowledge_id(requirement.id),
         kind=KIND,
         status=requirement.status,

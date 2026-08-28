@@ -106,7 +106,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1,
         maximum=50,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="Knowledge initialization",
+        group="KnowledgeObject initialization",
     ),
     Setting(
         key="initialization.evidence_limit",
@@ -117,7 +117,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1,
         maximum=100,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="Knowledge initialization",
+        group="KnowledgeObject initialization",
     ),
     Setting(
         key="initialization.evidence_character_limit",
@@ -129,7 +129,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1_000,
         maximum=100_000,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="Knowledge initialization",
+        group="KnowledgeObject initialization",
     ),
     Setting(
         key="initialization.community_limit",
@@ -145,7 +145,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1,
         maximum=100,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="Knowledge initialization",
+        group="KnowledgeObject initialization",
     ),
     Setting(
         key="initialization.excluded_paths",
@@ -158,7 +158,7 @@ SETTINGS: tuple[Setting, ...] = (
         type=ConfigType.JSON,
         default=(".github", ".codebase-memory"),
         scopes=(REPOSITORY, ORGANIZATION),
-        group="Knowledge initialization",
+        group="KnowledgeObject initialization",
     ),
     Setting(
         key="initialization.investigation_limit",
@@ -169,7 +169,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=0,
         maximum=50,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="Knowledge initialization",
+        group="KnowledgeObject initialization",
     ),
 )
 

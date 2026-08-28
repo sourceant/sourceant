@@ -20,7 +20,7 @@ from src.core.scope import Scope
 
 from .memory import InMemoryKnowledgeRepository
 from .models import (
-    Knowledge,
+    KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
@@ -31,7 +31,7 @@ from .models import (
 metadata = MetaData()
 scope_type = Text().with_variant(String(500), "mysql")
 knowledge_table = Table(
-    "knowledge",
+    "knowledge_objects",
     metadata,
     Column("scope", scope_type, primary_key=True),
     Column("id", String(255), primary_key=True),
@@ -62,7 +62,7 @@ class SQLKnowledgeRepository:
             metadata.create_all(engine)
         self._refresh()
 
-    def put(self, scope: Scope, knowledge: Knowledge) -> None:
+    def put(self, scope: Scope, knowledge: KnowledgeObject) -> None:
         values = {
             "scope": self._scope_key(scope),
             "id": knowledge.id,
@@ -133,7 +133,7 @@ class SQLKnowledgeRepository:
             for row in connection.execute(select(knowledge_table)).mappings():
                 memory.put(
                     self._decode_scope(row["scope"]),
-                    Knowledge(
+                    KnowledgeObject(
                         row["id"],
                         row["kind"],
                         row["status"],
