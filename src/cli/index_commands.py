@@ -109,11 +109,25 @@ def index_command(path, index_all, update, scip, revision):
 
     indexer = RepositoryIndexer(store)
     for entry in targets:
-        result = indexer.index(entry.scope, Path(entry.path), update=update)
+        result = indexer.index(
+            entry.scope,
+            Path(entry.path),
+            update=update,
+            excluded_paths=_excluded_paths(entry.name),
+        )
         click.echo(
             f"{entry.name}  indexed {result.indexed}  unchanged {result.unchanged}  "
             f"removed {result.removed}  skipped {result.skipped}"
         )
+
+
+def _excluded_paths(repository: str) -> frozenset[str]:
+    from src.core.settings import value_of
+
+    configured = value_of("initialization.excluded_paths", repository=repository)
+    if isinstance(configured, (list, tuple)):
+        return frozenset(item for item in configured if isinstance(item, str) and item)
+    return frozenset()
 
 
 @click.command(name="serve")

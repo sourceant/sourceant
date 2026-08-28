@@ -5,69 +5,67 @@
   </picture>
 </p>
 
-<p align="center"><strong>Open-source infrastructure for engineering knowledge and context.</strong></p>
+<p align="center"><strong>An indexed graph of your codebase and the decisions behind it, served to any AI tool over MCP.</strong></p>
 
-SourceAnt helps the agents and humans building your software remember how it works. Its open core models code structure, decisions, rules, system topology, API contracts, and review findings behind storage-neutral interfaces. MCP clients can manage and retrieve that context without requiring the hosted SourceAnt service.
+SourceAnt reads your repositories into a durable graph of files, symbols, imports, and definitions, and keeps the decisions, rules, API contracts, and system topology that explain them alongside it. Any MCP client can search that graph, walk it, and write to it, so what your team knows outlives the session that learned it.
 
-Code review is one application of this shared knowledge layer. SourceAnt also supports coding agents, architecture exploration, contract analysis, repository automation, and custom engineering workflows.
+It runs on a laptop with nothing configured and no account. Code review, issue triage, and system mapping are applications built on the graph, not the product.
 
-## What the community edition provides
-
-- **Knowledge management through MCP**: Create, update, search, connect, and retrieve scoped engineering knowledge.
-- **Durable storage**: Keep community knowledge in SourceAnt's existing SQL database. PostgreSQL is used in the normal deployment, while the existing SQLite fallback remains available for local use.
-- **Engineering context composition**: Combine code, knowledge, software topology, contracts, and active review findings into bounded context packs.
-- **Replaceable adapters**: Connect structural indexers, graph databases, or custom repositories without changing the core domain.
-- **Automated code reviews**: Use the same context interfaces for GitHub review and repository automation.
-- **Model choice**: Use Gemini, Anthropic Claude, OpenAI, DeepSeek, Mistral, and [100+ providers through LiteLLM](https://docs.litellm.ai/docs/providers).
-- **Plugin runtime**: Extend SourceAnt with new integrations and workflows.
-
-## Community knowledge server
-
-The included MCP server uses SourceAnt's configured database. Knowledge remains available after the MCP process restarts.
-
-### Start it
+## Start here
 
 ```bash
 git clone https://github.com/sourceant/sourceant.git
 cd sourceant
-python -m pip install -r requirements.txt
-sourceant db upgrade head
+pip install -r requirements.txt
+
+sourceant db upgrade head          # keeps its data in your user directory
+sourceant repo add ~/code/your-project
+sourceant index ~/code/your-project
+```
+
+That parses every file the repository does not ignore and stores the result. Index a second repository and it joins the same graph rather than starting another one, so a question can cross a repository boundary.
+
+Running it again reparses only what changed:
+
+```bash
+sourceant index ~/code/your-project --update
+```
+
+Point an MCP client at the knowledge server and it can use all of it:
+
+```bash
 python -m src.mcp_server
 ```
 
-This stdio option is useful for a local MCP client. It follows the required `DATABASE_URL`, just like the SourceAnt HTTP server. Set `STATELESS_MODE=true` to use temporary in-memory knowledge instead.
+See [Local index](docs/local-index.md) for the whole command set, and [Knowledge and context](docs/context.md) for what the server exposes.
 
-Configure your MCP client to run `python -m src.mcp_server` from the repository directory. Use that client's documented format for a local stdio server.
+## What the graph holds
 
-### Use the SourceAnt HTTP server
+| Part | What it is | Where it is kept |
+|---|---|---|
+| Code structure | Files, symbols, imports, definitions, references | Your database, from `sourceant index` or a SCIP index |
+| Knowledge | Decisions, rules, constraints, conventions, and how they relate | Your database |
+| Topology | Systems, services, components, and their dependencies | Your database |
+| Contracts | API surfaces and what changed between versions | In-memory in the core; a plugin makes it durable |
+| Review findings | What a review raised and what became of it | In-memory in the core; a plugin makes it durable |
 
-The regular SourceAnt application can also serve MCP over Streamable HTTP at `/mcp/`. This transport is disabled unless all three authorization settings are present:
+Everything is filed under a **scope**, an open map of key-value pairs you choose. A personal project can use `{"project": "shop"}`. An integration can use `{"organization": "acme", "repository": "acme/billing"}`. Nothing in the core needs to know which keys you picked.
 
-```env
-MCP_HTTP_ISSUER_URL=https://issuer.example.com
-MCP_HTTP_RESOURCE_URL=https://sourceant.example.com/mcp/
-MCP_HTTP_AUDIENCE=sourceant-mcp
-MCP_HTTP_REQUIRED_SCOPES=sourceant
-```
-
-`JWT_SECRET` remains the signing secret. Tokens must contain `sub`, `exp`, `iss`, `aud`, and a space-separated `scope` claim. Enabling MCP does not change the existing HTTP API or its authentication behavior.
-
-HTTP knowledge is isolated by the authenticated principal and the requested scope. The server adds the principal boundary itself, so a client cannot select another principal through tool arguments.
-
-### Manage knowledge
-
-The community server exposes these MCP tools:
+## Knowledge over MCP
 
 | Tool | Purpose |
-|------|---------|
-| `put_knowledge` | Create or update a decision, rule, constraint, convention, note, or another knowledge type. |
-| `put_knowledge_relationship` | Connect knowledge with relationships such as `depends_on`, `supports`, or `contradicts`. |
-| `search_knowledge` | Find knowledge by scope, identity, type, status, or properties. |
-| `get_context` | Traverse related knowledge and combine it with other configured engineering context. |
+|---|---|
+| `search_code` | Find files and symbols by label and property |
+| `trace_code` | Walk the neighbourhood around a symbol |
+| `put_knowledge` | Record a decision, rule, constraint, or convention |
+| `put_knowledge_relationship` | Connect knowledge with `depends_on`, `supports`, `contradicts` |
+| `search_knowledge` | Find knowledge by scope, identity, type, or property |
+| `put_topology_entity` | Record a part of the system |
+| `put_topology_relationship` | Record how two parts relate |
+| `traverse_topology` | Walk the system graph from a set of seeds |
+| `get_context` | Combine any of the above into one bounded pack |
 
-Scopes are open key-value pairs. A personal project can use `{"project": "shop"}`. An integration can use repository, organization, customer, or another boundary without changing core types.
-
-Example requests to an MCP-enabled coding agent:
+To an MCP-enabled agent this is ordinary instruction:
 
 ```text
 Remember that project shop uses signed webhook requests. Store it as an approved decision.
@@ -77,225 +75,58 @@ Connect the signed webhook decision to the rule that rejects unsigned requests.
 Get the approved knowledge related to the signed webhook decision before changing its handler.
 ```
 
-The SQL repository is the basic community implementation. Applications can inject another `KnowledgeRepository` and the MCP tools continue to use the same contract.
+Storage is replaceable. Inject another `KnowledgeRepository`, `TopologyRepository`, or `CodeIndexRepository` and the same tools keep working against it.
 
-Knowledge scopes can identify any repository. SourceAnt core does not clone or structurally index arbitrary repositories by itself. Code-aware context requires a `CodeIndexReader` integration, while knowledge management works without one.
+## Built on the graph
 
-### Model software boundaries
+- **[Code review](docs/reviews.md)** reads the graph for structure around a change before it comments.
+- **[Issue triage](docs/triage.md)** finds duplicates and labels what comes in.
+- **[Systems](docs/systems.md)** maps services and dependencies independently of repository layout.
+- **[Repo management](docs/repo-management.md)** automates the housekeeping around both.
 
-Software topology is independent of repository layout. A topology entity can represent a system, subsystem, component, service, module, interface, repository, document, or deployment. Relationships describe containment, dependencies, ownership, and storage without assigning architectural meaning to a repository boundary.
+These need model access and, for GitHub, an app. Both are optional; the graph is not.
 
-A monorepo can contain assets from several systems. One system can also contain assets stored across several repositories. Reviews can start from changed code, resolve its owning assets, and traverse system dependencies before repository locations are considered.
+## Documentation
 
-## Review automation setup
+| | |
+|---|---|
+| [Quick start](docs/quick-start.md) | Get something running |
+| [Local index](docs/local-index.md) | Index repositories on your own machine |
+| [Knowledge and context](docs/context.md) | The knowledge server and context packs |
+| [Systems](docs/systems.md) | Software topology |
+| [Configuration](docs/configuration.md) | Every environment variable |
+| [GitHub App setup](docs/github-app.md) | Self-hosted GitHub integration |
+| [API](docs/api.md) | HTTP endpoints |
+| [Deployment](docs/deployment.md) | Images, compose, and running it as a service |
 
-### Prerequisites
-- Python 3.10+
-- GitHub account with a repository for testing.
-- LLM API key (supports any [LiteLLM-compatible provider](https://docs.litellm.ai/docs/providers): Gemini, Anthropic, DeepSeek, OpenAI, etc.).
+Models come through [LiteLLM](https://docs.litellm.ai/docs/providers), so Gemini, Anthropic, OpenAI, DeepSeek, Mistral, and 100+ other providers work by setting two variables.
 
-### Installation
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/sourceant/sourceant.git
-   cd sourceant
-   ```
+## SourceAnt Cloud
 
-2. **Initial project setup (docker-compose)**:
-   ```bash
-   docker compose up -d
-   ```
-
-3. **Install Dependencies**:
-   ```bash
-   docker compose exec app pip install -r requirements.txt
-   ```
-
-4. **Set Environment Variables**:
-   Copy `.env.example` into `.env` file in the root directory and update the credentials accordingly:
-   ```bash
-   docker compose exec app cp .env.example .env
-   ```
-   #### `.env` file
-   ```env
-   GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
-   LLM_MODEL=gemini/gemini-2.5-flash
-   LLM_TOKEN_LIMIT=1000000
-   GEMINI_API_KEY=your_gemini_api_key
-   ```
-SourceAnt API should be live at http://localhost:8000
-
-## SourceAnt Commands
-
-The `sourceant` command provides the following subcommands for managing the application:
-
-| Command               | Description                                      |
-|-----------------------|--------------------------------------------------|
-| `docker compose exec app sourceant db upgrade head`        | Set up database tables |
-| `docker compose exec app sourceant db --help`                                 | See more database commands |
-
-
-### Example Usage
-
-- **Start the database**:
-  ```bash
-  sourceant db
-  ```
-
-- **Start the API server**:
-  ```bash
-  docker compose up -d
-  ```
-
-- **Run the Worker**:
-  ```bash
-  docker compose exec app rq worker --url redis://redis:6379
-  ```
-
-- **View logs**:
-  ```bash
-  docker compose logs
-  ```
-
-## Configuration
-The application can be configured using environment variables. Key variables are documented in the `.env.example` file.
-
-### LLM Model
-
-SourceAnt uses [LiteLLM](https://docs.litellm.ai/docs/providers) to support 100+ LLM providers through a unified interface. Set the `LLM_MODEL` env var using the `provider/model` format:
-
-| Provider | `LLM_MODEL` | API Key Env Var |
-|----------|-------------|-----------------|
-| Google Gemini | `gemini/gemini-2.5-flash` | `GEMINI_API_KEY` |
-| Anthropic | `anthropic/claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai/gpt-4o` | `OPENAI_API_KEY` |
-| DeepSeek | `deepseek/deepseek-chat` | `DEEPSEEK_API_KEY` |
-
-```bash
-# Example: switch from Gemini to Anthropic
-LLM_MODEL=anthropic/claude-sonnet-4-5-20250929
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-See the full list of supported providers in the [LiteLLM docs](https://docs.litellm.ai/docs/providers).
-
-### GitHub App Setup
-
-Authentication is handled via a GitHub App, which provides secure, repository-level access. Your setup path depends on whether you are using the official cloud service or self-hosting the backend.
-
-#### For Cloud Users
-
-If you are using the official SourceAnt cloud service, simply install our official GitHub App:
-
-- **[Install the SourceAnt GitHub App](https://github.com/apps/sourceant)**
-
-The app will request the necessary permissions, and once installed on your repositories, it will automatically send events to our hosted backend. No further configuration is needed. Manage your repositories, knowledge, and reviews from the dashboard at [app.sourceant.ai](https://app.sourceant.ai).
-
-#### For Self-Hosted Users
-
-If you are running your own instance of SourceAnt (e.g., from this repository), you **must create your own GitHub App**. This is because the webhook URL must point to your own server.
-
-1.  **Create a New GitHub App**:
-    *   Navigate to your GitHub settings: **Developer settings** > **GitHub Apps** > **New GitHub App**.
-    *   **Webhook URL**: Set this to the public URL of your backend, pointing to the webhook endpoint (e.g., `https://your-domain.com/api/github/webhooks`).
-    *   **Webhook Secret**: Generate a secure secret and save it. You will need this for the `GITHUB_SECRET` environment variable.
-
-2.  **Set Permissions**:
-    Under the "Permissions" tab for your app, grant the following access:
-    *   **Repository permissions** > **Contents**: `Read-only`
-    *   **Repository permissions** > **Pull requests**: `Read & write`
-
-3.  **Generate a Private Key**:
-    *   At the bottom of your app's settings page, generate a new private key (`.pem` file).
-    *   Save this file securely and note its path.
-
-4.  **Configure Environment Variables**:
-    Update your `.env` file with the credentials from the app you just created:
-    *   `GITHUB_APP_ID`: The "App ID" from your app's settings page.
-    *   `GITHUB_APP_PRIVATE_KEY_PATH`: The file path to the `.pem` private key you downloaded.
-    *   `GITHUB_SECRET`: The webhook secret you created.
-
-### Repo Management
-
-SourceAnt includes a builtin repo manager plugin that automates PR/issue triage and labeling. It is **disabled by default**. Enable it with environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REPO_MANAGER_ENABLED` | `false` | Master switch for the repo manager |
-| `REPO_MANAGER_PR_TRIAGE` | `true` | Enable PR duplicate detection |
-| `REPO_MANAGER_ISSUE_TRIAGE` | `true` | Enable issue duplicate detection |
-| `REPO_MANAGER_AUTO_LABEL` | `true` | Enable auto-labeling |
-
-Settings can also be configured per-repository using the Config model. See the [Repo Management docs](https://sourceant.ai/docs/repo-management) for details.
-
-### Stateless Mode
-For development, testing, or specific use cases where you want to process events without writing them to the database, you can enable stateless mode. In this mode, the application will not attempt to connect to or interact with any database, making it lighter and preventing data accumulation.
-
-To enable stateless mode, set the following environment variable:
-```bash
-STATELESS_MODE=true
-```
-
-### Log Driver
-
-The `LOG_DRIVER` environment variable controls where the application logs are sent. This is particularly useful in serverless environments where file-based logging is not practical.
-
--   **`console` (Default)**: Logs are sent to the console, intelligently routing to `stdout` for informational messages (`INFO`, `DEBUG`) and `stderr` for warnings and errors (`WARNING`, `ERROR`, `CRITICAL`). This is the recommended setting for serverless and containerized environments like Cloud Run and Docker.
--   **`file`**: Logs are written to `sourceant.log` in the root directory. This is useful for traditional deployments where you have access to the file system.
--   **`syslog`**: Logs are sent to the system's syslog daemon. This is suitable for environments where you want to centralize logs from multiple services into a single, system-level logging solution.
-
-### Queue Mode
-
-The application supports different backend modes for processing background jobs, controlled by the `QUEUE_MODE` environment variable.
-
--   **`redis` (Default)**: This is the recommended mode for production. It uses a persistent Redis queue (`rq`) to handle background tasks. This requires a separate `rq` worker process to be running:
-    ```bash
-    docker compose exec app rq worker --url redis://redis:6379
-    ```
-
--   **`redislite`**: A self-contained, file-based Redis queue. This mode is ideal for local development or testing as it provides the full functionality of a Redis queue without needing to run a separate Redis server. The Redis database file (`redislite.db`) will be created in the project root.
-
--   **`request`**: This mode uses FastAPI's `BackgroundTasks` to process jobs in the same process as the web request, after the response has been sent. It's the simplest mode for development as it requires no external worker or Redis, but it is not suitable for production as jobs are lost if the server restarts.
-
-## Docker Images
-
-### Base Image
-The base SourceAnt image is built automatically on merge to `main` and pushed to `ghcr.io/sourceant/sourceant`. You can also trigger a build manually via **Actions → Build Image → Run workflow**.
-
-### Local Builds
-```bash
-make prod-build                              # Build with default tag (:latest)
-make prod-build IMAGE_TAG=v1.0.0             # Build with custom tag
-make prod-push                               # Push to GHCR
-```
-
-## Setting Up GitHub Webhook
-1. Go to your GitHub repository.
-2. Navigate to **Settings > Webhooks > Add Webhook**.
-3. Set the **Payload URL** to your server's `/webhook` endpoint (e.g., `https://your-server.com/webhook`).
-4. Set the **Content type** to `application/json`.
-5. Add the `GITHUB_WEBHOOK_SECRET` to the **Secret** field.
-6. Select **Let me select individual events** and choose **Pull requests** and **Issues**.
-7. Save the webhook.
+The core is MIT licensed and self-hostable in full. [SourceAnt Cloud](https://app.sourceant.ai) runs the same engine with a managed layer on top: memory your team curates, contract analysis and structural indexing at scale, the explorable graph, workspaces and roles, and analytics.
 
 ## Contributing
-We welcome contributions! Here's how you can help:
+
 1. Fork the repository.
-2. Create a new branch: `git checkout -b feature/your-feature`.
-3. Make your changes and commit them: `git commit -m 'Add some feature'`.
-4. Push to the branch: `git push origin feature/your-feature`.
-5. Submit a pull request.
+2. Create a branch: `git checkout -b feature/your-feature`.
+3. Commit your changes.
+4. Push and open a pull request.
+
+Tests and formatting are what CI checks:
+
+```bash
+docker compose exec app pytest src/tests/ -v
+docker compose exec app sourceant code lint
+```
 
 ## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE.md) file for details.
+
+MIT. See [LICENSE](LICENSE.md).
 
 ## Contact
-Have questions or suggestions? Reach out to us:
-- **Email**: hello@sourceant.ai
-- **GitHub Issues**: [Open an issue](https://github.com/sourceant/sourceant/issues)
 
-## Contributors
-Thanks to these amazing people who have contributed to this project:
+- **Email**: hello@sourceant.ai
+- **Issues**: [Open an issue](https://github.com/sourceant/sourceant/issues)
 
 <a href="https://github.com/sourceant/sourceant/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=sourceant/sourceant" />

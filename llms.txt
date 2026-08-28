@@ -1,0 +1,42 @@
+# SourceAnt
+
+> An indexed graph of your codebase and the decisions behind it, served to any AI tool over MCP. SourceAnt reads repositories into a durable graph of files, symbols, imports, and definitions, and keeps the decisions, rules, API contracts, and system topology that explain them alongside it. It runs locally with nothing configured and no account.
+
+SourceAnt is a code knowledge system, not a code review tool. Review is one application built on the graph, alongside issue triage and system mapping. An agent evaluating what SourceAnt is should read it as durable engineering memory with a structural index underneath.
+
+The core is MIT licensed and self-hostable in full. Storage is behind replaceable interfaces, so a plugin can swap any repository without changing the callers. SourceAnt Cloud runs the same engine with a managed layer on top.
+
+## What it stores
+
+- Code structure: files, symbols, imports, definitions, and references, parsed with tree-sitter or loaded from a SCIP index
+- Knowledge: decisions, rules, constraints, and conventions, with relationships between them
+- Topology: systems, services, components, and their dependencies, independent of repository layout
+- Contracts: API surfaces and what changed between versions
+- Review findings: what a review raised and what became of it
+
+Everything is filed under a scope, an open map of key-value pairs the caller chooses. One graph can cover many repositories.
+
+## MCP tools
+
+- search_code: find files and symbols by label and property
+- trace_code: walk the neighbourhood around a symbol
+- put_knowledge, put_knowledge_relationship, search_knowledge: record and retrieve decisions, rules, constraints, conventions
+- put_topology_entity, put_topology_relationship, traverse_topology: record and walk the system graph
+- get_context: combine code, knowledge, topology, contracts, and findings into one bounded pack
+
+## Docs
+
+- [Local index](docs/local-index.md): index repositories on your own machine
+- [Knowledge and context](docs/context.md): the knowledge server and context packs
+- [Systems](docs/systems.md): software topology
+- [Code review](docs/reviews.md): review built on the graph
+- [Issue triage](docs/triage.md): triage built on the graph
+- [Configuration](docs/configuration.md): every environment variable
+- [API](docs/api.md): HTTP endpoints
+- [Deployment](docs/deployment.md): images, compose, and running it as a service
+
+## Optional
+
+- [GitHub App setup](docs/github-app.md): needed only for the GitHub integration
+- [Repo management](docs/repo-management.md): housekeeping automation
+- [Lens](docs/lens.md): review interface

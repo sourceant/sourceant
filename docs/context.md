@@ -56,7 +56,9 @@ A scope is an open map of key-value pairs, not a fixed hierarchy. A personal pro
 
 `depth` (1 to 3, default 2) and `limit` (1 to 50) bound the walk. The pack reports whether it was truncated, so a caller can tell a small answer from a clipped one.
 
-Knowledge and topology are stored in SourceAnt's database. Code structure, contracts, and review findings are served by in-memory adapters in the community edition: they answer the same interfaces, and a plugin can replace any of them with a real index or store without the callers changing.
+Code structure, knowledge, and topology are stored in SourceAnt's database. Contracts and review findings are served by in-memory adapters in the community edition: they answer the same interfaces, and a plugin can replace any of them with a durable store without the callers changing.
+
+Code structure gets there through [`sourceant index`](local-index.md), or from a SCIP index another tool produced.
 
 ### Asking for it in practice
 

@@ -41,7 +41,14 @@ def create_mcp_server(
 ) -> FastMCP:
     server = FastMCP(
         name="SourceAnt",
-        instructions="Retrieve bounded engineering context before reviewing code.",
+        instructions=(
+            "An indexed graph of this codebase and the engineering knowledge "
+            "recorded against it. Search and traverse code structure, read and "
+            "write decisions, rules, constraints, conventions, API contracts, "
+            "and system topology, and combine any of them into one bounded "
+            "context pack. Write what you learn back so it outlives this "
+            "session."
+        ),
         auth=auth,
         token_verifier=token_verifier,
         stateless_http=True,
