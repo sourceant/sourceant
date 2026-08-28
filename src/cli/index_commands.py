@@ -170,7 +170,9 @@ def requirements_import_command(repository, labels, dry_run):
     engine = _engine()
     github = GitHub()
     source = GitHubIssueRequirements(
-        lambda _repository, wanted: github.list_open_issues(owner, name),
+        lambda _repository, wanted: github.list_issues(
+            owner, name, labels=tuple(wanted), state="all"
+        ),
         labels=labels or DEFAULT_LABELS,
     )
     scope = Scope.from_mapping({"repository": repository})

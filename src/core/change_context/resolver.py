@@ -58,7 +58,9 @@ class DefaultChangeContextResolver:
             for path in changes.paths:
                 found = self._code.search(
                     CodeSearch(
-                        scope=changes.scope, properties={"file_path": path}, limit=1
+                        scope=changes.code_scope,
+                        properties={"file_path": path},
+                        limit=1,
                     )
                 )
                 seeds.extend(node.id for node in found.nodes)

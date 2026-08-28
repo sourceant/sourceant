@@ -822,6 +822,62 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+    def list_issues(
+        self,
+        owner: str,
+        repo: str,
+        labels: tuple = (),
+        state: str = "all",
+        max_pages: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """List issues, excluding pull requests, narrowed by label and state.
+
+        Labels go in one comma separated qualifier, which search reads as any
+        of them. Repeating the qualifier would read as all of them, and a
+        caller naming several labels wants issues carrying either.
+        """
+        if state not in {"all", "open", "closed"}:
+            raise ValueError("state must be all, open, or closed")
+        terms = [f"repo:{owner}/{repo}", "is:issue"]
+        if state != "all":
+            terms.append(f"is:{state}")
+        wanted = [label for label in labels if label]
+        if wanted:
+            terms.append("label:" + ",".join(f'"{label}"' for label in wanted))
+        return self._search_issues(owner, repo, " ".join(terms), max_pages)
+
+    def _search_issues(
+        self, owner: str, repo: str, query: str, max_pages: int
+    ) -> List[Dict[str, Any]]:
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            all_issues: List[Dict[str, Any]] = []
+            page = 1
+            per_page = 100
+            while page <= max_pages:
+                response = requests.get(
+                    "https://api.github.com/search/issues",
+                    headers=headers,
+                    params={"q": query, "per_page": per_page, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                issues = response.json().get("items", [])
+                all_issues.extend(issues)
+                if len(issues) < per_page:
+                    break
+                page += 1
+            return all_issues
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to list issues for {owner}/{repo}: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
     def list_open_issues(
         self, owner: str, repo: str, max_pages: int = 10
     ) -> List[Dict[str, Any]]:

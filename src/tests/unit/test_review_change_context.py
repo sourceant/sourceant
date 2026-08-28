@@ -564,3 +564,71 @@ def test_without_a_commit_code_is_filed_with_everything_else():
     changes = ChangeSet(scope=SCOPE, files=(ChangedFile(path="a.py"),))
 
     assert changes.code_scope == SCOPE
+
+
+def test_the_code_around_a_change_is_found_at_its_revision(tmp_path):
+    from sqlalchemy import create_engine
+
+    from src.core.change_context import (
+        ChangedFile,
+        ChangeSet,
+        DefaultChangeContextResolver,
+    )
+    from src.core.code_index import CodeEdge, CodeNode
+    from src.core.code_index.sql import SQLCodeIndexRepository
+
+    code = SQLCodeIndexRepository(
+        create_engine(f"sqlite:///{tmp_path / 'code.db'}"), create_schema=True
+    )
+    code.put_node(
+        CODE_SCOPE,
+        CodeNode("file:test.py", frozenset({"File"}), {"file_path": "test.py"}),
+    )
+    code.put_node(
+        CODE_SCOPE,
+        CodeNode("symbol:load", frozenset({"function"}), {"file_path": "test.py"}),
+    )
+    code.put_edge(
+        CODE_SCOPE, CodeEdge("defines", "file:test.py", "symbol:load", "DEFINES")
+    )
+
+    known = DefaultChangeContextResolver(code=code).resolve(
+        ChangeSet(
+            scope=SCOPE,
+            files=(ChangedFile(path="test.py"),),
+            revision="head_sha_def",
+        )
+    )
+
+    assert known.code is not None
+    assert {node.id for node in known.code.nodes} == {"file:test.py", "symbol:load"}
+
+
+def test_code_recorded_at_another_revision_is_not_found(tmp_path):
+    from sqlalchemy import create_engine
+
+    from src.core.change_context import (
+        ChangedFile,
+        ChangeSet,
+        DefaultChangeContextResolver,
+    )
+    from src.core.code_index import CodeNode
+    from src.core.code_index.sql import SQLCodeIndexRepository
+
+    code = SQLCodeIndexRepository(
+        create_engine(f"sqlite:///{tmp_path / 'other.db'}"), create_schema=True
+    )
+    code.put_node(
+        SCOPE.extend({"revision": "an_older_sha"}),
+        CodeNode("file:test.py", frozenset({"File"}), {"file_path": "test.py"}),
+    )
+
+    known = DefaultChangeContextResolver(code=code).resolve(
+        ChangeSet(
+            scope=SCOPE,
+            files=(ChangedFile(path="test.py"),),
+            revision="head_sha_def",
+        )
+    )
+
+    assert known.code is None
