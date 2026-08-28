@@ -101,7 +101,7 @@ class TestRecordingThatAWorkspaceExists:
         with Session(store(tmp_path)) as session:
             remembered = remember(session, "w42")
 
-            assert remembered.external_id == "w42"
+            assert remembered.external_ref == "w42"
             assert remembered.id is not None
 
     def test_seeing_it_again_records_nothing_further(self, tmp_path):
@@ -118,7 +118,7 @@ class TestRecordingThatAWorkspaceExists:
         renamed."""
         assert set(Workspace.model_fields) == {
             "id",
-            "external_id",
+            "external_ref",
             "created_at",
             "updated_at",
         }

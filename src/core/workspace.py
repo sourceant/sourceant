@@ -48,12 +48,12 @@ def remember(session: Session, workspace: str) -> Workspace:
     would be a copy of an answer the gateway already gives.
     """
     known = session.exec(
-        select(Workspace).where(Workspace.external_id == workspace)
+        select(Workspace).where(Workspace.external_ref == workspace)
     ).first()
     if known is not None:
         return known
 
-    known = Workspace(external_id=workspace)
+    known = Workspace(external_ref=workspace)
     session.add(known)
     # Flushed rather than committed: the row gets its id, and whatever the
     # caller is doing stays one transaction. Committing here would settle a
@@ -74,7 +74,7 @@ def connections_of(session: Session, workspace: str) -> list[ConnectedRepository
         session.exec(
             select(ConnectedRepository)
             .join(Workspace, ConnectedRepository.workspace_id == Workspace.id)
-            .where(Workspace.external_id == workspace)
+            .where(Workspace.external_ref == workspace)
         ).all()
     )
 
@@ -92,7 +92,7 @@ def connection_of(
         select(ConnectedRepository)
         .join(Workspace, ConnectedRepository.workspace_id == Workspace.id)
         .where(
-            Workspace.external_id == workspace,
+            Workspace.external_ref == workspace,
             ConnectedRepository.repository_id == repository_id,
         )
     ).first()

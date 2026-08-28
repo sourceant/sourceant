@@ -136,7 +136,7 @@ def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]
                 .join(Workspace, ConnectedRepository.workspace_id == Workspace.id)
                 .where(
                     Repository.full_name == repository,
-                    Workspace.external_id == workspace,
+                    Workspace.external_ref == workspace,
                 )
             ).first()
         return row.provider if row else None

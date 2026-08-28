@@ -97,7 +97,7 @@ class TestPagedEndpoints:
         monkeypatch.setattr(httpx, "AsyncClient", factory)
 
     def connect(self, full_names: list[str]) -> None:
-        workspace = Workspace(external_id="w1")
+        workspace = Workspace(external_ref="w1")
         self.session.add(workspace)
         self.session.commit()
         self.session.refresh(workspace)
