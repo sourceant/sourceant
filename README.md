@@ -45,6 +45,7 @@ See [Local index](docs/local-index.md) for the whole command set, and [Knowledge
 |---|---|---|
 | Code structure | Files, symbols, imports, definitions, references | Your database, from `sourceant index` or a SCIP index |
 | Knowledge | Decisions, rules, constraints, conventions, and how they relate | Your database |
+| Requirements | What the software is meant to do, and what carries it | Your database |
 | Topology | Systems, services, components, and their dependencies | Your database |
 | Contracts | API surfaces and what changed between versions | In-memory in the core; a plugin makes it durable |
 | Review findings | What a review raised and what became of it | In-memory in the core; a plugin makes it durable |
@@ -63,6 +64,10 @@ Everything is filed under a **scope**, an open map of key-value pairs you choose
 | `put_topology_entity` | Record a part of the system |
 | `put_topology_relationship` | Record how two parts relate |
 | `traverse_topology` | Walk the system graph from a set of seeds |
+| `put_requirement` | Record what the software is meant to do |
+| `link_requirement` | Point a requirement at the code or test that carries it |
+| `search_requirements` | Find requirements by identity, kind, status, or origin |
+| `get_requirement_coverage` | What has code, what has tests, what a change touches |
 | `get_context` | Combine any of the above into one bounded pack |
 
 To an MCP-enabled agent this is ordinary instruction:
@@ -93,6 +98,7 @@ These need model access and, for GitHub, an app. Both are optional; the graph is
 | [Quick start](docs/quick-start.md) | Get something running |
 | [Local index](docs/local-index.md) | Index repositories on your own machine |
 | [Knowledge and context](docs/context.md) | The knowledge server and context packs |
+| [Requirements](docs/requirements.md) | What the software is meant to do |
 | [Systems](docs/systems.md) | Software topology |
 | [Configuration](docs/configuration.md) | Every environment variable |
 | [GitHub App setup](docs/github-app.md) | Self-hosted GitHub integration |

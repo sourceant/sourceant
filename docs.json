@@ -11,6 +11,7 @@
     { "title": "Quick Start", "path": "docs/quick-start.md" },
     { "title": "Local Index", "path": "docs/local-index.md" },
     { "title": "Knowledge and Context", "path": "docs/context.md" },
+    { "title": "Requirements", "path": "docs/requirements.md" },
     { "title": "Systems", "path": "docs/systems.md" },
     { "title": "Code Review", "path": "docs/reviews.md" },
     { "title": "Triage", "path": "docs/triage.md" },
