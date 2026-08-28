@@ -669,7 +669,6 @@ class CodeReviewerPlugin(BasePlugin):
         )
 
     def _prepare_requirements(self, scope, paths) -> Optional[str]:
-        """What the changed files are meant to do, when anything says so."""
         try:
             requirements = self.services.resolve(RequirementsReader)
         except LookupError:
