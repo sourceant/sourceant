@@ -340,18 +340,23 @@ class SQLCodeIndexRepository:
         by_key: dict[tuple[str, str], tuple[Scope, CodeNode]] = {}
         for scope, node in entries:
             by_key[(_scope_key(scope), node.id)] = (scope, node)
+        by_scope: dict[str, list[str]] = {}
         for scope_key, node_id in by_key:
-            connection.execute(
-                delete(node_table).where(
-                    node_table.c.scope == scope_key, node_table.c.id == node_id
+            by_scope.setdefault(scope_key, []).append(node_id)
+        for scope_key, node_ids in by_scope.items():
+            for chunk in _chunked(sorted(node_ids)):
+                connection.execute(
+                    delete(node_table).where(
+                        node_table.c.scope == scope_key,
+                        node_table.c.id.in_(chunk),
+                    )
                 )
-            )
-            connection.execute(
-                delete(label_table).where(
-                    label_table.c.scope == scope_key,
-                    label_table.c.node_id == node_id,
+                connection.execute(
+                    delete(label_table).where(
+                        label_table.c.scope == scope_key,
+                        label_table.c.node_id.in_(chunk),
+                    )
                 )
-            )
         node_rows = []
         label_rows = []
         for (scope_key, node_id), (_, node) in by_key.items():
@@ -376,12 +381,17 @@ class SQLCodeIndexRepository:
         by_key: dict[tuple[str, str], tuple[Scope, CodeEdge]] = {}
         for scope, edge in entries:
             by_key[(_scope_key(scope), edge.id)] = (scope, edge)
+        by_scope: dict[str, list[str]] = {}
         for scope_key, edge_id in by_key:
-            connection.execute(
-                delete(edge_table).where(
-                    edge_table.c.scope == scope_key, edge_table.c.id == edge_id
+            by_scope.setdefault(scope_key, []).append(edge_id)
+        for scope_key, edge_ids in by_scope.items():
+            for chunk in _chunked(sorted(edge_ids)):
+                connection.execute(
+                    delete(edge_table).where(
+                        edge_table.c.scope == scope_key,
+                        edge_table.c.id.in_(chunk),
+                    )
                 )
-            )
         connection.execute(
             edge_table.insert(),
             [
@@ -555,6 +565,13 @@ def _edge_from_row(row: Mapping[str, Any]) -> CodeEdge:
         type=row["type"],
         properties=json.loads(row["properties"]),
     )
+
+
+def _chunked(values: list[str], size: int = 500):
+    # SQLite caps bound parameters per statement, so a whole repository cannot
+    # go into one IN clause.
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
 
 
 def _scope_key(scope: Scope) -> str:

@@ -45,6 +45,17 @@ class KnowledgeRepository(KnowledgeReader, KnowledgeWriter, Protocol):
 
 
 @runtime_checkable
+class KnowledgeRemover(Protocol):
+    """Deleting a knowledge object.
+
+    Separate from KnowledgeWriter because a store that only ever appends is
+    still a usable store. A caller asks with isinstance.
+    """
+
+    def remove(self, scope: Scope, knowledge_id: str) -> None: ...
+
+
+@runtime_checkable
 class KnowledgeLinkReader(Protocol):
     """What a knowledge object is attached to in the code.
 

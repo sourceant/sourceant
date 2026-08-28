@@ -119,6 +119,31 @@ class SQLKnowledgeRepository:
                 connection.execute(relationship_table.insert().values(**values))
             self._refresh()
 
+    def remove(self, scope: Scope, knowledge_id: str) -> None:
+        key = self._scope_key(scope)
+        with self._lock:
+            with self._engine.begin() as connection:
+                connection.execute(
+                    delete(link_table).where(
+                        link_table.c.scope == key,
+                        link_table.c.knowledge_id == knowledge_id,
+                    )
+                )
+                connection.execute(
+                    delete(relationship_table).where(
+                        relationship_table.c.scope == key,
+                        (relationship_table.c.source_id == knowledge_id)
+                        | (relationship_table.c.target_id == knowledge_id),
+                    )
+                )
+                connection.execute(
+                    delete(knowledge_table).where(
+                        knowledge_table.c.scope == key,
+                        knowledge_table.c.id == knowledge_id,
+                    )
+                )
+            self._refresh()
+
     def put_link(self, scope: Scope, link: KnowledgeLink) -> None:
         key = self._scope_key(scope)
         with self._lock:

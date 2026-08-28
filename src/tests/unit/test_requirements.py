@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 from sqlalchemy import create_engine
 
@@ -197,6 +200,52 @@ def test_a_change_touching_nothing_tracked_reports_nothing(store):
     assert report.items == ()
 
 
+def test_coverage_says_when_it_stopped_short(store):
+    for index in range(4):
+        store.put(SCOPE, _requirement(f"r{index}"))
+        store.put_link(
+            SCOPE,
+            RequirementLink(
+                id=f"l{index}",
+                requirement_id=f"r{index}",
+                target_kind=CODE,
+                target_id="src/refund.py",
+            ),
+        )
+
+    report = store.coverage(CoverageQuery(scope=SCOPE, limit=2))
+
+    assert len(report.items) == 2
+    assert report.truncated is True
+
+
+def test_coverage_that_fits_is_not_marked_short(store):
+    store.put(SCOPE, _requirement())
+
+    assert store.coverage(CoverageQuery(scope=SCOPE)).truncated is False
+
+
+def test_removing_a_requirement_takes_its_knowledge_copy(store, tmp_path):
+    from sqlalchemy import create_engine
+
+    from src.core.knowledge import SQLKnowledgeRepository
+
+    knowledge = SQLKnowledgeRepository(
+        create_engine(f"sqlite:///{tmp_path / 'twin.db'}"), create_schema=True
+    )
+    requirements = KnowledgeBackedRequirements(store, knowledge)
+    requirements.put(SCOPE, _requirement())
+
+    requirements.remove(SCOPE, "r1")
+
+    assert (
+        knowledge.search(
+            KnowledgeQuery(scope=SCOPE, kinds=frozenset({"requirement"}))
+        ).total
+        == 0
+    )
+
+
 def test_a_requirement_is_also_an_ordinary_knowledge_item(store):
     knowledge = InMemoryKnowledgeRepository()
     requirements = KnowledgeBackedRequirements(store, knowledge)
@@ -238,29 +287,30 @@ def test_linking_a_requirement_to_knowledge_connects_them(store):
 
 
 def test_github_issues_become_requirements():
-    issues = [
-        {
-            "number": 7,
-            "title": "Refunds settle within a day",
-            "state": "open",
-            "html_url": "https://github.com/acme/billing/issues/7",
-            "labels": [{"name": "requirement"}],
-        },
-        {
-            "number": 9,
-            "title": "Statements are downloadable",
-            "state": "closed",
-            "html_url": "https://github.com/acme/billing/issues/9",
-            "labels": [{"name": "requirement"}],
-        },
-    ]
+    issues = json.loads(
+        (Path(__file__).parents[1] / "fixtures" / "github" / "issues.json").read_text()
+    )
     source = GitHubIssueRequirements(lambda repository, labels: issues)
 
     found = source.sync(SCOPE)
 
-    assert [item.id for item in found] == ["issue-7", "issue-9"]
+    assert [item.id for item in found] == [f"issue-{item['number']}" for item in issues]
     assert [item.status for item in found] == ["open", "met"]
-    assert found[0].external_ref == "https://github.com/acme/billing/issues/7"
+    assert [item.summary for item in found] == [item["title"] for item in issues]
+    assert found[0].external_ref == issues[0]["html_url"]
+
+
+def test_the_labels_a_source_was_configured_with_reach_the_caller():
+    seen = {}
+
+    def issues(repository, labels):
+        seen["repository"] = repository
+        seen["labels"] = labels
+        return []
+
+    GitHubIssueRequirements(issues, labels=("requirement", "spec")).sync(SCOPE)
+
+    assert seen == {"repository": "acme/billing", "labels": ["requirement", "spec"]}
 
 
 def test_a_source_needs_to_know_which_repository_to_read():

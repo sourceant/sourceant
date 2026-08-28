@@ -15,7 +15,7 @@ The core is MIT licensed and self-hostable in full. Storage is behind replaceabl
 - Contracts: API surfaces and what changed between versions
 - Review findings: what a review raised and what became of it
 
-Everything is filed under a scope, an open map of key-value pairs the caller chooses. One graph can cover many repositories.
+Everything is filed under a scope, an open map of key-value pairs the caller chooses. One store holds many repositories, each under its own scope, and a query names one scope.
 
 ## MCP tools
 

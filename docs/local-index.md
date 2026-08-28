@@ -11,17 +11,17 @@ With no `DATABASE_URL` set, SourceAnt uses a SQLite database in your user data d
 | Linux | `$XDG_DATA_HOME/sourceant`, or `~/.local/share/sourceant` |
 | macOS | `~/.local/share/sourceant` |
 
-`SOURCEANT_HOME` overrides it. One location per user, not one per checkout, is what lets a single graph span several repositories.
+`SOURCEANT_HOME` overrides it. One location per user, not one per checkout, so every repository you register goes into the same store, each under its own scope.
 
 Set `DATABASE_URL` and it uses that instead, which is what a deployment does.
 
 ### Registering repositories
 
 ```bash
-sourceant repo add ~/code/billing
-sourceant repo add ~/code/shipping
-sourceant repo list
-sourceant repo remove ~/code/shipping
+./sourceant repo add ~/code/billing
+./sourceant repo add ~/code/shipping
+./sourceant repo list
+./sourceant repo remove ~/code/shipping
 ```
 
 Each repository is stored under a scope of `{"repository": "<name>"}`. The name comes from the `origin` remote when there is one, so `git@github.com:acme/billing.git` is stored as `acme/billing`. Pass `--name` to choose it yourself.
@@ -31,9 +31,9 @@ Removing a repository stops it being indexed. Its graph is left alone.
 ### Indexing
 
 ```bash
-sourceant index ~/code/billing        # read it in full
-sourceant index ~/code/billing --update   # reparse only what changed
-sourceant index --all --update            # every registered repository
+./sourceant index ~/code/billing        # read it in full
+./sourceant index ~/code/billing --update   # reparse only what changed
+./sourceant index --all --update            # every registered repository
 ```
 
 Run with no path and it uses the current directory, registering it if it is new.
@@ -60,7 +60,7 @@ For anything else, run one of the [SCIP indexers](https://github.com/sourcegraph
 
 ```bash
 scip-typescript index
-sourceant index . --scip index.scip.json --revision "$(git rev-parse HEAD)"
+./sourceant index . --scip index.scip.json --revision "$(git rev-parse HEAD)"
 ```
 
 ### Using it
@@ -76,5 +76,13 @@ python -m src.mcp_server
 The HTTP server serves the same thing, plus the REST API:
 
 ```bash
-sourceant serve
+./sourceant serve
 ```
+
+### What a local index is not
+
+A local index describes your working tree, which moves with every edit, so it is filed under the repository alone with no revision.
+
+A review is about a pinned commit, and is filed under that repository and revision together. The two do not meet, and that is deliberate: a review that read the local index could cite a symbol from work you have not committed.
+
+Connecting a local graph to a hosted one is an explicit step, not something that happens because both wrote to the same database.

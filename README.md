@@ -18,17 +18,17 @@ git clone https://github.com/sourceant/sourceant.git
 cd sourceant
 pip install -r requirements.txt
 
-sourceant db upgrade head          # keeps its data in your user directory
-sourceant repo add ~/code/your-project
-sourceant index ~/code/your-project
+./sourceant db upgrade head          # keeps its data in your user directory
+./sourceant repo add ~/code/your-project
+./sourceant index ~/code/your-project
 ```
 
-That parses every file the repository does not ignore and stores the result. Index a second repository and it joins the same graph rather than starting another one, so a question can cross a repository boundary.
+That parses every file the repository does not ignore and stores the result. Index a second repository and it goes into the same store rather than its own artifact, filed under its own scope. A query names one scope, so asking across two repositories at once is not something the core does yet.
 
 Running it again reparses only what changed:
 
 ```bash
-sourceant index ~/code/your-project --update
+./sourceant index ~/code/your-project --update
 ```
 
 Point an MCP client at the knowledge server and it can use all of it:

@@ -76,10 +76,13 @@ class CoverageQuery:
     scope: Scope
     requirement_ids: frozenset[str] = field(default_factory=frozenset)
     paths: frozenset[str] = field(default_factory=frozenset)
+    limit: int = 100
 
     def __post_init__(self) -> None:
         if any(not path for path in self.paths):
             raise ValueError("paths must not contain empty values")
+        if not 1 <= self.limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
 
 
 @dataclass(frozen=True)
@@ -118,6 +121,7 @@ class RequirementCoverage:
 @dataclass(frozen=True)
 class CoverageReport:
     items: tuple[RequirementCoverage, ...]
+    truncated: bool = False
 
     @property
     def uncovered(self) -> tuple[str, ...]:

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from src.core.knowledge import KnowledgeObject, KnowledgeRelationship, KnowledgeWriter
+from src.core.knowledge import (
+    KnowledgeObject,
+    KnowledgeRelationship,
+    KnowledgeRemover,
+    KnowledgeWriter,
+)
 from src.core.scope import Scope
 
 from .models import CODE, KNOWLEDGE, TEST, TOPOLOGY, Requirement, RequirementLink
@@ -66,6 +71,8 @@ class KnowledgeBackedRequirements:
 
     def remove(self, scope: Scope, requirement_id: str) -> None:
         self._requirements.remove(scope, requirement_id)
+        if isinstance(self._knowledge, KnowledgeRemover):
+            self._knowledge.remove(scope, knowledge_id(requirement_id))
 
     def search(self, query):
         return self._requirements.search(query)

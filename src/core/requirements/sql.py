@@ -200,13 +200,13 @@ class SQLRequirementsRepository:
                 ):
                     requirement_ids.add(row[0])
             if not requirement_ids:
-                return CoverageReport(items=())
+                return CoverageReport(items=(), truncated=False)
 
         found = self.search(
             RequirementQuery(
                 scope=query.scope,
                 ids=frozenset(requirement_ids),
-                limit=100,
+                limit=query.limit,
             )
         )
         links = self.get_links(query.scope, frozenset(item.id for item in found.items))
@@ -234,7 +234,7 @@ class SQLRequirementsRepository:
                     ),
                 )
             )
-        return CoverageReport(items=tuple(items))
+        return CoverageReport(items=tuple(items), truncated=found.has_more)
 
 
 def _requirement_from_row(row: Mapping[str, Any]) -> Requirement:
