@@ -116,6 +116,61 @@ class SQLCodeIndexRepository:
                 for table in (node_table, label_table, edge_table):
                     connection.execute(delete(table).where(table.c.scope == key))
 
+    def remove_path(self, scope: Scope, file_path: str) -> None:
+        key = _scope_key(scope)
+        with self._lock:
+            with self._engine.begin() as connection:
+                ids = [
+                    row[0]
+                    for row in connection.execute(
+                        select(node_table.c.id).where(
+                            node_table.c.scope == key,
+                            node_table.c.file_path == file_path,
+                        )
+                    )
+                ]
+                if not ids:
+                    return
+                connection.execute(
+                    delete(edge_table).where(
+                        edge_table.c.scope == key,
+                        or_(
+                            edge_table.c.source_id.in_(ids),
+                            edge_table.c.target_id.in_(ids),
+                        ),
+                    )
+                )
+                connection.execute(
+                    delete(label_table).where(
+                        label_table.c.scope == key,
+                        label_table.c.node_id.in_(ids),
+                    )
+                )
+                connection.execute(
+                    delete(node_table).where(
+                        node_table.c.scope == key, node_table.c.id.in_(ids)
+                    )
+                )
+
+    def file_digests(self, scope: Scope) -> dict[str, str]:
+        key = _scope_key(scope)
+        digests: dict[str, str] = {}
+        with self._engine.connect() as connection:
+            for row in connection.execute(
+                select(node_table.c.file_path, node_table.c.properties)
+                .join(
+                    label_table,
+                    (label_table.c.scope == node_table.c.scope)
+                    & (label_table.c.node_id == node_table.c.id),
+                )
+                .where(node_table.c.scope == key, label_table.c.label == "File")
+            ):
+                path, properties = row[0], json.loads(row[1])
+                digest = properties.get("digest")
+                if isinstance(path, str) and isinstance(digest, str) and digest:
+                    digests[path] = digest
+        return digests
+
     def search(self, query: CodeSearch) -> CodeSearchResult:
         key = _scope_key(query.scope)
         statement = select(node_table).where(node_table.c.scope == key)

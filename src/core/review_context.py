@@ -302,7 +302,5 @@ def build_changed_file_code_index(
             continue
         if not isinstance(content, str):
             continue
-        emit_file_graph(
-            index, scope, path, content, character_limit=character_limit
-        )
+        emit_file_graph(index, scope, path, content, character_limit=character_limit)
     return index

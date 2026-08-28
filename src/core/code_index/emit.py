@@ -16,6 +16,7 @@ def emit_file_graph(
     content: str,
     *,
     character_limit: int = DEFAULT_FILE_CHARACTER_LIMIT,
+    digest: str = "",
 ) -> bool:
     language = detect_language(path)
     if language is None:
@@ -33,11 +34,7 @@ def emit_file_graph(
         CodeNode(
             file_id,
             frozenset({"File"}),
-            {
-                "file_path": path,
-                "kind": language,
-                "name": path.rsplit("/", 1)[-1],
-            },
+            _file_properties(path, language, digest),
         ),
     )
     for position, item in enumerate(result.imports):
@@ -61,6 +58,17 @@ def emit_file_graph(
         )
     _emit_structure(writer, scope, path, file_id, result.structure)
     return True
+
+
+def _file_properties(path: str, language: str, digest: str) -> dict:
+    properties = {
+        "file_path": path,
+        "kind": language,
+        "name": path.rsplit("/", 1)[-1],
+    }
+    if digest:
+        properties["digest"] = digest
+    return properties
 
 
 def _emit_structure(writer, scope, path, parent_id, items) -> None:

@@ -46,5 +46,31 @@ class CodeIndexWriter(Protocol):
 
 
 @runtime_checkable
+class PathScopedCodeIndexWriter(Protocol):
+    """Removing one file's nodes and edges without rebuilding the scope.
+
+    Separate from CodeIndexWriter because an index is free not to be able to do
+    this. A caller asks with isinstance and rebuilds the scope when the answer
+    is no.
+    """
+
+    def remove_path(self, scope: Scope, file_path: str) -> None: ...
+
+
+@runtime_checkable
+class CodeIndexDigestReader(Protocol):
+    """What each file hashed to when it was last indexed, keyed by path."""
+
+    def file_digests(self, scope: Scope) -> dict[str, str]: ...
+
+
+@runtime_checkable
+class BulkCodeIndexWriter(Protocol):
+    """Grouping many writes into one commit while a repository is indexed."""
+
+    def bulk_writes(self): ...
+
+
+@runtime_checkable
 class CodeIndexRepository(CodeIndexReader, CodeIndexWriter, Protocol):
     pass
