@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+from src.core.language_pack import Error, ProcessConfig, detect_language, process
+from src.core.scope import Scope
+
+from .interfaces import CodeIndexWriter
+from .models import CodeEdge, CodeNode
+
+DEFAULT_FILE_CHARACTER_LIMIT = 500_000
+
+
+def emit_file_graph(
+    writer: CodeIndexWriter,
+    scope: Scope,
+    path: str,
+    content: str,
+    *,
+    character_limit: int = DEFAULT_FILE_CHARACTER_LIMIT,
+) -> bool:
+    language = detect_language(path)
+    if language is None:
+        return False
+    if not isinstance(content, str) or len(content) > character_limit:
+        return False
+    try:
+        result = process(content, ProcessConfig(language=language))
+    except (Error, RuntimeError):
+        return False
+
+    file_id = f"file:{path}"
+    writer.put_node(
+        scope,
+        CodeNode(
+            file_id,
+            frozenset({"File"}),
+            {
+                "file_path": path,
+                "kind": language,
+                "name": path.rsplit("/", 1)[-1],
+            },
+        ),
+    )
+    for position, item in enumerate(result.imports):
+        import_id = f"import:{path}:{position}"
+        writer.put_node(
+            scope,
+            CodeNode(
+                import_id,
+                frozenset({"Import"}),
+                {"file_path": path, "name": item.source},
+            ),
+        )
+        writer.put_edge(
+            scope,
+            CodeEdge(
+                f"imports:{file_id}:{import_id}",
+                file_id,
+                import_id,
+                "IMPORTS",
+            ),
+        )
+    _emit_structure(writer, scope, path, file_id, result.structure)
+    return True
+
+
+def _emit_structure(writer, scope, path, parent_id, items) -> None:
+    for position, item in enumerate(items):
+        if not item.name:
+            _emit_structure(writer, scope, path, parent_id, item.children)
+            continue
+        symbol_id = f"symbol:{path}:{item.name}:{item.span.start_line}:{position}"
+        writer.put_node(
+            scope,
+            CodeNode(
+                symbol_id,
+                frozenset({str(item.kind)}),
+                {
+                    "file_path": path,
+                    "kind": str(item.kind),
+                    "name": item.name,
+                    "signature": item.signature,
+                    "start_line": item.span.start_line + 1,
+                    "end_line": item.span.end_line + 1,
+                },
+            ),
+        )
+        writer.put_edge(
+            scope,
+            CodeEdge(
+                f"defines:{parent_id}:{symbol_id}",
+                parent_id,
+                symbol_id,
+                "DEFINES",
+            ),
+        )
+        _emit_structure(writer, scope, path, symbol_id, item.children)

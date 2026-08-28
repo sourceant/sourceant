@@ -5,7 +5,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from src.core.code_index import (
-    CodeEdge,
     CodeIndexReader,
     CodeNode,
     CodeSearch,
@@ -14,7 +13,8 @@ from src.core.code_index import (
     CodeTraversalResult,
     InMemoryCodeIndex,
 )
-from src.core.language_pack import Error, ProcessConfig, detect_language, process
+from src.core.code_index.emit import DEFAULT_FILE_CHARACTER_LIMIT, emit_file_graph
+from src.core.language_pack import detect_language
 from src.core.scope import Scope
 
 
@@ -292,87 +292,17 @@ def build_changed_file_code_index(
     paths: list[str],
     read_content: Callable[[str], str | None],
     *,
-    character_limit: int = 500_000,
+    character_limit: int = DEFAULT_FILE_CHARACTER_LIMIT,
 ) -> InMemoryCodeIndex:
     index = InMemoryCodeIndex()
     for path in dict.fromkeys(paths):
-        language = detect_language(path)
-        if language is None:
-            continue
         try:
             content = read_content(path)
         except (OSError, RuntimeError, ValueError):
             continue
-        if not isinstance(content, str) or len(content) > character_limit:
+        if not isinstance(content, str):
             continue
-        try:
-            result = process(content, ProcessConfig(language=language))
-        except (Error, RuntimeError):
-            continue
-        file_id = f"file:{path}"
-        index.put_node(
-            scope,
-            CodeNode(
-                file_id,
-                frozenset({"File"}),
-                {
-                    "file_path": path,
-                    "kind": language,
-                    "name": path.rsplit("/", 1)[-1],
-                },
-            ),
+        emit_file_graph(
+            index, scope, path, content, character_limit=character_limit
         )
-        for position, item in enumerate(result.imports):
-            import_id = f"import:{path}:{position}"
-            index.put_node(
-                scope,
-                CodeNode(
-                    import_id,
-                    frozenset({"Import"}),
-                    {"file_path": path, "name": item.source},
-                ),
-            )
-            index.put_edge(
-                scope,
-                CodeEdge(
-                    f"imports:{file_id}:{import_id}",
-                    file_id,
-                    import_id,
-                    "IMPORTS",
-                ),
-            )
-        _put_structure(index, scope, path, file_id, result.structure)
     return index
-
-
-def _put_structure(index, scope, path, parent_id, items) -> None:
-    for position, item in enumerate(items):
-        if not item.name:
-            _put_structure(index, scope, path, parent_id, item.children)
-            continue
-        symbol_id = f"symbol:{path}:{item.name}:{item.span.start_line}:{position}"
-        index.put_node(
-            scope,
-            CodeNode(
-                symbol_id,
-                frozenset({str(item.kind)}),
-                {
-                    "file_path": path,
-                    "kind": str(item.kind),
-                    "name": item.name,
-                    "signature": item.signature,
-                    "start_line": item.span.start_line + 1,
-                    "end_line": item.span.end_line + 1,
-                },
-            ),
-        )
-        index.put_edge(
-            scope,
-            CodeEdge(
-                f"defines:{parent_id}:{symbol_id}",
-                parent_id,
-                symbol_id,
-                "DEFINES",
-            ),
-        )
-        _put_structure(index, scope, path, symbol_id, item.children)
