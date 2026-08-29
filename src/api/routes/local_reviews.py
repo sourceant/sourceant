@@ -9,10 +9,19 @@ team wrote down that bears on it, and says whether the work satisfies it. No
 forge, no pull request, no installation: a repository registered on this machine
 is the whole of the setup.
 
-What it can answer without a model it always answers: what changed, what
-applies, and what has been recorded about the files touched. Judging the work
-against prose needs a model, and that part is skipped rather than faked when
-nobody has configured one.
+It is the same review the hosted path gives a pull request, from the same
+generator: an overview, what is worth changing, line by line suggestions with
+the code to put there, and a verdict. What differs is only where the change
+comes from and what is known about it.
+
+What a team has written down goes in as context rather than as the review
+itself. Their recorded decisions and the skills they taught their coding agents
+are what a reviewer here would know and a stranger would not, so they are given
+to the same reviewer rather than checked by a second one standing beside it.
+
+What it can answer without a model it always answers: what changed and what
+applies to it. Reviewing needs a model, and that part is skipped rather than
+faked when nobody has configured one.
 
 A review is asked for by one thing and read by another. An agent runs one over
 MCP while somebody is in the middle of something else and hands them a link, so
@@ -54,6 +63,7 @@ from src.core.local_reviews import (
 )
 from src.core.local_reviews.models import now
 from src.core.responses import success_response
+from src.utils.diff_parser import parse_diff
 from src.core.skills import (
     BLOCKING,
     Change,
@@ -160,6 +170,88 @@ class ReviewInput(BaseModel):
     use_model: bool = Field(default=True)
 
 
+def told(recorded, skills) -> str:
+    """What a team has written down, for the reviewer to read before it starts.
+
+    A reviewer who has not read these is a stranger with an opinion. The point
+    of any of this is that the review knows what the team already decided.
+    """
+    parts: list[str] = []
+
+    if recorded:
+        parts.append("## What this team has already decided\n")
+        parts.append(
+            "Recorded against this repository. A change that contradicts one of "
+            "these is worth raising even where the code reads well.\n"
+        )
+        for item in recorded:
+            why = dict(item.properties).get("why", "")
+            parts.append(f"- **{item.id}** ({item.kind}): {item.summary}")
+            if why:
+                parts.append(f"  Why: {why}")
+        parts.append("")
+
+    if skills:
+        parts.append("## What this team expects of work here\n")
+        parts.append(
+            "Written by the team for whatever reads their code. Judge the change "
+            "against these as well as against the code itself, and say which one "
+            "a suggestion comes from where it comes from one.\n"
+        )
+        for skill in skills:
+            parts.append(f"### {skill.name}")
+            if skill.description:
+                parts.append(f"_{skill.description}_")
+            body = (skill.body or "").strip()
+            if body:
+                parts.append(body[:6_000])
+            parts.append("")
+
+    return "\n".join(parts)
+
+
+def reviewed(review) -> dict[str, Any]:
+    """One review, in the shape a screen draws and an agent reads."""
+    if review is None:
+        return {}
+    summary = review.summary
+    return {
+        "verdict": review.verdict.value if review.verdict else "",
+        "summary": {
+            "overview": summary.overview if summary else "",
+            "key_improvements": list(summary.key_improvements) if summary else [],
+            "minor_suggestions": list(summary.minor_suggestions) if summary else [],
+            "critical_issues": list(summary.critical_issues) if summary else [],
+        },
+        "suggestions": [
+            {
+                "path": one.file_name,
+                "start_line": one.start_line,
+                "end_line": one.end_line,
+                "side": one.side.value if one.side else "",
+                "comment": one.comment,
+                "category": one.category.value if one.category else "",
+                "suggested_code": one.suggested_code or "",
+            }
+            for one in (review.code_suggestions or [])
+        ],
+        # The prose sections the reviewer fills in where it has something to say.
+        "notes": {
+            name: getattr(review, name)
+            for name in (
+                "code_quality",
+                "potential_bugs",
+                "performance",
+                "readability",
+                "security",
+                "refactoring_suggestions",
+                "documentation_suggestions",
+            )
+            if getattr(review, name)
+        },
+    }
+
+
 def verdict_payload(verdict: SkillVerdict) -> dict[str, Any]:
     return {
         "skill": verdict.skill_id,
@@ -208,6 +300,7 @@ def read_and_judge(body: ReviewInput, store: Any) -> dict[str, Any]:
             "skills": [],
             "knowledge": [],
             "verdicts": [],
+            "review": {},
             "where": {**where, "base": "", "commits": 0},
             "note": "Nothing has changed in this checkout.",
         }
@@ -254,6 +347,7 @@ def read_and_judge(body: ReviewInput, store: Any) -> dict[str, Any]:
             for item in recorded
         ],
         "verdicts": [],
+        "review": {},
         "ready": True,
         "note": "",
     }
@@ -275,6 +369,24 @@ def read_and_judge(body: ReviewInput, store: Any) -> dict[str, Any]:
     if not chosen:
         answer["note"] = "Nothing on this machine bears on what changed here."
         return answer
+
+    # The review proper, from the same generator the hosted path uses, told
+    # what this team has written down.
+    try:
+        review = provider.generate_code_review(
+            diff=changes.diff,
+            parsed_files=parse_diff(changes.diff),
+            pr_metadata={
+                "title": changes.title or f"Work on {where['branch']}",
+                "description": changes.description,
+                "author": "",
+            },
+            knowledge=told(recorded, chosen),
+        )
+    except Exception as error:  # noqa: BLE001 - whatever a provider raises
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    answer["review"] = reviewed(review)
 
     subject = Change(
         title=changes.title,
@@ -299,10 +411,13 @@ def read_and_judge(body: ReviewInput, store: Any) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(error)) from error
 
     answer["verdicts"] = [verdict_payload(verdict) for verdict in verdicts]
-    answer["ready"] = not any(
+    blocked = any(
         finding.severity == BLOCKING
         for verdict in verdicts
         for finding in verdict.findings
+    )
+    answer["ready"] = (
+        not blocked and answer["review"].get("verdict") != "REQUEST_CHANGES"
     )
     return answer
 

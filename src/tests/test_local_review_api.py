@@ -11,6 +11,13 @@ from src.api.routes.local_reviews import get_reviews
 from src.core.code_index import SQLCodeIndexRepository
 from src.core.knowledge import SQLKnowledgeRepository
 from src.core.local_reviews import SQLLocalReviewStore
+from src.models.code_review import (
+    CodeReview,
+    CodeReviewSummary,
+    CodeSuggestion,
+    Side,
+    Verdict,
+)
 from src.tests.base_test import BaseTestCase
 
 MIGRATIONS_SKILL = """---
@@ -23,16 +30,39 @@ Never edit a migration that has already run.
 
 
 class FakeModel:
-    """A model that answers whatever the test told it to."""
+    """A model that answers whatever the test told it to.
 
-    def __init__(self, answer):
+    Two questions get asked of it: the review proper, which is the same
+    generator the hosted path uses, and one question per skill.
+    """
+
+    def __init__(self, answer, review=None):
         self.answer = answer
+        self.review = review if review is not None else _review()
         self.asked = []
+        self.told = []
         self.model = "a-model"
 
     def generate_text(self, prompt):
         self.asked.append(prompt)
         return json.dumps(self.answer)
+
+    def generate_code_review(self, **called):
+        self.told.append(called)
+        return self.review
+
+
+def _review(verdict=Verdict.COMMENT, suggestions=()):
+    return CodeReview(
+        verdict=verdict,
+        summary=CodeReviewSummary(
+            overview="It edits a migration that has already run.",
+            key_improvements=["Add a new migration"],
+            minor_suggestions=[],
+            critical_issues=["A migration that already ran was edited"],
+        ),
+        code_suggestions=list(suggestions),
+    )
 
 
 class TestLocalReview(BaseTestCase):
@@ -243,6 +273,56 @@ class TestLocalReview(BaseTestCase):
 
         assert answered["status"] == "failed"
         assert "No model is configured" in answered["error"]
+
+    def test_a_review_is_a_review_rather_than_a_list_of_rule_breaches(
+        self, monkeypatch
+    ):
+        model = FakeModel(
+            {"passed": True},
+            review=_review(
+                verdict=Verdict.REQUEST_CHANGES,
+                suggestions=[
+                    CodeSuggestion(
+                        file_name="db/0001_charges.py",
+                        start_line=2,
+                        end_line=2,
+                        side=Side.RIGHT,
+                        comment="Add a new migration instead.",
+                        category=None,
+                        suggested_code="def up():\n    pass\n",
+                    )
+                ],
+            ),
+        )
+        monkeypatch.setattr(
+            "src.api.routes.local_reviews.model_for_this_machine", lambda: model
+        )
+        self.register()
+        self.edit_the_migration()
+
+        answered = self.review(title="Edit the charges migration").json()["data"][
+            "review"
+        ]
+
+        assert answered["review"]["verdict"] == "REQUEST_CHANGES"
+        assert answered["review"]["summary"]["overview"]
+        assert answered["review"]["suggestions"][0]["suggested_code"]
+        # A verdict of change-this is not ready, whatever the skills said.
+        assert answered["ready"] is False
+
+    def test_the_reviewer_is_told_what_the_team_wrote_down(self, monkeypatch):
+        model = FakeModel({"passed": True})
+        monkeypatch.setattr(
+            "src.api.routes.local_reviews.model_for_this_machine", lambda: model
+        )
+        self.register()
+        self.edit_the_migration()
+
+        self.review(title="Edit the charges migration")
+
+        told = model.told[0]["knowledge"]
+        assert "Never edit a migration" in told
+        assert "What this team expects of work here" in told
 
     def test_a_repository_nobody_registered_is_not_reviewed(self):
         # Refused when it is asked for, rather than written down as a review
