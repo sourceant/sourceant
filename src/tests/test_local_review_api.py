@@ -340,6 +340,38 @@ class TestLocalReview(BaseTestCase):
         assert found.json()["data"]["status"] == "done"
         assert found.json()["data"]["path"] == f"#/reviews/{identifier}"
 
+    def test_a_review_whose_reader_went_away_says_so(self, tmp_path):
+        # A stdio agent lives as long as its client. Whatever it started dies
+        # with it, and a spinner that never stops is a worse answer than none.
+        from datetime import timedelta
+
+        from src.core.local_reviews import LocalReview
+        from src.core.local_reviews.models import now
+
+        store = app.dependency_overrides[get_reviews]()
+        store.put(
+            LocalReview(
+                id="abandoned",
+                repository="acme/billing",
+                started=now() - timedelta(hours=2),
+            )
+        )
+
+        found = self.client.get("/api/local/reviews/abandoned").json()["data"]
+
+        assert found["status"] == "failed"
+        assert "stopped before it finished" in found["error"]
+
+    def test_a_review_that_only_just_started_is_still_running(self):
+        from src.core.local_reviews import LocalReview
+
+        store = app.dependency_overrides[get_reviews]()
+        store.put(LocalReview(id="fresh", repository="acme/billing"))
+
+        found = self.client.get("/api/local/reviews/fresh").json()["data"]
+
+        assert found["status"] == "running"
+
     def test_a_review_nobody_asked_for_is_not_invented(self):
         assert self.client.get("/api/local/reviews/nothing").status_code == 404
 

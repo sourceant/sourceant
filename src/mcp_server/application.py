@@ -70,8 +70,13 @@ def _reviewer():
     """How this server starts a review, or None where it cannot.
 
     Only the local surface reviews a checkout: it reads files off a disk, and a
-    hosted deployment has nobody's disk to read. The routes own the work, so
-    this asks them rather than growing a second copy of it.
+    hosted deployment has nobody's disk to read.
+
+    The work is handed to the agent rather than done here. This server is
+    frequently a stdio process that lives exactly as long as the client holding
+    it, and a review takes longer than that: a thread started here dies with
+    the process and leaves a review that says "running" for ever. The agent is
+    the thing that is always up.
     """
     from src.config.settings import LOCAL_MODE
 
@@ -79,37 +84,71 @@ def _reviewer():
         return None
 
     def start(repository: str, title: str = "") -> dict:
-        from src.api.routes.local_reviews import (
-            ReviewInput,
-            get_knowledge,
-            get_reviews,
-            kept,
-            run,
-        )
-        from src.core.local_reviews import LocalReview, named
-        from src.api.routes.code import find_repository
-
-        find_repository(repository)
-        body = ReviewInput(repository=repository, title=title)
-        store, reviews = get_knowledge(), get_reviews()
-
-        identifier = named()
-        started = reviews.put(
-            LocalReview(id=identifier, repository=repository, title=title)
-        )
-        # Not a background task: nothing here is inside a request, so the work
-        # goes on a thread of its own and this answers immediately.
-        Thread(
-            target=run,
-            args=(identifier, body, store, reviews),
-            daemon=True,
-        ).start()
-
-        answer = kept(started)
-        answer["url"] = _where(answer["path"])
-        return answer
+        agent = os.getenv("SOURCEANT_UI_URL", "").rstrip("/")
+        if agent:
+            return _asked_of_the_agent(agent, repository, title)
+        return _run_here(repository, title)
 
     return start
+
+
+def _asked_of_the_agent(agent: str, repository: str, title: str) -> dict:
+    """Hand the work to the process that will outlive this one."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        f"{agent}/api/reviews",
+        method="POST",
+        data=json.dumps(
+            {"repository": repository, "title": title, "use_model": True}
+        ).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as answer:
+            started = json.load(answer)
+    except urllib.error.HTTPError as refused:
+        raise ValueError(refused.read().decode(errors="replace")[:500]) from refused
+    except OSError as error:
+        # The agent is how this reaches anything. Saying so beats a review
+        # that never finishes.
+        raise ValueError(f"The SourceAnt agent is not answering at {agent}") from error
+
+    started["url"] = f"{agent}/#/reviews/{started['id']}"
+    return started
+
+
+def _run_here(repository: str, title: str) -> dict:
+    """Do it in this process, for a server that is going to be around.
+
+    Only right where this is the long-lived HTTP core. A stdio server that
+    takes this path leaves the review unfinished when its client goes away.
+    """
+    from src.api.routes.code import find_repository
+    from src.api.routes.local_reviews import (
+        ReviewInput,
+        get_knowledge,
+        get_reviews,
+        kept,
+        run,
+    )
+    from src.core.local_reviews import LocalReview, named
+
+    find_repository(repository)
+    body = ReviewInput(repository=repository, title=title)
+    store, reviews = get_knowledge(), get_reviews()
+
+    identifier = named()
+    started = reviews.put(
+        LocalReview(id=identifier, repository=repository, title=title)
+    )
+    Thread(target=run, args=(identifier, body, store, reviews), daemon=True).start()
+
+    answer = kept(started)
+    answer["url"] = _where(answer["path"])
+    return answer
 
 
 def _where(path: str) -> str:

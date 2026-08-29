@@ -61,6 +61,8 @@ from src.core.local_reviews import (
     SQLLocalReviewStore,
     named,
 )
+from datetime import timedelta
+
 from src.core.local_reviews.models import now
 from src.core.responses import success_response
 from src.utils.diff_parser import parse_diff
@@ -422,14 +424,31 @@ def read_and_judge(body: ReviewInput, store: Any) -> dict[str, Any]:
     return answer
 
 
+# Longer than any review takes, including one asking a slow provider about
+# every skill on a machine. Past this, whatever was doing the reading is gone.
+ABANDONED = timedelta(minutes=30)
+
+
 def kept(review: LocalReview) -> dict[str, Any]:
-    """One review, in the shape a screen and an agent both read."""
+    """One review, in the shape a screen and an agent both read.
+
+    A review still running long after anything could still be reading it was
+    abandoned: the process doing it went away. Saying so beats a spinner that
+    never stops.
+    """
+    status, error = review.status, review.error
+    if status == RUNNING and now() - review.started > ABANDONED:
+        status = FAILED
+        error = (
+            "Whatever was reading this stopped before it finished. Nothing was "
+            "changed; ask for it again."
+        )
     return {
         "id": review.id,
         "repository": review.repository,
-        "status": review.status,
+        "status": status,
         "title": review.title,
-        "error": review.error,
+        "error": error,
         "started": review.started.isoformat() if review.started else None,
         "finished": review.finished.isoformat() if review.finished else None,
         "review": dict(review.answer),
