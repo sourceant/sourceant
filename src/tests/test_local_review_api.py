@@ -116,6 +116,23 @@ class TestLocalReview(BaseTestCase):
         assert [item["path"] for item in answered["changed"]] == ["db/0002_refunds.py"]
         assert answered["changed"][0]["change"] == "added"
 
+    def test_another_checkout_nested_in_this_one_is_not_this_one_work(self, tmp_path):
+        # A worktree, or a repository somebody cloned in here. Git reports it as
+        # a directory it will not look inside, and everything in it belongs to
+        # that checkout rather than to the change being reviewed.
+        self.register()
+        nested = self.source / "elsewhere"
+        nested.mkdir()
+        subprocess.run(
+            ["git", "init", "-q"], cwd=nested, check=True, capture_output=True
+        )
+        (nested / "theirs.py").write_text("x = 1\n", encoding="utf-8")
+        self.edit_the_migration()
+
+        answered = self.review(use_model=False).json()["data"]
+
+        assert [item["path"] for item in answered["changed"]] == ["db/0001_charges.py"]
+
     def test_the_repository_own_rule_is_the_one_picked(self):
         self.register()
         self.edit_the_migration()
@@ -233,3 +250,89 @@ class TestSkillsApi(BaseTestCase):
 
     def test_a_skill_nobody_wrote_is_not_invented(self):
         assert self.client.get("/api/skills/nowhere").status_code == 404
+
+    def register(self):
+        return self.client.post(
+            "/api/code/repositories",
+            json={"path": str(self.source), "name": "acme/billing"},
+        )
+
+    def state(self, **body):
+        return self.client.put(
+            "/api/skills", json={"repository": "acme/billing", **body}
+        )
+
+    def test_a_rule_can_be_stated_and_read_back(self):
+        self.register()
+
+        written = self.state(
+            id="retry-limit",
+            name="retry-limit",
+            description="Use when a change touches how a charge is retried.",
+            body="Charges retry three times, then stop.",
+        )
+
+        assert written.status_code == 200
+        read = self.client.get("/api/skills/retry-limit?repository=acme/billing")
+        assert read.json()["data"]["body"] == "Charges retry three times, then stop."
+        assert read.json()["data"]["origin"] == "repository"
+
+    def test_a_rule_is_written_where_the_team_gets_it_by_pulling(self):
+        self.register()
+
+        self.state(id="retry-limit", description="Use when retrying a charge.")
+
+        assert (
+            self.source / ".sourceant" / "skills" / "retry-limit" / "SKILL.md"
+        ).is_file()
+
+    def test_a_rule_with_no_line_saying_when_it_applies_is_refused(self):
+        self.register()
+
+        answered = self.state(id="retry-limit", description="  ")
+
+        assert answered.status_code == 400
+        assert "when it applies" in answered.json()["detail"]
+
+    def test_a_name_that_is_a_path_is_refused_rather_than_tidied(self):
+        self.register()
+
+        answered = self.state(id="../../etc/passwd", description="Use when anything.")
+
+        assert answered.status_code == 400
+        assert not (self.source.parent / "etc").exists()
+
+    def test_stating_it_again_replaces_it(self):
+        self.register()
+        self.state(id="retry-limit", description="Use when retrying.", body="Three.")
+
+        self.state(id="retry-limit", description="Use when retrying.", body="Four.")
+
+        read = self.client.get("/api/skills/retry-limit?repository=acme/billing")
+        assert read.json()["data"]["body"] == "Four."
+
+    def test_a_rule_this_repository_stated_can_be_forgotten(self):
+        self.register()
+        self.state(id="retry-limit", description="Use when retrying a charge.")
+
+        forgotten = self.client.delete(
+            "/api/skills?repository=acme/billing&id=retry-limit"
+        )
+
+        assert forgotten.status_code == 200
+        assert self.client.get("/api/skills/retry-limit").status_code == 404
+
+    def test_a_rule_somebody_keeps_in_their_own_folder_is_not_deleted_here(self):
+        self.register()
+
+        answered = self.client.delete("/api/skills?repository=acme/billing&id=commits")
+
+        assert answered.status_code == 400
+        assert "read here and never written" in answered.json()["detail"]
+        assert (
+            tmp_path_of(self) / "person" / ".codex" / "skills" / "commits" / "SKILL.md"
+        ).is_file()
+
+
+def tmp_path_of(case):
+    return case.source.parent

@@ -120,12 +120,21 @@ def _untracked(root: Path) -> list[str]:
 
     A file somebody has written but not staged is still part of what they are
     about to propose, and it is the part most likely to have been forgotten.
+
+    A directory comes back where git will not look inside one, which is how it
+    reports a checkout nested in this one: a worktree, or a repository somebody
+    cloned in here. Whatever is in there is that checkout's work and not this
+    one's, so it is left out rather than reported as a file somebody added.
     """
     try:
         listed = _git(root, "ls-files", "--others", "--exclude-standard")
     except GitError:
         return []
-    return [line for line in listed.splitlines() if line and not line.isspace()]
+    return [
+        line
+        for line in listed.splitlines()
+        if line and not line.isspace() and not line.endswith("/")
+    ]
 
 
 def _changed(root: Path, base: str) -> list[ChangedFile]:

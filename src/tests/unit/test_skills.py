@@ -12,6 +12,7 @@ from src.core.skills import (
     PhraseSkillSelector,
     Skill,
     SkillQuery,
+    followed,
     read_front_matter,
 )
 
@@ -102,6 +103,64 @@ class TestReadingSkillsOffDisk:
 
         assert found[0].name == "unnamed"
         assert found[0].description == ""
+
+    def test_the_agent_own_built_ins_are_not_the_team_rules(self, tmp_path):
+        # Codex ships its own under `.system`. Reading those puts a page about
+        # generating images in front of somebody's pull request.
+        write(tmp_path, "house-commits", COMMIT)
+        write(tmp_path / ".system", "imagegen", MIGRATIONS)
+
+        found = DirectorySkillSource(tmp_path, "codex").read()
+
+        assert [skill.id for skill in found] == ["house-commits"]
+
+
+class TestFollowingWhatARulePointsAt:
+    def test_a_rule_that_points_at_a_document_is_read_with_it(self, tmp_path):
+        skills = tmp_path / "skills"
+        write(
+            skills, "shared", "---\nname: shared\n---\n\nNever edit an applied one.\n"
+        )
+        folder = write(
+            skills,
+            "migrations",
+            "---\nname: migrations\ndescription: Use when editing a migration.\n---\n\n"
+            "Read `../shared/SKILL.md` completely, then follow it.\n",
+        )
+
+        pointer = DirectorySkillSource(skills, "codex").read()
+        whole = followed(next(s for s in pointer if s.id == "migrations"))
+
+        assert "Never edit an applied one." in whole
+        assert str(folder)
+
+    def test_it_does_not_reach_outside_the_skills_folder(self, tmp_path):
+        skills = tmp_path / "skills"
+        (tmp_path / "private").mkdir()
+        (tmp_path / "private" / "secrets.md").write_text(
+            "Nobody's business.", encoding="utf-8"
+        )
+        write(
+            skills,
+            "nosey",
+            "---\nname: nosey\ndescription: Use always.\n---\n\nRead `../../private/secrets.md`.\n",
+        )
+
+        whole = followed(DirectorySkillSource(skills, "codex").read()[0])
+
+        assert "Nobody's business." not in whole
+
+    def test_a_rule_that_points_nowhere_is_left_as_it_is(self, tmp_path):
+        skills = tmp_path / "skills"
+        write(
+            skills,
+            "dangling",
+            "---\nname: dangling\ndescription: Use always.\n---\n\nRead `../gone/SKILL.md`.\n",
+        )
+
+        skill = DirectorySkillSource(skills, "codex").read()[0]
+
+        assert followed(skill) == skill.body
 
 
 class TestSeveralPlacesReadAsOneList:

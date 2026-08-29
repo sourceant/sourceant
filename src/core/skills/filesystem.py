@@ -14,12 +14,16 @@ rather than interpreted.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from .models import Skill
 
 MANIFEST = "SKILL.md"
+
+# What every one of these directories is called, whichever agent keeps it.
+SKILLS = "skills"
 
 # Deep enough for a plugin's skills to be nested under a plugin folder, shallow
 # enough that pointing this at a home directory does not walk the whole disk.
@@ -101,7 +105,11 @@ class DirectorySkillSource:
             depth = len(Path(here).relative_to(root).parts)
             if depth >= MAX_DEPTH:
                 folders[:] = []
-            folders[:] = sorted(f for f in folders if not f.startswith(".git"))
+            # A folder starting with a dot in a skills directory is the tool's
+            # own: Codex keeps its built-ins in `.system`. Those are not a
+            # team's rules, and reading them puts a page about generating
+            # images in front of somebody's pull request.
+            folders[:] = sorted(f for f in folders if not f.startswith("."))
 
             if MANIFEST in files:
                 yield Path(here) / MANIFEST
@@ -144,6 +152,77 @@ class DirectorySkillSource:
                 )
             )
         return tuple(skills)
+
+
+# A path to another document, as it is written in prose or in a link. Skills are
+# routinely two lines long and point at the file that says the actual rule.
+REFERENCE = re.compile(r"[`(\[\s]([\w./-]+\.md)[`)\]\s,.]", re.IGNORECASE)
+
+# Enough for a rule spread over a handful of documents, and a stop well before
+# somebody's whole knowledge base is sent to a model.
+MAX_FOLLOWED = 3
+MAX_FOLLOWED_BYTES = 24_000
+
+
+def _skills_root(folder: Path) -> Path:
+    """How far out of its own folder a skill may reach.
+
+    Skills that share a rule keep it in a sibling folder, so the whole skills
+    directory is in bounds. A skill kept somewhere with no such directory above
+    it reaches no further than itself.
+    """
+    here = folder
+    while here.parent != here:
+        if here.name == SKILLS:
+            return here
+        here = here.parent
+    return folder
+
+
+def followed(skill: Skill, limit: int = MAX_FOLLOWED) -> str:
+    """A skill's own words plus the documents it points at.
+
+    Most of these are a pointer: two lines saying to go and read the file that
+    holds the rule. Judging a change against the pointer judges it against
+    nothing, and the model says so, which reads as the change being at fault.
+
+    Only what the skill names, only one level down, and only inside the folder
+    the skill came from. A rule is not a licence to read the rest of the disk.
+    """
+    if not skill.path:
+        return skill.body
+
+    here = Path(skill.path).parent
+    try:
+        boundary = _skills_root(here.resolve())
+    except OSError:
+        return skill.body
+
+    seen: set[Path] = set()
+    gathered: list[str] = []
+    spent = 0
+    for name in REFERENCE.findall(f" {skill.body} "):
+        if len(seen) >= limit or spent >= MAX_FOLLOWED_BYTES:
+            break
+        try:
+            target = (here / name).resolve()
+        except OSError:
+            continue
+        if target in seen or not target.is_file():
+            continue
+        # Outside the folder the skills live in is somebody else's document.
+        if boundary != target and boundary not in target.parents:
+            continue
+        try:
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        seen.add(target)
+        text = text[: MAX_FOLLOWED_BYTES - spent]
+        spent += len(text)
+        gathered.append(f"\n\n--- {name} ---\n\n{text}")
+
+    return skill.body + "".join(gathered)
 
 
 # Where the coding agents keep them, on a machine and inside a repository. A

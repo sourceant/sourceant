@@ -17,6 +17,8 @@ nobody has configured one.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,7 @@ from src.core.skills import (
     ModelSkillChecker,
     PhraseSkillSelector,
     SkillVerdict,
+    followed,
 )
 
 router = APIRouter()
@@ -163,12 +166,20 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
     )
     checker = ModelSkillChecker(ask=provider.generate_text, model=provider.model)
 
-    verdicts = []
-    for skill in chosen:
-        try:
-            verdicts.append(checker.check(skill, subject))
-        except Exception as error:  # noqa: BLE001 - whatever a provider raises
-            raise HTTPException(status_code=502, detail=str(error)) from error
+    # A rule is routinely a pointer at the document that states it. Judging a
+    # change against the pointer judges it against nothing.
+    whole = [replace(skill, body=followed(skill)) for skill in chosen]
+
+    # One question per rule, asked at the same time. Asked one after another,
+    # five rules is a minute of somebody watching a spinner, and a minute is
+    # long enough for anything between here and the provider to give up.
+    try:
+        with ThreadPoolExecutor(max_workers=len(whole)) as pool:
+            verdicts = list(
+                pool.map(lambda skill: checker.check(skill, subject), whole)
+            )
+    except Exception as error:  # noqa: BLE001 - whatever a provider raises
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
     answer["verdicts"] = [verdict_payload(verdict) for verdict in verdicts]
     answer["ready"] = not any(

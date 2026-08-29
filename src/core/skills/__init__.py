@@ -4,6 +4,7 @@ from .filesystem import (
     DirectorySkillSource,
     MACHINE_SKILLS,
     REPOSITORY_SKILLS,
+    followed,
     read_front_matter,
     sources_for,
 )
@@ -19,6 +20,7 @@ from .models import (
     SkillVerdict,
 )
 from .selection import PhraseSkillSelector
+from .writing import OWN_SKILLS, SkillWriteError, remove_skill, write_skill
 
 __all__ = [
     "ADVISORY",
@@ -28,6 +30,7 @@ __all__ = [
     "DirectorySkillSource",
     "MACHINE_SKILLS",
     "ModelSkillChecker",
+    "OWN_SKILLS",
     "PhraseSkillSelector",
     "REPOSITORY_SKILLS",
     "Skill",
@@ -39,6 +42,10 @@ __all__ = [
     "SkillSelector",
     "SkillSource",
     "SkillVerdict",
+    "SkillWriteError",
+    "followed",
     "read_front_matter",
+    "remove_skill",
     "sources_for",
+    "write_skill",
 ]
