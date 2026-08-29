@@ -4,13 +4,13 @@ The hosted review happens after a pull request exists, which is after the author
 has decided the work is finished and asked other people to spend time on it.
 Most of what a review says would have been cheaper to hear an hour earlier.
 
-This is that hour earlier. It reads a checkout's own diff, picks the rules the
-team wrote down that bear on it, and says whether the work satisfies them. No
+This is that hour earlier. It reads a checkout's own diff, picks out what the
+team wrote down that bears on it, and says whether the work satisfies it. No
 forge, no pull request, no installation: a repository registered on this machine
 is the whole of the setup.
 
-What it can answer without a model it always answers: what changed, which rules
-apply, and what has been recorded about the files touched. Judging the work
+What it can answer without a model it always answers: what changed, what
+applies, and what has been recorded about the files touched. Judging the work
 against prose needs a model, and that part is skipped rather than faked when
 nobody has configured one.
 """
@@ -63,16 +63,16 @@ HOUSE = "Applies to everything here, whatever the change is about."
 
 
 def split(chosen) -> list[Skill]:
-    """Each rule with what only it points at, and the shared documents on their own.
+    """Each skill with what only it points at, and the shared documents on their own.
 
-    A rule is routinely a pointer at the document that states it, so the
-    documents get read with it. But most of a person's rules point at the same
+    A skill is routinely a pointer at the document that holds it, so the
+    documents get read with it. But most of a person's skills point at the same
     one file of house preferences, and attaching that to each of them asks the
-    same question five times and files every answer under whichever rule was
-    asked. A finding about commit messages then arrives under the rule about
+    same question five times and files every answer under whichever skill was
+    asked. A finding about commit messages then arrives under the one about
     page layout.
 
-    A document more than one rule points at is not that rule's content: it is
+    A document more than one skill points at is not that skill's content: it is
     what the team expects of everything. It is asked about once, under its own
     name.
     """
@@ -219,7 +219,7 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
     }
 
     if not body.use_model:
-        answer["note"] = "Read what changed and which rules apply. Nothing was judged."
+        answer["note"] = "Read what changed and what applies to it. Nothing was judged."
         return success_response(answer)
 
     provider = model_for_this_machine()
@@ -233,7 +233,7 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
         )
 
     if not chosen:
-        answer["note"] = "No rule on this machine bears on what changed here."
+        answer["note"] = "Nothing on this machine bears on what changed here."
         return success_response(answer)
 
     subject = Change(

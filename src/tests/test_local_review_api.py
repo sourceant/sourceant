@@ -208,9 +208,13 @@ class TestSkillsApi(BaseTestCase):
     @pytest.fixture(autouse=True)
     def machine(self, tmp_path, monkeypatch):
         monkeypatch.setenv("SOURCEANT_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("SOURCEANT_MACHINE_HOME", str(tmp_path / "person"))
         monkeypatch.setattr(
             "src.core.skills.filesystem.MACHINE_SKILLS",
-            ((str(tmp_path / "person" / ".codex" / "skills"), "codex"),),
+            (
+                (".codex/skills", "codex"),
+                (".sourceant/skills", "machine"),
+            ),
         )
         monkeypatch.setattr("src.api.routes.code.LOCAL_MODE", True)
         self.source = tmp_path / "billing"
@@ -321,6 +325,65 @@ class TestSkillsApi(BaseTestCase):
 
         assert forgotten.status_code == 200
         assert self.client.get("/api/skills/retry-limit").status_code == 404
+
+    def test_a_skill_can_belong_to_the_machine_rather_than_a_repository(self, tmp_path):
+        # What somebody works by everywhere, rather than what one project needs.
+        written = self.client.put(
+            "/api/skills",
+            json={
+                "scope": "machine",
+                "id": "write-simply",
+                "description": "Use when drafting prose of any kind.",
+                "body": "Say the thing, then stop.",
+            },
+        )
+
+        assert written.status_code == 200
+        assert written.json()["data"]["origin"] == "machine"
+        assert (
+            tmp_path / "person" / ".sourceant" / "skills" / "write-simply" / "SKILL.md"
+        ).is_file()
+
+    def test_a_machine_skill_is_read_back_without_naming_a_repository(self, tmp_path):
+        self.client.put(
+            "/api/skills",
+            json={
+                "scope": "machine",
+                "id": "write-simply",
+                "description": "Use when drafting prose of any kind.",
+                "body": "Say the thing, then stop.",
+            },
+        )
+
+        listed = self.client.get("/api/skills").json()["data"]
+
+        assert "write-simply" in [item["id"] for item in listed["skills"]]
+        assert self.client.get("/api/skills/write-simply").json()["data"]["body"] == (
+            "Say the thing, then stop."
+        )
+
+    def test_a_machine_skill_is_forgotten_without_naming_a_repository(self, tmp_path):
+        self.client.put(
+            "/api/skills",
+            json={
+                "scope": "machine",
+                "id": "write-simply",
+                "description": "Use when drafting prose.",
+            },
+        )
+
+        forgotten = self.client.delete("/api/skills?scope=machine&id=write-simply")
+
+        assert forgotten.status_code == 200
+        assert self.client.get("/api/skills/write-simply").status_code == 404
+
+    def test_a_scope_nobody_offers_is_refused(self):
+        answered = self.client.put(
+            "/api/skills",
+            json={"scope": "everywhere", "id": "x", "description": "Use always."},
+        )
+
+        assert answered.status_code == 400
 
     def test_a_rule_somebody_keeps_in_their_own_folder_is_not_deleted_here(self):
         self.register()

@@ -1,13 +1,14 @@
-"""Writing a skill into the repository it is about.
+"""Writing a skill down, in the repository or on the machine.
 
-Reading covers what a team already taught its coding agents. Writing covers the
-rule somebody has in their head and nowhere else, which is most of them.
+Reading covers what a team already taught its coding agents. Writing covers
+what somebody has in their head and nowhere else, which is most of it.
 
-Only one place is ever written: the repository's own `.sourceant/skills`. What
-sits in a person's agent folders is theirs, is frequently a link into a
-repository of its own, and writing through one of those links would edit
-somebody's other checkout without saying so. A rule about this code belongs
-with this code anyway, where the rest of the team gets it by pulling.
+Two places are written, and both are ours: a repository's `.sourceant/skills`,
+where the rest of the team gets it by pulling, and the machine's own
+`~/.sourceant/skills`, for what somebody wants everywhere rather than in one
+project. What sits in the folders named after a coding agent is that agent's,
+is frequently a link into a checkout of its own, and writing through one of
+those links would edit somebody's other repository without saying so.
 """
 
 from __future__ import annotations
@@ -20,11 +21,11 @@ from pathlib import Path
 from .filesystem import MANIFEST, MAX_BODY
 from .models import Skill
 
-# Where a repository keeps the rules it states for itself.
+# Where a repository, or a machine, keeps what it states for itself.
 OWN_SKILLS = Path(".sourceant") / "skills"
 
 # A name, not a path. Anything that could climb out of the folder, or mean two
-# things on two filesystems, is refused rather than sanitised: a rule saved
+# things on two filesystems, is refused rather than sanitised: a skill saved
 # under a name nobody asked for is worse than one that was not saved.
 NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -67,8 +68,8 @@ def folder_for(root: Path, identifier: str) -> Path:
     return Path(root) / OWN_SKILLS / _checked(identifier)
 
 
-def write_skill(root: Path, skill: Skill) -> Skill:
-    """Record a rule in the repository it is about, and answer with what was written.
+def write_skill(root: Path, skill: Skill, origin: str = "repository") -> Skill:
+    """Write a skill under a root, and answer with what was written.
 
     The file is replaced rather than edited in place, so a reader that arrives
     mid-write sees the old rule or the new one and never half of each.
@@ -76,10 +77,10 @@ def write_skill(root: Path, skill: Skill) -> Skill:
     identifier = _checked(skill.id)
     name = (skill.name or identifier).strip()
     if not name:
-        raise SkillWriteError("A rule needs a name")
+        raise SkillWriteError("A skill needs a name")
     if not (skill.description or "").strip():
         raise SkillWriteError(
-            "A rule needs a line saying when it applies, or nothing will pick it"
+            "A skill needs a line saying when it applies, or nothing will pick it"
         )
 
     folder = folder_for(root, identifier)
@@ -92,7 +93,7 @@ def write_skill(root: Path, skill: Skill) -> Skill:
         description=" ".join(skill.description.split())[:MAX_DESCRIPTION],
         body=(skill.body or "").strip()[:MAX_BODY],
         path=str(target),
-        origin="repository",
+        origin=origin,
     )
 
     handle, temporary = tempfile.mkstemp(dir=folder, prefix=".skill-", suffix=".md")
@@ -110,7 +111,7 @@ def write_skill(root: Path, skill: Skill) -> Skill:
 
 
 def remove_skill(root: Path, identifier: str) -> bool:
-    """Forget a rule this repository stated. False when it had not stated one.
+    """Forget a skill written under a root. False when there was none.
 
     Only the manifest and the folder holding it go. Anything else somebody put
     in there is theirs, and a folder that still has something in it stays.

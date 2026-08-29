@@ -1,13 +1,15 @@
 """Putting a change through a skill.
 
-A skill is prose: it says how work here is meant to be done. Judging whether a
+A skill is prose a team wrote down about how work here is done. Some of it
+states a requirement and some of it explains a procedure, and judging whether a
 change follows prose is not something a rule engine does, so it is asked of a
 model, one skill at a time. One at a time because a model asked to hold six
 documents at once answers about the loudest of them.
 
-What comes back is a verdict per skill, and a verdict blocks only when the skill
-itself was written as a rule. Anything a model is unsure of is advisory, because
-a check that stops work on a maybe is a check people turn off.
+What comes back is a verdict per skill, and a verdict blocks only where the
+skill itself states a requirement. Anything else, and anything a model is
+unsure of, is advice: a check that stops work on a maybe is a check people turn
+off.
 """
 
 from __future__ import annotations
@@ -29,9 +31,9 @@ from .models import (
 MAX_DIFF = 40_000
 MAX_FINDINGS = 10
 
-PROMPT = """You are checking one change against one rule its team wrote.
+PROMPT = """You are checking one change against one piece of guidance its team wrote down.
 
-The rule, titled "{name}":
+The guidance, titled "{name}":
 {skill}
 
 The change{titled}:
@@ -44,18 +46,19 @@ What it does:
 {diff}
 
 Answer with a JSON object:
-  "passed":   true if the change follows the rule, false if it does not
+  "passed":   true if the change follows the guidance, false if it does not
   "note":     one sentence saying why, in the present tense
   "findings": an array, at most {limit} entries, each an object with
               "detail"   what is wrong, and what to do instead
-              "severity" "blocking" when the rule states a requirement the
-                         change breaks, "advisory" otherwise
+              "severity" "blocking" only where the guidance states a
+                         requirement the change breaks, "advisory" otherwise
               "path"     the file it is about, or ""
               "line"     the line number in that file, or null
 
-Judge only against this rule. Say nothing about anything the rule does not
-cover, however wrong it looks. If the rule does not apply to this change,
-answer passed with an empty findings array.
+Judge only against this. Say nothing about anything it does not cover, however
+wrong it looks. Guidance that describes a procedure rather than a requirement
+is not something a change can break: where it does not apply, answer passed
+with an empty findings array.
 
 Answer with the JSON object and nothing else."""
 
@@ -112,7 +115,7 @@ class ModelSkillChecker:
             return SkillVerdict(
                 skill_id=skill.id,
                 passed=True,
-                note="Nothing usable came back, so this rule was not applied.",
+                note="Nothing usable came back, so this was not applied.",
             )
 
         findings: list[SkillFinding] = []

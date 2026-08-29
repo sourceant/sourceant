@@ -8,10 +8,11 @@ What a person keeps in their own agent folders is read and never written: those
 files are theirs, are often a link into a checkout of their own, and writing
 through one would edit somebody else's repository without saying so.
 
-A repository's own rules are a different matter. Most of what a team knows is in
+What this product keeps is a different matter. Most of what a team knows is in
 somebody's head rather than in any folder, and asking them to go and write a
-file by hand is where it stays. Those are written here, into the repository the
-rule is about, so the rest of the team gets it by pulling.
+file by hand is where it stays. Those are written here: into the repository they
+are about, so the team gets them by pulling, or onto the machine for what
+somebody wants everywhere.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from src.core.skills import (
     Skill,
     SkillQuery,
     SkillWriteError,
+    machine_home,
     remove_skill,
     sources_for,
     write_skill,
@@ -37,17 +39,42 @@ from src.core.skills import (
 router = APIRouter()
 
 THEIRS = (
-    "That rule is one of yours, kept wherever your coding agent keeps it. It is "
-    "read here and never written. Save it into this repository to change it here."
+    "That skill is one of yours, kept wherever your coding agent keeps it. It is "
+    "read here and never written. Save it into this repository, or onto this "
+    "machine, to change it here."
 )
+
+# Where a skill can be written. A repository, so the team gets it by pulling,
+# or the machine, for what somebody wants everywhere. The folders named after a
+# coding agent are that agent's, and are read rather than written.
+REPOSITORY = "repository"
+MACHINE = "machine"
+SCOPES = (REPOSITORY, MACHINE)
 
 
 class SkillInput(BaseModel):
-    repository: str = Field(...)
     id: str = Field(...)
+    # Empty when the skill is the machine's rather than one repository's.
+    repository: str = Field(default="")
+    scope: str = Field(default=REPOSITORY)
     name: str = Field(default="")
     description: str = Field(default="")
     body: str = Field(default="")
+
+
+def where(scope: str, repository: str) -> Path:
+    """The root a skill of this scope is written under."""
+    if scope not in SCOPES:
+        raise HTTPException(
+            status_code=400, detail=f"scope must be one of {', '.join(SCOPES)}"
+        )
+    if scope == MACHINE:
+        return machine_home()
+    if not repository:
+        raise HTTPException(
+            status_code=400, detail="Name the repository this belongs to"
+        )
+    return Path(find_repository(repository).path)
 
 
 def catalogue_for(repository: str = "") -> Catalogue:
@@ -96,17 +123,18 @@ def read_skills(
 
 @router.put("", dependencies=[Depends(require_local)])
 def record_skill(body: SkillInput):
-    """State a rule in the repository it is about."""
-    entry = find_repository(body.repository)
+    """Write a skill down, in a repository or on this machine."""
+    root = where(body.scope, body.repository)
     try:
         written = write_skill(
-            Path(entry.path),
+            root,
             Skill(
                 id=body.id,
                 name=body.name or body.id,
                 description=body.description,
                 body=body.body,
             ),
+            origin=body.scope,
         )
     except SkillWriteError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -117,17 +145,18 @@ def record_skill(body: SkillInput):
 
 @router.delete("", dependencies=[Depends(require_local)])
 def forget_skill(
-    repository: str = Query(...),
     id: str = Query(...),
+    repository: str = Query(default=""),
+    scope: str = Query(default=REPOSITORY),
 ):
-    """Forget a rule this repository stated.
+    """Forget a skill written here.
 
-    Only its own. A rule somebody keeps in their agent folder is theirs, and
-    this is not the place it gets deleted from.
+    Only one of ours. A skill somebody keeps in their coding agent's folder is
+    theirs, and this is not the place it gets deleted from.
     """
-    entry = find_repository(repository)
+    root = where(scope, repository)
     try:
-        gone = remove_skill(Path(entry.path), id)
+        gone = remove_skill(root, id)
     except SkillWriteError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     if not gone:

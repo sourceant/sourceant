@@ -244,6 +244,9 @@ def followed(skill: Skill, limit: int = MAX_FOLLOWED) -> str:
 MACHINE_SKILLS: tuple[tuple[str, str], ...] = (
     (".claude/skills", "claude"),
     (".codex/skills", "codex"),
+    # The one place on a machine this product owns, and so the one it may write.
+    # The others belong to the agents whose names they carry.
+    (".sourceant/skills", "machine"),
 )
 
 REPOSITORY_SKILLS: tuple[tuple[str, str], ...] = (
