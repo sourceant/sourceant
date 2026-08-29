@@ -14,6 +14,7 @@ from .filesystem import (
     sources_for,
 )
 from .interfaces import SkillChecker, SkillReader, SkillSelector, SkillSource
+from .keeping import folder_name, global_skills, kept_for, repository_skills
 from .matching import any_match, matches
 from .models import (
     ADVISORY,
@@ -28,7 +29,7 @@ from .models import (
     SkillVerdict,
 )
 from .selection import PhraseSkillSelector
-from .writing import OWN_SKILLS, SkillWriteError, remove_skill, write_skill
+from .writing import SkillWriteError, remove_skill, write_skill
 
 __all__ = [
     "ADVISORY",
@@ -41,7 +42,6 @@ __all__ = [
     "ELSEWHERE",
     "ROLES",
     "ModelSkillChecker",
-    "OWN_SKILLS",
     "PhraseSkillSelector",
     "Skill",
     "SkillChecker",
@@ -55,13 +55,17 @@ __all__ = [
     "SkillWriteError",
     "any_match",
     "discover",
+    "folder_name",
+    "global_skills",
     "attach",
     "followed",
+    "kept_for",
     "listed",
     "machine_home",
     "matches",
     "read_front_matter",
     "references",
+    "repository_skills",
     "remove_skill",
     "sources_for",
     "write_skill",

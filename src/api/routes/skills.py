@@ -10,9 +10,11 @@ through one would edit somebody else's repository without saying so.
 
 What this product keeps is a different matter. Most of what a team knows is in
 somebody's head rather than in any folder, and asking them to go and write a
-file by hand is where it stays. Those are written here: into the repository they
-are about, so the team gets them by pulling, or onto the machine for what
-somebody wants everywhere.
+file by hand is where it stays. Those are written here, beside the index rather
+than inside anybody's repository: a folder appearing in somebody's checkout
+because a tool was opened turns up in their `git status` and in a review nobody
+asked for. Which repository one is for is recorded rather than implied by where
+the file sits.
 """
 
 from __future__ import annotations
@@ -32,8 +34,9 @@ from src.core.skills import (
     Skill,
     SkillQuery,
     SkillWriteError,
-    machine_home,
+    global_skills,
     remove_skill,
+    repository_skills,
     sources_for,
     write_skill,
 )
@@ -41,22 +44,22 @@ from src.core.skills import (
 router = APIRouter()
 
 THEIRS = (
-    "That skill is one of yours, kept wherever your coding agent keeps it. It is "
-    "read here and never written. Save it into this repository, or onto this "
-    "machine, to change it here."
+    "That skill is one of yours, kept wherever your coding agent keeps it, or "
+    "committed to the repository by your team. It is read here and never "
+    "written. Save your own copy to change it here."
 )
 
-# Where a skill can be written. A repository, so the team gets it by pulling,
-# or the machine, for what somebody wants everywhere. The folders named after a
-# coding agent are that agent's, and are read rather than written.
+# Who a skill is for. One project, or everything somebody works on. Both are
+# kept beside the index; the difference is which is read where, not which
+# folder on somebody else's checkout got written to.
 REPOSITORY = "repository"
-MACHINE = "machine"
-SCOPES = (REPOSITORY, MACHINE)
+GLOBAL = "global"
+SCOPES = (REPOSITORY, GLOBAL)
 
 
 class SkillInput(BaseModel):
     id: str = Field(...)
-    # Empty when the skill is the machine's rather than one repository's.
+    # Empty for a skill that applies everywhere rather than to one project.
     repository: str = Field(default="")
     scope: str = Field(default=REPOSITORY)
     name: str = Field(default="")
@@ -71,18 +74,25 @@ class SkillInput(BaseModel):
 
 
 def where(scope: str, repository: str) -> Path:
-    """The root a skill of this scope is written under."""
+    """Where a skill for this scope is kept.
+
+    Never inside the repository. A repository belongs to the team that owns it,
+    and a folder appearing in it because a tool was opened is that tool helping
+    itself to somebody else's checkout.
+    """
     if scope not in SCOPES:
         raise HTTPException(
             status_code=400, detail=f"scope must be one of {', '.join(SCOPES)}"
         )
-    if scope == MACHINE:
-        return machine_home()
+    if scope == GLOBAL:
+        return global_skills()
     if not repository:
         raise HTTPException(
             status_code=400, detail="Name the repository this belongs to"
         )
-    return Path(find_repository(repository).path)
+    # Checked, so a skill cannot be filed against a repository nobody covers.
+    find_repository(repository)
+    return repository_skills(repository)
 
 
 def elsewhere() -> tuple[str, ...]:
@@ -99,7 +109,10 @@ def elsewhere() -> tuple[str, ...]:
 
 def catalogue_for(repository: str = "") -> Catalogue:
     root = Path(find_repository(repository).path) if repository else None
-    return Catalogue(sources=sources_for(root, elsewhere()))
+    ours = [(global_skills(), GLOBAL)]
+    if repository:
+        ours.append((repository_skills(repository), REPOSITORY))
+    return Catalogue(sources=sources_for(root, elsewhere(), ours))
 
 
 def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
@@ -127,7 +140,7 @@ def read_skills(
     origin: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=500),
 ):
-    """Every skill on hand, machine-wide and this repository's own."""
+    """Every skill on hand: yours, your agents', and this repository's."""
     if repository and not registered():
         raise HTTPException(status_code=404, detail="No repository is registered")
     result = catalogue_for(repository).search(
@@ -147,7 +160,7 @@ def read_skills(
 
 @router.put("", dependencies=[Depends(require_local)])
 def record_skill(body: SkillInput):
-    """Write a skill down, in a repository or on this machine."""
+    """Write a skill down, for one repository or for everything."""
     root = where(body.scope, body.repository)
     # Kept where the format sets a map aside for it, namespaced as the spec
     # asks, so a skill carrying it stays readable by everything else.

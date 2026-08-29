@@ -51,7 +51,7 @@ def _described(resolved: Resolved) -> dict:
         # log the first time somebody debugged the screen.
         "value": None if secret else resolved.value,
         "secret": secret,
-        "multiline": bool(setting and setting.multiline),
+        "listed": bool(setting and setting.listed),
         "is_set": bool(resolved.value) if secret else None,
         "source": resolved.source,
         "source_id": resolved.source_id,

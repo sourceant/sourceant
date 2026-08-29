@@ -43,9 +43,10 @@ class Setting:
     # answering with it would put it in a log the first time somebody debugged
     # the screen.
     secret: bool = False
-    # Whether the value is a list of things, one to a line, so a screen gives
-    # it room rather than a single-line box.
-    multiline: bool = False
+    # Whether the value is several of something rather than one thing. Stored
+    # one to a line; drawn as a list somebody adds to and removes from, because
+    # a box of lines is a text editor pretending to be a list.
+    listed: bool = False
 
     def validate(self, value: Any) -> Any:
         """Return the value coerced to this setting's type, or raise ValueError."""
@@ -237,7 +238,7 @@ SETTINGS: tuple[Setting, ...] = (
         scopes=(USER, REPOSITORY, ORGANIZATION),
         default="",
         group="Skills",
-        multiline=True,
+        listed=True,
     ),
 )
 

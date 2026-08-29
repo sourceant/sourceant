@@ -223,7 +223,7 @@ class TestSkillsApi(BaseTestCase):
         )
         yield
 
-    def test_a_machine_and_a_repository_are_read_together(self):
+    def test_what_a_person_and_their_agents_keep_are_read_together(self):
         self.client.post(
             "/api/code/repositories",
             json={"path": str(self.source), "name": "acme/billing"},
@@ -235,10 +235,9 @@ class TestSkillsApi(BaseTestCase):
             "commits",
             "migrations",
         ]
-        assert {item["origin"] for item in answered["skills"]} == {
-            "codex",
-            "repository",
-        }
+        # The repository's own is read where the team committed it, and the
+        # person's from wherever their agent keeps it.
+        assert {item["origin"] for item in answered["skills"]} == {"codex", "sourceant"}
 
     def test_one_skill_comes_back_in_full_so_a_person_can_read_it(self):
         answered = self.client.get("/api/skills/commits").json()["data"]
@@ -275,14 +274,36 @@ class TestSkillsApi(BaseTestCase):
         assert read.json()["data"]["body"] == "Charges retry three times, then stop."
         assert read.json()["data"]["origin"] == "repository"
 
-    def test_a_rule_is_written_where_the_team_gets_it_by_pulling(self):
+    def test_nothing_is_written_into_somebody_repository(self, tmp_path):
+        # A folder appearing in a checkout because a tool was opened turns up
+        # in their `git status` and in a review nobody asked for.
         self.register()
 
         self.state(id="retry-limit", description="Use when retrying a charge.")
 
-        assert (
-            self.source / ".sourceant" / "skills" / "retry-limit" / "SKILL.md"
-        ).is_file()
+        assert not (self.source / ".sourceant" / "skills" / "retry-limit").exists()
+        assert list((tmp_path / "home" / "skills" / "repositories").iterdir())
+
+    def test_a_skill_written_for_a_repository_is_read_back_for_it(self):
+        self.register()
+
+        self.state(id="retry-limit", description="Use when retrying a charge.")
+
+        read = self.client.get("/api/skills?repository=acme/billing").json()["data"]
+        assert "retry-limit" in [item["id"] for item in read["skills"]]
+
+    def test_a_skill_written_for_one_repository_is_not_another_one(self, tmp_path):
+        self.register()
+        other = tmp_path / "other"
+        (other / ".sourceant" / "skills").mkdir(parents=True)
+        self.client.post(
+            "/api/code/repositories", json={"path": str(other), "name": "acme/other"}
+        )
+
+        self.state(id="retry-limit", description="Use when retrying a charge.")
+
+        read = self.client.get("/api/skills?repository=acme/other").json()["data"]
+        assert "retry-limit" not in [item["id"] for item in read["skills"]]
 
     def test_a_rule_with_no_line_saying_when_it_applies_is_refused(self):
         self.register()
@@ -320,12 +341,12 @@ class TestSkillsApi(BaseTestCase):
         assert forgotten.status_code == 200
         assert self.client.get("/api/skills/retry-limit").status_code == 404
 
-    def test_a_skill_can_belong_to_the_machine_rather_than_a_repository(self, tmp_path):
+    def test_a_skill_can_apply_everywhere_rather_than_to_one_repository(self, tmp_path):
         # What somebody works by everywhere, rather than what one project needs.
         written = self.client.put(
             "/api/skills",
             json={
-                "scope": "machine",
+                "scope": "global",
                 "id": "write-simply",
                 "description": "Use when drafting prose of any kind.",
                 "body": "Say the thing, then stop.",
@@ -333,16 +354,16 @@ class TestSkillsApi(BaseTestCase):
         )
 
         assert written.status_code == 200
-        assert written.json()["data"]["origin"] == "machine"
+        assert written.json()["data"]["origin"] == "global"
         assert (
-            tmp_path / "person" / ".sourceant" / "skills" / "write-simply" / "SKILL.md"
+            tmp_path / "home" / "skills" / "global" / "write-simply" / "SKILL.md"
         ).is_file()
 
-    def test_a_machine_skill_is_read_back_without_naming_a_repository(self, tmp_path):
+    def test_a_global_skill_is_read_back_without_naming_a_repository(self, tmp_path):
         self.client.put(
             "/api/skills",
             json={
-                "scope": "machine",
+                "scope": "global",
                 "id": "write-simply",
                 "description": "Use when drafting prose of any kind.",
                 "body": "Say the thing, then stop.",
@@ -356,17 +377,17 @@ class TestSkillsApi(BaseTestCase):
             "Say the thing, then stop."
         )
 
-    def test_a_machine_skill_is_forgotten_without_naming_a_repository(self, tmp_path):
+    def test_a_global_skill_is_forgotten_without_naming_a_repository(self, tmp_path):
         self.client.put(
             "/api/skills",
             json={
-                "scope": "machine",
+                "scope": "global",
                 "id": "write-simply",
                 "description": "Use when drafting prose.",
             },
         )
 
-        forgotten = self.client.delete("/api/skills?scope=machine&id=write-simply")
+        forgotten = self.client.delete("/api/skills?scope=global&id=write-simply")
 
         assert forgotten.status_code == 200
         assert self.client.get("/api/skills/write-simply").status_code == 404

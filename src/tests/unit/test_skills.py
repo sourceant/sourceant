@@ -252,7 +252,7 @@ class TestFindingWhereSkillsAreKept:
     def test_a_tool_nobody_here_has_heard_of_is_read_the_same(self, tmp_path):
         write(tmp_path / ".whatever" / "skills", "house", COMMIT)
 
-        found = discover(tmp_path, "machine")
+        found = discover(tmp_path)
 
         assert [source.origin for source in found] == ["whatever"]
         assert [skill.id for skill in found[0].read()] == ["house"]
@@ -261,7 +261,7 @@ class TestFindingWhereSkillsAreKept:
         write(tmp_path / ".claude" / "skills", "one", COMMIT)
         write(tmp_path / ".codex" / "skills", "two", COMMIT)
 
-        found = discover(tmp_path, "machine")
+        found = discover(tmp_path)
 
         assert sorted(source.origin for source in found) == ["claude", "codex"]
 
@@ -275,7 +275,7 @@ class TestFindingWhereSkillsAreKept:
             encoding="utf-8",
         )
 
-        found = discover(tmp_path, "machine")
+        found = discover(tmp_path)
         skills = found[0].read()
 
         assert [skill.id for skill in skills] == ["nfebe-pr"]
@@ -285,25 +285,18 @@ class TestFindingWhereSkillsAreKept:
         folder = write(tmp_path / ".claude" / "skills", "workflows", COMMIT)
         (folder / "global.md").write_text("Shared preferences.\n", encoding="utf-8")
 
-        skills = discover(tmp_path, "machine")[0].read()
+        skills = discover(tmp_path)[0].read()
 
         assert [skill.id for skill in skills] == ["workflows"]
-
-    def test_this_product_own_folder_is_named_for_what_it_means(self, tmp_path):
-        write(tmp_path / ".sourceant" / "skills", "ours", COMMIT)
-
-        found = discover(tmp_path, "machine")
-
-        assert [source.origin for source in found] == ["machine"]
 
     def test_somewhere_that_is_not_a_tool_is_left_alone(self, tmp_path):
         write(tmp_path / ".git" / "skills", "nope", COMMIT)
         write(tmp_path / ".cache" / "skills", "nope", COMMIT)
 
-        assert discover(tmp_path, "machine") == []
+        assert discover(tmp_path) == []
 
     def test_a_home_with_nothing_in_it_finds_nothing(self, tmp_path):
-        assert discover(tmp_path, "machine") == []
+        assert discover(tmp_path) == []
 
 
 class TestWhatTheAuthorSaid:

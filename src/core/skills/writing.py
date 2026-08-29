@@ -1,14 +1,13 @@
-"""Writing a skill down, in the repository or on the machine.
+"""Writing a skill down.
 
 Reading covers what a team already taught its coding agents. Writing covers
 what somebody has in their head and nowhere else, which is most of it.
 
-Two places are written, and both are ours: a repository's `.sourceant/skills`,
-where the rest of the team gets it by pulling, and the machine's own
-`~/.sourceant/skills`, for what somebody wants everywhere rather than in one
-project. What sits in the folders named after a coding agent is that agent's,
-is frequently a link into a checkout of its own, and writing through one of
-those links would edit somebody's other repository without saying so.
+Where it goes is decided in `keeping`: beside the index rather than inside
+anybody's repository. What sits in the folders named after a coding agent is
+that agent's, is frequently a link into a checkout of its own, and writing
+through one of those links would edit somebody's other repository without
+saying so.
 """
 
 from __future__ import annotations
@@ -22,9 +21,6 @@ import yaml
 
 from .filesystem import MANIFEST, MAX_BODY
 from .models import Skill
-
-# Where a repository, or a machine, keeps what it states for itself.
-OWN_SKILLS = Path(".sourceant") / "skills"
 
 # A name, not a path. Anything that could climb out of the folder, or mean two
 # things on two filesystems, is refused rather than sanitised: a skill saved
@@ -86,7 +82,7 @@ def _rendered(skill: Skill) -> str:
 
 
 def folder_for(root: Path, identifier: str) -> Path:
-    return Path(root) / OWN_SKILLS / _checked(identifier)
+    return Path(root) / _checked(identifier)
 
 
 def write_skill(root: Path, skill: Skill, origin: str = "repository") -> Skill:

@@ -318,9 +318,6 @@ def followed(skill: Skill, limit: int = MAX_FOLLOWED) -> str:
 # that were merged into skills in `commands` or `prompts`.
 ROLES: tuple[str, ...] = ("skills", "commands", "prompts")
 
-# Where this product keeps its own, and so the only ones it writes.
-OURS = ".sourceant"
-
 # Somewhere somebody named that discovery would not have found.
 ELSEWHERE = "elsewhere"
 
@@ -337,7 +334,7 @@ def machine_home() -> Path:
     return Path(os.environ.get(MACHINE_HOME) or Path.home())
 
 
-def discover(root: Path, ours: str) -> list[DirectorySkillSource]:
+def discover(root: Path) -> list[DirectorySkillSource]:
     """Every folder of skills under a root, and which tool keeps each one.
 
     Named lists go stale. The skill format is an open standard that upwards of
@@ -358,33 +355,36 @@ def discover(root: Path, ours: str) -> list[DirectorySkillSource]:
     for tool in here:
         if tool.name in NOT_A_TOOL or not tool.is_dir():
             continue
-        # This product's own folder is named for what it means rather than for
-        # the product, because it is the one place here that gets written to.
-        origin = ours if tool.name == OURS else tool.name.lstrip(".")
         for role in ROLES:
             folder = tool / role
             if folder.is_dir():
-                found.append(DirectorySkillSource(folder, origin))
+                found.append(DirectorySkillSource(folder, tool.name.lstrip(".")))
     return found
 
 
 def sources_for(
-    root: Path | None = None, extra: Iterable[str] = ()
+    root: Path | None = None,
+    extra: Iterable[str] = (),
+    ours: Iterable[tuple[Path, str]] = (),
 ) -> tuple[DirectorySkillSource, ...]:
     """Everywhere worth looking, for a machine and optionally a repository.
 
-    Found rather than listed, so a tool nobody here has heard of is read the
-    same as the ones they have. A repository's own come last, so a project can
-    say something its machine does not and be seen saying it.
+    What the coding agents keep is found rather than listed, so a tool nobody
+    here has heard of is read the same as the ones they have. A repository's
+    own come after the machine's, so a project can say something that departs
+    from how somebody usually works and be seen saying it.
+
+    What was written here comes last, because it is the one anybody can change
+    from this screen and so is the one that should win.
 
     Somewhere discovery would not reach, a checkout of skills kept off on its
     own, is named by whoever knows about it. A named folder is read relative to
     the repository when it is relative and as written when it is not, which is
     how people write both.
     """
-    found = discover(machine_home(), "machine")
+    found = discover(machine_home())
     if root is not None:
-        found += discover(Path(root), "repository")
+        found += discover(Path(root))
 
     for named in extra:
         named = (named or "").strip()
@@ -394,4 +394,6 @@ def sources_for(
         if not where.is_absolute() and root is not None:
             where = Path(root) / where
         found.append(DirectorySkillSource(where, ELSEWHERE))
+
+    found += [DirectorySkillSource(where, origin) for where, origin in ours]
     return tuple(found)
