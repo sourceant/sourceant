@@ -11,7 +11,9 @@ because uncommitted work is the work.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 from src.core.scope import Scope
@@ -20,9 +22,13 @@ from .models import ChangedFile, ChangeSet
 
 TIMEOUT = 60
 
-# Enough diff for a model to judge the change, and a stop before a branch that
-# regenerated a lock file becomes the whole review.
-MAX_DIFF = 200_000
+# Enough of a change to show all of it to a person. What a model is sent is
+# bounded separately and far lower, so this is only about what a page can draw
+# and what an answer can carry.
+#
+# Too low and the files at the end of a long change arrive with no diff at all,
+# which reads as "nothing changed here" rather than as "this was cut off".
+MAX_DIFF = 2_000_000
 
 STATUS = {
     "A": "added",
@@ -156,6 +162,40 @@ def _untracked(root: Path) -> list[str]:
     ]
 
 
+# The line git starts every file's patch with. Splitting on it turns one diff
+# into the piece belonging to each file, without asking git once per file.
+FILE = re.compile(r"^diff --git ", re.MULTILINE)
+
+# Enough of one file to read, and a stop before a generated bundle fills a
+# screen nobody was going to scroll.
+MAX_PATCH = 60_000
+
+
+def split(diff: str) -> dict[str, str]:
+    """One diff, as the piece of it belonging to each file.
+
+    Keyed by the path on the right of the change, which is the file as it is
+    now. A deletion has no right side, so it is keyed by the left.
+    """
+    pieces: dict[str, str] = {}
+    for piece in FILE.split(diff):
+        if not piece.strip():
+            continue
+        piece = "diff --git " + piece
+        first = piece.splitlines()[0]
+        # `diff --git a/where b/where`, and a path with a space in it is why
+        # this reads the halves rather than splitting on whitespace.
+        marker = first.find(" b/")
+        if marker == -1:
+            continue
+        right = first[marker + 3 :].strip()
+        left = first[len("diff --git a/") : marker].strip()
+        name = right if right != "dev/null" else left
+        if name:
+            pieces[name] = piece[:MAX_PATCH]
+    return pieces
+
+
 def _changed(root: Path, base: str) -> list[ChangedFile]:
     lines = _git(root, "diff", "--name-status", base).splitlines()
     files: list[ChangedFile] = []
@@ -213,6 +253,17 @@ def read_change(
         diff += _differ(root, "--no-index", "--", os.devnull, path)
     if len(diff) > MAX_DIFF:
         diff = diff[:MAX_DIFF] + "\n… the rest of the diff was left out\n"
+
+    # Each file carries its own piece, so a screen can show somebody what
+    # changed in the file they are looking at rather than a list of names.
+    pieces = split(diff)
+    files = [
+        replace(
+            item,
+            properties={**dict(item.properties), "patch": pieces.get(item.path, "")},
+        )
+        for item in files
+    ]
 
     try:
         revision = _git(root, "rev-parse", "HEAD").strip()

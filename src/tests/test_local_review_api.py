@@ -134,6 +134,27 @@ class TestLocalReview(BaseTestCase):
 
         assert [item["path"] for item in answered["changed"]] == ["db/0001_charges.py"]
 
+    def test_each_file_carries_what_changed_in_it(self):
+        # A list of names is not a review. Somebody has to see the work.
+        self.register()
+        self.edit_the_migration()
+
+        answered = self.review(use_model=False).json()["data"]
+
+        patch = answered["changed"][0]["patch"]
+        assert "db/0001_charges.py" in patch
+        assert "+    return 1" in patch
+
+    def test_a_file_nobody_had_staged_carries_its_own_too(self):
+        self.register()
+        (self.source / "db" / "0002_refunds.py").write_text(
+            "def up():\n    return 2\n", encoding="utf-8"
+        )
+
+        answered = self.review(use_model=False).json()["data"]
+
+        assert "+    return 2" in answered["changed"][0]["patch"]
+
     def test_the_repository_own_rule_is_the_one_picked(self):
         self.register()
         self.edit_the_migration()

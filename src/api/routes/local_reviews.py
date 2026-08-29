@@ -200,7 +200,14 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
 
     answer: dict[str, Any] = {
         "changed": [
-            {"path": item.path, "change": item.change} for item in changes.files
+            {
+                "path": item.path,
+                "change": item.change,
+                # What actually changed in it, so a page can show the work
+                # rather than a list of names.
+                "patch": dict(item.properties).get("patch", ""),
+            }
+            for item in changes.files
         ],
         "base": changes.base_revision,
         "where": {
