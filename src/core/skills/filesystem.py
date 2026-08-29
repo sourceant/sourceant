@@ -179,36 +179,38 @@ def _skills_root(folder: Path) -> Path:
     return folder
 
 
-def followed(skill: Skill, limit: int = MAX_FOLLOWED) -> str:
-    """A skill's own words plus the documents it points at.
+def references(skill: Skill, limit: int = MAX_FOLLOWED) -> dict[str, str]:
+    """The documents a skill points at, by where each one actually is.
 
     Most of these are a pointer: two lines saying to go and read the file that
     holds the rule. Judging a change against the pointer judges it against
     nothing, and the model says so, which reads as the change being at fault.
 
+    Keyed by resolved path rather than by what the skill called it, so a
+    document several rules point at is recognisably the same document.
+
     Only what the skill names, only one level down, and only inside the folder
     the skill came from. A rule is not a licence to read the rest of the disk.
     """
     if not skill.path:
-        return skill.body
+        return {}
 
     here = Path(skill.path).parent
     try:
         boundary = _skills_root(here.resolve())
     except OSError:
-        return skill.body
+        return {}
 
-    seen: set[Path] = set()
-    gathered: list[str] = []
+    found: dict[str, str] = {}
     spent = 0
     for name in REFERENCE.findall(f" {skill.body} "):
-        if len(seen) >= limit or spent >= MAX_FOLLOWED_BYTES:
+        if len(found) >= limit or spent >= MAX_FOLLOWED_BYTES:
             break
         try:
             target = (here / name).resolve()
         except OSError:
             continue
-        if target in seen or not target.is_file():
+        if str(target) in found or not target.is_file():
             continue
         # Outside the folder the skills live in is somebody else's document.
         if boundary != target and boundary not in target.parents:
@@ -217,12 +219,23 @@ def followed(skill: Skill, limit: int = MAX_FOLLOWED) -> str:
             text = target.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        seen.add(target)
         text = text[: MAX_FOLLOWED_BYTES - spent]
         spent += len(text)
-        gathered.append(f"\n\n--- {name} ---\n\n{text}")
+        found[str(target)] = text
 
-    return skill.body + "".join(gathered)
+    return found
+
+
+def attach(body: str, documents: dict[str, str]) -> str:
+    """A skill's own words with the documents it points at written out under them."""
+    return body + "".join(
+        f"\n\n--- {Path(path).name} ---\n\n{text}" for path, text in documents.items()
+    )
+
+
+def followed(skill: Skill, limit: int = MAX_FOLLOWED) -> str:
+    """A skill's own words plus everything it points at, as one document."""
+    return attach(skill.body, references(skill, limit))
 
 
 # Where the coding agents keep them, on a machine and inside a repository. A

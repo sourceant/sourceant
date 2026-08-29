@@ -77,6 +77,25 @@ def default_branch(root: Path) -> str:
     return ""
 
 
+def branch_of(root: Path) -> str:
+    """What this checkout is on, or the commit when it is on no branch."""
+    try:
+        named = _git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    except GitError:
+        return ""
+    return "" if named == "HEAD" else named
+
+
+def commits_since(root: Path, base: str) -> int:
+    """How many commits this checkout has that the branch it came from does not."""
+    if not base:
+        return 0
+    try:
+        return int(_git(root, "rev-list", "--count", f"{base}..HEAD").strip() or 0)
+    except (GitError, ValueError):
+        return 0
+
+
 def _base(root: Path, against: str) -> str:
     """Where this branch left the one it is going back to.
 

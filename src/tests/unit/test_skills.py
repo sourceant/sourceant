@@ -12,8 +12,10 @@ from src.core.skills import (
     PhraseSkillSelector,
     Skill,
     SkillQuery,
+    attach,
     followed,
     read_front_matter,
+    references,
 )
 
 COMMIT = """---
@@ -161,6 +163,46 @@ class TestFollowingWhatARulePointsAt:
         skill = DirectorySkillSource(skills, "codex").read()[0]
 
         assert followed(skill) == skill.body
+
+
+class TestARuleEveryOtherRulePointsAt:
+    """What several rules share is the team's baseline, not any one rule's content."""
+
+    def house(self, tmp_path):
+        skills = tmp_path / "skills"
+        write(
+            skills,
+            "house",
+            "---\nname: house\n---\n\nA commit message says what changed and why.\n",
+        )
+        for name, about in (("commits", "committing"), ("layout", "a page layout")):
+            write(
+                skills,
+                name,
+                f"---\nname: {name}\ndescription: Use when {about}.\n---\n\n"
+                "Read `../house/SKILL.md`, then follow it.\n",
+            )
+        return DirectorySkillSource(skills, "codex").read()
+
+    def test_the_shared_document_is_recognised_as_one_document(self, tmp_path):
+        skills = {skill.id: references(skill) for skill in self.house(tmp_path)}
+
+        pointed = [
+            path for id_, found in skills.items() if id_ != "house" for path in found
+        ]
+
+        assert len(pointed) == 2
+        assert len(set(pointed)) == 1
+
+    def test_a_rule_carries_only_what_is_its_own(self, tmp_path):
+        found = self.house(tmp_path)
+        commits = next(skill for skill in found if skill.id == "commits")
+
+        alone = attach(commits.body, {})
+        with_it = followed(commits)
+
+        assert "what changed and why" not in alone
+        assert "what changed and why" in with_it
 
 
 class TestSeveralPlacesReadAsOneList:

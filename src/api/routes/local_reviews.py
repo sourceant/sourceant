@@ -17,6 +17,7 @@ nobody has configured one.
 
 from __future__ import annotations
 
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -29,7 +30,13 @@ from src.api.routes.code import find_repository, require_local
 from src.api.routes.knowledge import get_knowledge
 from src.api.routes.local_settings import model_for_this_machine
 from src.api.routes.skills import catalogue_for, payload as skill_payload
-from src.core.change_context import GitError, read_change
+from src.core.change_context import (
+    GitError,
+    branch_of,
+    commits_since,
+    default_branch,
+    read_change,
+)
 from src.core.knowledge import KnowledgeQuery
 from src.core.responses import success_response
 from src.core.skills import (
@@ -37,14 +44,71 @@ from src.core.skills import (
     Change,
     ModelSkillChecker,
     PhraseSkillSelector,
+    Skill,
     SkillVerdict,
-    followed,
+    attach,
+    references,
 )
 
 router = APIRouter()
 
 MAX_SKILLS = 5
 MAX_KNOWLEDGE = 25
+
+# How many baseline documents are worth asking about on their own. More than a
+# couple and every review pays for the same answer twice.
+MAX_SHARED = 2
+
+HOUSE = "Applies to everything here, whatever the change is about."
+
+
+def split(chosen) -> list[Skill]:
+    """Each rule with what only it points at, and the shared documents on their own.
+
+    A rule is routinely a pointer at the document that states it, so the
+    documents get read with it. But most of a person's rules point at the same
+    one file of house preferences, and attaching that to each of them asks the
+    same question five times and files every answer under whichever rule was
+    asked. A finding about commit messages then arrives under the rule about
+    page layout.
+
+    A document more than one rule points at is not that rule's content: it is
+    what the team expects of everything. It is asked about once, under its own
+    name.
+    """
+    attached = {skill.id: references(skill) for skill in chosen}
+    counted = Counter(path for found in attached.values() for path in found)
+    shared = [path for path, times in counted.most_common(MAX_SHARED) if times > 1]
+
+    asking = [
+        replace(
+            skill,
+            body=attach(
+                skill.body,
+                {
+                    path: text
+                    for path, text in attached[skill.id].items()
+                    if path not in shared
+                },
+            ),
+        )
+        for skill in chosen
+    ]
+
+    for path in shared:
+        text = next(found[path] for found in attached.values() if path in found)
+        name = Path(path).name
+        asking.append(
+            Skill(
+                id=name,
+                name=name,
+                description=HOUSE,
+                body=text,
+                path=path,
+                origin="shared",
+            )
+        )
+    return asking
 
 
 class ReviewInput(BaseModel):
@@ -94,6 +158,14 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
     except GitError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
+    # Which checkout, on which branch, against what. A person with a worktree
+    # open somewhere else is otherwise left wondering whose work this is.
+    where = {
+        "path": str(root),
+        "branch": branch_of(root),
+        "against": body.against or default_branch(root),
+    }
+
     if changes is None:
         return success_response(
             {
@@ -102,6 +174,7 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
                 "skills": [],
                 "knowledge": [],
                 "verdicts": [],
+                "where": {**where, "base": "", "commits": 0},
                 "note": "Nothing has changed in this checkout.",
             }
         )
@@ -130,6 +203,11 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
             {"path": item.path, "change": item.change} for item in changes.files
         ],
         "base": changes.base_revision,
+        "where": {
+            **where,
+            "base": changes.base_revision,
+            "commits": commits_since(root, changes.base_revision),
+        },
         "skills": [skill_payload(skill) for skill in chosen],
         "knowledge": [
             {"id": item.id, "kind": item.kind, "summary": item.summary}
@@ -166,9 +244,8 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
     )
     checker = ModelSkillChecker(ask=provider.generate_text, model=provider.model)
 
-    # A rule is routinely a pointer at the document that states it. Judging a
-    # change against the pointer judges it against nothing.
-    whole = [replace(skill, body=followed(skill)) for skill in chosen]
+    whole = split(chosen)
+    answer["skills"] = [skill_payload(skill) for skill in whole]
 
     # One question per rule, asked at the same time. Asked one after another,
     # five rules is a minute of somebody watching a spinner, and a minute is

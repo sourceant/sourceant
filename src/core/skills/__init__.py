@@ -4,8 +4,10 @@ from .filesystem import (
     DirectorySkillSource,
     MACHINE_SKILLS,
     REPOSITORY_SKILLS,
+    attach,
     followed,
     read_front_matter,
+    references,
     sources_for,
 )
 from .interfaces import SkillChecker, SkillReader, SkillSelector, SkillSource
@@ -43,8 +45,10 @@ __all__ = [
     "SkillSource",
     "SkillVerdict",
     "SkillWriteError",
+    "attach",
     "followed",
     "read_front_matter",
+    "references",
     "remove_skill",
     "sources_for",
     "write_skill",
