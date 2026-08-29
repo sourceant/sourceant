@@ -18,7 +18,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.routes.code import find_repository, require_local
+from src.api.routes.local_settings import WHOEVER_IS_HERE
+from src.config.settings import DEFAULT_TOKEN_LIMIT
 from src.config.db import get_engine
+from src.core.knowledge.proposing import propose
 from src.core.knowledge.seeding import read
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
@@ -30,6 +33,7 @@ from src.core.knowledge import (
 )
 from src.core.responses import success_response
 from src.core.services import service_registry
+from src.llms.litellm_provider import LiteLLMProvider
 
 router = APIRouter()
 
@@ -128,6 +132,49 @@ class InitializeInput(BaseModel):
     # Reading is the safe half and answering is the useful one, so a caller can
     # ask what a repository states without anything being recorded.
     dry_run: bool = False
+    # Reading finds only what somebody bothered to type. Asking finds what they
+    # did not, and costs whatever the model costs, so it is asked for.
+    use_model: bool = False
+
+
+def _model_for_this_machine():
+    """The model this machine was told to ask, or None if it was told none."""
+    from src.core.settings.resolver import resolve
+
+    def value(key: str) -> str:
+        return str(resolve(key, user=WHOEVER_IS_HERE).value or "")
+
+    name = value("model.name")
+    if not name:
+        return None
+    return LiteLLMProvider(
+        model=name,
+        token_limit=DEFAULT_TOKEN_LIMIT,
+        api_key=value("model.api_key"),
+        api_base=value("model.base_url"),
+    )
+
+
+def _evidence(root: Path) -> tuple[list[str], str]:
+    """What a repository looks like, and what it says, without sending all of it."""
+    layout = []
+    for path in sorted(root.rglob("*"))[:4000]:
+        if path.is_dir() or any(part.startswith(".") for part in path.parts):
+            continue
+        layout.append(path.relative_to(root).as_posix())
+        if len(layout) >= 400:
+            break
+
+    prose = ""
+    for name in ("README.md", "README.rst", "README.txt"):
+        candidate = root / name
+        if candidate.is_file():
+            try:
+                prose = candidate.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                prose = ""
+            break
+    return layout, prose
 
 
 @router.post("/initialize", dependencies=[Depends(require_local)])
@@ -143,19 +190,48 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
     proposed, because nobody has agreed to any of it yet.
     """
     entry = find_repository(body.repository)
-    seeds = read(Path(entry.path))
+    root = Path(entry.path)
+    seeds = read(root)
+    found = [
+        {**payload(seed.knowledge), "source": seed.path, "from": "repository"}
+        for seed in seeds
+    ]
+    items = [seed.knowledge for seed in seeds]
+
+    if body.use_model:
+        provider = _model_for_this_machine()
+        if provider is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No model is configured on this machine. Choose one in "
+                    "Settings, or read what the repository states instead."
+                ),
+            )
+        layout, prose = _evidence(root)
+        try:
+            proposals = propose(
+                repository=entry.name,
+                layout=layout,
+                prose=prose,
+                known=items,
+                ask=provider.generate_text,
+                model=provider.model,
+            )
+        except Exception as error:  # noqa: BLE001 - whatever a provider raises
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        items += [proposal.knowledge for proposal in proposals]
+        found += [
+            {**payload(proposal.knowledge), "source": proposal.model, "from": "model"}
+            for proposal in proposals
+        ]
 
     if not body.dry_run:
-        for seed in seeds:
-            store.put(entry.scope, seed.knowledge)
+        for item in items:
+            store.put(entry.scope, item)
 
     return success_response(
-        {
-            "found": [
-                {**payload(seed.knowledge), "source": seed.path} for seed in seeds
-            ],
-            "recorded": 0 if body.dry_run else len(seeds),
-        }
+        {"found": found, "recorded": 0 if body.dry_run else len(items)}
     )
 
 

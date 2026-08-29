@@ -199,6 +199,54 @@ class TestLocalWrites(BaseTestCase):
         assert asked.json()["data"]["recorded"] == 0
         assert read.json()["data"]["total"] == 0
 
+    def test_asking_a_model_that_nobody_chose_says_so(self):
+        """Reading needs no model. Asking does, and it is off until somebody
+        says which one, so the answer names the thing to go and do."""
+        self.register()
+
+        response = self.client.post(
+            "/api/knowledge/initialize",
+            json={"repository": "acme/billing", "use_model": True},
+        )
+
+        assert response.status_code == 400
+        assert "Settings" in response.json()["detail"]
+
+    def test_what_a_model_proposes_is_marked_as_a_proposal(self, monkeypatch):
+        """Nothing a model says is agreed, and it says a model said it."""
+        import json
+
+        class Answering:
+            model = "a/model"
+
+            def generate_text(self, _prompt):
+                return json.dumps(
+                    [
+                        {
+                            "id": "retry-limit",
+                            "kind": "decision",
+                            "summary": "A failed charge is retried three times.",
+                            "why": "The provider rate limits after four.",
+                        }
+                    ]
+                )
+
+        monkeypatch.setattr(
+            "src.api.routes.knowledge._model_for_this_machine", lambda: Answering()
+        )
+        self.register()
+
+        self.client.post(
+            "/api/knowledge/initialize",
+            json={"repository": "acme/billing", "use_model": True},
+        )
+        read = self.client.get("/api/knowledge", params={"repository": "acme/billing"})
+
+        item = read.json()["data"]["items"][0]
+        assert item["status"] == "proposed"
+        assert item["properties"]["source"] == "model"
+        assert item["properties"]["model"] == "a/model"
+
     def test_knowledge_about_a_repository_nobody_registered_is_refused(self):
         response = self.client.get("/api/knowledge", params={"repository": "acme/nope"})
 
