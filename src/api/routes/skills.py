@@ -26,6 +26,8 @@ from pydantic import BaseModel, Field
 from src.api.routes.code import find_repository, registered, require_local
 from src.core.responses import success_response
 from src.core.skills import (
+    NAMESPACE,
+    REVIEW,
     Catalogue,
     Skill,
     SkillQuery,
@@ -60,6 +62,12 @@ class SkillInput(BaseModel):
     name: str = Field(default="")
     description: str = Field(default="")
     body: str = Field(default="")
+    # Globs naming the files this is about, so it is picked on a statement
+    # rather than on how its description happens to be worded.
+    paths: list[str] = Field(default_factory=list)
+    # Whether it belongs in a review at all. Null leaves that unsaid, which is
+    # where most skills are and is not the same as saying no.
+    reviews: bool | None = Field(default=None)
 
 
 def where(scope: str, repository: str) -> Path:
@@ -77,9 +85,21 @@ def where(scope: str, repository: str) -> Path:
     return Path(find_repository(repository).path)
 
 
+def elsewhere() -> tuple[str, ...]:
+    """The folders somebody told this machine to look in as well."""
+    from src.api.routes.local_settings import WHOEVER_IS_HERE
+    from src.core.settings.resolver import resolve
+
+    try:
+        named = str(resolve("skills.paths", user=WHOEVER_IS_HERE).value or "")
+    except Exception:  # noqa: BLE001 - a store that cannot answer is no folders
+        return ()
+    return tuple(line.strip() for line in named.splitlines() if line.strip())
+
+
 def catalogue_for(repository: str = "") -> Catalogue:
     root = Path(find_repository(repository).path) if repository else None
-    return Catalogue(sources=sources_for(root))
+    return Catalogue(sources=sources_for(root, elsewhere()))
 
 
 def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
@@ -89,9 +109,13 @@ def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
         "description": skill.description,
         "origin": skill.origin,
         "path": skill.path,
+        "paths": list(skill.paths),
+        "reviews": skill.reviews,
+        "automatic": skill.automatic,
     }
     if full:
         listed["body"] = skill.body
+        listed["metadata"] = dict(skill.metadata)
         listed["properties"] = dict(skill.properties)
     return listed
 
@@ -125,6 +149,9 @@ def read_skills(
 def record_skill(body: SkillInput):
     """Write a skill down, in a repository or on this machine."""
     root = where(body.scope, body.repository)
+    # Kept where the format sets a map aside for it, namespaced as the spec
+    # asks, so a skill carrying it stays readable by everything else.
+    metadata = {} if body.reviews is None else {NAMESPACE: {REVIEW: body.reviews}}
     try:
         written = write_skill(
             root,
@@ -133,6 +160,8 @@ def record_skill(body: SkillInput):
                 name=body.name or body.id,
                 description=body.description,
                 body=body.body,
+                paths=tuple(body.paths),
+                metadata=metadata,
             ),
             origin=body.scope,
         )

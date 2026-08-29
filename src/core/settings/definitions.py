@@ -43,6 +43,9 @@ class Setting:
     # answering with it would put it in a log the first time somebody debugged
     # the screen.
     secret: bool = False
+    # Whether the value is a list of things, one to a line, so a screen gives
+    # it room rather than a single-line box.
+    multiline: bool = False
 
     def validate(self, value: Any) -> Any:
         """Return the value coerced to this setting's type, or raise ValueError."""
@@ -216,6 +219,25 @@ SETTINGS: tuple[Setting, ...] = (
         scopes=(USER, REPOSITORY, ORGANIZATION),
         default="",
         group="Model",
+    ),
+    # Skills are read from the folders each coding agent keeps them in, and
+    # from this product's own. People keep them elsewhere too: in a repository
+    # of their own, in a plugin, in a package of a monorepo. Nothing can guess
+    # those, so they are named.
+    Setting(
+        key="skills.paths",
+        label="Extra places to look",
+        description=(
+            "Directories to read skills from, one to a line, on top of the "
+            "folders your coding agents already keep them in. A path to a "
+            "folder of skills, where each skill is a directory holding a "
+            "SKILL.md."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Skills",
+        multiline=True,
     ),
 )
 

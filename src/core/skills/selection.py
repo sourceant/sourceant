@@ -4,9 +4,15 @@ A machine can easily hold thirty of these and most of them are about something
 else. Asking a model to judge a change against all thirty costs thirty times
 what asking it about the three that apply costs, and reads no better.
 
-The choosing is done on words, deterministically, before anything is asked.
-A skill says when to use it; a change says what it touches. Where those overlap
-is where the skill is worth reading.
+What the author said comes first, because it is a statement rather than a
+guess. The format lets them write globs naming the files a skill is about, say
+that only a person may invoke it, and record whatever else they like in a map
+set aside for it, which is where this reads whether a skill belongs in a review
+at all. Not everything somebody teaches an agent is about judging a change.
+
+Where nobody has said, the choosing falls back to words: a skill says when to
+use it, a change says what it touches, and where those overlap is where the
+skill is worth reading.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ import re
 from dataclasses import dataclass
 from typing import Sequence
 
+from .matching import any_match
 from .models import Change, Skill
 
 WORDS = re.compile(r"[A-Za-z][A-Za-z0-9]+")
@@ -99,6 +106,28 @@ class PhraseSkillSelector:
 
     minimum: int = MIN_SCORE
 
+    def wanted(self, skill: Skill, change: Change) -> bool | None:
+        """What the author said about this skill and this change, if anything.
+
+        False where they said it is not for reviews, or that only a person may
+        invoke it. True where they said it is, or wrote globs and the change
+        touches one of the files. None where they said nothing, which is most
+        of them.
+        """
+        said = skill.reviews
+        if said is False:
+            return False
+        if not skill.automatic and said is not True:
+            return False
+        if said is True:
+            return True
+        if skill.paths:
+            # Globs are the author narrowing their own skill. A change that
+            # touches none of those files is one they already said it is not
+            # about, so the wording is not consulted afterwards.
+            return any_match(change.paths, skill.paths)
+        return None
+
     def score(self, skill: Skill, subject: set[str]) -> tuple[int, float]:
         """How many words a skill shares with a change, and how much of it that is.
 
@@ -124,12 +153,28 @@ class PhraseSkillSelector:
                 )
             )
         )
-        if not subject:
-            return ()
+
+        stated: list[Skill] = []
+        maybe: list[Skill] = []
+        for skill in skills:
+            said = self.wanted(skill, change)
+            if said is False:
+                continue
+            (stated if said else maybe).append(skill)
+
+        # What somebody stated comes first and is not competed with.
+        chosen = sorted(stated, key=lambda skill: skill.id)[:limit]
+        room = limit - len(chosen)
+        if room <= 0 or not subject:
+            return tuple(chosen)
+
         ranked = sorted(
-            ((self.score(skill, subject), skill) for skill in skills),
+            ((self.score(skill, subject), skill) for skill in maybe),
             key=lambda pair: (-pair[0][0], -pair[0][1], pair[1].id),
         )
-        return tuple(
-            skill for (matches, _), skill in ranked if matches >= self.minimum
-        )[:limit]
+        return (
+            tuple(chosen)
+            + tuple(skill for (matched, _), skill in ranked if matched >= self.minimum)[
+                :room
+            ]
+        )

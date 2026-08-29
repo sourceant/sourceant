@@ -18,6 +18,8 @@ import re
 import tempfile
 from pathlib import Path
 
+import yaml
+
 from .filesystem import MANIFEST, MAX_BODY
 from .models import Skill
 
@@ -48,20 +50,39 @@ def _checked(identifier: str) -> str:
 def _rendered(skill: Skill) -> str:
     """The file, in the shape every coding agent already reads.
 
-    The description is written on one line and quoted: it is the sentence that
-    decides when the rule applies, and a line break in the middle of it would
-    end the block early for a reader stricter than ours.
+    Written as YAML, in the order somebody reading it would want: what it is
+    called, when it applies, then whatever narrows it. The description is put
+    on one line, because it is the sentence that decides when the skill
+    applies and a break in the middle of it ends the block early for a reader
+    stricter than ours.
+
+    Anything the author had written that this does not act on is written back
+    unchanged. Dropping somebody's `license` because this had no opinion about
+    it would be losing their work.
     """
-    description = " ".join((skill.description or "").split())[:MAX_DESCRIPTION]
-    quoted = description.replace("\\", "\\\\").replace('"', '\\"')
-    body = (skill.body or "").strip()[:MAX_BODY]
-    return (
-        "---\n"
-        f"name: {skill.name}\n"
-        f'description: "{quoted}"\n'
-        "---\n"
-        f"\n{body}\n"
+    fields: dict[str, object] = {
+        "name": skill.name,
+        "description": " ".join((skill.description or "").split())[:MAX_DESCRIPTION],
+    }
+    if skill.paths:
+        fields["paths"] = list(skill.paths)
+    if skill.metadata:
+        fields["metadata"] = dict(skill.metadata)
+    if not skill.automatic:
+        fields["disable-model-invocation"] = True
+    fields.update(
+        {key: value for key, value in skill.properties.items() if key not in fields}
     )
+
+    block = yaml.safe_dump(
+        fields,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+        width=10_000,
+    )
+    body = (skill.body or "").strip()[:MAX_BODY]
+    return f"---\n{block}---\n\n{body}\n"
 
 
 def folder_for(root: Path, identifier: str) -> Path:
@@ -94,6 +115,10 @@ def write_skill(root: Path, skill: Skill, origin: str = "repository") -> Skill:
         body=(skill.body or "").strip()[:MAX_BODY],
         path=str(target),
         origin=origin,
+        paths=skill.paths,
+        metadata=dict(skill.metadata),
+        automatic=skill.automatic,
+        properties=dict(skill.properties),
     )
 
     handle, temporary = tempfile.mkstemp(dir=folder, prefix=".skill-", suffix=".md")

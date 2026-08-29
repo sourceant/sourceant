@@ -12,6 +12,8 @@ from src.core.skills import (
     PhraseSkillSelector,
     Skill,
     SkillQuery,
+    any_match,
+    discover,
     attach,
     followed,
     read_front_matter,
@@ -244,6 +246,152 @@ def skill(identifier, description, body=""):
     return Skill(id=identifier, name=identifier, description=description, body=body)
 
 
+class TestFindingWhereSkillsAreKept:
+    """A list of tool names is always one tool behind. These are found."""
+
+    def test_a_tool_nobody_here_has_heard_of_is_read_the_same(self, tmp_path):
+        write(tmp_path / ".whatever" / "skills", "house", COMMIT)
+
+        found = discover(tmp_path, "machine")
+
+        assert [source.origin for source in found] == ["whatever"]
+        assert [skill.id for skill in found[0].read()] == ["house"]
+
+    def test_the_folder_a_tool_keeps_them_in_names_the_tool(self, tmp_path):
+        write(tmp_path / ".claude" / "skills", "one", COMMIT)
+        write(tmp_path / ".codex" / "skills", "two", COMMIT)
+
+        found = discover(tmp_path, "machine")
+
+        assert sorted(source.origin for source in found) == ["claude", "codex"]
+
+    def test_commands_are_skills_too(self, tmp_path):
+        # Custom commands and skills were merged: a file at commands/deploy.md
+        # and a folder at skills/deploy/SKILL.md are the same thing.
+        folder = tmp_path / ".claude" / "commands"
+        folder.mkdir(parents=True)
+        (folder / "nfebe-pr.md").write_text(
+            "---\ndescription: Prepare a pull request.\n---\n\nDo it carefully.\n",
+            encoding="utf-8",
+        )
+
+        found = discover(tmp_path, "machine")
+        skills = found[0].read()
+
+        assert [skill.id for skill in skills] == ["nfebe-pr"]
+        assert skills[0].description == "Prepare a pull request."
+
+    def test_a_document_a_skill_was_written_with_is_not_another_skill(self, tmp_path):
+        folder = write(tmp_path / ".claude" / "skills", "workflows", COMMIT)
+        (folder / "global.md").write_text("Shared preferences.\n", encoding="utf-8")
+
+        skills = discover(tmp_path, "machine")[0].read()
+
+        assert [skill.id for skill in skills] == ["workflows"]
+
+    def test_this_product_own_folder_is_named_for_what_it_means(self, tmp_path):
+        write(tmp_path / ".sourceant" / "skills", "ours", COMMIT)
+
+        found = discover(tmp_path, "machine")
+
+        assert [source.origin for source in found] == ["machine"]
+
+    def test_somewhere_that_is_not_a_tool_is_left_alone(self, tmp_path):
+        write(tmp_path / ".git" / "skills", "nope", COMMIT)
+        write(tmp_path / ".cache" / "skills", "nope", COMMIT)
+
+        assert discover(tmp_path, "machine") == []
+
+    def test_a_home_with_nothing_in_it_finds_nothing(self, tmp_path):
+        assert discover(tmp_path, "machine") == []
+
+
+class TestWhatTheAuthorSaid:
+    """The skill format lets somebody state this, and a statement beats a guess."""
+
+    def declared(self, tmp_path, front):
+        write(tmp_path, "declared", f"---\n{front}---\n\nDo the thing.\n")
+        return DirectorySkillSource(tmp_path, "codex").read()[0]
+
+    def test_globs_naming_the_files_it_is_about_are_read(self, tmp_path):
+        skill = self.declared(
+            tmp_path,
+            "name: migrations\ndescription: Use when editing one.\n"
+            "paths:\n  - db/migrations/**\n  - '**/*.sql'\n",
+        )
+
+        assert skill.paths == ("db/migrations/**", "**/*.sql")
+
+    def test_globs_written_on_one_line_mean_the_same(self, tmp_path):
+        skill = self.declared(
+            tmp_path, "name: x\ndescription: y\npaths: db/**, app/**\n"
+        )
+
+        assert skill.paths == ("db/**", "app/**")
+
+    def test_a_client_may_keep_its_own_keys_where_the_format_says(self, tmp_path):
+        skill = self.declared(
+            tmp_path,
+            "name: x\ndescription: y\nmetadata:\n  sourceant:\n    review: false\n",
+        )
+
+        assert skill.reviews is False
+
+    def test_a_skill_only_a_person_may_start_says_so(self, tmp_path):
+        skill = self.declared(
+            tmp_path, "name: x\ndescription: y\ndisable-model-invocation: true\n"
+        )
+
+        assert skill.automatic is False
+
+    def test_saying_nothing_is_not_saying_no(self, tmp_path):
+        skill = self.declared(tmp_path, "name: x\ndescription: y\n")
+
+        assert skill.reviews is None
+        assert skill.automatic is True
+
+    def test_anything_else_the_author_wrote_is_kept_rather_than_read(self, tmp_path):
+        skill = self.declared(
+            tmp_path, "name: x\ndescription: y\nlicense: MIT\nallowed-tools: Read\n"
+        )
+
+        assert skill.properties["license"] == "MIT"
+
+    def test_a_block_yaml_will_not_take_still_gives_up_its_name(self, tmp_path):
+        # Real frontmatter is often not valid YAML. A hint written as
+        # `[working | <path>] [--only]` is two flow sequences on one line,
+        # which the agents that read these files tolerate. Losing the
+        # description over a field nothing here reads would be our fault.
+        fields, body = read_front_matter(
+            "---\n"
+            "description: Prepare a pull request.\n"
+            "argument-hint: [working | <file path>] [--critique-only]\n"
+            "---\n\nDo it carefully.\n"
+        )
+
+        assert fields["description"] == "Prepare a pull request."
+        assert "Do it carefully." in body
+
+
+class TestWhichFilesASkillIsAbout:
+    def test_one_star_stops_at_a_separator(self):
+        assert any_match(["src/thing.py"], ["src/*.py"])
+        assert not any_match(["src/deep/thing.py"], ["src/*.py"])
+
+    def test_two_stars_cross_them(self):
+        assert any_match(["src/deep/down/thing.py"], ["src/**"])
+
+    def test_anywhere_matches_at_the_top_too(self):
+        assert any_match(["thing.sql"], ["**/*.sql"])
+        assert any_match(["db/migrations/thing.sql"], ["**/*.sql"])
+
+    def test_a_directory_means_everything_under_it(self):
+        assert any_match(["db/migrations/0001.py"], ["db/migrations/"])
+
+    def test_naming_nothing_matches_nothing(self):
+        assert not any_match(["anything.py"], [])
+
+
 class TestChoosingWhichSkillsApply:
     def test_a_change_picks_the_skill_written_about_it(self):
         skills = [
@@ -308,6 +456,112 @@ class TestChoosingWhichSkillsApply:
         skills = [skill("migrations", "Use when a change adds a database migration.")]
 
         assert PhraseSkillSelector().select(skills, Change()) == ()
+
+    def test_a_skill_that_named_the_files_is_picked_on_that_alone(self):
+        # Nothing in the title says migration; the author already said which
+        # files this is about, which is better than anything read out of words.
+        skills = [
+            Skill(
+                id="migrations",
+                name="migrations",
+                description="Use when editing one.",
+                body="",
+                paths=("db/migrations/**",),
+            )
+        ]
+
+        chosen = PhraseSkillSelector().select(
+            skills, Change(title="Bump the retry count", paths=("db/migrations/7.py",))
+        )
+
+        assert [item.id for item in chosen] == ["migrations"]
+
+    def test_a_skill_that_named_other_files_is_not_picked_on_its_wording(self):
+        skills = [
+            Skill(
+                id="migrations",
+                name="migrations",
+                description="Use when a change adds a database migration.",
+                body="",
+                paths=("db/migrations/**",),
+            )
+        ]
+
+        chosen = PhraseSkillSelector().select(
+            skills,
+            Change(title="Add a database migration helper", paths=("app/helpers.py",)),
+        )
+
+        assert chosen == ()
+
+    def test_a_skill_said_not_to_be_for_reviews_is_never_picked(self):
+        skills = [
+            Skill(
+                id="migrations",
+                name="migrations",
+                description="Use when a change adds a database migration.",
+                body="",
+                metadata={"sourceant": {"review": False}},
+            )
+        ]
+
+        assert (
+            PhraseSkillSelector().select(
+                skills, Change(title="Add a database migration")
+            )
+            == ()
+        )
+
+    def test_a_skill_said_to_be_for_reviews_is_always_picked(self):
+        skills = [
+            Skill(
+                id="house",
+                name="house",
+                description="Nothing to do with anything.",
+                body="",
+                metadata={"sourceant": {"review": True}},
+            )
+        ]
+
+        chosen = PhraseSkillSelector().select(skills, Change(title="Bump a timeout"))
+
+        assert [item.id for item in chosen] == ["house"]
+
+    def test_a_skill_only_a_person_may_start_is_not_started_here(self):
+        skills = [
+            Skill(
+                id="migrations",
+                name="migrations",
+                description="Use when a change adds a database migration.",
+                body="",
+                automatic=False,
+            )
+        ]
+
+        assert (
+            PhraseSkillSelector().select(
+                skills, Change(title="Add a database migration")
+            )
+            == ()
+        )
+
+    def test_what_was_stated_does_not_compete_with_what_was_guessed(self):
+        skills = [
+            Skill(
+                id="house",
+                name="house",
+                description="Nothing to do with anything.",
+                body="",
+                metadata={"sourceant": {"review": True}},
+            ),
+            skill("migrations", "Use when a change adds a database migration."),
+        ]
+
+        chosen = PhraseSkillSelector().select(
+            skills, Change(title="Add a database migration"), limit=2
+        )
+
+        assert [item.id for item in chosen] == ["house", "migrations"]
 
 
 class TestPuttingAChangeThroughASkill:

@@ -39,9 +39,10 @@ class TestLocalReview(BaseTestCase):
     @pytest.fixture(autouse=True)
     def machine(self, tmp_path, monkeypatch):
         monkeypatch.setenv("SOURCEANT_HOME", str(tmp_path / "home"))
-        # Otherwise this reads whichever skills the person running the tests
-        # keeps in their own agent folders.
-        monkeypatch.setattr("src.core.skills.filesystem.MACHINE_SKILLS", ())
+        # An empty home, or this reads whichever skills the person running the
+        # tests keeps in their own agent folders.
+        (tmp_path / "nobody").mkdir()
+        monkeypatch.setenv("SOURCEANT_MACHINE_HOME", str(tmp_path / "nobody"))
         monkeypatch.setattr("src.api.routes.code.LOCAL_MODE", True)
 
         self.source = tmp_path / "billing"
@@ -209,13 +210,6 @@ class TestSkillsApi(BaseTestCase):
     def machine(self, tmp_path, monkeypatch):
         monkeypatch.setenv("SOURCEANT_HOME", str(tmp_path / "home"))
         monkeypatch.setenv("SOURCEANT_MACHINE_HOME", str(tmp_path / "person"))
-        monkeypatch.setattr(
-            "src.core.skills.filesystem.MACHINE_SKILLS",
-            (
-                (".codex/skills", "codex"),
-                (".sourceant/skills", "machine"),
-            ),
-        )
         monkeypatch.setattr("src.api.routes.code.LOCAL_MODE", True)
         self.source = tmp_path / "billing"
         own = self.source / ".sourceant" / "skills" / "migrations"
