@@ -42,6 +42,7 @@ from src.core.code_index import (
     InMemoryCodeIndex,
     SQLCodeIndexRepository,
 )
+from src.core.code_index.attention import attention
 from src.core.code_index.clustering import Modularity, degrees
 from src.core.code_index.linking import index_directories, index_paths, resolve
 from src.core.responses import success_response
@@ -210,6 +211,65 @@ def read_repositories():
     """Every repository registered on this machine, for a client drawing all of them."""
     return success_response(
         [{"name": item.name, "path": item.path} for item in registered()]
+    )
+
+
+@router.get("/attention")
+def read_attention(
+    repository: str = Query(...),
+    limit: int = Query(10, ge=1, le=50),
+    index: Any = Depends(get_code_index),
+):
+    """Where recent change is landing on what the rest of the code leans on.
+
+    Two facts nobody has to supply: how much of the repository imports a file,
+    and how often it has been changing. Either alone says little. A file half
+    the codebase imports and nobody has touched in two years is settled. A file
+    that changes constantly and nothing imports is somebody's scratch pad. It
+    is where they meet that is worth a person's time, and that is also the
+    shortest list of files worth reading first.
+    """
+    entry = find_repository(repository)
+    if not isinstance(index, CodeGraphReader):
+        raise HTTPException(
+            status_code=501,
+            detail="The configured index cannot read a whole scope at once",
+        )
+
+    result = index.graph(
+        CodeGraphQuery(
+            scope=entry.scope, include_tests=False, node_limit=MAX_GRAPH_NODES
+        )
+    )
+    nodes, edges = joined(result.nodes, result.edges)
+
+    # How many files import each one, which is what "leans on" means here.
+    paths = {
+        node.id: str(dict(node.properties).get("file_path") or "")
+        for node in nodes
+        if "file" in {label.lower() for label in node.labels}
+    }
+    dependants: dict[str, int] = {}
+    for edge in edges:
+        target = paths.get(edge.target_id)
+        if target and paths.get(edge.source_id):
+            dependants[target] = dependants.get(target, 0) + 1
+
+    found = attention(dependants, Path(entry.path), limit=limit)
+    return success_response(
+        {
+            "files": [
+                {
+                    "path": item.path,
+                    "dependants": item.dependants,
+                    "changes": item.changes,
+                }
+                for item in found
+            ],
+            # So a screen can say "in the last 90 days" rather than inventing a
+            # window of its own.
+            "since": "90 days",
+        }
     )
 
 
