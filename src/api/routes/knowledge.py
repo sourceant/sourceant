@@ -11,6 +11,7 @@ to have been started by ``sourceant serve``. See ``code.py``.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.routes.code import find_repository, require_local
-from src.api.routes.local_settings import model_for_this_machine
+from src.api.routes.local_settings import WHOEVER_IS_HERE, model_for_this_machine
 from src.config.db import get_engine
 from src.core.knowledge.proposing import propose
 from src.core.knowledge.seeding import read
@@ -135,6 +136,29 @@ class InitializeInput(BaseModel):
     use_model: bool = False
 
 
+def accept_above() -> float:
+    """How sure a proposal has to be to skip a person, or zero for none of them."""
+    from src.core.settings.resolver import resolve
+
+    try:
+        return float(resolve("knowledge.accept_above", user=WHOEVER_IS_HERE).value or 0)
+    except Exception:  # noqa: BLE001 - a store that cannot answer accepts nothing
+        return 0.0
+
+
+def agreed(
+    item: KnowledgeObject, confidence: float, threshold: float
+) -> KnowledgeObject:
+    """The same thing, marked accepted where somebody said that is sure enough.
+
+    A threshold of zero accepts nothing, which is the default: agreeing on
+    somebody's behalf is not a favour until they have said it is.
+    """
+    if threshold <= 0 or confidence < threshold:
+        return item
+    return replace(item, status="accepted")
+
+
 def _evidence(root: Path) -> tuple[list[str], str]:
     """What a repository looks like, and what it says, without sending all of it."""
     layout = []
@@ -171,12 +195,15 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
     """
     entry = find_repository(body.repository)
     root = Path(entry.path)
+    # What a repository states about itself is quoted rather than inferred, so
+    # it is as sure as anything here gets.
+    threshold = accept_above()
     seeds = read(root)
     found = [
         {**payload(seed.knowledge), "source": seed.path, "from": "repository"}
         for seed in seeds
     ]
-    items = [seed.knowledge for seed in seeds]
+    items = [agreed(seed.knowledge, 1.0, threshold) for seed in seeds]
 
     if body.use_model:
         provider = model_for_this_machine()
@@ -200,7 +227,10 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
             )
         except Exception as error:  # noqa: BLE001 - whatever a provider raises
             raise HTTPException(status_code=502, detail=str(error)) from error
-        items += [proposal.knowledge for proposal in proposals]
+        items += [
+            agreed(proposal.knowledge, proposal.confidence, threshold)
+            for proposal in proposals
+        ]
         found += [
             {**payload(proposal.knowledge), "source": proposal.model, "from": "model"}
             for proposal in proposals

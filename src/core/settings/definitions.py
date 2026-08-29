@@ -221,6 +221,61 @@ SETTINGS: tuple[Setting, ...] = (
         default="",
         group="Model",
     ),
+    # A repository read once is a repository that answers about last month.
+    # Reading again is cheap: unchanged files are recognised and skipped.
+    Setting(
+        key="index.every",
+        label="Read repositories again every",
+        description=(
+            "How often the folders on this machine are read again, in "
+            "minutes. Only what changed is read, so this costs close to "
+            "nothing. Zero turns it off and leaves reading to the button."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=60,
+        minimum=0,
+        maximum=10_080,
+        unit="minutes",
+        group="Schedule",
+    ),
+    # Asking a model costs money every time, so this is off until somebody
+    # decides the answers are worth it.
+    Setting(
+        key="knowledge.every",
+        label="Look for new knowledge every",
+        description=(
+            "How often a repository is read again for what it states about "
+            "itself, in minutes, and asked of a model where one is "
+            "configured. Zero, the default, means only when you ask."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=0,
+        minimum=0,
+        maximum=10_080,
+        unit="minutes",
+        group="Schedule",
+    ),
+    # Nothing arrives agreed. A person looking at every proposal is the point
+    # where most of this stops being used, so a team that trusts the reading
+    # can say how sure is sure enough to skip that.
+    Setting(
+        key="knowledge.accept_above",
+        label="Accept on its own above",
+        description=(
+            "How sure a proposal has to be before it is accepted without "
+            "anybody looking, from 0 to 1. Zero, the default, means every "
+            "proposal waits for a person. What a repository plainly states "
+            "about itself is quoted rather than inferred and counts as one."
+        ),
+        type=ConfigType.FLOAT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=0.0,
+        minimum=0.0,
+        maximum=1.0,
+        group="Knowledge",
+    ),
     # Skills are read from the folders each coding agent keeps them in, and
     # from this product's own. People keep them elsewhere too: in a repository
     # of their own, in a plugin, in a package of a monorepo. Nothing can guess

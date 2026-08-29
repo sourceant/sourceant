@@ -49,6 +49,9 @@ Answer with a JSON array, at most {limit} entries, each an object with:
   "kind":    one of {kinds}
   "summary": one sentence stating what is true, in the present tense
   "why":     one sentence on why it is that way, or "" if the code does not say
+  "sure":    how certain you are, from 0 to 1. Above 0.8 only where the code
+             plainly shows it and you would say the same having read it twice.
+             Below 0.5 where you are inferring from a convention or a name.
 
 Only include something a person maintaining this would need to know and could
 not tell at a glance. Do not describe what the repository contains, which
@@ -65,6 +68,10 @@ class Proposal:
     knowledge: KnowledgeObject
     # What was asked, so a person can tell a proposal from a reading.
     model: str
+    # How sure the model said it was. Recorded rather than acted on here:
+    # whether a number is high enough to accept without a person looking is a
+    # policy somebody sets, not something this decides.
+    confidence: float = 0.5
 
 
 def _shorten(text: str, limit: int) -> str:
@@ -127,6 +134,10 @@ def propose(
         if not identifier or not summary or kind not in KINDS or identifier in seen:
             continue
         why = str(item.get("why") or "").strip()
+        try:
+            sure = min(1.0, max(0.0, float(item.get("sure", 0.5))))
+        except (TypeError, ValueError):
+            sure = 0.5
         # A model asked what a repository knows will answer that it uses
         # PostgreSQL. The same rule that rejects that from anywhere else
         # rejects it here.
@@ -138,12 +149,13 @@ def propose(
             future_decision="",
             invalidation="",
             evidence_ids=(),
+            confidence=sure,
         )
         if not policy.assess(candidate).accepted:
             continue
         seen.add(identifier)
 
-        properties = {"source": "model", "model": model}
+        properties = {"source": "model", "model": model, "confidence": sure}
         if why:
             properties["why"] = why
         proposals.append(
@@ -156,6 +168,7 @@ def propose(
                     properties=properties,
                 ),
                 model=model,
+                confidence=sure,
             )
         )
     return proposals

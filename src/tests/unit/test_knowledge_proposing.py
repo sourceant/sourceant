@@ -149,3 +149,76 @@ class TestRefusals:
             len(propose("acme/billing", LAYOUT, PROSE, [], answering(payload), limit=5))
             == 5
         )
+
+
+class TestHowSureAModelSaidItWas:
+    """Recorded rather than acted on: what is sure enough is somebody's policy."""
+
+    def answering(self, entries):
+        import json
+
+        return lambda prompt: json.dumps(entries)
+
+    def test_what_it_said_is_kept(self):
+        proposals = propose(
+            repository="acme/billing",
+            layout=["app/charge.py"],
+            prose="",
+            known=(),
+            ask=self.answering(
+                [
+                    {
+                        "id": "retry-limit",
+                        "kind": "decision",
+                        "summary": "Charges retry three times, then stop.",
+                        "why": "The provider rate limits after four.",
+                        "sure": 0.9,
+                    }
+                ]
+            ),
+            model="a-model",
+        )
+
+        assert proposals[0].confidence == 0.9
+        assert proposals[0].knowledge.properties["confidence"] == 0.9
+
+    def test_saying_nothing_is_the_middle_rather_than_certain(self):
+        proposals = propose(
+            repository="acme/billing",
+            layout=["app/charge.py"],
+            prose="",
+            known=(),
+            ask=self.answering(
+                [
+                    {
+                        "id": "retry-limit",
+                        "kind": "decision",
+                        "summary": "Charges retry three times, then stop.",
+                        "why": "The provider rate limits after four.",
+                    }
+                ]
+            ),
+        )
+
+        assert proposals[0].confidence == 0.5
+
+    def test_nonsense_is_the_middle_rather_than_an_error(self):
+        proposals = propose(
+            repository="acme/billing",
+            layout=["app/charge.py"],
+            prose="",
+            known=(),
+            ask=self.answering(
+                [
+                    {
+                        "id": "retry-limit",
+                        "kind": "decision",
+                        "summary": "Charges retry three times, then stop.",
+                        "why": "The provider rate limits after four.",
+                        "sure": "very",
+                    }
+                ]
+            ),
+        )
+
+        assert proposals[0].confidence == 0.5
