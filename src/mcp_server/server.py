@@ -46,6 +46,7 @@ def create_mcp_server(
     topology: TopologyRepository | None = None,
     requirements: RequirementsRepository | None = None,
     scope_resolver: Callable[[Scope], Scope] | None = None,
+    reviews: Any | None = None,
     auth: AuthSettings | None = None,
     token_verifier: TokenVerifier | None = None,
 ) -> FastMCP:
@@ -66,6 +67,12 @@ def create_mcp_server(
         streamable_http_path="/",
     )
     resolve_scope = scope_resolver or (lambda scope: scope)
+
+    # Only where this server can reach a checkout. A hosted one has nobody's
+    # disk to read, and advertising a tool that always refuses is worse than
+    # not advertising it.
+    if reviews is not None:
+        _reviewing(server, reviews)
 
     @server.tool(
         name="search_code",
@@ -559,3 +566,38 @@ def _build_evidence(
         )
         for item in evidence or ()
     )
+
+
+def _reviewing(server: FastMCP, reviews: Any) -> None:
+    """The tool that reads a checkout, where there is one to read."""
+
+    @server.tool(
+        name="review_working_tree",
+        description=(
+            "Read the uncommitted and unpushed work in a checkout on this "
+            "machine against the skills its team wrote down, and answer with "
+            "a link a person can open to see what it found. The reading "
+            "happens after this answers, so open the link rather than waiting."
+        ),
+        structured_output=True,
+    )
+    def review_working_tree(repository: str, title: str = "") -> dict[str, Any]:
+        """Ask for a review, and hand back where to read it.
+
+        This is the half an agent can do. A person reads the other half, which
+        is why what comes back is a link rather than a wall of findings: the
+        thing that asked is rarely the thing that acts on the answer.
+        """
+        if reviews is None:
+            raise ValueError("This server does not review working trees")
+        started = reviews(repository=repository, title=title)
+        return {
+            "id": started["id"],
+            "repository": started["repository"],
+            "status": started["status"],
+            "url": started.get("url") or started.get("path", ""),
+            "say": (
+                "Reading has started. Open the link to see what it found; it "
+                "keeps working whether or not anybody is watching."
+            ),
+        }

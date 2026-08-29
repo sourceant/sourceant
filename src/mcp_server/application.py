@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from threading import Thread
 
 from mcp.server.auth.settings import AuthSettings
 
@@ -61,7 +62,64 @@ def create_default_mcp_server():
         knowledge=knowledge,
         topology=topology,
         requirements=requirements,
+        reviews=_reviewer(),
     )
+
+
+def _reviewer():
+    """How this server starts a review, or None where it cannot.
+
+    Only the local surface reviews a checkout: it reads files off a disk, and a
+    hosted deployment has nobody's disk to read. The routes own the work, so
+    this asks them rather than growing a second copy of it.
+    """
+    from src.config.settings import LOCAL_MODE
+
+    if not LOCAL_MODE:
+        return None
+
+    def start(repository: str, title: str = "") -> dict:
+        from src.api.routes.local_reviews import (
+            ReviewInput,
+            get_knowledge,
+            get_reviews,
+            kept,
+            run,
+        )
+        from src.core.local_reviews import LocalReview, named
+        from src.api.routes.code import find_repository
+
+        find_repository(repository)
+        body = ReviewInput(repository=repository, title=title)
+        store, reviews = get_knowledge(), get_reviews()
+
+        identifier = named()
+        started = reviews.put(
+            LocalReview(id=identifier, repository=repository, title=title)
+        )
+        # Not a background task: nothing here is inside a request, so the work
+        # goes on a thread of its own and this answers immediately.
+        Thread(
+            target=run,
+            args=(identifier, body, store, reviews),
+            daemon=True,
+        ).start()
+
+        answer = kept(started)
+        answer["url"] = _where(answer["path"])
+        return answer
+
+    return start
+
+
+def _where(path: str) -> str:
+    """A link somebody can click, where this machine knows its own address.
+
+    The agent serves the screen and knows where it is listening; core is told
+    on the way in. Without that, the path is the honest answer.
+    """
+    base = os.getenv("SOURCEANT_UI_URL", "").rstrip("/")
+    return f"{base}/{path}" if base else path
 
 
 def create_http_mcp_server():

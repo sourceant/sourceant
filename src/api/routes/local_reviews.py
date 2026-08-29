@@ -13,6 +13,11 @@ What it can answer without a model it always answers: what changed, what
 applies, and what has been recorded about the files touched. Judging the work
 against prose needs a model, and that part is skipped rather than faked when
 nobody has configured one.
+
+A review is asked for by one thing and read by another. An agent runs one over
+MCP while somebody is in the middle of something else and hands them a link, so
+asking for one answers with a name straight away and the reading happens behind
+it. The answer is kept, because the link has to still open it an hour later.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.routes.code import find_repository, require_local
@@ -37,7 +42,17 @@ from src.core.change_context import (
     default_branch,
     read_change,
 )
+from src.config.db import get_engine
 from src.core.knowledge import KnowledgeQuery
+from src.core.local_reviews import (
+    DONE,
+    FAILED,
+    RUNNING,
+    LocalReview,
+    SQLLocalReviewStore,
+    named,
+)
+from src.core.local_reviews.models import now
 from src.core.responses import success_response
 from src.core.skills import (
     BLOCKING,
@@ -51,6 +66,27 @@ from src.core.skills import (
 )
 
 router = APIRouter()
+
+_kept: Any = None
+
+
+def get_reviews() -> Any:
+    """Where reviews are kept on this machine.
+
+    The schema is made if it is missing rather than waited for: this table is
+    local, and a person who started the agent should not have to know that
+    migrations are a thing.
+    """
+    global _kept
+    if _kept is None:
+        engine = get_engine()
+        if engine is None:
+            raise HTTPException(
+                status_code=503, detail="This machine has nowhere to keep a review"
+            )
+        _kept = SQLLocalReviewStore(engine, create_schema=True)
+    return _kept
+
 
 MAX_SKILLS = 5
 MAX_KNOWLEDGE = 25
@@ -141,8 +177,7 @@ def verdict_payload(verdict: SkillVerdict) -> dict[str, Any]:
     }
 
 
-@router.post("", dependencies=[Depends(require_local)])
-def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
+def read_and_judge(body: ReviewInput, store: Any) -> dict[str, Any]:
     """Whether this checkout's work is ready to be proposed to anyone."""
     entry = find_repository(body.repository)
     root = Path(entry.path)
@@ -167,17 +202,15 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
     }
 
     if changes is None:
-        return success_response(
-            {
-                "ready": True,
-                "changed": [],
-                "skills": [],
-                "knowledge": [],
-                "verdicts": [],
-                "where": {**where, "base": "", "commits": 0},
-                "note": "Nothing has changed in this checkout.",
-            }
-        )
+        return {
+            "ready": True,
+            "changed": [],
+            "skills": [],
+            "knowledge": [],
+            "verdicts": [],
+            "where": {**where, "base": "", "commits": 0},
+            "note": "Nothing has changed in this checkout.",
+        }
 
     everything = catalogue_for(body.repository).all()
     if body.skills:
@@ -227,7 +260,7 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
 
     if not body.use_model:
         answer["note"] = "Read what changed and what applies to it. Nothing was judged."
-        return success_response(answer)
+        return answer
 
     provider = model_for_this_machine()
     if provider is None:
@@ -241,7 +274,7 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
 
     if not chosen:
         answer["note"] = "Nothing on this machine bears on what changed here."
-        return success_response(answer)
+        return answer
 
     subject = Change(
         title=changes.title,
@@ -271,4 +304,112 @@ def review(body: ReviewInput, store: Any = Depends(get_knowledge)):
         for verdict in verdicts
         for finding in verdict.findings
     )
-    return success_response(answer)
+    return answer
+
+
+def kept(review: LocalReview) -> dict[str, Any]:
+    """One review, in the shape a screen and an agent both read."""
+    return {
+        "id": review.id,
+        "repository": review.repository,
+        "status": review.status,
+        "title": review.title,
+        "error": review.error,
+        "started": review.started.isoformat() if review.started else None,
+        "finished": review.finished.isoformat() if review.finished else None,
+        "review": dict(review.answer),
+        # Where to send somebody who was handed this by an agent.
+        "path": f"#/reviews/{review.id}",
+    }
+
+
+def run(identifier: str, body: ReviewInput, store: Any, reviews: Any) -> None:
+    """Do the reading, and keep whatever came of it.
+
+    Nothing raised here reaches anybody: the request that asked for it has long
+    since been answered, so a failure is written down rather than thrown.
+    """
+    try:
+        answer = read_and_judge(body, store)
+    except HTTPException as refused:
+        reviews.put(
+            LocalReview(
+                id=identifier,
+                repository=body.repository,
+                status=FAILED,
+                error=str(refused.detail),
+                title=body.title,
+                finished=now(),
+            )
+        )
+        return
+    except Exception as error:  # noqa: BLE001 - whatever went wrong is the answer
+        reviews.put(
+            LocalReview(
+                id=identifier,
+                repository=body.repository,
+                status=FAILED,
+                error=str(error),
+                title=body.title,
+                finished=now(),
+            )
+        )
+        return
+
+    reviews.put(
+        LocalReview(
+            id=identifier,
+            repository=body.repository,
+            status=DONE,
+            answer=answer,
+            title=body.title,
+            finished=now(),
+        )
+    )
+
+
+@router.post("", dependencies=[Depends(require_local)])
+def start_review(
+    body: ReviewInput,
+    background: BackgroundTasks,
+    store: Any = Depends(get_knowledge),
+    reviews: Any = Depends(get_reviews),
+):
+    """Ask for a review, and get back where to find it.
+
+    The name comes back before the reading starts, so whatever asked can hand
+    somebody a link and get on with something else.
+    """
+    # Checked here rather than in the background, so naming a repository nobody
+    # covers is refused rather than written down as a failed review.
+    find_repository(body.repository)
+
+    identifier = named()
+    started = reviews.put(
+        LocalReview(id=identifier, repository=body.repository, title=body.title)
+    )
+    background.add_task(run, identifier, body, store, reviews)
+    return success_response(kept(started))
+
+
+@router.get("", dependencies=[Depends(require_local)])
+def read_reviews(
+    repository: str = "",
+    limit: int = 20,
+    reviews: Any = Depends(get_reviews),
+):
+    """The last few, newest first."""
+    found = reviews.recent(repository=repository, limit=max(1, min(limit, 100)))
+    return success_response([{**kept(review), "review": {}} for review in found])
+
+
+@router.get("/{identifier}", dependencies=[Depends(require_local)])
+def read_review(identifier: str, reviews: Any = Depends(get_reviews)):
+    """One review, whether it is still running or long finished."""
+    found = reviews.get(identifier)
+    if found is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No review by that name. It may have been one of the oldest.",
+        )
+    return success_response(kept(found))

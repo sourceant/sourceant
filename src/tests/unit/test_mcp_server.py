@@ -507,3 +507,64 @@ async def test_a_token_that_names_no_workspace_is_refused(tmp_path, monkeypatch)
 
     with pytest.raises(ValueError, match="authenticated principal is required"):
         resolver(Scope.from_mapping({"repository": "acme/shop"}))
+
+
+class TestReviewingAWorkingTree:
+    """The half an agent can do: ask for one, and hand somebody the link."""
+
+    def asked(self):
+        seen = {}
+
+        def start(repository, title=""):
+            seen["repository"] = repository
+            seen["title"] = title
+            return {
+                "id": "abc123",
+                "repository": repository,
+                "status": "running",
+                "path": "#/reviews/abc123",
+                "url": "http://127.0.0.1:8930/#/reviews/abc123",
+            }
+
+        return start, seen
+
+    @pytest.mark.asyncio
+    async def test_a_server_with_no_checkout_does_not_offer_it(self):
+        server = create_mcp_server(DefaultContextProvider(code=InMemoryCodeIndex()))
+
+        async with create_connected_server_and_client_session(server) as session:
+            tools = await session.list_tools()
+
+        assert "review_working_tree" not in {tool.name for tool in tools.tools}
+
+    @pytest.mark.asyncio
+    async def test_a_server_that_can_reach_one_offers_it(self):
+        start, _ = self.asked()
+        server = create_mcp_server(
+            DefaultContextProvider(code=InMemoryCodeIndex()), reviews=start
+        )
+
+        async with create_connected_server_and_client_session(server) as session:
+            tools = await session.list_tools()
+
+        assert "review_working_tree" in {tool.name for tool in tools.tools}
+
+    @pytest.mark.asyncio
+    async def test_it_answers_with_a_link_rather_than_findings(self):
+        start, seen = self.asked()
+        server = create_mcp_server(
+            DefaultContextProvider(code=InMemoryCodeIndex()), reviews=start
+        )
+
+        async with create_connected_server_and_client_session(server) as session:
+            answered = await session.call_tool(
+                "review_working_tree",
+                {"repository": "acme/billing", "title": "Retry"},
+            )
+
+        structured = answered.structuredContent
+        assert seen["repository"] == "acme/billing"
+        assert structured["id"] == "abc123"
+        assert structured["url"].endswith("#/reviews/abc123")
+        # Running, not finished: whoever asked is not the one who reads it.
+        assert structured["status"] == "running"

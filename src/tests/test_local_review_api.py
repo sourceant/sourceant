@@ -7,8 +7,10 @@ from sqlalchemy import create_engine
 from src.api.main import app
 from src.api.routes.code import get_code_index
 from src.api.routes.knowledge import get_knowledge
+from src.api.routes.local_reviews import get_reviews
 from src.core.code_index import SQLCodeIndexRepository
 from src.core.knowledge import SQLKnowledgeRepository
+from src.core.local_reviews import SQLLocalReviewStore
 from src.tests.base_test import BaseTestCase
 
 MIGRATIONS_SKILL = """---
@@ -66,6 +68,9 @@ class TestLocalReview(BaseTestCase):
         app.dependency_overrides[get_knowledge] = lambda: SQLKnowledgeRepository(
             engine, create_schema=True
         )
+        app.dependency_overrides[get_reviews] = lambda: SQLLocalReviewStore(
+            engine, create_schema=True
+        )
         yield
         app.dependency_overrides.clear()
 
@@ -84,15 +89,27 @@ class TestLocalReview(BaseTestCase):
             "def up():\n    return 1\n", encoding="utf-8"
         )
 
-    def review(self, **body):
+    def start(self, **body):
         return self.client.post(
             "/api/local/reviews", json={"repository": "acme/billing", **body}
         )
 
+    def review(self, **body):
+        """Ask for one, then read what came of it.
+
+        Asking answers with a name and the reading happens behind it, so a
+        test that wants the answer has to come back for it, exactly as a
+        screen or an agent does.
+        """
+        started = self.start(**body)
+        if started.status_code != 200:
+            return started
+        return self.client.get(f"/api/local/reviews/{started.json()['data']['id']}")
+
     def test_a_checkout_with_nothing_changed_is_ready(self):
         self.register()
 
-        answered = self.review().json()["data"]
+        answered = self.review().json()["data"]["review"]
 
         assert answered["ready"] is True
         assert answered["changed"] == []
@@ -101,7 +118,7 @@ class TestLocalReview(BaseTestCase):
         self.register()
         self.edit_the_migration()
 
-        answered = self.review(use_model=False).json()["data"]
+        answered = self.review(use_model=False).json()["data"]["review"]
 
         assert [item["path"] for item in answered["changed"]] == ["db/0001_charges.py"]
         assert answered["verdicts"] == []
@@ -112,7 +129,7 @@ class TestLocalReview(BaseTestCase):
             "def up():\n    pass\n", encoding="utf-8"
         )
 
-        answered = self.review(use_model=False).json()["data"]
+        answered = self.review(use_model=False).json()["data"]["review"]
 
         assert [item["path"] for item in answered["changed"]] == ["db/0002_refunds.py"]
         assert answered["changed"][0]["change"] == "added"
@@ -130,7 +147,7 @@ class TestLocalReview(BaseTestCase):
         (nested / "theirs.py").write_text("x = 1\n", encoding="utf-8")
         self.edit_the_migration()
 
-        answered = self.review(use_model=False).json()["data"]
+        answered = self.review(use_model=False).json()["data"]["review"]
 
         assert [item["path"] for item in answered["changed"]] == ["db/0001_charges.py"]
 
@@ -139,7 +156,7 @@ class TestLocalReview(BaseTestCase):
         self.register()
         self.edit_the_migration()
 
-        answered = self.review(use_model=False).json()["data"]
+        answered = self.review(use_model=False).json()["data"]["review"]
 
         patch = answered["changed"][0]["patch"]
         assert "db/0001_charges.py" in patch
@@ -151,7 +168,7 @@ class TestLocalReview(BaseTestCase):
             "def up():\n    return 2\n", encoding="utf-8"
         )
 
-        answered = self.review(use_model=False).json()["data"]
+        answered = self.review(use_model=False).json()["data"]["review"]
 
         assert "+    return 2" in answered["changed"][0]["patch"]
 
@@ -161,7 +178,7 @@ class TestLocalReview(BaseTestCase):
 
         answered = self.review(use_model=False, title="Edit the charges migration")
 
-        assert [item["id"] for item in answered.json()["data"]["skills"]] == [
+        assert [item["id"] for item in answered.json()["data"]["review"]["skills"]] == [
             "migrations"
         ]
 
@@ -186,7 +203,9 @@ class TestLocalReview(BaseTestCase):
         self.register()
         self.edit_the_migration()
 
-        answered = self.review(title="Edit the charges migration").json()["data"]
+        answered = self.review(title="Edit the charges migration").json()["data"][
+            "review"
+        ]
 
         assert answered["ready"] is False
         assert answered["verdicts"][0]["skill"] == "migrations"
@@ -206,7 +225,9 @@ class TestLocalReview(BaseTestCase):
         self.register()
         self.edit_the_migration()
 
-        answered = self.review(title="Edit the charges migration").json()["data"]
+        answered = self.review(title="Edit the charges migration").json()["data"][
+            "review"
+        ]
 
         assert answered["ready"] is True
         assert answered["verdicts"][0]["findings"][0]["severity"] == "advisory"
@@ -218,10 +239,41 @@ class TestLocalReview(BaseTestCase):
         self.register()
         self.edit_the_migration()
 
-        assert self.review().status_code == 400
+        answered = self.review().json()["data"]
+
+        assert answered["status"] == "failed"
+        assert "No model is configured" in answered["error"]
 
     def test_a_repository_nobody_registered_is_not_reviewed(self):
-        assert self.review().status_code == 404
+        # Refused when it is asked for, rather than written down as a review
+        # that failed: nobody wants a record of a typo.
+        assert self.start().status_code == 404
+
+    def test_a_review_is_kept_so_a_link_to_it_still_opens(self):
+        self.register()
+        self.edit_the_migration()
+
+        identifier = self.start(use_model=False).json()["data"]["id"]
+
+        found = self.client.get(f"/api/local/reviews/{identifier}")
+        assert found.status_code == 200
+        assert found.json()["data"]["status"] == "done"
+        assert found.json()["data"]["path"] == f"#/reviews/{identifier}"
+
+    def test_a_review_nobody_asked_for_is_not_invented(self):
+        assert self.client.get("/api/local/reviews/nothing").status_code == 404
+
+    def test_the_last_few_come_back_without_their_findings(self):
+        self.register()
+        self.edit_the_migration()
+        self.start(use_model=False)
+
+        listed = self.client.get("/api/local/reviews?repository=acme/billing")
+
+        assert listed.status_code == 200
+        assert len(listed.json()["data"]) == 1
+        # A list is a list. Whoever wants the findings opens the one they mean.
+        assert listed.json()["data"][0]["review"] == {}
 
 
 class TestSkillsApi(BaseTestCase):
