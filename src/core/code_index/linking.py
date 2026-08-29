@@ -1,76 +1,90 @@
-"""Working out which file an import names.
+"""Working out which file an import names, when nothing authoritative has.
 
-The parser reports an import as the text that was written: `./charge`,
-`src.core.scope`, `github.com/acme/billing/ledger`. Left at that, a repository
-draws as one island per file, because nothing joins a file to the file it uses.
-The connections between files are most of what a person is looking for.
+This is the last of three ways to answer that, and the only one that needs
+nothing installed.
 
-Resolution is by matching against the paths the repository actually has, rather
-than by implementing each language's module system. A repository is a closed set
-of files, so the question "which of these did they mean" is answerable without
-knowing how the language would answer it, and a rule per language would be one
-more thing to be wrong per language.
+The accurate way is to ask the compiler: an indexer that runs the real
+toolchain knows exactly what a name binds to, and `scip.py` reads the result.
+The rigorous way without a build is to write name binding rules per language
+and resolve by walking the graph they describe, which is what stack graphs do.
+Both are per-language work.
 
-Nothing is guessed. Where two files match equally well the import is left
-unresolved, because a line drawn to the wrong file is worse than no line: it is
-read as fact.
+This is neither. It matches the text of an import against the paths the
+repository has, and is right often enough to be worth having and wrong often
+enough that it must never be mistaken for the other two. Everything it produces
+is marked inferred, and where two files fit equally well it produces nothing:
+a line to the wrong file is worse than no line, because a drawing is read as
+fact.
+
+The matching itself knows no languages. An import is a run of names with
+punctuation between them, and a path is a run of names with slashes between
+them; whichever punctuation a language chose, the tail is the same. So both
+sides are cut into names and the longest run that ends the same way wins.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 
-# What a module might be written as, once the extension is dropped.
-INDEXES = ("index", "__init__", "mod", "lib")
+# Every character a language has used to separate one name from the next. This
+# is punctuation, not a list of languages: nothing here needs to know which of
+# them writes a namespace and which writes a path.
+SEPARATORS = re.compile(r"[/\\.:]+")
 
 
-def _without_extension(path: str) -> str:
-    head, _, tail = path.rpartition("/")
-    stem, dot, _ = tail.rpartition(".")
-    if not dot:
-        return path
-    return f"{head}/{stem}" if head else stem
+def names(text: str) -> tuple[str, ...]:
+    """The names in something, whatever was written between them."""
+    return tuple(part for part in SEPARATORS.split(text.strip()) if part)
 
 
-def _candidates(path: str) -> tuple[str, ...]:
-    """The names an import could plausibly use for this file.
+def _tails(parts: tuple[str, ...]) -> tuple[str, ...]:
+    """Every run of names that ends where this one ends, longest first.
 
-    A file is reachable as its own path, as that path without the extension,
-    and, when it is a directory's entry point, as the directory itself.
+    An import almost never names a file from the root of the repository: it
+    names it from wherever that language or that build was told the root is.
+    What survives is the end, so the end is what is matched.
     """
-    bare = _without_extension(path)
-    head, _, tail = bare.rpartition("/")
-    if tail in INDEXES and head:
-        return (path, bare, head)
-    return (path, bare)
+    return tuple("/".join(parts[start:]) for start in range(len(parts)))
+
+
+def _key(parts: Iterable[str]) -> str:
+    # Folded, because a name and a directory routinely differ only in case.
+    return "/".join(part.lower() for part in parts)
 
 
 def index_paths(paths: Iterable[str]) -> Mapping[str, tuple[str, ...]]:
-    """Every name a file could be imported as, pointing back at the file.
+    """Every ending a file could be named by, pointing back at the file.
 
-    A name several files answer to is kept with all of them, so the caller can
-    tell an ambiguous import from a resolved one.
+    An ending several files answer to is kept with all of them, so the caller
+    can tell an ambiguous import from a resolved one.
     """
-    by_name: dict[str, list[str]] = {}
+    found: dict[str, set[str]] = {}
     for path in paths:
-        for candidate in _candidates(path):
-            by_name.setdefault(candidate, []).append(path)
-    return {name: tuple(sorted(found)) for name, found in by_name.items()}
+        parts = names(path)
+        # With the extension and without it: an import usually omits it, and
+        # occasionally does not.
+        for ending in set(_tails(parts)) | set(_tails(parts[:-1])):
+            if ending:
+                found.setdefault(_key(ending.split("/")), set()).add(path)
+    return {ending: tuple(sorted(matches)) for ending, matches in found.items()}
 
 
 def index_directories(paths: Iterable[str]) -> Mapping[str, tuple[str, ...]]:
-    """What sits directly in each directory.
+    """What sits directly in each directory, by every ending that names it.
 
-    Some languages import a directory rather than a file: a Go import names a
-    package, and the package is every file in that folder. Without this those
-    imports resolve to nothing, because no single file answers to the name.
+    Some imports name a container rather than a file, and the container is
+    every file in it.
     """
-    inside: dict[str, list[str]] = {}
+    inside: dict[str, set[str]] = {}
     for path in paths:
         head, sep, _ = path.rpartition("/")
-        if sep:
-            inside.setdefault(head, []).append(path)
-    return {name: tuple(sorted(found)) for name, found in inside.items()}
+        if not sep:
+            continue
+        for ending in _tails(names(head)):
+            if ending:
+                inside.setdefault(_key(ending.split("/")), set()).add(path)
+    return {ending: tuple(sorted(matches)) for ending, matches in inside.items()}
 
 
 def _normalise(segments: list[str]) -> str | None:
@@ -101,65 +115,52 @@ def resolve(
 ) -> tuple[str, ...]:
     """The files an import names, empty where the repository does not say.
 
-    Usually one file. A language that imports a directory rather than a file
-    names all of them at once, and answering with the whole package is truer
-    than answering with whichever file happens to sort first.
+    Usually one file. An import that names a container names all of them at
+    once, and answering with the whole thing is truer than answering with
+    whichever file happens to sort first.
 
-    Relative imports are resolved against the importing file and go no further:
-    `./charge` in one directory is not `charge` in another, and treating it as
-    such would join two files that have nothing to do with each other.
+    A relative import is positional rather than a name, so it is resolved
+    against the importing file and goes no further: `./charge` in one directory
+    is not `charge` in another, and treating it as such would join two files
+    that have nothing to do with each other.
     """
-    if not source:
+    if not source.strip():
         return ()
     inside = inside or {}
 
-    if source.startswith("."):
-        target = _relative(importer, source)
+    if source.lstrip().startswith("."):
+        target = _relative(importer, source.strip().replace("\\", "/"))
         if target is None:
             return ()
-        return _at(by_name, inside, target, importer)
+        return _at(by_name, inside, names(target), importer)
 
-    # A dotted name is a path in every language that writes them that way.
-    dotted = source.replace(".", "/") if "/" not in source else source
-    for candidate in (source, dotted):
-        found = _at(by_name, inside, candidate, importer)
+    # Longest ending first: the more of the import that matched, the likelier
+    # it is the file that was meant. A single trailing name matches too much to
+    # be worth anything, so it is not tried.
+    parts = names(source)
+    for start in range(len(parts) - 1):
+        found = _at(by_name, inside, parts[start:], importer)
         if found:
             return found
-
-    return _by_tail(by_name, inside, importer, dotted)
+    return ()
 
 
 def _at(
     by_name: Mapping[str, tuple[str, ...]],
     inside: Mapping[str, tuple[str, ...]],
-    name: str,
+    parts: tuple[str, ...],
     importer: str,
 ) -> tuple[str, ...]:
-    """What one name points at: a file, or the package of that name."""
-    found = by_name.get(name)
+    """What one ending points at: a file, or everything in a container of that name."""
+    if not parts:
+        return ()
+    key = _key(parts)
+
+    found = by_name.get(key)
     if found and len(found) == 1:
         return () if found[0] == importer else found
-    package = inside.get(name)
-    if package:
-        kept = tuple(path for path in package if path != importer)
-        return kept
-    return ()
 
-
-def _by_tail(
-    by_name: Mapping[str, tuple[str, ...]],
-    inside: Mapping[str, tuple[str, ...]],
-    importer: str,
-    source: str,
-) -> tuple[str, ...]:
-    """A package-qualified import, matched on the end of the path.
-
-    `github.com/acme/billing/ledger` ends in the part that is a path inside the
-    repository. The longest end that matches wins, so a bare `fmt` never does.
-    """
-    segments = [segment for segment in source.split("/") if segment]
-    for start in range(len(segments) - 1):
-        found = _at(by_name, inside, "/".join(segments[start:]), importer)
-        if found:
-            return found
+    container = inside.get(key)
+    if container:
+        return tuple(path for path in container if path != importer)
     return ()

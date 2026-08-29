@@ -189,7 +189,18 @@ def joined(nodes, edges):
                     continue
                 seen.add((source, target))
                 kept_edges.append(
-                    CodeEdge(f"imports:{source}:{target}", source, target, "IMPORTS")
+                    CodeEdge(
+                        f"imports:{source}:{target}",
+                        source,
+                        target,
+                        "IMPORTS",
+                        # Which of these was read and which was worked out. An
+                        # import was in the file; the file it points at was
+                        # matched against the paths the repository has, and is
+                        # a good guess rather than a fact. A drawing that
+                        # cannot tell them apart presents both as fact.
+                        {"origin": "inferred"},
+                    )
                 )
     return kept_nodes, tuple(kept_edges)
 
@@ -249,6 +260,8 @@ def read_graph(
                     "source": edge.source_id,
                     "target": edge.target_id,
                     "type": edge.type.lower(),
+                    # Read out of the file, or worked out from it.
+                    "origin": edge.properties.get("origin", "extracted"),
                 }
                 for edge in edges
             ],

@@ -45,21 +45,23 @@ class TestDotted:
     def test_a_dotted_module_is_a_path(self):
         assert only("src/api/routes/code.py", "src.core.scope") == "src/core/scope.py"
 
-    def test_a_package_is_the_file_that_opens_it(self):
+    def test_a_package_names_everything_in_it(self):
+        """An import of a container names the container, and the container is
+        its files. Which file opens a package is a rule per language, and
+        guessing at it is how a resolver starts collecting languages."""
         assert only("src/api/routes/code.py", "src.core.code_index") == (
-            "src/core/code_index/__init__.py"
+            "src/core/code_index/__init__.py",
+            "src/core/code_index/emit.py",
         )
 
 
 class TestQualified:
     def test_a_package_qualified_import_matches_on_its_end(self):
-        """The host and account in front of it are not in the repository.
-
-        `internal/core` resolves to the file that opens that directory, not to
-        the other file sitting in it.
-        """
+        """The host and account in front of it are not in the repository, so
+        what matches is the end: the directory, and so its files."""
         assert only("cmd/agent/main.go", "example.com/who/what/internal/core") == (
-            "internal/core/index.ts"
+            "internal/core/client.go",
+            "internal/core/index.ts",
         )
 
     def test_the_longest_end_that_matches_wins(self):
@@ -115,13 +117,17 @@ class TestPackages:
 
 
 class TestNaming:
-    def test_a_file_is_known_by_its_path_and_without_its_extension(self):
-        names = index_paths(["src/core/scope.py"])
+    """A file answers to any run of names that ends where its path ends."""
 
-        assert names["src/core/scope.py"] == ("src/core/scope.py",)
-        assert names["src/core/scope"] == ("src/core/scope.py",)
+    def test_a_file_is_known_by_every_end_of_its_path(self):
+        found = index_paths(["src/core/scope.py"])
 
-    def test_a_directory_answers_for_the_file_that_opens_it(self):
-        names = index_paths(["src/core/code_index/__init__.py"])
+        assert found["src/core/scope"] == ("src/core/scope.py",)
+        assert found["core/scope"] == ("src/core/scope.py",)
+        assert found["scope"] == ("src/core/scope.py",)
 
-        assert names["src/core/code_index"] == ("src/core/code_index/__init__.py",)
+    def test_case_is_not_what_tells_two_files_apart(self):
+        """A namespace and the directory it maps to routinely differ in case."""
+        found = index_paths(["app/Models/User.php"])
+
+        assert found["models/user"] == ("app/Models/User.php",)

@@ -5,6 +5,7 @@ import re
 from src.core.language_pack import Error, ProcessConfig, detect_language, process
 from src.core.scope import Scope
 
+from .imports import read as read_imports
 from .interfaces import CodeIndexWriter
 from .models import CodeEdge, CodeNode
 
@@ -71,8 +72,15 @@ def emit_file_graph(
             _file_properties(path, language, digest),
         ),
     )
-    for position, item in enumerate(result.imports):
-        named = import_source(item.source)
+    # Some grammars report imports and some report none. Where none came back,
+    # they are read here, because a repository whose connections were never
+    # read draws as one island per file however good the resolver is.
+    sources = [item.source for item in result.imports] or read_imports(
+        language, content
+    )
+
+    for position, item in enumerate(sources):
+        named = import_source(item)
         if named is None:
             continue
         import_id = f"import:{path}:{position}"

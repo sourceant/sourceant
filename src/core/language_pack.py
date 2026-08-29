@@ -7,6 +7,7 @@ from tree_sitter_language_pack import (
     PackConfig,
     ProcessConfig,
     detect_language,
+    get_parser,
     process,
 )
 
@@ -17,4 +18,4 @@ if _cache_dir:
     configure(PackConfig(cache_dir=_cache_dir))
 
 
-__all__ = ["Error", "ProcessConfig", "detect_language", "process"]
+__all__ = ["Error", "ProcessConfig", "detect_language", "get_parser", "process"]
