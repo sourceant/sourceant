@@ -38,6 +38,11 @@ class Setting:
     choices: tuple[str, ...] = ()
     # Grouping for presentation, so related settings stay together.
     group: str = "General"
+    # Whether the value is a credential. One is written like any other setting
+    # and never read back: a screen shows whether it is set, and anything
+    # answering with it would put it in a log the first time somebody debugged
+    # the screen.
+    secret: bool = False
 
     def validate(self, value: Any) -> Any:
         """Return the value coerced to this setting's type, or raise ValueError."""
@@ -170,6 +175,47 @@ SETTINGS: tuple[Setting, ...] = (
         maximum=50,
         scopes=(REPOSITORY, ORGANIZATION),
         group="KnowledgeObject initialization",
+    ),
+    # Whose model, and whose bill. Reading a repository is deterministic and
+    # needs none of this; anything that proposes rather than reads does, and it
+    # stays off until somebody says which model to ask.
+    Setting(
+        key="model.name",
+        label="Model",
+        description=(
+            "The model asked when something has to be proposed rather than "
+            "read. Named the way the provider names it, for example "
+            "anthropic/claude-sonnet-4-5 or openai/gpt-4o."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Model",
+    ),
+    Setting(
+        key="model.api_key",
+        label="API key",
+        description=(
+            "The key for that provider. It is kept on this machine, sent to "
+            "that provider and nowhere else, and never read back."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Model",
+        secret=True,
+    ),
+    Setting(
+        key="model.base_url",
+        label="Endpoint",
+        description=(
+            "Where to reach the model, for a provider that is not the default "
+            "one or a model running on this machine. Left empty otherwise."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Model",
     ),
 )
 

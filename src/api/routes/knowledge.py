@@ -11,6 +11,7 @@ to have been started by ``sourceant serve``. See ``code.py``.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from src.api.routes.code import find_repository, require_local
 from src.config.db import get_engine
+from src.core.knowledge.seeding import read
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
     KnowledgeObject,
@@ -119,6 +121,42 @@ def write_knowledge(body: KnowledgeInput, store: Any = Depends(get_knowledge)):
         raise HTTPException(status_code=400, detail=str(error)) from error
     store.put(entry.scope, item)
     return success_response(payload(item))
+
+
+class InitializeInput(BaseModel):
+    repository: str
+    # Reading is the safe half and answering is the useful one, so a caller can
+    # ask what a repository states without anything being recorded.
+    dry_run: bool = False
+
+
+@router.post("/initialize", dependencies=[Depends(require_local)])
+def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
+    """Record what a repository already states about itself.
+
+    Most repositories have written some of this down: a decision record, a
+    conventions section, a page of rules for whatever works on them. It is
+    knowledge already, just nowhere a tool can reach.
+
+    Nothing here is judged or summarised, and everything points back at the
+    heading it came from so a person can check it in one step. It all arrives
+    proposed, because nobody has agreed to any of it yet.
+    """
+    entry = find_repository(body.repository)
+    seeds = read(Path(entry.path))
+
+    if not body.dry_run:
+        for seed in seeds:
+            store.put(entry.scope, seed.knowledge)
+
+    return success_response(
+        {
+            "found": [
+                {**payload(seed.knowledge), "source": seed.path} for seed in seeds
+            ],
+            "recorded": 0 if body.dry_run else len(seeds),
+        }
+    )
 
 
 @router.delete("", dependencies=[Depends(require_local)])

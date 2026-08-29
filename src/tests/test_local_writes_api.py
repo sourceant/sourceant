@@ -145,6 +145,60 @@ class TestLocalWrites(BaseTestCase):
 
         assert read.json()["data"]["total"] == 0
 
+    def test_a_repository_that_states_things_can_have_them_recorded(self):
+        """It is knowledge already; it was just nowhere a tool could reach."""
+        (self.source / "docs" / "adr").mkdir(parents=True)
+        (self.source / "docs" / "adr" / "0001-retry.md").write_text(
+            "# Retry charges three times\n\n"
+            "## Context\n\nThe provider rate limits after four.\n\n"
+            "## Decision\n\nA failed charge is retried three times.\n",
+            encoding="utf-8",
+        )
+        self.register()
+
+        started = self.client.post(
+            "/api/knowledge/initialize", json={"repository": "acme/billing"}
+        )
+        read = self.client.get("/api/knowledge", params={"repository": "acme/billing"})
+
+        assert started.status_code == 200
+        assert started.json()["data"]["recorded"] == 1
+        item = read.json()["data"]["items"][0]
+        assert item["summary"] == "A failed charge is retried three times."
+        assert item["properties"]["source"] == "docs/adr/0001-retry.md"
+        assert item["properties"]["why"] == "The provider rate limits after four."
+
+    def test_nobody_has_agreed_to_what_was_only_read_off_a_file(self):
+        (self.source / "CONTRIBUTING.md").write_text(
+            "## Conventions\n\nEvery route answers in the standard envelope.\n",
+            encoding="utf-8",
+        )
+        self.register()
+
+        self.client.post(
+            "/api/knowledge/initialize", json={"repository": "acme/billing"}
+        )
+        read = self.client.get("/api/knowledge", params={"repository": "acme/billing"})
+
+        assert [item["status"] for item in read.json()["data"]["items"]] == ["proposed"]
+
+    def test_asking_what_a_repository_states_records_nothing(self):
+        (self.source / "CONTRIBUTING.md").write_text(
+            "## Conventions\n\nEvery route answers in the standard envelope.\n",
+            encoding="utf-8",
+        )
+        self.register()
+
+        asked = self.client.post(
+            "/api/knowledge/initialize",
+            json={"repository": "acme/billing", "dry_run": True},
+        )
+        read = self.client.get("/api/knowledge", params={"repository": "acme/billing"})
+
+        assert len(asked.json()["data"]["found"]) == 1
+        assert asked.json()["data"]["recorded"] == 0
+        assert read.json()["data"]["total"] == 0
+
     def test_knowledge_about_a_repository_nobody_registered_is_refused(self):
         response = self.client.get("/api/knowledge", params={"repository": "acme/nope"})
 
