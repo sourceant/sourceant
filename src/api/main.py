@@ -69,6 +69,7 @@ app = FastAPI(
 
 from src.api.routes import code as code_endpoints
 from src.api.routes import knowledge as knowledge_endpoints
+from src.api.routes import local_settings as local_settings_endpoints
 from src.api.routes import repos as repo_endpoints
 from src.api.routes import reviews as review_endpoints
 from src.api.routes import settings as settings_endpoints
@@ -86,6 +87,9 @@ app.include_router(topology_endpoints.router, prefix="/api/topology", tags=["top
 app.include_router(code_endpoints.router, prefix="/api/code", tags=["code"])
 app.include_router(
     knowledge_endpoints.router, prefix="/api/knowledge", tags=["knowledge"]
+)
+app.include_router(
+    local_settings_endpoints.router, prefix="/api/local/settings", tags=["settings"]
 )
 if mcp_http_app is not None:
     app.mount("/mcp", mcp_http_app)
