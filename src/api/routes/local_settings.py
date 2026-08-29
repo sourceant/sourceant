@@ -17,9 +17,11 @@ from pydantic import BaseModel
 
 from src.api.routes.code import require_local
 from src.api.routes.settings import _described
+from src.config.settings import DEFAULT_TOKEN_LIMIT
 from src.core.responses import success_response
 from src.core.settings.definitions import USER
-from src.core.settings.resolver import clear_value, resolve_all, set_value
+from src.core.settings.resolver import clear_value, resolve, resolve_all, set_value
+from src.llms.litellm_provider import LiteLLMProvider
 
 router = APIRouter()
 
@@ -27,6 +29,27 @@ router = APIRouter()
 # be something, and anything derived from the machine would move the settings
 # when a laptop is renamed.
 WHOEVER_IS_HERE = "local"
+
+
+def model_for_this_machine():
+    """The model this machine was told to ask, or None if it was told none.
+
+    Nothing that proposes or judges runs until somebody has named one, because
+    the bill for asking is theirs.
+    """
+
+    def value(key: str) -> str:
+        return str(resolve(key, user=WHOEVER_IS_HERE).value or "")
+
+    name = value("model.name")
+    if not name:
+        return None
+    return LiteLLMProvider(
+        model=name,
+        token_limit=DEFAULT_TOKEN_LIMIT,
+        api_key=value("model.api_key"),
+        api_base=value("model.base_url"),
+    )
 
 
 @router.get("", dependencies=[Depends(require_local)])

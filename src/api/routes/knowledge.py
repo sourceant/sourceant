@@ -18,8 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.routes.code import find_repository, require_local
-from src.api.routes.local_settings import WHOEVER_IS_HERE
-from src.config.settings import DEFAULT_TOKEN_LIMIT
+from src.api.routes.local_settings import model_for_this_machine
 from src.config.db import get_engine
 from src.core.knowledge.proposing import propose
 from src.core.knowledge.seeding import read
@@ -33,7 +32,6 @@ from src.core.knowledge import (
 )
 from src.core.responses import success_response
 from src.core.services import service_registry
-from src.llms.litellm_provider import LiteLLMProvider
 
 router = APIRouter()
 
@@ -137,24 +135,6 @@ class InitializeInput(BaseModel):
     use_model: bool = False
 
 
-def _model_for_this_machine():
-    """The model this machine was told to ask, or None if it was told none."""
-    from src.core.settings.resolver import resolve
-
-    def value(key: str) -> str:
-        return str(resolve(key, user=WHOEVER_IS_HERE).value or "")
-
-    name = value("model.name")
-    if not name:
-        return None
-    return LiteLLMProvider(
-        model=name,
-        token_limit=DEFAULT_TOKEN_LIMIT,
-        api_key=value("model.api_key"),
-        api_base=value("model.base_url"),
-    )
-
-
 def _evidence(root: Path) -> tuple[list[str], str]:
     """What a repository looks like, and what it says, without sending all of it."""
     layout = []
@@ -199,7 +179,7 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
     items = [seed.knowledge for seed in seeds]
 
     if body.use_model:
-        provider = _model_for_this_machine()
+        provider = model_for_this_machine()
         if provider is None:
             raise HTTPException(
                 status_code=400,
