@@ -42,31 +42,47 @@ Catch context-blind changes early. Keep the useful knowledge they uncover. Stay 
 
 ## Start here
 
+SourceAnt is two binaries and a core. Take `sourceant` and `sourceant-agent` for your
+platform from the [CLI releases](https://github.com/sourceant/cli/releases) and the
+[agent releases](https://github.com/sourceant/agent/releases), and put them on your
+`PATH`.
+
+```bash
+sourceant install     # pulls the core and writes down which one to start
+sourceant-agent       # supervises it, keeps the index current, serves the view
+sourceant ui          # opens the view in a browser
+```
+
+`install` needs Docker. The index goes in your user data directory, so a second
+repository joins the same store under its own scope rather than leaving an artifact
+in the folder.
+
+Add a repository from the Repositories page. SourceAnt parses every file the
+repository does not ignore, then reads it again on the schedule you set in Settings,
+reparsing only what changed.
+
+Point an MCP client at the agent and it reads your code, knowledge, requirements and
+system context:
+
+```
+http://127.0.0.1:8930/mcp
+```
+
+Settings has the block to paste into your client. See [Local index](docs/local-index.md)
+for the whole command set, and [Knowledge and context](docs/context.md) for what the
+server exposes.
+
+### From source
+
 ```bash
 git clone https://github.com/sourceant/sourceant.git
 cd sourceant
 pip install -r requirements.txt
 
-./sourceant db upgrade head          # keeps its data in your user directory
+./sourceant db upgrade head
 ./sourceant repo add ~/code/your-project
-./sourceant index ~/code/your-project
-```
-
-That parses every file the repository does not ignore. Index a second repository and it goes into the same store, under its own scope, rather than leaving an artifact in the folder.
-
-Running it again reparses only what changed:
-
-```bash
 ./sourceant index ~/code/your-project --update
 ```
-
-Point an MCP client at the server and it reads your code, knowledge, requirements and system context:
-
-```bash
-python -m src.mcp_server
-```
-
-See [Local index](docs/local-index.md) for the whole command set, and [Knowledge and context](docs/context.md) for what the server exposes.
 
 ## How the graphs behave
 
