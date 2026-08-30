@@ -42,14 +42,28 @@ Catch context-blind changes early. Keep the useful knowledge they uncover. Stay 
 
 ## Start here
 
-SourceAnt is two binaries and a core. Take `sourceant` and `sourceant-agent` for your
-platform from the [CLI releases](https://github.com/sourceant/cli/releases) and the
-[agent releases](https://github.com/sourceant/agent/releases), and put them on your
-`PATH`.
+SourceAnt is two binaries and a core. Take the binaries for your platform:
+
+```bash
+VERSION=1.0.0-beta.2
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+
+for BIN in sourceant sourceant-agent; do
+  REPO=$([ "$BIN" = "sourceant" ] && echo cli || echo agent)
+  curl -fsSL "https://github.com/sourceant/$REPO/releases/download/v$VERSION/$BIN-$VERSION-$OS-$ARCH.tar.gz" | tar xz
+  sudo install -m 755 "$BIN-$VERSION-$OS-$ARCH" "/usr/local/bin/$BIN"
+  rm "$BIN-$VERSION-$OS-$ARCH"
+done
+```
+
+Newer versions are on the [CLI releases](https://github.com/sourceant/cli/releases) and
+[agent releases](https://github.com/sourceant/agent/releases) pages, each with a
+`checksums.txt`. Then:
 
 ```bash
 sourceant install     # pulls the core and writes down which one to start
-sourceant-agent       # supervises it, keeps the index current, serves the view
+sourceant-agent &     # supervises it, keeps the index current, serves the view
 sourceant ui          # opens the view in a browser
 ```
 
