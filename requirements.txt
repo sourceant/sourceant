@@ -10,7 +10,7 @@ Mako==1.4.1
 mcp==1.28.1
 psycopg2==2.9.12
 pymysql==1.1.2
-PyJWT==2.10.1
+PyJWT==2.13.0
 python-dateutil==2.8.2
 python-dotenv==1.2.3
 rapidfuzz==3.14.5
