@@ -18,6 +18,7 @@ from src.core.settings.definitions import (
     for_scope,
     get,
 )
+from src.config.settings import STATELESS_MODE
 from src.models.config import Config
 from src.utils.logger import logger
 
@@ -30,6 +31,10 @@ def organization_of(repository: str) -> Optional[str]:
 
 def _stored(setting: Setting, scope: str, scope_id: str) -> Any:
     if scope not in setting.scopes:
+        return None
+    # Nothing is stored without a database, and attempting the read logs an
+    # error for a condition that is normal in a stateless deployment.
+    if STATELESS_MODE:
         return None
     try:
         raw = Config.get_value(scope, scope_id, setting.key)
