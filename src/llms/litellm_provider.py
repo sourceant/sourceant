@@ -20,9 +20,23 @@ class LiteLLMProvider(LLMInterface):
         self,
         model: str,
         token_limit: int,
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
     ):
         self.model = model
         self._token_limit = token_limit
+        # Whose key and whose endpoint. Absent, litellm reads the environment,
+        # which is how a deployment has always configured this.
+        self._api_key = api_key or None
+        self._api_base = api_base or None
+
+    def _credentials(self) -> dict:
+        given = {}
+        if self._api_key:
+            given["api_key"] = self._api_key
+        if self._api_base:
+            given["api_base"] = self._api_base
+        return given
 
     @property
     def token_limit(self) -> int:
@@ -111,6 +125,7 @@ class LiteLLMProvider(LLMInterface):
         try:
             logger.info(f"Generating code review from model: {self.model}...")
             response = litellm.completion(
+                **self._credentials(),
                 model=self.model,
                 messages=[
                     {"role": "system", "content": Prompts.REVIEW_SYSTEM_PROMPT},
@@ -151,12 +166,14 @@ class LiteLLMProvider(LLMInterface):
 
         if as_text:
             response = litellm.completion(
+                **self._credentials(),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
             return response.choices[0].message.content
 
         response = litellm.completion(
+            **self._credentials(),
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             response_format=CodeReviewSummary,
@@ -168,6 +185,7 @@ class LiteLLMProvider(LLMInterface):
     def generate_text(self, prompt: str) -> str:
         try:
             response = litellm.completion(
+                **self._credentials(),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -183,6 +201,7 @@ class LiteLLMProvider(LLMInterface):
         try:
             logger.info("Comparing summaries for semantic differences...")
             response = litellm.completion(
+                **self._credentials(),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )

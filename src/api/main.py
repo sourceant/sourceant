@@ -67,9 +67,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from src.api.routes import code as code_endpoints
+from src.api.routes import knowledge as knowledge_endpoints
+from src.api.routes import local_reviews as local_review_endpoints
+from src.api.routes import local_settings as local_settings_endpoints
 from src.api.routes import repos as repo_endpoints
 from src.api.routes import reviews as review_endpoints
 from src.api.routes import settings as settings_endpoints
+from src.api.routes import skills as skill_endpoints
 from src.api.routes import topology as topology_endpoints
 from src.api.routes import triage as triage_endpoints
 
@@ -81,5 +86,16 @@ app.include_router(review_endpoints.router, prefix="/api/reviews", tags=["review
 app.include_router(triage_endpoints.router, prefix="/api/triage", tags=["triage"])
 app.include_router(settings_endpoints.router, prefix="/api/settings", tags=["settings"])
 app.include_router(topology_endpoints.router, prefix="/api/topology", tags=["topology"])
+app.include_router(code_endpoints.router, prefix="/api/code", tags=["code"])
+app.include_router(
+    knowledge_endpoints.router, prefix="/api/knowledge", tags=["knowledge"]
+)
+app.include_router(
+    local_settings_endpoints.router, prefix="/api/local/settings", tags=["settings"]
+)
+app.include_router(skill_endpoints.router, prefix="/api/skills", tags=["skills"])
+app.include_router(
+    local_review_endpoints.router, prefix="/api/local/reviews", tags=["reviews"]
+)
 if mcp_http_app is not None:
     app.mount("/mcp", mcp_http_app)

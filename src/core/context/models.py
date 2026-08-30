@@ -6,7 +6,7 @@ from src.core.code_index import CodeTraversal, CodeTraversalResult
 from src.core.contracts import ContractQuery, ContractResult
 from src.core.knowledge import KnowledgeSubgraph, KnowledgeTraversal
 from src.core.requirements import RequirementQuery, RequirementResult
-from src.core.review_state import FindingQuery, FindingResult
+from src.core.review.findings import FindingQuery, FindingResult
 from src.core.scope import Scope
 from src.core.topology import TopologySubgraph, TopologyTraversal
 

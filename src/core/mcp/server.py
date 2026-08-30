@@ -4,8 +4,6 @@ from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
-from mcp.server.auth.provider import TokenVerifier
-from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
@@ -27,8 +25,11 @@ from src.core.requirements import (
     RequirementQuery,
     RequirementsRepository,
 )
-from src.core.review_state import FindingQuery
+from src.core.review.findings import FindingQuery
+from src.core.mcp.surface import Surface
 from src.core.scope import Scope
+from src.core.services import ServiceRegistry, service_registry
+from src.utils.logger import logger
 from src.core.topology import (
     TopologyEntity,
     TopologyEvidence,
@@ -45,9 +46,8 @@ def create_mcp_server(
     knowledge: KnowledgeRepository | None = None,
     topology: TopologyRepository | None = None,
     requirements: RequirementsRepository | None = None,
-    scope_resolver: Callable[[Scope], Scope] | None = None,
-    auth: AuthSettings | None = None,
-    token_verifier: TokenVerifier | None = None,
+    surface: "Surface | None" = None,
+    services: ServiceRegistry = service_registry,
 ) -> FastMCP:
     server = FastMCP(
         name="SourceAnt",
@@ -59,13 +59,16 @@ def create_mcp_server(
             "context pack. Write what you learn back so it outlives this "
             "session."
         ),
-        auth=auth,
-        token_verifier=token_verifier,
+        auth=surface.auth if surface else None,
+        token_verifier=surface.token_verifier if surface else None,
         stateless_http=True,
         json_response=True,
         streamable_http_path="/",
+        transport_security=surface.transport_security if surface else None,
     )
-    resolve_scope = scope_resolver or (lambda scope: scope)
+    resolve_scope = (surface.scope_resolver if surface else None) or (
+        lambda scope: scope
+    )
 
     @server.tool(
         name="search_code",
@@ -513,6 +516,7 @@ def create_mcp_server(
             "truncated": report.truncated,
         }
 
+    _add_registered_tools(server, surface, services)
     return server
 
 
@@ -559,3 +563,16 @@ def _build_evidence(
         )
         for item in evidence or ()
     )
+
+
+def _add_registered_tools(
+    server: FastMCP, surface: Surface | None, services: ServiceRegistry
+) -> None:
+    """Let anything that registered a ToolProvider add its own tools."""
+    from src.core.mcp.interfaces import ToolProvider
+
+    for provider in services.contributions(ToolProvider):
+        try:
+            provider.add_tools(server, surface)
+        except Exception as error:  # noqa: BLE001 - one bad provider is not all of them
+            logger.warning(f"MCP tools from {provider.name} were not added: {error}")

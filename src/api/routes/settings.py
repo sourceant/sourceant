@@ -42,9 +42,17 @@ def _authorize_user_scope(scope: Scope, scope_id: str, user: dict) -> None:
 
 def _described(resolved: Resolved) -> dict:
     setting = resolved.setting
+    secret = bool(setting and setting.secret)
     return {
         "key": resolved.key,
-        "value": resolved.value,
+        # A credential is written like any other setting and never read back.
+        # A screen needs to know whether one is set, which is a different
+        # question from what it is, and answering the second would put it in a
+        # log the first time somebody debugged the screen.
+        "value": None if secret else resolved.value,
+        "secret": secret,
+        "listed": bool(setting and setting.listed),
+        "is_set": bool(resolved.value) if secret else None,
         "source": resolved.source,
         "source_id": resolved.source_id,
         "label": setting.label if setting else resolved.key,

@@ -25,9 +25,9 @@ from src.core.plugins import (
     PluginRegistry,
     PluginType,
 )
-from src.core.review_state import (
+from src.core.review import (
     FindingQuery,
-    InMemoryReviewStateRepository,
+    InMemoryFindingStore,
     ReviewFinding,
 )
 from src.core.scope import Scope
@@ -272,7 +272,7 @@ def test_knowledge_traversal_rejects_unbounded_inputs(field, value, message):
 
 
 def test_review_state_uses_scope_and_extensible_state():
-    reviews = InMemoryReviewStateRepository()
+    reviews = InMemoryFindingStore()
     reviews.put_finding(PROJECT, ReviewFinding("one", "needs-review", "One"))
     reviews.put_finding(PROJECT, ReviewFinding("two", "resolved", "Two"))
 

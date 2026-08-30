@@ -6,7 +6,7 @@ SourceAnt Cloud adds surfaces of its own on top, including organization-wide kno
 
 ### Authentication
 
-Every route under `/api/` except the GitHub webhooks expects a bearer token:
+Every route under `/api/` expects a bearer token, except the GitHub webhooks and the local code index:
 
 ```
 Authorization: Bearer <token>
@@ -20,6 +20,8 @@ The token is a JWT signed with `JWT_SECRET` using HS256. It must carry `sub` and
 | `scope.workspace_id` | The topology routes, which keep one graph away from another by it. A token without it is refused with 403. The core does not interpret the value or model anything behind it; in the cloud it is your workspace there, and on your own instance it is any stable string you choose |
 
 The webhook endpoints authenticate differently, by HMAC signature. See [GitHub App Setup](github-app.md).
+
+The `/api/code/` routes take no token, because a laptop has nobody to issue one. What limits them instead is the registry: they read a repository only when `sourceant repo add` has registered it on that machine, and they take no scope from the caller. On a server where nobody registered a repository they return 404 to everything. See [Local index](local-index.md).
 
 ### Response shape
 
@@ -101,6 +103,16 @@ Everything else is configured through the environment. See [Configuration](confi
 ### Topology
 
 `PUT /api/topology/entities`, `PUT /api/topology/relationships`, `POST /api/topology/search`, `POST /api/topology/traverse`, `POST /api/topology/infer`, and the two `DELETE` routes. See [Systems](systems.md).
+
+### Code index
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/code/repositories` | Every repository registered on this machine |
+| `GET /api/code/graph` | One whole scope, as `nodes` and `links`, for drawing |
+| `GET /api/code/nodes` | A page of nodes, by label or by file |
+
+No token, and no scope from the caller. See [Local index](local-index.md).
 
 ### Webhooks
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from src.config.settings import DEFAULT_TOKEN_LIMIT
 from src.models.config import ConfigType
 
 # Where a setting can be given a value. Order matters: the narrowest scope that
@@ -38,6 +39,15 @@ class Setting:
     choices: tuple[str, ...] = ()
     # Grouping for presentation, so related settings stay together.
     group: str = "General"
+    # Whether the value is a credential. One is written like any other setting
+    # and never read back: a screen shows whether it is set, and anything
+    # answering with it would put it in a log the first time somebody debugged
+    # the screen.
+    secret: bool = False
+    # Whether the value is several of something rather than one thing. Stored
+    # one to a line; drawn as a list somebody adds to and removes from, because
+    # a box of lines is a text editor pretending to be a list.
+    listed: bool = False
 
     def validate(self, value: Any) -> Any:
         """Return the value coerced to this setting's type, or raise ValueError."""
@@ -83,6 +93,23 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.reading_budget",
+        label="Read at once",
+        description=(
+            "How much of a change is read in one go, in tokens. A larger "
+            "change is read in parts of this size and the parts are put "
+            "together. This is not how much the model can accept: it is where "
+            "a review stops finding things, which is far below that."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=15_000,
+        unit="tokens",
+        minimum=2_000,
+        maximum=200_000,
+        group="Review",
+    ),
+    Setting(
         key="review.structural_context_file_limit",
         label="Structural context files",
         description=(
@@ -95,6 +122,21 @@ SETTINGS: tuple[Setting, ...] = (
         unit="files",
         minimum=1,
         maximum=100,
+        group="Review",
+    ),
+    Setting(
+        key="review.remember_findings",
+        label="Remember what a review said",
+        description=(
+            "Keep each thing a review says, so the next one knows it has said "
+            "it before and anything dismissed stays dismissed. A finding is "
+            "recognised by what it says and what it proposes, not by where it "
+            "is, but a reviewer that rewords itself will still raise the odd "
+            "duplicate. Off until you want that trade."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=False,
         group="Review",
     ),
     Setting(
@@ -170,6 +212,133 @@ SETTINGS: tuple[Setting, ...] = (
         maximum=50,
         scopes=(REPOSITORY, ORGANIZATION),
         group="KnowledgeObject initialization",
+    ),
+    # Whose model, and whose bill. Reading a repository is deterministic and
+    # needs none of this; anything that proposes rather than reads does, and it
+    # stays off until somebody says which model to ask.
+    Setting(
+        key="model.name",
+        label="Model",
+        description=(
+            "The model asked when something has to be proposed rather than "
+            "read. Named the way the provider names it, for example "
+            "anthropic/claude-sonnet-4-5 or openai/gpt-4o."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Model",
+    ),
+    Setting(
+        key="model.api_key",
+        label="API key",
+        description=(
+            "The key for that provider. It is kept on this machine, sent to "
+            "that provider and nowhere else, and never read back."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Model",
+        secret=True,
+    ),
+    Setting(
+        key="model.base_url",
+        label="Endpoint",
+        description=(
+            "Where to reach the model, for a provider that is not the default "
+            "one or a model running on this machine. Left empty otherwise."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Model",
+    ),
+    Setting(
+        key="model.token_limit",
+        label="How much it can read at once",
+        description=(
+            "How many tokens the chosen model accepts. A larger change is read "
+            "a file at a time instead of whole."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=DEFAULT_TOKEN_LIMIT,
+        group="Model",
+    ),
+    # A repository read once is a repository that answers about last month.
+    # Reading again is cheap: unchanged files are recognised and skipped.
+    Setting(
+        key="index.every",
+        label="Read repositories again every",
+        description=(
+            "How often the folders on this machine are read again, in "
+            "minutes. Only what changed is read, so this costs close to "
+            "nothing. Zero turns it off and leaves reading to the button."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=60,
+        minimum=0,
+        maximum=10_080,
+        unit="minutes",
+        group="Schedule",
+    ),
+    # Asking a model costs money every time, so this is off until somebody
+    # decides the answers are worth it.
+    Setting(
+        key="knowledge.every",
+        label="Look for new knowledge every",
+        description=(
+            "How often a repository is read again for what it states about "
+            "itself, in minutes, and asked of a model where one is "
+            "configured. Zero, the default, means only when you ask."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=0,
+        minimum=0,
+        maximum=10_080,
+        unit="minutes",
+        group="Schedule",
+    ),
+    # Nothing arrives agreed. A person looking at every proposal is the point
+    # where most of this stops being used, so a team that trusts the reading
+    # can say how sure is sure enough to skip that.
+    Setting(
+        key="knowledge.accept_above",
+        label="Accept on its own above",
+        description=(
+            "How sure a proposal has to be before it is accepted without "
+            "anybody looking, from 0 to 1. Zero, the default, means every "
+            "proposal waits for a person. What a repository plainly states "
+            "about itself is quoted rather than inferred and counts as one."
+        ),
+        type=ConfigType.FLOAT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=0.0,
+        minimum=0.0,
+        maximum=1.0,
+        group="Knowledge",
+    ),
+    # Skills are read from the folders each coding agent keeps them in, and
+    # from this product's own. People keep them elsewhere too: in a repository
+    # of their own, in a plugin, in a package of a monorepo. Nothing can guess
+    # those, so they are named.
+    Setting(
+        key="skills.paths",
+        label="Extra places to look",
+        description=(
+            "Directories to read skills from, one to a line, on top of the "
+            "folders your coding agents already keep them in. A path to a "
+            "folder of skills, where each skill is a directory holding a "
+            "SKILL.md."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default="",
+        group="Skills",
+        listed=True,
     ),
 )
 

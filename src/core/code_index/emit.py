@@ -1,12 +1,47 @@
 from __future__ import annotations
 
+import re
+
 from src.core.language_pack import Error, ProcessConfig, detect_language, process
 from src.core.scope import Scope
 
+from .imports import read as read_imports
 from .interfaces import CodeIndexWriter
 from .models import CodeEdge, CodeNode
 
 DEFAULT_FILE_CHARACTER_LIMIT = 500_000
+
+QUOTED = re.compile(r"""["'`]([^"'`\n]+)["'`]|<([^>\n]+)>""")
+LEADING = re.compile(r"^(?:from|import|use|require|include|#include)\s+", re.IGNORECASE)
+
+
+def import_source(raw: object) -> str | None:
+    """The module an import names, out of the statement it was written as.
+
+    The parser answers with the whole statement rather than the module in it:
+    `from app.charge import charge`, `"example.com/who/thing"`, or a grouped
+    block spanning lines. Stored like that an import matches nothing, so a
+    repository draws as one island per file.
+
+    A quoted or bracketed path is the module wherever it appears, which covers
+    every language that writes one. Otherwise it is the first word after the
+    keyword. A block is not one module at all and is left out, rather than kept
+    as a node standing for nothing.
+    """
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip().rstrip(";").strip()
+    if not text or "\n" in text:
+        return None
+
+    quoted = QUOTED.search(text)
+    if quoted:
+        return (quoted.group(1) or quoted.group(2)).strip() or None
+
+    stripped = LEADING.sub("", text, count=1)
+    words = stripped.split()
+    word = words[0] if words else ""
+    return word.rstrip(",").strip("\"'`<>").strip() or None
 
 
 def emit_file_graph(
@@ -37,14 +72,24 @@ def emit_file_graph(
             _file_properties(path, language, digest),
         ),
     )
-    for position, item in enumerate(result.imports):
+    # Some grammars report imports and some report none. Where none came back,
+    # they are read here, because a repository whose connections were never
+    # read draws as one island per file however good the resolver is.
+    sources = [item.source for item in result.imports] or read_imports(
+        language, content
+    )
+
+    for position, item in enumerate(sources):
+        named = import_source(item)
+        if named is None:
+            continue
         import_id = f"import:{path}:{position}"
         writer.put_node(
             scope,
             CodeNode(
                 import_id,
                 frozenset({"Import"}),
-                {"file_path": path, "name": item.source},
+                {"file_path": path, "name": named},
             ),
         )
         writer.put_edge(

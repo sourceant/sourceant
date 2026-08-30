@@ -20,6 +20,22 @@ from src.models.pull_request import PullRequest
 from src.core.responses import success_response
 
 
+# Settings are looked up by key, so a fixture has to answer by key. Returning
+# one number for every setting made the reading budget whatever the file limit
+# happened to be, and a budget of twenty tokens reads any change in parts.
+def _setting(key, **_):
+    if key == "review.reading_budget":
+        return 1_000_000
+    return 20
+
+
+def _one_file(key, **_):
+    """A file limit of one, with the budget left alone."""
+    if key == "review.reading_budget":
+        return 1_000_000
+    return 1
+
+
 @pytest.fixture
 def plugin():
     return CodeReviewerPlugin()
@@ -46,7 +62,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
     def test_synchronize_uses_incremental_diff(
         self,
         mock_llm,
@@ -61,8 +77,8 @@ class TestIncrementalReview:
 
         mock_github = MagicMock()
         mock_github_cls.return_value = mock_github
-        mock_github.get_diff_between_shas.return_value = "incremental diff"
-        mock_github.get_diff.return_value = "full diff"
+        mock_github.get_diff_between_shas.return_value = _DIFF
+        mock_github.get_diff.return_value = _DIFF
 
         mock_llm_instance = MagicMock()
         mock_llm.return_value = mock_llm_instance
@@ -99,7 +115,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
     def test_synchronize_falls_back_on_force_push(
         self,
         mock_llm,
@@ -115,7 +131,7 @@ class TestIncrementalReview:
         mock_github = MagicMock()
         mock_github_cls.return_value = mock_github
         mock_github.get_diff_between_shas.side_effect = ValueError("Not found")
-        mock_github.get_diff.return_value = "full diff content"
+        mock_github.get_diff.return_value = _DIFF
 
         mock_llm_instance = MagicMock()
         mock_llm.return_value = mock_llm_instance
@@ -146,7 +162,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
     def test_first_review_uses_full_diff(
         self,
         mock_llm,
@@ -161,7 +177,7 @@ class TestIncrementalReview:
 
         mock_github = MagicMock()
         mock_github_cls.return_value = mock_github
-        mock_github.get_diff.return_value = "full diff"
+        mock_github.get_diff.return_value = _DIFF
 
         mock_llm_instance = MagicMock()
         mock_llm.return_value = mock_llm_instance
@@ -193,7 +209,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
     def test_saves_review_record_on_success(
         self,
         mock_llm,
@@ -208,7 +224,7 @@ class TestIncrementalReview:
 
         mock_github = MagicMock()
         mock_github_cls.return_value = mock_github
-        mock_github.get_diff.return_value = "full diff"
+        mock_github.get_diff.return_value = _DIFF
 
         mock_llm_instance = MagicMock()
         mock_llm.return_value = mock_llm_instance
@@ -430,7 +446,7 @@ class TestPreviewResponseIsSerializable:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
     def test_preview_run_renders_as_json(
         self,
         mock_llm,
@@ -490,9 +506,11 @@ class TestPreviewResponseIsSerializable:
 
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-    @patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=1)
+    @patch(
+        "src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_one_file
+    )
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
     def test_preview_drops_a_missing_import_claim_disproved_by_post_change_file(
         self,
         mock_llm,
@@ -568,7 +586,9 @@ class TestPreviewResponseIsSerializable:
         ]
         assert '"file_path":"test.py"' in code_context
         assert '"name":"load"' in code_context
-        mock_value_of.assert_called_once_with(
+        # That this setting is read, not that it is the only one: a review also
+        # asks how much it is worth reading at once.
+        mock_value_of.assert_any_call(
             "review.structural_context_file_limit",
             repository="test_owner/test_repo",
         )
@@ -578,9 +598,9 @@ class TestPreviewResponseIsSerializable:
 
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-    @patch("src.plugins.builtin.code_reviewer.plugin.value_of", return_value=20)
+    @patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.llm")
+    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
     def test_review_receives_referenced_definition_source_from_durable_graph(
         self,
         mock_llm,

@@ -183,6 +183,27 @@ def _read(path: Path) -> str | None:
     try:
         if path.stat().st_size > DEFAULT_FILE_CHARACTER_LIMIT * 4:
             return None
-        return path.read_text(encoding="utf-8")
+        content = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError, ValueError):
         return None
+    return None if is_generated(path.name, content) else content
+
+
+# A minified file's names are single letters, so parsing one fills the graph
+# with hundreds of symbols called things like `q` and `eo`. They crowd out the
+# repository around them and no reader ever wanted them.
+MINIFIED_LINE = 500
+
+
+def is_generated(name: str, content: str) -> bool:
+    """Whether a file was written by a build rather than by a person.
+
+    Read from the file rather than from where it sits, because there is no
+    directory a build always writes to: what is checked in as `dist` in one
+    repository is `assets` or `public` in the next, and a rule naming those
+    would skip somebody's hand-written code.
+    """
+    if ".min." in name or name.endswith(".map"):
+        return True
+    lines = content.split("\n", 40)[:40]
+    return any(len(line) > MINIFIED_LINE for line in lines)

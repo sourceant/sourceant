@@ -217,6 +217,17 @@ def requirements_import_command(repository, labels, dry_run):
 @click.option("--port", default=8000, show_default=True, type=int)
 def serve_command(host, port):
     """Run the HTTP server, including the MCP endpoint."""
+    import os
     import uvicorn
 
+    from src.config import settings
+
+    # Being the local command is what opens the routes that change what this
+    # machine indexes, and mounts the MCP endpoint. Set on the module because
+    # settings was imported before this ran and uvicorn does not re-execute an
+    # imported module, and in the environment because the module mutation is
+    # lost the moment uvicorn runs the app anywhere but this process.
+    # Deployments run uvicorn directly and leave it off.
+    settings.LOCAL_MODE = True
+    os.environ["SOURCEANT_LOCAL"] = "true"
     uvicorn.run("src.api.main:app", host=host, port=port)

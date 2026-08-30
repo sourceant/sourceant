@@ -2,7 +2,7 @@
 
 from sqlmodel import Session, SQLModel, create_engine
 
-from src.mcp_server.auth import connected_repository_entitlement
+from src.core.mcp.auth import connected_repository_entitlement
 from src.models.connected_repository import ConnectedRepository
 from src.models.repository import Repository
 from src.models.workspace import Workspace

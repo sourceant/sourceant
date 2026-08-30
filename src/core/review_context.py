@@ -103,12 +103,23 @@ class DefaultReviewCodeContextPreparer:
         repository: str,
         revision: str,
         paths: list[str],
+        scope: Scope | None = None,
     ) -> ReviewCodeContext | None:
+        """The bounded graph around what changed.
+
+        ``scope`` is how the index being read was written: a pull request is
+        indexed per commit, a working checkout without one. Asking a
+        revisionless index for a revision matches nothing.
+        """
         unique_paths = tuple(dict.fromkeys(path for path in paths if path))
-        if not repository or not revision or not unique_paths:
+        if not repository or not unique_paths:
+            return None
+        if scope is None and not revision:
             return None
         selected_paths = unique_paths[: self._file_limit]
-        scope = Scope.from_mapping({"repository": repository, "revision": revision})
+        scope = scope or Scope.from_mapping(
+            {"repository": repository, "revision": revision}
+        )
         seeds = []
         search_truncated = len(unique_paths) > len(selected_paths)
         for path in selected_paths:

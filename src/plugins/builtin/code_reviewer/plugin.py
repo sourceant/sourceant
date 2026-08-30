@@ -11,58 +11,27 @@ from typing import Dict, Any, Optional, List
 from rapidfuzz import fuzz
 
 from src.core.plugins import BasePlugin, PluginMetadata, PluginType
-from src.core.plugins import event_hooks, HookPriority
-from sqlalchemy.exc import SQLAlchemyError
+from src.core.plugins import event_hooks
 
-from src.core.code_index import CodeIndexReader, SQLCodeIndexRepository
-from src.core.change_context import (
-    ChangeContextResolver,
-    ChangedFile,
-    ChangeSet,
-    DefaultChangeContextResolver,
-)
-from src.core.knowledge import (
-    KnowledgeReader,
-    KnowledgeSelector,
-    LinkedKnowledgeSelector,
-)
-from src.core.impact import ChangeImpactResolver
-from src.core.requirements import (
-    LinkedRequirementSelector,
-    RequirementSelector,
-    RequirementsReader,
-)
-from src.core.review_context import (
-    DefaultReviewCodeContextPreparer,
-    LazyChangedFileCodeIndex,
-    merge_review_code_contexts,
-)
+from src.core.change_context import ChangeSet
+from src.core.model import model_for
+from src.core.mcp import contribute_tools
+from src.core.review import Reviewer, WorkingTreeReviewer
+from src.plugins.builtin.code_reviewer.context import changed_files
+from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
+from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
+from src.plugins.builtin.code_reviewer.tools import ReviewTools
+from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.core.scope import Scope
-from src.core.settings.resolver import value_of
-from src.core.review_evidence import (
-    CachedChangedFileEvidenceReader,
-    ChangedFileEvidenceReader,
-    FallbackChangedFileEvidenceReader,
-    IndexedChangedFileEvidenceReader,
-    StructuralReviewEvidenceValidator,
-)
 from src.integrations.github.github import GitHub
 from src.llms.llm_factory import llm
-from src.models.code_review import (
-    CodeReview,
-    CodeReviewSummary,
-    Side,
-    Verdict,
-    SuggestionCategory,
-)
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
-from src.utils.diff_parser import parse_diff, ParsedDiff
+from src.utils.diff_parser import parse_diff
 from src.utils.line_mapper import LineMapper
-from src.utils.suggestion_filter import SuggestionFilter
 from src.guards.base import GuardAction
 from src.guards.duplicate_approval import DuplicateApprovalGuard
-from src.config.settings import REVIEW_DRAFT_PRS, APP_ENV
+from src.config.settings import REVIEW_DRAFT_PRS
 from src.utils.logger import logger
 from src.utils.review_record_service import get_last_reviewed_sha, save_review_record
 
@@ -127,6 +96,40 @@ class CodeReviewerPlugin(BasePlugin):
         )
 
         logger.info("Code Reviewer plugin initialized and subscribed to PR events")
+
+    async def _register_services(self) -> None:
+        """Register the reviewer and the two ways in to it."""
+        self.services.register(
+            Reviewer,
+            CodeReviewer(services=self.services),
+            self.metadata.name,
+        )
+        self.services.register(
+            WorkingTreeReviewer,
+            WorkingTreeReviews(knowledge=self._knowledge(), services=self.services),
+            self.metadata.name,
+        )
+        contribute_tools(
+            ReviewTools(services=self.services), self.metadata.name, self.services
+        )
+        contribute_tools(
+            ReviewPrompts(services=self.services), self.metadata.name, self.services
+        )
+
+    @staticmethod
+    def _knowledge():
+        """Recorded knowledge, or None where there is nowhere to keep it."""
+        from src.config.db import get_engine
+        from src.core.knowledge import SQLKnowledgeRepository
+
+        engine = get_engine()
+        if engine is None:
+            return None
+        try:
+            return SQLKnowledgeRepository(engine)
+        except Exception as error:  # noqa: BLE001 - a store that will not open
+            logger.warning(f"Reviewing without recorded knowledge: {error}")
+            return None
 
     async def _start(self) -> None:
         """Start the plugin."""
@@ -376,8 +379,14 @@ class CodeReviewerPlugin(BasePlugin):
             parsed_files = parse_diff(raw_diff)
             line_mapper = LineMapper(parsed_files)
 
-            # Calculate token count
-            llm_instance = llm()
+            llm_instance = model_for(repository=repo_full_name)
+            if llm_instance is None:
+                return {
+                    "status": "error",
+                    "message": "No model is configured to review with",
+                    "error_type": "no_model",
+                }
+
             total_tokens = sum(
                 llm_instance.count_tokens(pf.diff_text) for pf in parsed_files
             )
@@ -405,90 +414,36 @@ class CodeReviewerPlugin(BasePlugin):
                     "revision": pull_request.head_sha,
                 }
             )
-            context_file_limit = value_of(
-                "review.structural_context_file_limit",
-                repository=repo_full_name,
-            )
-            local_code = LazyChangedFileCodeIndex(
-                code_scope,
-                [
-                    parsed_file.file_path
-                    for parsed_file in parsed_files
-                    if not parsed_file.is_binary_file
-                ],
-                read_changed_file,
-                file_limit=context_file_limit,
-            )
-            try:
-                durable_code = self.services.resolve(CodeIndexReader)
-            except LookupError:
-                durable_code = _core_code_index()
-            changed_files = tuple(
-                ChangedFile(path=parsed_file.file_path)
-                for parsed_file in parsed_files
-                if not parsed_file.is_binary_file and parsed_file.file_path
-            )
-            known = None
-            if changed_files:
-                known = self._change_context_resolver(durable_code).resolve(
-                    ChangeSet(
-                        scope=Scope.from_mapping({"repository": repo_full_name}),
-                        files=changed_files,
-                        revision=pull_request.head_sha or "",
-                        base_revision=pull_request.base_sha or "",
-                        title=pull_request.title or "",
-                        description=getattr(pull_request, "body", "") or "",
-                    )
-                )
-            requirements_section = _requirements_section(known)
-            knowledge_section = _knowledge_section(known)
-            impact_section = _impact_section(known)
-            local_evidence = CachedChangedFileEvidenceReader(read_changed_file)
-            evidence: ChangedFileEvidenceReader = local_evidence
-            if durable_code is not None:
-                evidence = FallbackChangedFileEvidenceReader(
-                    IndexedChangedFileEvidenceReader(durable_code, code_scope),
-                    local_evidence,
-                )
+            changed = changed_files(parsed_files)
+            if not changed:
+                return {
+                    "status": "error",
+                    "message": "No reviewable files in diff",
+                    "error_type": "no_diff",
+                }
 
-            # Generate review based on token count
-            if total_tokens < llm_instance.token_limit:
-                logger.info("Diff is small enough for a single-pass review.")
-                final_review = await self._generate_single_pass_review(
-                    github,
-                    repository,
-                    pull_request,
-                    raw_diff,
-                    parsed_files,
-                    line_mapper,
-                    pr_metadata=pr_metadata,
-                    existing_comments=existing_comments,
-                    evidence=evidence,
-                    code_readers=(durable_code, local_code),
-                    read_content=read_changed_file,
-                    context_file_limit=context_file_limit,
-                    requirements=requirements_section,
-                    knowledge=knowledge_section,
-                    impact=impact_section,
-                )
-            else:
-                logger.info("Diff is too large. Performing file-by-file review.")
-                final_review = await self._generate_file_by_file_review(
-                    github,
-                    repository,
-                    pull_request,
-                    parsed_files,
-                    line_mapper,
-                    pr_metadata=pr_metadata,
-                    existing_comments=existing_comments,
-                    evidence=evidence,
-                    code_readers=(durable_code, local_code),
-                    read_content=read_changed_file,
-                    context_file_limit=context_file_limit,
-                    requirements=requirements_section,
-                    knowledge=knowledge_section,
-                    impact=impact_section,
-                )
+            final_review = CodeReviewer(services=self.services).review(
+                ChangeSet(
+                    scope=Scope.from_mapping({"repository": repo_full_name}),
+                    files=changed,
+                    revision=pull_request.head_sha or "",
+                    base_revision=pull_request.base_sha or "",
+                    title=pull_request.title or "",
+                    description=getattr(pull_request, "body", "") or "",
+                    diff=raw_diff,
+                ),
+                provider=llm_instance,
+                read_content=read_changed_file,
+                existing_comments=existing_comments,
+                code_scope=code_scope,
+                metadata=pr_metadata,
+            )
+            if final_review is None:
+                return {
+                    "status": "error",
+                    "message": "No diff could be computed",
+                    "error_type": "no_diff",
+                }
 
             if existing_comments and final_review.code_suggestions:
                 before_count = len(final_review.code_suggestions)
@@ -500,9 +455,7 @@ class CodeReviewerPlugin(BasePlugin):
                     logger.info(
                         f"Filtered {removed} duplicate suggestion(s) already posted on PR"
                     )
-                    final_review.verdict = self._determine_verdict_from_suggestions(
-                        final_review.code_suggestions
-                    )
+                    final_review.verdict = verdict_from(final_review.code_suggestions)
 
             # Apply review guards
             guards = [DuplicateApprovalGuard()]
@@ -565,312 +518,6 @@ class CodeReviewerPlugin(BasePlugin):
                 "message": str(e),
                 "error_type": "review_generation_failed",
             }
-
-    async def _generate_single_pass_review(
-        self,
-        github: GitHub,
-        repository: Repository,
-        pull_request: PullRequest,
-        raw_diff: str,
-        parsed_files: List[ParsedDiff],
-        line_mapper: LineMapper,
-        pr_metadata: Optional[Dict[str, Any]] = None,
-        existing_comments: Optional[List[Dict[str, Any]]] = None,
-        evidence: ChangedFileEvidenceReader | None = None,
-        code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
-        read_content=None,
-        context_file_limit: int = 20,
-        requirements: Optional[str] = None,
-        knowledge: Optional[str] = None,
-        impact: Optional[str] = None,
-    ) -> CodeReview:
-        """Generate review in a single pass for small diffs."""
-        suggestion_filter = SuggestionFilter()
-        code_context = self._prepare_code_context(
-            code_readers,
-            repository.full_name or f"{repository.owner}/{repository.name}",
-            pull_request.head_sha,
-            [parsed_file.file_path for parsed_file in parsed_files],
-            read_content=read_content,
-            file_limit=context_file_limit,
-        )
-
-        full_review = llm().generate_code_review(
-            diff=raw_diff,
-            parsed_files=parsed_files,
-            pr_metadata=pr_metadata,
-            existing_comments=existing_comments,
-            code_context=code_context,
-            requirements=requirements,
-            knowledge=knowledge,
-            impact=impact,
-        )
-
-        all_suggestions = []
-        evidence_rejections: List[str] = []
-        if full_review and full_review.code_suggestions:
-            all_suggestions = self._process_suggestions(
-                full_review.code_suggestions,
-                suggestion_filter,
-                line_mapper,
-                evidence=evidence,
-                evidence_rejections=evidence_rejections,
-            )
-
-        verdict = self._determine_verdict_from_suggestions(all_suggestions)
-        if full_review:
-            return CodeReview(
-                summary=(
-                    self._summary_from_suggestions(all_suggestions)
-                    if evidence_rejections
-                    else full_review.summary
-                ),
-                verdict=verdict,
-                code_suggestions=all_suggestions,
-                scores=full_review.scores,
-            )
-        else:
-            return CodeReview(
-                summary=None,
-                verdict=verdict,
-                code_suggestions=all_suggestions,
-            )
-
-    async def _generate_file_by_file_review(
-        self,
-        github: GitHub,
-        repository: Repository,
-        pull_request: PullRequest,
-        parsed_files: List[ParsedDiff],
-        line_mapper: LineMapper,
-        pr_metadata: Optional[Dict[str, Any]] = None,
-        existing_comments: Optional[List[Dict[str, Any]]] = None,
-        evidence: ChangedFileEvidenceReader | None = None,
-        code_readers: tuple[CodeIndexReader | None, CodeIndexReader] | None = None,
-        read_content=None,
-        context_file_limit: int = 20,
-        requirements: Optional[str] = None,
-        knowledge: Optional[str] = None,
-        impact: Optional[str] = None,
-    ) -> CodeReview:
-        """Generate review file by file for large diffs."""
-        suggestion_filter = SuggestionFilter()
-        all_suggestions = []
-
-        for parsed_file in parsed_files:
-            logger.info(f"Reviewing file: {parsed_file.file_path}")
-
-            file_comments = None
-            if existing_comments:
-                file_comments = [
-                    c
-                    for c in existing_comments
-                    if c.get("path") == parsed_file.file_path
-                ]
-
-            review_for_file = llm().generate_code_review(
-                diff=parsed_file.diff_text,
-                parsed_files=[parsed_file],
-                pr_metadata=pr_metadata,
-                existing_comments=file_comments or None,
-                code_context=self._prepare_code_context(
-                    code_readers,
-                    repository.full_name or f"{repository.owner}/{repository.name}",
-                    pull_request.head_sha,
-                    [parsed_file.file_path],
-                    read_content=read_content,
-                    file_limit=context_file_limit,
-                ),
-                requirements=requirements,
-                knowledge=knowledge,
-                impact=impact,
-            )
-
-            if review_for_file and review_for_file.code_suggestions:
-                accepted = self._process_suggestions(
-                    review_for_file.code_suggestions,
-                    suggestion_filter,
-                    line_mapper,
-                    evidence=evidence,
-                )
-                all_suggestions.extend(accepted)
-
-        summary_obj = llm().generate_summary(all_suggestions)
-        verdict = self._determine_verdict_from_suggestions(all_suggestions)
-
-        return CodeReview(
-            summary=summary_obj,
-            verdict=verdict,
-            code_suggestions=all_suggestions,
-        )
-
-    def _change_context_resolver(self, durable_code):
-        try:
-            return self.services.resolve(ChangeContextResolver)
-        except LookupError:
-            pass
-        return DefaultChangeContextResolver(
-            code=durable_code,
-            knowledge=self._knowledge_selector(),
-            requirements=self._requirement_selector(),
-            impact=self._impact_preparer(),
-        )
-
-    def _knowledge_selector(self):
-        try:
-            return self.services.resolve(KnowledgeSelector)
-        except LookupError:
-            pass
-        try:
-            reader = self.services.resolve(KnowledgeReader)
-        except LookupError:
-            reader = _core_knowledge()
-        return LinkedKnowledgeSelector(reader) if reader is not None else None
-
-    def _requirement_selector(self):
-        try:
-            return self.services.resolve(RequirementSelector)
-        except LookupError:
-            pass
-        try:
-            reader = self.services.resolve(RequirementsReader)
-        except LookupError:
-            reader = _core_requirements()
-        return LinkedRequirementSelector(reader) if reader is not None else None
-
-    def _impact_preparer(self):
-        try:
-            return self.services.resolve(ChangeImpactResolver)
-        except LookupError:
-            return _core_impact_preparer(self.services)
-
-    @staticmethod
-    def _prepare_code_context(
-        readers: tuple[CodeIndexReader | None, CodeIndexReader] | None,
-        repository: str,
-        revision: str,
-        paths: List[str],
-        *,
-        read_content=None,
-        file_limit: int = 20,
-    ) -> str | None:
-        if readers is None:
-            return None
-        contexts = []
-        for reader in readers:
-            if reader is None:
-                continue
-            try:
-                context = DefaultReviewCodeContextPreparer(
-                    reader,
-                    read_content=read_content,
-                    file_limit=file_limit,
-                ).prepare(
-                    repository=repository,
-                    revision=revision,
-                    paths=paths,
-                )
-            except (OSError, RuntimeError, ValueError):
-                continue
-            if context:
-                contexts.append(context)
-        merged = merge_review_code_contexts(contexts)
-        return merged.content if merged else None
-
-    def _process_suggestions(
-        self,
-        suggestions: List,
-        suggestion_filter: SuggestionFilter,
-        line_mapper: LineMapper,
-        evidence: ChangedFileEvidenceReader | None = None,
-        evidence_rejections: List[str] | None = None,
-    ) -> List:
-        """Filter and map suggestions to valid diff positions."""
-        result = []
-        validator = StructuralReviewEvidenceValidator()
-        filtered, _ = suggestion_filter.filter_suggestions(suggestions)
-        for suggestion in filtered:
-            if line_mapper.suggestion_replays_diff(suggestion):
-                logger.info(
-                    f"Filtered out suggestion for "
-                    f"{suggestion.file_name}:{suggestion.start_line}: "
-                    f"suggested code is already applied"
-                )
-                continue
-            mapped_result = line_mapper.validate_and_map_suggestion(
-                suggestion, strict_mode=(APP_ENV == "production")
-            )
-            if mapped_result:
-                mapping, reason = mapped_result
-                suggestion.position = mapping.get("position")
-                suggestion.end_line = mapping["line"]
-                suggestion.side = Side(mapping["side"])
-                if "start_line" in mapping:
-                    suggestion.start_line = mapping["start_line"]
-                decision = validator.validate(
-                    suggestion.claims,
-                    evidence.read(suggestion.file_name) if evidence else None,
-                )
-                if decision.contradicted:
-                    if evidence_rejections is not None:
-                        evidence_rejections.append(decision.reason)
-                    logger.info(
-                        f"Filtered contradicted suggestion for {suggestion.file_name}: "
-                        f"{decision.reason}"
-                    )
-                    continue
-                result.append(suggestion)
-        return result
-
-    @staticmethod
-    def _summary_from_suggestions(suggestions: List) -> CodeReviewSummary:
-        critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
-        critical = [
-            suggestion.comment
-            for suggestion in suggestions
-            if suggestion.category in critical_categories
-        ]
-        minor = [
-            suggestion.comment
-            for suggestion in suggestions
-            if suggestion.category not in critical_categories
-        ]
-        overview = (
-            f"Review found {len(suggestions)} actionable issue(s)."
-            if suggestions
-            else "No actionable issues were found."
-        )
-        return CodeReviewSummary(
-            overview=overview,
-            key_improvements=[],
-            minor_suggestions=minor,
-            critical_issues=critical,
-        )
-
-    def _determine_verdict_from_suggestions(self, suggestions: List) -> Verdict:
-        """Determine the appropriate verdict based on suggestions analysis."""
-        if not suggestions:
-            return Verdict.APPROVE
-
-        critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
-        security_keywords = ["vulnerability", "exploit", "injection"]
-
-        critical_count = 0
-        for suggestion in suggestions:
-            if not suggestion or not suggestion.comment:
-                continue
-
-            comment_lower = suggestion.comment.lower()
-
-            if suggestion.category in critical_categories or any(
-                keyword in comment_lower for keyword in security_keywords
-            ):
-                critical_count += 1
-
-        if critical_count > 0:
-            return Verdict.REQUEST_CHANGES
-        else:
-            return Verdict.COMMENT
 
     @staticmethod
     def _filter_duplicate_suggestions(
@@ -976,95 +623,3 @@ class CodeReviewerPlugin(BasePlugin):
                 return True
 
         return False
-
-
-def _requirements_section(known) -> Optional[str]:
-    if known is None or not known.requirements:
-        return None
-    lines = [
-        "## Requirements This Change Is Answerable To",
-        "Judge the change against these as well as against how it is written.",
-        "",
-    ]
-    for item in known.requirements:
-        lines.append(f"- {item.id} ({item.status}): {item.summary}")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def _knowledge_section(known) -> Optional[str]:
-    if known is None or not known.knowledge:
-        return None
-    lines = [
-        "## Decisions And Rules Governing This Code",
-        "Recorded by the team and still standing. A change that breaks one of "
-        "these is a defect even when the code reads correctly.",
-        "",
-    ]
-    for item in known.knowledge:
-        lines.append(f"- {item.id} ({item.kind}, {item.status}): {item.summary}")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def _impact_section(known) -> Optional[str]:
-    if known is None or known.impact is None or not known.impact.findings:
-        return None
-    lines = [
-        "## What This Change Reaches",
-        "Parts of the wider system that depend on what is being changed. A "
-        "finding marked uncertain is a question to raise, not a fact to assert.",
-        "",
-    ]
-    for finding in known.impact.findings:
-        certainty = "certain" if finding.certain else "uncertain"
-        reached = ", ".join(finding.topology_entity_ids)
-        lines.append(f"- {finding.summary} ({certainty}, reaches {reached})")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def _core_impact_preparer(services):
-    from src.config.db import get_engine
-    from src.core.impact import (
-        DefaultChangeImpactResolver,
-        SQLCompatibilityCheckRepository,
-        SQLImpactSeedRepository,
-    )
-    from src.core.topology import SQLTopologyRepository, TopologyReader
-
-    engine = get_engine()
-    if engine is None:
-        return None
-    try:
-        topology = services.resolve(TopologyReader)
-    except LookupError:
-        topology = SQLTopologyRepository(engine)
-    return DefaultChangeImpactResolver(
-        seeds=SQLImpactSeedRepository(engine),
-        topology=topology,
-        compatibility=SQLCompatibilityCheckRepository(engine),
-    )
-
-
-def _core_knowledge():
-    from src.config.db import get_engine
-    from src.core.knowledge import SQLKnowledgeRepository
-
-    engine = get_engine()
-    return SQLKnowledgeRepository(engine) if engine is not None else None
-
-
-def _core_requirements():
-    from src.config.db import get_engine
-    from src.core.requirements import SQLRequirementsRepository
-
-    engine = get_engine()
-    return SQLRequirementsRepository(engine) if engine is not None else None
-
-
-def _core_code_index():
-    from src.config.db import get_engine
-
-    engine = get_engine()
-    return SQLCodeIndexRepository(engine) if engine is not None else None

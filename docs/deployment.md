@@ -64,7 +64,7 @@ make prod-push
 
 - `DATABASE_URL` points at PostgreSQL, and migrations have been applied.
 - `GITHUB_SECRET` is set, and matches the secret on the webhook.
-- `JWT_SECRET` is set if anything uses the API.
+- `JWT_SECRET` is set, and matches whatever else signs the tokens this instance verifies.
 - `QUEUE_MODE=redis` with at least one worker running.
 - `LOG_DRIVER=console`, so your platform collects the logs.
 - `APP_ENV=production` and `DEBUG_MODE=false`.

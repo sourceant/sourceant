@@ -51,6 +51,13 @@ def setup_logger():
         handler = SysLogHandler()
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+    elif log_driver == "stderr":
+        # Everything to stderr, for a process whose stdout is a protocol.
+        # A stdio MCP server has a client parsing every line of stdout as
+        # JSON-RPC, so one log line there loses the message it interrupted.
+        handler = logging.StreamHandler(stream=sys.stderr)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
     elif log_driver == "console":
         # Handler for stdout (INFO and DEBUG)
         stdout_handler = logging.StreamHandler(stream=sys.stdout)
@@ -65,7 +72,8 @@ def setup_logger():
         logger.addHandler(stderr_handler)
     else:
         raise ValueError(
-            f"Invalid LOG_DRIVER: {log_driver}. Must be one of ['console', 'file', 'syslog']"
+            f"Invalid LOG_DRIVER: {log_driver}. "
+            "Must be one of ['console', 'stderr', 'file', 'syslog']"
         )
 
 
