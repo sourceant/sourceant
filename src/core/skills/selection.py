@@ -24,7 +24,10 @@ from typing import Sequence
 from .matching import any_match
 from .models import Change, Skill
 
-WORDS = re.compile(r"[A-Za-z][A-Za-z0-9]+")
+# Letters rather than ASCII: skills and the prose around code are written
+# in whatever language somebody works in, and matching on A to Z splits
+# "médico" into "m" and "dico".
+WORDS = re.compile(r"[^\W\d_][^\W_]+")
 
 # Ordinary English, and the sentence every skill description opens with. Both
 # appear in every skill and every change, so counting them would rank on

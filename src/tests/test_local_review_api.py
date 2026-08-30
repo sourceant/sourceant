@@ -7,15 +7,23 @@ from sqlalchemy import create_engine
 from src.api.main import app
 from src.api.routes.code import get_code_index
 from src.api.routes.knowledge import get_knowledge
-from src.api.routes.local_reviews import get_reviews
+from src.api.routes.local_reviews import get_reviews, get_working_tree_reviewer
+from src.core.review import Reviewer
+from src.core.services import ServiceRegistry
+from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
+from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
+from src.plugins.builtin.local.folders import RegisteredFolders
+from src.plugins.builtin.local.skills import SkillsOnDisk
 from src.core.code_index import SQLCodeIndexRepository
 from src.core.knowledge import SQLKnowledgeRepository
-from src.core.local_reviews import SQLLocalReviewStore
+from src.core.review import SQLReviewStore
+from src.llms.llm_interface import LLMInterface
 from src.models.code_review import (
     CodeReview,
     CodeReviewSummary,
     CodeSuggestion,
     Side,
+    SuggestionCategory,
     Verdict,
 )
 from src.tests.base_test import BaseTestCase
@@ -29,11 +37,11 @@ Never edit a migration that has already run.
 """
 
 
-class FakeModel:
+class FakeModel(LLMInterface):
     """A model that answers whatever the test told it to.
 
     Two questions get asked of it: the review proper, which is the same
-    generator the hosted path uses, and one question per skill.
+    reviewer a pull request gets, and one question per skill.
     """
 
     def __init__(self, answer, review=None):
@@ -43,6 +51,13 @@ class FakeModel:
         self.told = []
         self.model = "a-model"
 
+    @property
+    def token_limit(self):
+        return 1_000_000
+
+    def count_tokens(self, text):
+        return len(text)
+
     def generate_text(self, prompt):
         self.asked.append(prompt)
         return json.dumps(self.answer)
@@ -50,6 +65,12 @@ class FakeModel:
     def generate_code_review(self, **called):
         self.told.append(called)
         return self.review
+
+    def generate_summary(self, suggestions):
+        return self.review.summary
+
+    def is_summary_different(self, summary_a, summary_b):
+        return summary_a != summary_b
 
 
 def _review(verdict=Verdict.COMMENT, suggestions=()):
@@ -92,15 +113,29 @@ class TestLocalReview(BaseTestCase):
         self.git("commit", "-q", "-m", "First")
 
         engine = create_engine(f"sqlite:///{tmp_path / 'store.db'}")
+        services = ServiceRegistry()
         app.dependency_overrides[get_code_index] = lambda: SQLCodeIndexRepository(
             engine, create_schema=True
         )
         app.dependency_overrides[get_knowledge] = lambda: SQLKnowledgeRepository(
             engine, create_schema=True
         )
-        app.dependency_overrides[get_reviews] = lambda: SQLLocalReviewStore(
+        app.dependency_overrides[get_reviews] = lambda: SQLReviewStore(
             engine, create_schema=True
         )
+        # The plugin that reads a checkout, pointed at this test's store. It
+        # resolves the reviewer itself, so registering one is what decides
+        # whether these reviews are judged at all.
+        folders = RegisteredFolders()
+        app.dependency_overrides[get_working_tree_reviewer] = (
+            lambda: WorkingTreeReviews(
+                repositories=folders,
+                skills=SkillsOnDisk(folders),
+                knowledge=SQLKnowledgeRepository(engine, create_schema=True),
+                services=services,
+            )
+        )
+        services.register(Reviewer, CodeReviewer(services=services), "test")
         yield
         app.dependency_overrides.clear()
 
@@ -228,7 +263,8 @@ class TestLocalReview(BaseTestCase):
             }
         )
         monkeypatch.setattr(
-            "src.api.routes.local_reviews.model_for_this_machine", lambda: model
+            "src.plugins.builtin.code_reviewer.working_tree.model_for",
+            lambda **_: model,
         )
         self.register()
         self.edit_the_migration()
@@ -250,7 +286,8 @@ class TestLocalReview(BaseTestCase):
             }
         )
         monkeypatch.setattr(
-            "src.api.routes.local_reviews.model_for_this_machine", lambda: model
+            "src.plugins.builtin.code_reviewer.working_tree.model_for",
+            lambda **_: model,
         )
         self.register()
         self.edit_the_migration()
@@ -264,7 +301,7 @@ class TestLocalReview(BaseTestCase):
 
     def test_judging_without_a_model_is_refused_rather_than_guessed(self, monkeypatch):
         monkeypatch.setattr(
-            "src.api.routes.local_reviews.model_for_this_machine", lambda: None
+            "src.plugins.builtin.code_reviewer.working_tree.model_for", lambda **_: None
         )
         self.register()
         self.edit_the_migration()
@@ -288,14 +325,16 @@ class TestLocalReview(BaseTestCase):
                         end_line=2,
                         side=Side.RIGHT,
                         comment="Add a new migration instead.",
-                        category=None,
-                        suggested_code="def up():\n    pass\n",
+                        category=SuggestionCategory.BUG,
+                        existing_code="    return 1\n",
+                        suggested_code="    pass\n",
                     )
                 ],
             ),
         )
         monkeypatch.setattr(
-            "src.api.routes.local_reviews.model_for_this_machine", lambda: model
+            "src.plugins.builtin.code_reviewer.working_tree.model_for",
+            lambda **_: model,
         )
         self.register()
         self.edit_the_migration()
@@ -313,7 +352,8 @@ class TestLocalReview(BaseTestCase):
     def test_the_reviewer_is_told_what_the_team_wrote_down(self, monkeypatch):
         model = FakeModel({"passed": True})
         monkeypatch.setattr(
-            "src.api.routes.local_reviews.model_for_this_machine", lambda: model
+            "src.plugins.builtin.code_reviewer.working_tree.model_for",
+            lambda **_: model,
         )
         self.register()
         self.edit_the_migration()
@@ -338,19 +378,18 @@ class TestLocalReview(BaseTestCase):
         found = self.client.get(f"/api/local/reviews/{identifier}")
         assert found.status_code == 200
         assert found.json()["data"]["status"] == "done"
-        assert found.json()["data"]["path"] == f"#/reviews/{identifier}"
+        assert found.json()["data"]["path"] == f"/reviews/{identifier}"
 
     def test_a_review_whose_reader_went_away_says_so(self, tmp_path):
         # A stdio agent lives as long as its client. Whatever it started dies
         # with it, and a spinner that never stops is a worse answer than none.
         from datetime import timedelta
 
-        from src.core.local_reviews import LocalReview
-        from src.core.local_reviews.models import now
+        from src.core.review import ReviewRecord, now
 
         store = app.dependency_overrides[get_reviews]()
         store.put(
-            LocalReview(
+            ReviewRecord(
                 id="abandoned",
                 repository="acme/billing",
                 started=now() - timedelta(hours=2),
@@ -363,10 +402,10 @@ class TestLocalReview(BaseTestCase):
         assert "stopped before it finished" in found["error"]
 
     def test_a_review_that_only_just_started_is_still_running(self):
-        from src.core.local_reviews import LocalReview
+        from src.core.review import ReviewRecord
 
         store = app.dependency_overrides[get_reviews]()
-        store.put(LocalReview(id="fresh", repository="acme/billing"))
+        store.put(ReviewRecord(id="fresh", repository="acme/billing"))
 
         found = self.client.get("/api/local/reviews/fresh").json()["data"]
 

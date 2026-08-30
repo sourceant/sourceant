@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.api.routes.code import find_repository, require_local
+from src.api.routes.code import find_repository, registered, require_local
 from src.api.routes.local_settings import WHOEVER_IS_HERE, model_for_this_machine
 from src.config.db import get_engine
 from src.core.knowledge.proposing import propose
@@ -72,29 +72,48 @@ def payload(item: KnowledgeObject) -> dict[str, Any]:
 
 @router.get("")
 def read_knowledge(
-    repository: str = Query(...),
+    repository: str = Query(default=""),
     kinds: list[str] = Query(default=[]),
     statuses: list[str] = Query(default=[]),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     store: Any = Depends(get_knowledge),
 ):
-    """What is recorded about one repository."""
-    entry = find_repository(repository)
-    result = store.search(
-        KnowledgeQuery(
-            scope=entry.scope,
-            kinds=frozenset(kinds),
-            statuses=frozenset(statuses),
-            limit=limit,
-            offset=offset,
+    """What is recorded, about one repository or about every one.
+
+    A decision is remembered by what it decided rather than by which checkout
+    it was recorded against, so naming no repository answers about all of them.
+    Each item says which one it came from, since across repositories that is
+    the thing a reader cannot infer.
+    """
+    wanted = [find_repository(repository)] if repository else registered()
+
+    items: list[dict] = []
+    total = 0
+    for entry in wanted:
+        result = store.search(
+            KnowledgeQuery(
+                scope=entry.scope,
+                kinds=frozenset(kinds),
+                statuses=frozenset(statuses),
+                # Asked for whole, then cut once. Asking each for a page of the
+                # answer would drop whatever fell past one repository's page
+                # while another had room.
+                limit=100,
+                offset=0,
+            )
         )
-    )
+        total += result.total
+        items.extend(
+            {**payload(item), "repository": entry.name} for item in result.items
+        )
+
+    page = items[offset : offset + limit]
     return success_response(
         {
-            "items": [payload(item) for item in result.items],
-            "total": result.total,
-            "has_more": result.has_more,
+            "items": page,
+            "total": total,
+            "has_more": offset + len(page) < len(items),
         }
     )
 

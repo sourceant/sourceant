@@ -1,9 +1,8 @@
-"""Settings for the machine this is running on.
+"""Settings for the computer this runs on.
 
-The settings API proper is scoped to a user, a repository or an organisation,
-and answers to a signed token that says which. Nobody signs in to their own
-machine, so these routes are the same store at the user scope with one fixed
-identity: whoever is sitting at it.
+The settings API proper is scoped to a user, repository or organisation and
+answers to a signed token. There is no sign-in here, so these routes are the
+same store at the user scope with one fixed identity.
 
 Gated like the rest of the local surface. See ``code.py``.
 """
@@ -17,39 +16,29 @@ from pydantic import BaseModel
 
 from src.api.routes.code import require_local
 from src.api.routes.settings import _described
-from src.config.settings import DEFAULT_TOKEN_LIMIT
+from src.core.environment import environment
+from src.core.model import SettingsModelSource
 from src.core.responses import success_response
 from src.core.settings.definitions import USER
-from src.core.settings.resolver import clear_value, resolve, resolve_all, set_value
-from src.llms.litellm_provider import LiteLLMProvider
+from src.core.settings.resolver import clear_value, resolve_all, set_value
 
 router = APIRouter()
 
-# One machine, one person, one place to keep what they chose. The scope has to
-# be something, and anything derived from the machine would move the settings
-# when a laptop is renamed.
+# The scope has to be something, and anything derived from the computer would
+# move the settings when it is renamed.
 WHOEVER_IS_HERE = "local"
 
 
 def model_for_this_machine():
-    """The model this machine was told to ask, or None if it was told none.
+    """The model chosen here, or None.
 
-    Nothing that proposes or judges runs until somebody has named one, because
-    the bill for asking is theirs.
+    Unlike a hosted deployment there is no fallback: the bill is the user's,
+    so an unchosen model stays unchosen.
     """
-
-    def value(key: str) -> str:
-        return str(resolve(key, user=WHOEVER_IS_HERE).value or "")
-
-    name = value("model.name")
-    if not name:
-        return None
-    return LiteLLMProvider(
-        model=name,
-        token_limit=DEFAULT_TOKEN_LIMIT,
-        api_key=value("model.api_key"),
-        api_base=value("model.base_url"),
-    )
+    here = environment()
+    if here is not None:
+        return here.model_for(here.workspace_for())
+    return SettingsModelSource(fallback_model="").model_for(user=WHOEVER_IS_HERE)
 
 
 @router.get("", dependencies=[Depends(require_local)])
@@ -70,7 +59,7 @@ class ValueInput(BaseModel):
 
 @router.put("/{key}", dependencies=[Depends(require_local)])
 def write_local_setting(key: str, body: ValueInput):
-    """Give one setting a value on this machine."""
+    """Give one setting a value."""
     try:
         return success_response(
             _described(set_value(USER, WHOEVER_IS_HERE, key, body.value))
@@ -85,7 +74,7 @@ def write_local_setting(key: str, body: ValueInput):
 
 @router.delete("/{key}", dependencies=[Depends(require_local)])
 def reset_local_setting(key: str):
-    """Put one setting back to what it would be if nobody had touched it."""
+    """Put one setting back to its default."""
     try:
         clear_value(USER, WHOEVER_IS_HERE, key)
     except KeyError as error:

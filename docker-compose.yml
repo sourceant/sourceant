@@ -5,7 +5,10 @@ services:
       dockerfile: Dockerfile.dev
     container_name: sourceant
     ports:
-      - "8000:8000"
+      # Loopback only. With SOURCEANT_LOCAL set this publishes an
+      # unauthenticated MCP server, which on every interface is a writable
+      # endpoint on the LAN.
+      - "127.0.0.1:8000:8000"
     volumes:
       - .:/app
     depends_on:

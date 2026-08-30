@@ -67,8 +67,29 @@ class CodeSuggestion(BaseModel):
     )
     claims: List[ReviewClaim] = Field(
         default_factory=list,
-        description="Machine-checkable factual claims that support the suggestion.",
+        description=(
+            "Machine-checkable factual claims this suggestion depends on. State "
+            "every assertion that a name is or is not defined or imported. A "
+            "claim contradicted by the file is discarded with its suggestion, "
+            "so an unstated claim is an unchecked one. Empty only when the "
+            "suggestion asserts nothing about a definition or an import."
+        ),
     )
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        """Optional to write here, required to answer with.
+
+        Structured output follows the schema rather than the prose asking for
+        it: left optional, the field is omitted and every assertion goes
+        unchecked. Nothing in this codebase has to state claims to build one.
+        """
+        schema = handler(core_schema)
+        required = list(schema.get("required", []))
+        if "claims" not in required:
+            required.append("claims")
+        schema["required"] = required
+        return schema
 
     def is_multiline(self) -> bool:
         """Checks if the suggestion spans multiple lines."""

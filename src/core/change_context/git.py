@@ -102,6 +102,50 @@ def commits_since(root: Path, base: str) -> int:
         return 0
 
 
+# Enough to read what the work was, without paging a long-lived branch.
+MAX_COMMITS = 100
+
+
+def commits_in(root: Path, base: str, limit: int = MAX_COMMITS) -> list[dict]:
+    """The commits this checkout has that the branch it came from does not.
+
+    Newest first. Uncommitted work is not here: it is in the diff.
+    """
+    if not base:
+        return []
+    # A unit separator, because a subject may contain anything a person typed.
+    fields = "%H%x1f%an%x1f%aI%x1f%s%x1f%b"
+    try:
+        written = _git(
+            root,
+            "log",
+            f"--max-count={limit}",
+            f"--format={fields}%x1e",
+            f"{base}..HEAD",
+        )
+    except GitError:
+        return []
+
+    found = []
+    for record in written.split("\x1e"):
+        record = record.strip("\n")
+        if not record:
+            continue
+        parts = record.split("\x1f")
+        if len(parts) < 4:
+            continue
+        found.append(
+            {
+                "sha": parts[0],
+                "author": parts[1],
+                "at": parts[2],
+                "subject": parts[3],
+                "body": parts[4].strip() if len(parts) > 4 else "",
+            }
+        )
+    return found
+
+
 def _base(root: Path, against: str) -> str:
     """Where this branch left the one it is going back to.
 

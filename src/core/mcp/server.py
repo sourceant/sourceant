@@ -4,8 +4,6 @@ from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
-from mcp.server.auth.provider import TokenVerifier
-from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
@@ -27,8 +25,11 @@ from src.core.requirements import (
     RequirementQuery,
     RequirementsRepository,
 )
-from src.core.review_state import FindingQuery
+from src.core.review.findings import FindingQuery
+from src.core.mcp.surface import Surface
 from src.core.scope import Scope
+from src.core.services import ServiceRegistry, service_registry
+from src.utils.logger import logger
 from src.core.topology import (
     TopologyEntity,
     TopologyEvidence,
@@ -45,10 +46,8 @@ def create_mcp_server(
     knowledge: KnowledgeRepository | None = None,
     topology: TopologyRepository | None = None,
     requirements: RequirementsRepository | None = None,
-    scope_resolver: Callable[[Scope], Scope] | None = None,
-    reviews: Any | None = None,
-    auth: AuthSettings | None = None,
-    token_verifier: TokenVerifier | None = None,
+    surface: "Surface | None" = None,
+    services: ServiceRegistry = service_registry,
 ) -> FastMCP:
     server = FastMCP(
         name="SourceAnt",
@@ -60,19 +59,16 @@ def create_mcp_server(
             "context pack. Write what you learn back so it outlives this "
             "session."
         ),
-        auth=auth,
-        token_verifier=token_verifier,
+        auth=surface.auth if surface else None,
+        token_verifier=surface.token_verifier if surface else None,
         stateless_http=True,
         json_response=True,
         streamable_http_path="/",
+        transport_security=surface.transport_security if surface else None,
     )
-    resolve_scope = scope_resolver or (lambda scope: scope)
-
-    # Only where this server can reach a checkout. A hosted one has nobody's
-    # disk to read, and advertising a tool that always refuses is worse than
-    # not advertising it.
-    if reviews is not None:
-        _reviewing(server, reviews)
+    resolve_scope = (surface.scope_resolver if surface else None) or (
+        lambda scope: scope
+    )
 
     @server.tool(
         name="search_code",
@@ -520,6 +516,7 @@ def create_mcp_server(
             "truncated": report.truncated,
         }
 
+    _add_registered_tools(server, surface, services)
     return server
 
 
@@ -568,36 +565,14 @@ def _build_evidence(
     )
 
 
-def _reviewing(server: FastMCP, reviews: Any) -> None:
-    """The tool that reads a checkout, where there is one to read."""
+def _add_registered_tools(
+    server: FastMCP, surface: Surface | None, services: ServiceRegistry
+) -> None:
+    """Let anything that registered a ToolProvider add its own tools."""
+    from src.core.mcp.interfaces import ToolProvider
 
-    @server.tool(
-        name="review_working_tree",
-        description=(
-            "Read the uncommitted and unpushed work in a checkout on this "
-            "machine against the skills its team wrote down, and answer with "
-            "a link a person can open to see what it found. The reading "
-            "happens after this answers, so open the link rather than waiting."
-        ),
-        structured_output=True,
-    )
-    def review_working_tree(repository: str, title: str = "") -> dict[str, Any]:
-        """Ask for a review, and hand back where to read it.
-
-        This is the half an agent can do. A person reads the other half, which
-        is why what comes back is a link rather than a wall of findings: the
-        thing that asked is rarely the thing that acts on the answer.
-        """
-        if reviews is None:
-            raise ValueError("This server does not review working trees")
-        started = reviews(repository=repository, title=title)
-        return {
-            "id": started["id"],
-            "repository": started["repository"],
-            "status": started["status"],
-            "url": started.get("url") or started.get("path", ""),
-            "say": (
-                "Reading has started. Open the link to see what it found; it "
-                "keeps working whether or not anybody is watching."
-            ),
-        }
+    for provider in services.contributions(ToolProvider):
+        try:
+            provider.add_tools(server, surface)
+        except Exception as error:  # noqa: BLE001 - one bad provider is not all of them
+            logger.warning(f"MCP tools from {provider.name} were not added: {error}")

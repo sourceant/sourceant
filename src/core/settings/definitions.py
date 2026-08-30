@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from src.config.settings import DEFAULT_TOKEN_LIMIT
 from src.models.config import ConfigType
 
 # Where a setting can be given a value. Order matters: the narrowest scope that
@@ -92,6 +93,23 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.reading_budget",
+        label="Read at once",
+        description=(
+            "How much of a change is read in one go, in tokens. A larger "
+            "change is read in parts of this size and the parts are put "
+            "together. This is not how much the model can accept: it is where "
+            "a review stops finding things, which is far below that."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=15_000,
+        unit="tokens",
+        minimum=2_000,
+        maximum=200_000,
+        group="Review",
+    ),
+    Setting(
         key="review.structural_context_file_limit",
         label="Structural context files",
         description=(
@@ -104,6 +122,21 @@ SETTINGS: tuple[Setting, ...] = (
         unit="files",
         minimum=1,
         maximum=100,
+        group="Review",
+    ),
+    Setting(
+        key="review.remember_findings",
+        label="Remember what a review said",
+        description=(
+            "Keep each thing a review says, so the next one knows it has said "
+            "it before and anything dismissed stays dismissed. A finding is "
+            "recognised by what it says and what it proposes, not by where it "
+            "is, but a reviewer that rewords itself will still raise the odd "
+            "duplicate. Off until you want that trade."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=False,
         group="Review",
     ),
     Setting(
@@ -219,6 +252,18 @@ SETTINGS: tuple[Setting, ...] = (
         type=ConfigType.STRING,
         scopes=(USER, REPOSITORY, ORGANIZATION),
         default="",
+        group="Model",
+    ),
+    Setting(
+        key="model.token_limit",
+        label="How much it can read at once",
+        description=(
+            "How many tokens the chosen model accepts. A larger change is read "
+            "a file at a time instead of whole."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=DEFAULT_TOKEN_LIMIT,
         group="Model",
     ),
     # A repository read once is a repository that answers about last month.

@@ -41,3 +41,25 @@ class SkillChecker(Protocol):
     """Whether a change satisfies a skill."""
 
     def check(self, skill: Skill, change: Change) -> SkillVerdict: ...
+
+
+@runtime_checkable
+class SkillLibrary(Protocol):
+    """Every skill a workspace can see, across all of its ``SkillSource``s.
+
+    Writes reach only the sources the workspace owns; the rest are read-only.
+    """
+
+    def all(self, workspace: str, repository: str = "") -> Sequence[Skill]: ...
+
+    def one(
+        self, workspace: str, identifier: str, repository: str = ""
+    ) -> Skill | None: ...
+
+    def write(
+        self, workspace: str, skill: Skill, *, scope: str, repository: str = ""
+    ) -> Skill: ...
+
+    def forget(
+        self, workspace: str, identifier: str, *, scope: str, repository: str = ""
+    ) -> bool: ...

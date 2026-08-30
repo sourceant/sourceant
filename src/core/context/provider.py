@@ -4,7 +4,7 @@ from src.core.code_index import CodeIndexReader
 from src.core.contracts import ContractReader
 from src.core.knowledge import KnowledgeReader
 from src.core.requirements import RequirementsReader
-from src.core.review_state import ReviewStateReader
+from src.core.review import FindingReader
 from src.core.topology import TopologyReader
 
 from .models import ContextPack, ContextRequest
@@ -18,7 +18,7 @@ class DefaultContextProvider:
         knowledge: KnowledgeReader | None = None,
         topology: TopologyReader | None = None,
         contracts: ContractReader | None = None,
-        review_state: ReviewStateReader | None = None,
+        review_state: FindingReader | None = None,
         requirements: RequirementsReader | None = None,
     ) -> None:
         self._code = code

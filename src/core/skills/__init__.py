@@ -13,7 +13,13 @@ from .filesystem import (
     references,
     sources_for,
 )
-from .interfaces import SkillChecker, SkillReader, SkillSelector, SkillSource
+from .interfaces import (
+    SkillChecker,
+    SkillLibrary,
+    SkillReader,
+    SkillSelector,
+    SkillSource,
+)
 from .keeping import folder_name, global_skills, kept_for, repository_skills
 from .matching import any_match, matches
 from .models import (
@@ -47,6 +53,7 @@ __all__ = [
     "SkillChecker",
     "SkillFinding",
     "SkillQuery",
+    "SkillLibrary",
     "SkillReader",
     "SkillResult",
     "SkillSelector",

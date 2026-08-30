@@ -621,3 +621,18 @@ class TestPuttingAChangeThroughASkill:
         assert verdict.passed is True
         assert verdict.findings == ()
         assert "not applied" in verdict.note
+
+
+def test_a_word_is_a_word_in_any_language():
+    """Matching on A to Z splits an accented word in two and matches neither."""
+    from src.core.skills.selection import WORDS
+
+    assert WORDS.findall("médico paciente") == ["médico", "paciente"]
+    assert WORDS.findall("prüfung") == ["prüfung"]
+
+
+def test_ascii_words_are_read_exactly_as_before():
+    from src.core.skills.selection import WORDS
+
+    assert WORDS.findall("reviewcode2 ab") == ["reviewcode2", "ab"]
+    assert WORDS.findall("snake_case") == ["snake", "case"]

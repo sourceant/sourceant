@@ -21,13 +21,15 @@ def now() -> datetime:
 
 
 @dataclass(frozen=True)
-class LocalReview:
-    """One reading of one checkout, kept so it can be looked at again.
+class ReviewRecord:
+    """One review, kept so it can be looked at again.
 
-    Held rather than answered on the spot, because the thing that asks for a
-    review is often not the thing that reads it: an agent runs one over MCP
-    and hands a person a link, and the link has to still work when they open
-    it.
+    Nothing about keeping one is local. It is held rather than answered on the
+    spot because the thing that asks for a review is often not the thing that
+    reads it.
+
+    An agent runs one over MCP and hands somebody a link, and the link has to
+    still work when they open it.
     """
 
     id: str

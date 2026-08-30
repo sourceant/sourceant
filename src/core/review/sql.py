@@ -15,7 +15,7 @@ from sqlalchemy import (
     select,
 )
 
-from .models import DONE, FAILED, RUNNING, LocalReview
+from .records import DONE, FAILED, RUNNING, ReviewRecord
 
 metadata = MetaData()
 
@@ -48,7 +48,7 @@ def _when(value) -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-class SQLLocalReviewStore:
+class SQLReviewStore:
     """Reviews, kept where the rest of what this machine knows is kept."""
 
     def __init__(self, engine: Engine, *, create_schema: bool = False) -> None:
@@ -56,7 +56,7 @@ class SQLLocalReviewStore:
         if create_schema:
             metadata.create_all(engine)
 
-    def put(self, review: LocalReview) -> LocalReview:
+    def put(self, review: ReviewRecord) -> ReviewRecord:
         row = {
             "id": review.id,
             "repository": review.repository,
@@ -90,7 +90,7 @@ class SQLLocalReviewStore:
             return
         connection.execute(delete(reviews_table).where(reviews_table.c.id.notin_(kept)))
 
-    def get(self, identifier: str) -> LocalReview | None:
+    def get(self, identifier: str) -> ReviewRecord | None:
         with self._engine.connect() as connection:
             row = (
                 connection.execute(
@@ -101,7 +101,7 @@ class SQLLocalReviewStore:
             )
         return self._read(row) if row else None
 
-    def recent(self, repository: str = "", limit: int = 20) -> tuple[LocalReview, ...]:
+    def recent(self, repository: str = "", limit: int = 20) -> tuple[ReviewRecord, ...]:
         query = (
             select(reviews_table).order_by(reviews_table.c.started.desc()).limit(limit)
         )
@@ -112,12 +112,12 @@ class SQLLocalReviewStore:
         return tuple(self._read(row) for row in rows)
 
     @staticmethod
-    def _read(row) -> LocalReview:
+    def _read(row) -> ReviewRecord:
         try:
             answer = json.loads(row["answer"] or "{}")
         except (json.JSONDecodeError, TypeError):
             answer = {}
-        return LocalReview(
+        return ReviewRecord(
             id=row["id"],
             repository=row["repository"],
             status=(

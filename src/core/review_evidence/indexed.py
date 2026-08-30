@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
 from src.core.scope import Scope
 
@@ -26,7 +28,7 @@ class IndexedChangedFileEvidenceReader:
         if path not in self._cache:
             try:
                 self._cache[path] = self._read(path)
-            except (OSError, RuntimeError, ValueError):
+            except (OSError, RuntimeError, ValueError, SQLAlchemyError):
                 self._cache[path] = None
         return self._cache[path]
 

@@ -64,6 +64,8 @@ class CachedChangedFileEvidenceReader:
 
         facts: set[StructuralFact] = set()
         _collect_structure(result.structure, facts)
+        for name in _assigned_names(language, content):
+            facts.add(StructuralFact(name, StructuralPredicate.DEFINED))
         for name in _imported_names(language, content, result.imports):
             facts.add(StructuralFact(name, StructuralPredicate.IMPORTED))
             facts.add(StructuralFact(name, StructuralPredicate.DEFINED))
@@ -96,6 +98,24 @@ class StructuralReviewEvidenceValidator:
                     "post-change structure contradicts a factual claim",
                 )
         return EvidenceDecision(False)
+
+
+# Names bound at the left margin. The parser reports functions and classes
+# only, so without this a module-level constant is a name no file admits to
+# defining.
+_PYTHON_ASSIGNED = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]+)?=", re.M)
+_JS_ASSIGNED = re.compile(
+    r"^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)", re.M
+)
+
+
+def _assigned_names(language: str, content: str) -> set[str]:
+    """Names a file binds outside any function or class."""
+    if language == "python":
+        return set(_PYTHON_ASSIGNED.findall(content))
+    if language in {"javascript", "typescript", "tsx"}:
+        return set(_JS_ASSIGNED.findall(content))
+    return set()
 
 
 def _collect_structure(items, facts: set[StructuralFact], prefix: str = "") -> None:

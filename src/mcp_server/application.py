@@ -1,7 +1,15 @@
+"""Assembling the MCP server this deployment serves.
+
+One assembly. Which surface it gets is decided by whether an issuer is named:
+an issuer means hosted and authenticated, no issuer means personal and
+loopback-only, and a half-configured deployment serves nothing rather than an
+open server.
+"""
+
 from __future__ import annotations
 
 import os
-from threading import Thread
+from typing import Optional
 
 from mcp.server.auth.settings import AuthSettings
 
@@ -18,157 +26,81 @@ from src.core.knowledge import (
     InMemoryKnowledgeRepository,
     SQLKnowledgeRepository,
 )
-from src.core.requirements import (
-    KnowledgeBackedRequirements,
-    SQLRequirementsRepository,
-)
-from src.core.review_state import InMemoryReviewStateRepository
-from src.core.services import service_registry
-from src.core.topology import InMemoryTopologyRepository, SQLTopologyRepository
-
-from .auth import (
+from src.core.mcp import Surface, create_mcp_server, hosted_surface, personal_surface
+from src.core.mcp.auth import (
     EntitledScopeResolver,
     SourceAntTokenVerifier,
     connected_repository_entitlement,
 )
-from .server import create_mcp_server
+from src.core.requirements import (
+    KnowledgeBackedRequirements,
+    SQLRequirementsRepository,
+)
+from src.core.review import InMemoryFindingStore, finding_store
+from src.core.services import service_registry
+from src.core.topology import InMemoryTopologyRepository, SQLTopologyRepository
+from src.utils.logger import logger
 
 
 def create_default_mcp_server():
-    engine = get_engine()
-    knowledge = (
-        SQLKnowledgeRepository(engine)
-        if engine is not None
-        else InMemoryKnowledgeRepository()
-    )
-    topology = (
-        SQLTopologyRepository(engine)
-        if engine is not None
-        else InMemoryTopologyRepository()
-    )
-    code = _resolving_code_index(engine)
-    requirements = _requirements(engine, knowledge)
-    provider = DefaultContextProvider(
-        code=code,
-        knowledge=knowledge,
-        topology=topology,
-        contracts=InMemoryContractRepository(),
-        review_state=InMemoryReviewStateRepository(),
-        requirements=requirements,
-    )
-    return create_mcp_server(
-        provider,
-        code=code,
-        knowledge=knowledge,
-        topology=topology,
-        requirements=requirements,
-        reviews=_reviewer(),
-    )
+    """The stdio server.
 
-
-def _reviewer():
-    """How this server starts a review, or None where it cannot.
-
-    Only the local surface reviews a checkout: it reads files off a disk, and a
-    hosted deployment has nobody's disk to read.
-
-    The work is handed to the agent rather than done here. This server is
-    frequently a stdio process that lives exactly as long as the client holding
-    it, and a review takes longer than that: a thread started here dies with
-    the process and leaves a review that says "running" for ever. The agent is
-    the thing that is always up.
+    Stdio has no listening socket, so the transport itself is the evidence that
+    the client and the checkout are on one computer.
     """
-    from src.config.settings import LOCAL_MODE
-
-    if not LOCAL_MODE:
-        return None
-
-    def start(repository: str, title: str = "") -> dict:
-        agent = os.getenv("SOURCEANT_UI_URL", "").rstrip("/")
-        if agent:
-            return _asked_of_the_agent(agent, repository, title)
-        return _run_here(repository, title)
-
-    return start
-
-
-def _asked_of_the_agent(agent: str, repository: str, title: str) -> dict:
-    """Hand the work to the process that will outlive this one."""
-    import json
-    import urllib.error
-    import urllib.request
-
-    request = urllib.request.Request(
-        f"{agent}/api/reviews",
-        method="POST",
-        data=json.dumps(
-            {"repository": repository, "title": title, "use_model": True}
-        ).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as answer:
-            started = json.load(answer)
-    except urllib.error.HTTPError as refused:
-        raise ValueError(refused.read().decode(errors="replace")[:500]) from refused
-    except OSError as error:
-        # The agent is how this reaches anything. Saying so beats a review
-        # that never finishes.
-        raise ValueError(f"The SourceAnt agent is not answering at {agent}") from error
-
-    started["url"] = f"{agent}/#/reviews/{started['id']}"
-    return started
-
-
-def _run_here(repository: str, title: str) -> dict:
-    """Do it in this process, for a server that is going to be around.
-
-    Only right where this is the long-lived HTTP core. A stdio server that
-    takes this path leaves the review unfinished when its client goes away.
-    """
-    from src.api.routes.code import find_repository
-    from src.api.routes.local_reviews import (
-        ReviewInput,
-        get_knowledge,
-        get_reviews,
-        kept,
-        run,
-    )
-    from src.core.local_reviews import LocalReview, named
-
-    find_repository(repository)
-    body = ReviewInput(repository=repository, title=title)
-    store, reviews = get_knowledge(), get_reviews()
-
-    identifier = named()
-    started = reviews.put(
-        LocalReview(id=identifier, repository=repository, title=title)
-    )
-    Thread(target=run, args=(identifier, body, store, reviews), daemon=True).start()
-
-    answer = kept(started)
-    answer["url"] = _where(answer["path"])
-    return answer
-
-
-def _where(path: str) -> str:
-    """A link somebody can click, where this machine knows its own address.
-
-    The agent serves the screen and knows where it is listening; core is told
-    on the way in. Without that, the path is the honest answer.
-    """
-    base = os.getenv("SOURCEANT_UI_URL", "").rstrip("/")
-    return f"{base}/{path}" if base else path
+    return _assemble(personal_surface())
 
 
 def create_http_mcp_server():
+    """The HTTP server, or None where this deployment serves none."""
+    surface = mcp_surface()
+    if surface is None:
+        return None
+    # Before assembling: a server advertises the tools that exist when it is
+    # built, and the plugins contributing them are otherwise initialized later
+    # in the application's lifespan.
+    load_plugins()
+    return _assemble(surface)
+
+
+def load_plugins() -> None:
+    """Initialize plugins, so the tools they contribute are advertised.
+
+    Only as far as initializing. Starting them subscribes to webhook events,
+    which the application's own lifespan does when it is serving them.
+    """
+    import asyncio
+    from pathlib import Path
+
+    from src.core.plugins import plugin_manager
+
+    async def load() -> None:
+        plugin_manager.add_plugin_directory(Path(__file__).parent.parent / "plugins")
+        await plugin_manager.load_all_plugins()
+        await plugin_manager.initialize_plugins()
+
+    try:
+        asyncio.run(load())
+    except Exception as error:  # noqa: BLE001 - serve core's own tools regardless
+        logger.warning(f"MCP tools from plugins are unavailable: {error}")
+
+
+def mcp_surface() -> Optional[Surface]:
+    """Which surface this deployment's HTTP endpoint serves, if any."""
+    issuer = os.getenv("MCP_HTTP_ISSUER_URL")
+    if issuer:
+        return _hosted(issuer)
+    if _local_mode():
+        return personal_surface()
+    return None
+
+
+def _hosted(issuer: str) -> Surface:
     values = {
-        "issuer": os.getenv("MCP_HTTP_ISSUER_URL"),
+        "issuer": issuer,
         "resource": os.getenv("MCP_HTTP_RESOURCE_URL"),
         "audience": os.getenv("MCP_HTTP_AUDIENCE"),
     }
-    if not any(values.values()):
-        return None
     missing = [key for key, value in values.items() if not value]
     if not os.getenv("JWT_SECRET"):
         missing.append("JWT_SECRET")
@@ -181,34 +113,7 @@ def create_http_mcp_server():
         for item in os.getenv("MCP_HTTP_REQUIRED_SCOPES", "sourceant").split()
         if item
     )
-    engine = get_engine()
-    knowledge = (
-        SQLKnowledgeRepository(engine)
-        if engine is not None
-        else InMemoryKnowledgeRepository()
-    )
-    topology = (
-        SQLTopologyRepository(engine)
-        if engine is not None
-        else InMemoryTopologyRepository()
-    )
-    code = _resolving_code_index(engine)
-    requirements = _requirements(engine, knowledge)
-    provider = DefaultContextProvider(
-        code=code,
-        knowledge=knowledge,
-        topology=topology,
-        contracts=InMemoryContractRepository(),
-        review_state=InMemoryReviewStateRepository(),
-        requirements=requirements,
-    )
-    return create_mcp_server(
-        provider,
-        code=code,
-        knowledge=knowledge,
-        topology=topology,
-        requirements=requirements,
-        scope_resolver=EntitledScopeResolver(connected_repository_entitlement(engine)),
+    return hosted_surface(
         auth=AuthSettings(
             issuer_url=values["issuer"],
             resource_server_url=values["resource"],
@@ -219,6 +124,57 @@ def create_http_mcp_server():
             audience=values["audience"],
             required_scopes=required_scopes,
         ),
+        scope_resolver=EntitledScopeResolver(
+            connected_repository_entitlement(get_engine())
+        ),
+    )
+
+
+def _local_mode() -> bool:
+    # Read through the module: serve_command sets the attribute after settings
+    # is imported.
+    from src.config import settings
+
+    return bool(getattr(settings, "LOCAL_MODE", False))
+
+
+def _assemble(surface: Surface):
+    knowledge, topology, code, requirements = _repositories(get_engine())
+    provider = DefaultContextProvider(
+        code=code,
+        knowledge=knowledge,
+        topology=topology,
+        contracts=InMemoryContractRepository(),
+        # Whatever keeps findings, or one that forgets when nothing does.
+        review_state=finding_store() or InMemoryFindingStore(),
+        requirements=requirements,
+    )
+    return create_mcp_server(
+        provider,
+        code=code,
+        knowledge=knowledge,
+        topology=topology,
+        requirements=requirements,
+        surface=surface,
+    )
+
+
+def _repositories(engine):
+    knowledge = (
+        SQLKnowledgeRepository(engine)
+        if engine is not None
+        else InMemoryKnowledgeRepository()
+    )
+    topology = (
+        SQLTopologyRepository(engine)
+        if engine is not None
+        else InMemoryTopologyRepository()
+    )
+    return (
+        knowledge,
+        topology,
+        _resolving_code_index(engine),
+        _requirements(engine, knowledge),
     )
 
 

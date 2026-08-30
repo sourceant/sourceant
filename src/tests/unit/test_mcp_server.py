@@ -27,9 +27,16 @@ from src.core.knowledge import (
 from src.core.requirements import Requirement, SQLRequirementsRepository
 from src.core.scope import Scope
 from src.core.topology import SQLTopologyRepository
-from src.mcp_server import create_mcp_server
+from src.core.mcp import (
+    contribute_tools,
+    create_mcp_server,
+    hosted_surface,
+    personal_surface,
+)
+from src.core.services import ServiceRegistry
+from src.plugins.builtin.code_reviewer.tools import ReviewTools
 from src.mcp_server.application import create_http_mcp_server
-from src.mcp_server.auth import EntitledScopeResolver, SourceAntTokenVerifier
+from src.core.mcp.auth import EntitledScopeResolver, SourceAntTokenVerifier
 
 PROJECT = Scope.from_mapping({"project": "one"})
 OTHER_PROJECT = Scope.from_mapping({"project": "two"})
@@ -413,18 +420,20 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
     server = create_mcp_server(
         DefaultContextProvider(knowledge=knowledge),
         knowledge=knowledge,
-        scope_resolver=EntitledScopeResolver(
-            lambda workspace, repository: entitlements.get((workspace, repository))
-        ),
-        auth=AuthSettings(
-            issuer_url="https://issuer.example.com",
-            resource_server_url="https://sourceant.example.com/mcp",
-            required_scopes=["sourceant"],
-        ),
-        token_verifier=SourceAntTokenVerifier(
-            issuer="https://issuer.example.com",
-            audience="sourceant-mcp",
-            required_scopes=frozenset({"sourceant"}),
+        surface=hosted_surface(
+            scope_resolver=EntitledScopeResolver(
+                lambda workspace, repository: entitlements.get((workspace, repository))
+            ),
+            auth=AuthSettings(
+                issuer_url="https://issuer.example.com",
+                resource_server_url="https://sourceant.example.com/mcp",
+                required_scopes=["sourceant"],
+            ),
+            token_verifier=SourceAntTokenVerifier(
+                issuer="https://issuer.example.com",
+                audience="sourceant-mcp",
+                required_scopes=frozenset({"sourceant"}),
+            ),
         ),
     )
     mcp_app = server.streamable_http_app()
@@ -513,24 +522,45 @@ class TestReviewingAWorkingTree:
     """The half an agent can do: ask for one, and hand somebody the link."""
 
     def asked(self):
+        """The plugin's tool provider, with the reviewing itself stubbed out."""
         seen = {}
 
-        def start(repository, title=""):
-            seen["repository"] = repository
-            seen["title"] = title
-            return {
-                "id": "abc123",
-                "repository": repository,
-                "status": "running",
-                "path": "#/reviews/abc123",
-                "url": "http://127.0.0.1:8930/#/reviews/abc123",
-            }
+        class Fake(ReviewTools):
+            def _start(self, repository, title=""):
+                seen["repository"] = repository
+                seen["title"] = title
+                return {
+                    "id": "abc123",
+                    "repository": repository,
+                    "status": "running",
+                    "path": "/reviews/abc123",
+                    "url": "http://127.0.0.1:8930/reviews/abc123",
+                }
 
-        return start, seen
+        services = ServiceRegistry()
+        contribute_tools(Fake(), "test", services)
+        return services, seen
 
     @pytest.mark.asyncio
     async def test_a_server_with_no_checkout_does_not_offer_it(self):
-        server = create_mcp_server(DefaultContextProvider(code=InMemoryCodeIndex()))
+        services, _ = self.asked()
+        server = create_mcp_server(
+            DefaultContextProvider(code=InMemoryCodeIndex()),
+            surface=hosted_surface(
+                auth=AuthSettings(
+                    issuer_url="https://issuer.example.com",
+                    resource_server_url="https://sourceant.example.com/mcp",
+                    required_scopes=["sourceant"],
+                ),
+                token_verifier=SourceAntTokenVerifier(
+                    issuer="https://issuer.example.com",
+                    audience="sourceant",
+                    required_scopes=frozenset({"sourceant"}),
+                ),
+                scope_resolver=lambda scope: scope,
+            ),
+            services=services,
+        )
 
         async with create_connected_server_and_client_session(server) as session:
             tools = await session.list_tools()
@@ -539,9 +569,11 @@ class TestReviewingAWorkingTree:
 
     @pytest.mark.asyncio
     async def test_a_server_that_can_reach_one_offers_it(self):
-        start, _ = self.asked()
+        services, _ = self.asked()
         server = create_mcp_server(
-            DefaultContextProvider(code=InMemoryCodeIndex()), reviews=start
+            DefaultContextProvider(code=InMemoryCodeIndex()),
+            surface=personal_surface(),
+            services=services,
         )
 
         async with create_connected_server_and_client_session(server) as session:
@@ -551,9 +583,11 @@ class TestReviewingAWorkingTree:
 
     @pytest.mark.asyncio
     async def test_it_answers_with_a_link_rather_than_findings(self):
-        start, seen = self.asked()
+        services, seen = self.asked()
         server = create_mcp_server(
-            DefaultContextProvider(code=InMemoryCodeIndex()), reviews=start
+            DefaultContextProvider(code=InMemoryCodeIndex()),
+            surface=personal_surface(),
+            services=services,
         )
 
         async with create_connected_server_and_client_session(server) as session:
@@ -565,6 +599,6 @@ class TestReviewingAWorkingTree:
         structured = answered.structuredContent
         assert seen["repository"] == "acme/billing"
         assert structured["id"] == "abc123"
-        assert structured["url"].endswith("#/reviews/abc123")
+        assert structured["url"].endswith("/reviews/abc123")
         # Running, not finished: whoever asked is not the one who reads it.
         assert structured["status"] == "running"

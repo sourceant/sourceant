@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from src.mcp_server.application import _asked_of_the_agent
+from src.plugins.builtin.code_reviewer.tools import _asked_of_the_agent
 
 
 class Agent(BaseHTTPRequestHandler):
@@ -65,7 +65,7 @@ class TestHandingTheWorkOver:
         started = _asked_of_the_agent(agent, "acme/billing", "")
 
         assert started["id"] == "abc123"
-        assert started["url"] == f"{agent}/#/reviews/abc123"
+        assert started["url"] == f"{agent}/reviews/abc123"
 
     def test_an_agent_that_is_not_there_is_said_out_loud(self):
         # Better than doing the work in a process that is about to exit.
