@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] - 2026-08-30
+
+### Added
+
+- Reviewing a checkout on this machine, through the same reviewer a pull request
+  goes through, with no forge and no pull request involved
+- A review is kept and answers to a name, so an agent can ask for one over MCP and
+  hand somebody a link that still opens it an hour later
+- `review_working_tree` over MCP, and prompts a person can trigger rather than tools
+  a model has to decide to call
+- What a review found can be kept between runs and recognised again when the code
+  moves under it, so a finding dismissed once stays dismissed. Off unless asked for
+- Interfaces for what a deployment provides: which repositories a workspace covers,
+  where its skills are kept, which model it bills, and who is asking. A hosted
+  deployment answers from a database and a personal one from a disk
+- Knowledge can be read across every registered repository at once rather than one
+  at a time
+
+### Changed
+
+- The MCP server is part of the core rather than beside it, and anything able to do
+  something contributes the tools for it
+- A large change is read in parts sized to what a review can take in, rather than to
+  what the model will accept. On a change of a hundred and thirteen files the whole
+  diff yielded between nothing and ten findings and the parts yielded thirty four
+- The parts are read at the same time rather than one after another
+- The reviewer, the folders a workspace covers and the model it bills are resolved
+  through the registry rather than by reaching for a class
+
+### Fixed
+
+- A working checkout is indexed as it is rather than as a commit, and reviews asked
+  for it by commit. The code graph was never reachable from a review of a checkout
+- The claims a suggestion is checked against were optional in the schema a model
+  answers, so it never sent them and nothing was ever checked
+- Names bound at the left margin were recorded by nothing, so a claim that a constant
+  is undefined could not be contradicted by the file defining it
+- Skills are matched on letters rather than on A to Z, so a description written in
+  any other language is no longer split at every accent
+- A page of findings is asked of the database rather than fetched whole and sliced
+- The local API is published on loopback rather than on every interface, and the MCP
+  endpoint refuses a host it does not recognise
+
 ## [1.0.0-beta.1] - 2026-08-26
 
 ### Added
