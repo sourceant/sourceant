@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sourceant"
+dynamic = ["version", "dependencies"]
+description = "Software intelligence for you and your coding agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE.md" }
+
+[project.scripts]
+sourceant = "src.cli.main:cli"
+
+[project.urls]
+Homepage = "https://sourceant.ai"
+Source = "https://github.com/sourceant/sourceant"
+
+# The code imports itself as `src.*`, so `src` is what ships. Renaming it is a
+# change to every import in the tree, and this is installed into a virtual
+# environment of its own where nothing else claims the name.
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
+dependencies = { file = "requirements.txt" }
+
+[tool.setuptools.package-data]
+"src.migrations" = ["**/*.py", "**/*.mako", "**/*.ini"]

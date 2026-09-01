@@ -8,7 +8,7 @@ httpx==0.28.1
 litellm==1.96.0
 Mako==1.4.1
 mcp==1.28.1
-psycopg2==2.9.12
+psycopg2-binary==2.9.12
 pymysql==1.1.2
 PyJWT==2.13.0
 python-dateutil==2.8.2
