@@ -10,7 +10,7 @@ import sys
 import subprocess
 from src.config.settings import DATABASE_URL, STATELESS_MODE
 from src.utils.logger import logger
-from src.utils.migration_paths import resolve_version_locations
+from src.utils.migration_paths import migrations_root, resolve_version_locations
 from alembic.config import Config, CommandLine
 
 from src.cli.index_commands import (
@@ -44,7 +44,10 @@ def db_command(ctx):
     sys.argv = ["alembic"] + ctx.args
     cmd = CommandLine()
     options = cmd.parser.parse_args(ctx.args)
-    cfg = Config("alembic.ini", cmd_opts=options)
+    cfg = Config(cmd_opts=options)
+    # Installed as a package there is no alembic.ini and no repository to be
+    # relative to, so the migrations are found beside the code that ships them.
+    cfg.set_main_option("script_location", str(migrations_root()))
     cfg.set_main_option("version_locations", " ".join(resolve_version_locations()))
     fn, positional, kwarg = options.cmd
     fn(
