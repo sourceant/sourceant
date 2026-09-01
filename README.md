@@ -32,14 +32,11 @@ Catch context-blind changes early. Keep the useful knowledge they uncover. Stay 
 
 ## Run it locally
 
-Install the command. It is the only thing you fetch by hand.
+Install the CLI.
 
 ~~~bash
 curl -fsSL https://raw.githubusercontent.com/sourceant/cli/main/scripts/install.sh | sh
 ~~~
-
-Install the agent and the core. A container where you have Docker, a Python
-program where you do not.
 
 ~~~bash
 sourceant setup
@@ -84,16 +81,12 @@ You ask for it in plain language:
 
 The core is MIT licensed and self-hostable in full. [SourceAnt Cloud](https://app.sourceant.ai) runs the same engine with a managed layer on top: memory your team curates, contract analysis, continuous indexing at scale, the explorable graph, workspaces and roles, and analytics.
 
-## Contributing
+---
 
-Contributions are welcome. See [CONTRIBUTING](CONTRIBUTING.md).
+| License | Contact | Maintainer | Contributing |
+|---|---|---|---|
+| [MIT](LICENSE.md), copyright Whilesmart LLC | hello@sourceant.ai | [WhileSmart](https://whilesmart.com) | [CONTRIBUTING](CONTRIBUTING.md) |
 
 <a href="https://github.com/sourceant/sourceant/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=sourceant/sourceant" />
 </a>
-
----
-
-| License | Contact | Maintainer |
-|---|---|---|
-| [MIT](LICENSE.md), copyright Whilesmart LLC | hello@sourceant.ai | [WhileSmart](https://whilesmart.com) |
