@@ -12,18 +12,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read the version
+        id: version
+        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: whilesmart/workflows/python/release@main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           package: sourceant
           release_type: app
-          python_version: '3.9'
+          python_version: '3.10'
+          build_command: pip install build && python -m build --wheel
           deploy_instructions: |
-            Pull the latest Docker image or build from source:
+            Install the CLI, and it brings down the rest:
 
             ```bash
-            docker compose up -d
+            curl -fsSL https://raw.githubusercontent.com/sourceant/cli/main/scripts/install.sh | sh
+            sourceant setup
+            sourceant ui
             ```
 
             See the [README](README.md) for full setup instructions.
+
+      # The wheel is what `sourceant setup --runtime python` installs, so it is
+      # attached to the release the CLI reads rather than published separately.
+      - name: Attach the wheel
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: v${{ steps.version.outputs.version }}
+          files: dist/*.whl

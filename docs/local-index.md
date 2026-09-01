@@ -15,6 +15,19 @@ With no `DATABASE_URL` set, SourceAnt uses a SQLite database in your user data d
 
 Set `DATABASE_URL` and it uses that instead, which is what a deployment does.
 
+### Running it from source
+
+The binaries are the short path. To run the core directly instead:
+
+```bash
+git clone https://github.com/sourceant/sourceant.git
+cd sourceant
+pip install -r requirements.txt
+./sourceant db upgrade head
+```
+
+The commands below are that `./sourceant`, and are the same ones the agent calls.
+
 ### Registering repositories
 
 ```bash

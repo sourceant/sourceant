@@ -27,8 +27,12 @@ class TestRepositoryEvents(BaseTestCase):
 
     @pytest.mark.parametrize("stateless_mode", [True, False])
     def test_github_webhook(self, stateless_mode):
-        with patch("src.config.db.STATELESS_MODE", stateless_mode), patch(
-            "src.controllers.repository_event_controller.STATELESS_MODE", stateless_mode
+        with (
+            patch("src.config.db.STATELESS_MODE", stateless_mode),
+            patch(
+                "src.controllers.repository_event_controller.STATELESS_MODE",
+                stateless_mode,
+            ),
         ):
             payload = {
                 "action": "opened",
@@ -76,8 +80,12 @@ class TestRepositoryEvents(BaseTestCase):
 
     @pytest.mark.parametrize("stateless_mode", [True, False])
     def test_get_repository_events(self, stateless_mode):
-        with patch("src.config.db.STATELESS_MODE", stateless_mode), patch(
-            "src.controllers.repository_event_controller.STATELESS_MODE", stateless_mode
+        with (
+            patch("src.config.db.STATELESS_MODE", stateless_mode),
+            patch(
+                "src.controllers.repository_event_controller.STATELESS_MODE",
+                stateless_mode,
+            ),
         ):
             if not stateless_mode:
                 RepositoryEvent.create(
@@ -188,8 +196,9 @@ class TestRepositoryEvents(BaseTestCase):
         assert response.status_code == 401
 
     def test_get_multiple_repository_events(self):
-        with patch("src.config.db.STATELESS_MODE", False), patch(
-            "src.controllers.repository_event_controller.STATELESS_MODE", False
+        with (
+            patch("src.config.db.STATELESS_MODE", False),
+            patch("src.controllers.repository_event_controller.STATELESS_MODE", False),
         ):
             for i in range(1, 4):
                 RepositoryEvent.create(

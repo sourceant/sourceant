@@ -44,13 +44,16 @@ def test_download_repository_archive_streams_authenticated_revision(github_insta
     response._content_consumed = True
     destination = io.BytesIO()
 
-    with patch.object(
-        github_instance,
-        "get_installation_access_token",
-        return_value="installation-token",
-    ), patch(
-        "src.integrations.github.github.requests.get", return_value=response
-    ) as get:
+    with (
+        patch.object(
+            github_instance,
+            "get_installation_access_token",
+            return_value="installation-token",
+        ),
+        patch(
+            "src.integrations.github.github.requests.get", return_value=response
+        ) as get,
+    ):
         github_instance.download_repository_archive(
             "sourceant", "sourceant", "abc123", destination
         )
@@ -68,11 +71,14 @@ def test_download_repository_archive_reports_the_configured_limit(github_instanc
     response._content = b"archive-content"
     response._content_consumed = True
 
-    with patch.object(
-        github_instance,
-        "get_installation_access_token",
-        return_value="installation-token",
-    ), patch("src.integrations.github.github.requests.get", return_value=response):
+    with (
+        patch.object(
+            github_instance,
+            "get_installation_access_token",
+            return_value="installation-token",
+        ),
+        patch("src.integrations.github.github.requests.get", return_value=response),
+    ):
         with pytest.raises(
             ValueError,
             match="repository archive exceeds the 3-byte download limit",
@@ -145,17 +151,22 @@ def code_review_instance_comment_no_suggestions():
 
 
 def test_generate_jwt(github_instance):
-    with patch(
-        "builtins.open", new_callable=mock_open, read_data="test_private_key"
-    ), patch("jwt.encode") as mock_jwt_encode:
+    with (
+        patch("builtins.open", new_callable=mock_open, read_data="test_private_key"),
+        patch("jwt.encode") as mock_jwt_encode,
+    ):
         github_instance.generate_jwt()
         mock_jwt_encode.assert_called_once()
 
 
 def test_get_installation_id(github_instance, repository_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.generate_jwt", return_value="test_jwt"
-    ), patch("requests.get") as mock_get:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.generate_jwt",
+            return_value="test_jwt",
+        ),
+        patch("requests.get") as mock_get,
+    ):
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": 12345}
         mock_response.raise_for_status.return_value = None
@@ -169,13 +180,17 @@ def test_get_installation_id(github_instance, repository_instance):
 
 
 def test_get_installation_access_token_caching(github_instance, repository_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.get_installation_id", return_value=12345
-    ), patch(
-        "src.integrations.github.github.GitHub.generate_jwt", return_value="test_jwt"
-    ), patch(
-        "requests.post"
-    ) as mock_post:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.get_installation_id",
+            return_value=12345,
+        ),
+        patch(
+            "src.integrations.github.github.GitHub.generate_jwt",
+            return_value="test_jwt",
+        ),
+        patch("requests.post") as mock_post,
+    ):
 
         mock_response = MagicMock()
         # Corrected to match the new implementation that uses time.time()
@@ -213,9 +228,13 @@ def test_get_installation_access_token_caching(github_instance, repository_insta
 
 
 def test_get_app_slug(github_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.generate_jwt", return_value="test_jwt"
-    ), patch("requests.get") as mock_get:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.generate_jwt",
+            return_value="test_jwt",
+        ),
+        patch("requests.get") as mock_get,
+    ):
         mock_response = MagicMock()
         mock_response.json.return_value = {"slug": "test-app"}
         mock_response.raise_for_status.return_value = None
@@ -271,10 +290,13 @@ def test_find_overview_comment_not_found(
 def test_create_or_update_overview_comment_create(
     github_instance, repository_instance, pull_request_instance
 ):
-    with patch(
-        "src.integrations.github.github.GitHub._find_overview_comment",
-        return_value=None,
-    ), patch("requests.post") as mock_post:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub._find_overview_comment",
+            return_value=None,
+        ),
+        patch("requests.post") as mock_post,
+    ):
 
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
@@ -297,10 +319,13 @@ def test_create_or_update_overview_comment_create(
 def test_create_or_update_overview_comment_update(
     github_instance, repository_instance, pull_request_instance
 ):
-    with patch(
-        "src.integrations.github.github.GitHub._find_overview_comment",
-        return_value={"id": 123, "body": "old summary"},
-    ), patch("requests.patch") as mock_patch:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub._find_overview_comment",
+            return_value={"id": 123, "body": "old summary"},
+        ),
+        patch("requests.patch") as mock_patch,
+    ):
 
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
@@ -318,15 +343,17 @@ def test_create_or_update_overview_comment_update(
 
 
 def test_has_existing_bot_approval_true(github_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.get_installation_access_token",
-        return_value="test_token",
-    ), patch(
-        "src.integrations.github.github.GitHub.get_app_slug",
-        return_value="sourceant",
-    ), patch(
-        "requests.get"
-    ) as mock_get:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ),
+        patch(
+            "src.integrations.github.github.GitHub.get_app_slug",
+            return_value="sourceant",
+        ),
+        patch("requests.get") as mock_get,
+    ):
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
@@ -341,15 +368,17 @@ def test_has_existing_bot_approval_true(github_instance):
 
 
 def test_has_existing_bot_approval_false(github_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.get_installation_access_token",
-        return_value="test_token",
-    ), patch(
-        "src.integrations.github.github.GitHub.get_app_slug",
-        return_value="sourceant",
-    ), patch(
-        "requests.get"
-    ) as mock_get:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ),
+        patch(
+            "src.integrations.github.github.GitHub.get_app_slug",
+            return_value="sourceant",
+        ),
+        patch("requests.get") as mock_get,
+    ):
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
@@ -368,15 +397,17 @@ def test_has_existing_bot_approval_false(github_instance):
 
 
 def test_has_existing_bot_approval_paginates(github_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.get_installation_access_token",
-        return_value="test_token",
-    ), patch(
-        "src.integrations.github.github.GitHub.get_app_slug",
-        return_value="sourceant",
-    ), patch(
-        "requests.get"
-    ) as mock_get:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ),
+        patch(
+            "src.integrations.github.github.GitHub.get_app_slug",
+            return_value="sourceant",
+        ),
+        patch("requests.get") as mock_get,
+    ):
         first_page = MagicMock()
         first_page.json.return_value = [
             {"user": {"login": "other-user"}, "state": "APPROVED"}
@@ -394,15 +425,17 @@ def test_has_existing_bot_approval_paginates(github_instance):
 
 
 def test_has_existing_bot_approval_false_after_request_changes(github_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.get_installation_access_token",
-        return_value="test_token",
-    ), patch(
-        "src.integrations.github.github.GitHub.get_app_slug",
-        return_value="sourceant",
-    ), patch(
-        "requests.get"
-    ) as mock_get:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ),
+        patch(
+            "src.integrations.github.github.GitHub.get_app_slug",
+            return_value="sourceant",
+        ),
+        patch("requests.get") as mock_get,
+    ):
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
@@ -447,16 +480,17 @@ def test_post_review_uses_line_side_and_commit_id(
 
     mock_mapper = MagicMock(spec=LineMapper)
 
-    with patch(
-        "src.integrations.github.github.GitHub.get_installation_access_token",
-        return_value="test_token",
-    ), patch(
-        "src.integrations.github.github.GitHub._find_overview_comment",
-        return_value=None,
-    ), patch(
-        "requests.post"
-    ) as mock_post, patch(
-        "requests.get"
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_token",
+        ),
+        patch(
+            "src.integrations.github.github.GitHub._find_overview_comment",
+            return_value=None,
+        ),
+        patch("requests.post") as mock_post,
+        patch("requests.get"),
     ):
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": 1}
@@ -562,15 +596,17 @@ class TestPostReviewRetryOn422:
 
 class TestGetExistingBotReviewComments:
     def test_returns_bot_comments(self, github_instance):
-        with patch(
-            "src.integrations.github.github.GitHub.get_installation_access_token",
-            return_value="test_token",
-        ), patch(
-            "src.integrations.github.github.GitHub.get_app_slug",
-            return_value="sourceant",
-        ), patch(
-            "requests.get"
-        ) as mock_get:
+        with (
+            patch(
+                "src.integrations.github.github.GitHub.get_installation_access_token",
+                return_value="test_token",
+            ),
+            patch(
+                "src.integrations.github.github.GitHub.get_app_slug",
+                return_value="sourceant",
+            ),
+            patch("requests.get") as mock_get,
+        ):
             mock_response = MagicMock()
             mock_response.json.return_value = [
                 {
@@ -609,15 +645,17 @@ class TestGetExistingBotReviewComments:
             assert result[1]["path"] == "src/utils.py"
 
     def test_returns_empty_on_no_bot_comments(self, github_instance):
-        with patch(
-            "src.integrations.github.github.GitHub.get_installation_access_token",
-            return_value="test_token",
-        ), patch(
-            "src.integrations.github.github.GitHub.get_app_slug",
-            return_value="sourceant",
-        ), patch(
-            "requests.get"
-        ) as mock_get:
+        with (
+            patch(
+                "src.integrations.github.github.GitHub.get_installation_access_token",
+                return_value="test_token",
+            ),
+            patch(
+                "src.integrations.github.github.GitHub.get_app_slug",
+                return_value="sourceant",
+            ),
+            patch("requests.get") as mock_get,
+        ):
             mock_response = MagicMock()
             mock_response.json.return_value = [
                 {"user": {"login": "human"}, "path": "a.py", "body": "ok", "line": 1}
@@ -641,15 +679,17 @@ class TestGetExistingBotReviewComments:
             assert result == []
 
     def test_paginates(self, github_instance):
-        with patch(
-            "src.integrations.github.github.GitHub.get_installation_access_token",
-            return_value="test_token",
-        ), patch(
-            "src.integrations.github.github.GitHub.get_app_slug",
-            return_value="sourceant",
-        ), patch(
-            "requests.get"
-        ) as mock_get:
+        with (
+            patch(
+                "src.integrations.github.github.GitHub.get_installation_access_token",
+                return_value="test_token",
+            ),
+            patch(
+                "src.integrations.github.github.GitHub.get_app_slug",
+                return_value="sourceant",
+            ),
+            patch("requests.get") as mock_get,
+        ):
             page1 = MagicMock()
             page1.json.return_value = [
                 {
@@ -685,10 +725,13 @@ class TestGetExistingBotReviewComments:
 
 
 def test_get_diff(github_instance, repository_instance, pull_request_instance):
-    with patch(
-        "src.integrations.github.github.GitHub.get_installation_access_token",
-        return_value="test_access_token",
-    ), patch("requests.get") as mock_get:
+    with (
+        patch(
+            "src.integrations.github.github.GitHub.get_installation_access_token",
+            return_value="test_access_token",
+        ),
+        patch("requests.get") as mock_get,
+    ):
         mock_response = MagicMock()
         mock_response.text = "diff --git a/file.py b/file.py\n--- a/file.py\n+++ b/file.py\n@@ -1,1 +1,1 @@\n-hello\n+world"
         mock_response.raise_for_status.return_value = None
