@@ -1,13 +1,20 @@
 import glob as globmod
 import os
+from pathlib import Path
 from typing import List
 
 from src.utils.logger import logger
 
 
+def migrations_root() -> Path:
+    """Where the migrations live, whether this is a checkout or a wheel."""
+    return Path(__file__).resolve().parent.parent / "migrations"
+
+
 def resolve_version_locations() -> List[str]:
-    dirs = globmod.glob("src/plugins/builtin/*/migrations")
-    dirs += globmod.glob("src/plugins/*/migrations")
+    package = migrations_root().parent
+    dirs = globmod.glob(str(package / "plugins" / "builtin" / "*" / "migrations"))
+    dirs += globmod.glob(str(package / "plugins" / "*" / "migrations"))
     try:
         from importlib.metadata import entry_points
         import importlib.util
@@ -23,4 +30,4 @@ def resolve_version_locations() -> List[str]:
                 dirs.append(path)
     except Exception as e:
         logger.warning(f"Could not discover entrypoint migrations: {e}")
-    return ["src/migrations/versions"] + dirs
+    return [str(migrations_root() / "versions")] + dirs
