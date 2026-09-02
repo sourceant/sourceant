@@ -47,15 +47,24 @@ class SettingsModelSource:
         )
         if choice is None:
             return None
-        if choice not in self._built:
+        # Keyed on who is asking as well as what is asked, because what a call
+        # consumed is recorded against the scope the model was chosen for, and a
+        # provider kept for one scope would report every later call as that one.
+        asking = (repository, organization, user)
+        if (choice, asking) not in self._built:
             logger.info(f"Asking {choice.name}")
-            self._built[choice] = LiteLLMProvider(
+            self._built[(choice, asking)] = LiteLLMProvider(
                 model=choice.name,
                 token_limit=choice.token_limit,
                 api_key=choice.api_key,
                 api_base=choice.base_url,
+                attribution={
+                    "repository": repository,
+                    "organization": organization,
+                    "user": user,
+                },
             )
-        return self._built[choice]
+        return self._built[(choice, asking)]
 
     def choice_for(
         self,

@@ -22,6 +22,7 @@ class LiteLLMProvider(LLMInterface):
         token_limit: int,
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
+        attribution: Optional[dict] = None,
     ):
         self.model = model
         self._token_limit = token_limit
@@ -29,6 +30,33 @@ class LiteLLMProvider(LLMInterface):
         # which is how a deployment has always configured this.
         self._api_key = api_key or None
         self._api_base = api_base or None
+        # Who the call is on behalf of. Known where the model was chosen and
+        # nowhere after it, so it is carried rather than looked up again.
+        self._attribution = attribution or {}
+
+    def _spent(self, response, purpose: str) -> None:
+        """Keep what the provider says the call consumed.
+
+        The counts come back on the response and were thrown away with it. A
+        count taken from the prompt here would see neither the system prompt nor
+        the answer, and the answer is the expensive half.
+        """
+        from src.core.usage import ModelUsage, record
+
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return
+        hidden = getattr(response, "_hidden_params", None) or {}
+        record(
+            ModelUsage(
+                model=self.model,
+                input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                cost=hidden.get("response_cost"),
+                purpose=purpose,
+                **self._attribution,
+            )
+        )
 
     def _credentials(self) -> dict:
         given = {}
@@ -134,6 +162,7 @@ class LiteLLMProvider(LLMInterface):
                 response_format=CodeReview,
             )
 
+            self._spent(response, "review")
             logger.info("Code review generated successfully.")
 
             review = CodeReview.model_validate_json(response.choices[0].message.content)
@@ -170,6 +199,7 @@ class LiteLLMProvider(LLMInterface):
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
+            self._spent(response, "summary")
             return response.choices[0].message.content
 
         response = litellm.completion(
@@ -178,6 +208,7 @@ class LiteLLMProvider(LLMInterface):
             messages=[{"role": "user", "content": prompt}],
             response_format=CodeReviewSummary,
         )
+        self._spent(response, "summary")
         return CodeReviewSummary.model_validate_json(
             response.choices[0].message.content
         )
@@ -189,6 +220,7 @@ class LiteLLMProvider(LLMInterface):
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
+            self._spent(response, "text")
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"An error occurred during text generation: {e}")
@@ -206,6 +238,7 @@ class LiteLLMProvider(LLMInterface):
                 messages=[{"role": "user", "content": prompt}],
             )
 
+            self._spent(response, "summary-comparison")
             verdict = response.choices[0].message.content.strip().upper()
             logger.info(f"Summary comparison verdict: {verdict}")
 
