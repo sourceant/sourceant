@@ -6,6 +6,7 @@ where the skills are, and which model the bill goes to.
 
 from typing import Any, Dict, Optional
 
+from src.config import settings
 from src.config.db import get_engine
 from src.core.environment import Environment
 from src.core.model import ModelSource
@@ -48,7 +49,13 @@ class LocalPlugin(BasePlugin):
                     },
                 },
             },
-            enabled=True,
+            # Off unless this is somebody's own machine. Hosted, it would answer
+            # for the model as well, and its answer is that nobody chose one,
+            # which leaves a deployment that named a model unable to review.
+            # `sourceant serve` is what turns this on; deployments run uvicorn
+            # directly and leave it off. Read through the module rather than
+            # imported, because serve sets it after settings is first imported.
+            enabled=settings.LOCAL_MODE,
             priority=20,
         )
 
