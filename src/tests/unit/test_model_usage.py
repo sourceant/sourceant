@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel, select
 
 from src.core.model.settings import Choice, SettingsModelSource
+from src.core.usage import record_completion
 from src.llms.litellm_provider import LiteLLMProvider
 from src.models.model_usage import ModelUsageRecord
 
@@ -78,3 +79,41 @@ def test_two_repositories_are_not_billed_to_one(tmp_path):
     assert first is not second
     assert first._attribution["repository"] == "one/a"
     assert second._attribution["repository"] == "two/b"
+
+
+def test_a_provider_that_names_the_counts_differently_is_still_read(tmp_path):
+    """The raw Anthropic client reports input_tokens and output_tokens."""
+    engine = _kept(tmp_path)
+    answered = SimpleNamespace(usage=SimpleNamespace(input_tokens=90, output_tokens=15))
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(
+            answered, model="anthropic/one", purpose="extraction", repository="a/b"
+        )
+
+    with Session(engine) as session:
+        kept = session.exec(select(ModelUsageRecord)).all()
+
+    assert len(kept) == 1
+    assert kept[0].input_tokens == 90
+    assert kept[0].output_tokens == 15
+    assert kept[0].repository == "a/b"
+    assert kept[0].cost is None
+
+
+def test_an_answer_that_reports_nothing_is_not_a_call_that_cost_nothing(tmp_path):
+    """A row of zeroes would read as a free call, which is a different claim."""
+    engine = _kept(tmp_path)
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(SimpleNamespace(), model="m", purpose="p")
+        record_completion(
+            SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=0, completion_tokens=0)
+            ),
+            model="m",
+            purpose="p",
+        )
+
+    with Session(engine) as session:
+        assert session.exec(select(ModelUsageRecord)).all() == []

@@ -49,11 +49,8 @@ class LocalPlugin(BasePlugin):
                     },
                 },
             },
-            # Off unless this is somebody's own machine. Hosted, it would answer
-            # for the model as well, and its answer is that nobody chose one,
-            # which leaves a deployment that named a model unable to review.
-            # `sourceant serve` is what turns this on; deployments run uvicorn
-            # directly and leave it off. Read through the module rather than
+            # `sourceant serve` turns this on; a deployment runs uvicorn
+            # directly and leaves it off. Read through the module rather than
             # imported, because serve sets it after settings is first imported.
             enabled=settings.LOCAL_MODE,
             priority=20,

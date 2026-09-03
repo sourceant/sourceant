@@ -37,25 +37,14 @@ class LiteLLMProvider(LLMInterface):
     def _spent(self, response, purpose: str) -> None:
         """Keep what the provider says the call consumed.
 
-        The counts come back on the response and were thrown away with it. A
-        count taken from the prompt here would see neither the system prompt nor
-        the answer, and the answer is the expensive half.
+        The counts come back on the answer and were thrown away with it. A count
+        taken from the prompt here would see neither the system prompt nor the
+        answer, and the answer is the expensive half.
         """
-        from src.core.usage import ModelUsage, record
+        from src.core.usage import record_completion
 
-        usage = getattr(response, "usage", None)
-        if usage is None:
-            return
-        hidden = getattr(response, "_hidden_params", None) or {}
-        record(
-            ModelUsage(
-                model=self.model,
-                input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-                output_tokens=getattr(usage, "completion_tokens", 0) or 0,
-                cost=hidden.get("response_cost"),
-                purpose=purpose,
-                **self._attribution,
-            )
+        record_completion(
+            response, model=self.model, purpose=purpose, **self._attribution
         )
 
     def _credentials(self) -> dict:
