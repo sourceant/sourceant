@@ -9,12 +9,14 @@ class ModelUsageRecord(BaseModel, table=True):
     __tablename__ = "model_usage"
 
     id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    provider: str = Field(default="", index=True)
     model: str = Field(index=True)
     purpose: str = Field(default="", index=True)
     input_tokens: int = Field(default=0)
     output_tokens: int = Field(default=0)
     reported_total: int = Field(default=0)
-    cost: Optional[float] = Field(default=None)
+    cost_micro: Optional[int] = Field(default=None)
+    currency: str = Field(default="USD")
     workspace: Optional[str] = Field(default=None, index=True)
     repository: Optional[str] = Field(default=None, index=True)
     organization: Optional[str] = Field(default=None)

@@ -49,7 +49,7 @@ def test_a_call_records_what_it_consumed_and_for_whom(tmp_path):
     assert kept[0].repository == "sourceant/cli"
     assert kept[0].input_tokens == 120
     assert kept[0].output_tokens == 30
-    assert kept[0].cost == 0.0004
+    assert kept[0].cost_micro == 400
     assert kept[0].purpose == "text"
 
 
@@ -98,7 +98,7 @@ def test_a_provider_that_names_the_counts_differently_is_still_read(tmp_path):
     assert kept[0].input_tokens == 90
     assert kept[0].output_tokens == 15
     assert kept[0].repository == "a/b"
-    assert kept[0].cost is None
+    assert kept[0].cost_micro is None
 
 
 def test_an_answer_that_reports_nothing_is_not_a_call_that_cost_nothing(tmp_path):
@@ -135,7 +135,7 @@ def test_a_provider_that_reports_only_a_total_is_still_recorded(tmp_path):
 
     assert len(kept) == 1
     assert kept[0].reported_total == 4321
-    assert kept[0].cost == 0.0731
+    assert kept[0].cost_micro == 73_100
 
 
 def test_a_real_answer_is_read_the_way_the_provider_builds_it(tmp_path):
@@ -179,6 +179,32 @@ def test_an_answer_it_cannot_read_does_not_destroy_the_answer(tmp_path):
 
     # What could be read is kept, and what could not is left at nothing rather
     # than guessed at.
-    assert [(one.input_tokens, one.output_tokens, one.cost) for one in kept] == [
+    assert [(one.input_tokens, one.output_tokens, one.cost_micro) for one in kept] == [
         (0, 2, None)
     ]
+
+
+def test_the_provider_is_kept_apart_from_the_model(tmp_path):
+    """Asking what one service cost should not mean parsing a model name."""
+    from litellm.types.utils import ModelResponse, Usage
+
+    engine = _kept(tmp_path)
+    answered = ModelResponse(usage=Usage(prompt_tokens=1, completion_tokens=1))
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(answered, model="gemini/gemini-2.5-flash", purpose="review")
+
+    with Session(engine) as session:
+        kept = session.exec(select(ModelUsageRecord)).all()
+
+    assert kept[0].provider == "gemini"
+    assert kept[0].model == "gemini/gemini-2.5-flash"
+
+
+def test_money_is_kept_whole(tmp_path):
+    """A bill is a sum of many rows, and a float drifts as they add up."""
+    from src.core.usage import ModelUsage
+
+    assert ModelUsage.micro(0.0731) == 73_100
+    assert ModelUsage.micro(0.0000001) == 0
+    assert ModelUsage.micro(None) is None

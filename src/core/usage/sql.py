@@ -45,12 +45,14 @@ class SQLUsageRecorder:
             with Session(engine) as session:
                 session.add(
                     ModelUsageRecord(
+                        provider=usage.provider,
                         model=usage.model,
                         purpose=usage.purpose,
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens,
                         reported_total=usage.reported_total,
-                        cost=usage.cost,
+                        cost_micro=usage.cost_micro,
+                        currency=usage.currency,
                         workspace=usage.workspace,
                         repository=usage.repository,
                         organization=usage.organization,

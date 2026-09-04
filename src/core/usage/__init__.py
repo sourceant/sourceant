@@ -68,12 +68,14 @@ def record_completion(
         if not given and not answered and not total and cost is None:
             return
 
+        provider, _, _ = model.rpartition("/")
         usage = ModelUsage(
+            provider=provider,
             model=model,
             input_tokens=given,
             output_tokens=answered,
             reported_total=total,
-            cost=cost,
+            cost_micro=ModelUsage.micro(cost),
             purpose=purpose,
             **attribution,
         )
