@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from src.config.settings import DEFAULT_TOKEN_LIMIT, LLM_MODEL, LLM_TOKEN_LIMIT
@@ -11,9 +10,6 @@ from src.core.settings.resolver import value_of
 from src.llms.litellm_provider import LiteLLMProvider
 from src.llms.llm_interface import LLMInterface
 from src.utils.logger import logger
-
-# Enough that a busy deployment rebuilds one rarely.
-MOST_KEPT = 64
 
 
 @dataclass(frozen=True)
@@ -30,14 +26,10 @@ class Choice:
 class SettingsModelSource:
     """Reads the model from settings: user, then repository, then organisation,
     then what the deployment was started with.
-
-    Providers are cached on the whole Choice, so editing a key takes effect on
-    the next call rather than after a restart.
     """
 
     fallback_model: str = LLM_MODEL
     fallback_token_limit: int = LLM_TOKEN_LIMIT
-    _built: "OrderedDict" = field(default_factory=OrderedDict, repr=False)
 
     def model_for(
         self,
@@ -51,30 +43,18 @@ class SettingsModelSource:
         )
         if choice is None:
             return None
-        # Keyed on who is asking as well as what is asked, because what a call
-        # consumed is recorded against the scope the model was chosen for, and a
-        # provider kept for one scope would report every later call as that one.
-        asking = (choice, repository, organization, user)
-        if asking not in self._built:
-            logger.info(f"Asking {choice.name}")
-            self._built[asking] = LiteLLMProvider(
-                model=choice.name,
-                token_limit=choice.token_limit,
-                api_key=choice.api_key,
-                api_base=choice.base_url,
-                attribution={
-                    "repository": repository,
-                    "organization": organization,
-                    "user": user,
-                },
-            )
-            # The scope is part of the key, so a deployment reviewing many
-            # repositories would otherwise keep one of these per repository for
-            # the life of the process.
-            while len(self._built) > MOST_KEPT:
-                self._built.popitem(last=False)
-        self._built.move_to_end(asking)
-        return self._built[asking]
+        logger.info(f"Asking {choice.name}")
+        return LiteLLMProvider(
+            model=choice.name,
+            token_limit=choice.token_limit,
+            api_key=choice.api_key,
+            api_base=choice.base_url,
+            attribution={
+                "repository": repository,
+                "organization": organization,
+                "user": user,
+            },
+        )
 
     def choice_for(
         self,

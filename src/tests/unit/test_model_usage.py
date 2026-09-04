@@ -65,20 +65,29 @@ def test_recording_nowhere_to_keep_it_does_not_fail_the_call(tmp_path):
 
 
 def test_two_repositories_are_not_billed_to_one(tmp_path):
-    """A provider kept for one scope must not report later calls as that one."""
+    """What one repository asked for must never be recorded against another."""
+    engine = _kept(tmp_path)
     source = SettingsModelSource()
+    answered = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+        usage=SimpleNamespace(prompt_tokens=5, completion_tokens=1),
+        _hidden_params={},
+    )
 
     with patch.object(
         SettingsModelSource,
         "choice_for",
         return_value=Choice(name="m", token_limit=10),
     ):
-        first = source.model_for(repository="one/a")
-        second = source.model_for(repository="two/b")
+        with patch("src.core.usage.sql.get_engine", return_value=engine):
+            with patch("litellm.completion", return_value=answered):
+                source.model_for(repository="one/a").generate_text("x")
+                source.model_for(repository="two/b").generate_text("x")
 
-    assert first is not second
-    assert first._attribution["repository"] == "one/a"
-    assert second._attribution["repository"] == "two/b"
+    with Session(engine) as session:
+        kept = session.exec(select(ModelUsageRecord)).all()
+
+    assert [one.owner_id for one in kept] == ["one/a", "two/b"]
 
 
 def test_a_provider_that_names_the_counts_differently_is_still_read(tmp_path):
