@@ -5,10 +5,10 @@ from __future__ import annotations
 from sqlmodel import Session
 
 from src.config.db import get_engine
-from src.models.model_usage import ModelUsageRecord
+from src.models.token_usage import TokenUsageRecord
 from src.utils.logger import logger
 
-from .models import ModelUsage
+from .models import TokenUsage
 
 
 class SQLUsageRecorder:
@@ -31,12 +31,12 @@ class SQLUsageRecorder:
         """
         if self._created:
             return
-        from src.models.model_usage import ModelUsageRecord
+        from src.models.token_usage import TokenUsageRecord
 
-        ModelUsageRecord.__table__.create(engine, checkfirst=True)
+        TokenUsageRecord.__table__.create(engine, checkfirst=True)
         self._created = True
 
-    def record(self, usage: ModelUsage) -> None:
+    def record(self, usage: TokenUsage) -> None:
         engine = get_engine()
         if engine is None:
             return
@@ -44,7 +44,7 @@ class SQLUsageRecorder:
         try:
             with Session(engine) as session:
                 session.add(
-                    ModelUsageRecord(
+                    TokenUsageRecord(
                         provider=usage.provider,
                         model=usage.model,
                         purpose=usage.purpose,

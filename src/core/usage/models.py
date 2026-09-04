@@ -7,7 +7,7 @@ from typing import Optional
 
 
 @dataclass(frozen=True)
-class ModelUsage:
+class TokenUsage:
     """One call to a model, as the provider reported it.
 
     Tokens come from the provider rather than from counting the prompt, because
@@ -15,22 +15,14 @@ class ModelUsage:
     the answer that costs the most.
     """
 
-    #: Whose service answered, apart from which of their models did.
     provider: str
     model: str
     input_tokens: int
     output_tokens: int
-    #: What the provider called the total. Some report only this, and a total
-    #: with no split is still a real cost.
     reported_total: int = 0
-    #: Millionths of a currency unit. Money is kept whole, because a bill is
-    #: read as a sum of many rows and a float drifts as they add up.
     cost_micro: Optional[int] = None
     currency: str = "USD"
-    #: What asked, e.g. "review" or "initialization", for reading a bill back.
     purpose: str = ""
-    #: Who owes for it, named by kind so the kind can change without the table
-    #: changing. A workspace where one is known, and what asked otherwise.
     owner_type: Optional[str] = None
     owner_id: Optional[str] = None
     #: What the call was about, where that is not the owner itself.

@@ -7,7 +7,7 @@ from src.core.services import ServiceRegistry, service_registry
 from src.utils.logger import logger
 
 from .interfaces import UsageRecorder
-from .models import ModelUsage
+from .models import TokenUsage
 from .sql import SQLUsageRecorder
 
 _core = SQLUsageRecorder(create_schema=True)
@@ -21,7 +21,7 @@ def usage_recorder(services: ServiceRegistry = service_registry) -> UsageRecorde
         return _core
 
 
-def record(usage: ModelUsage, services: ServiceRegistry = service_registry) -> None:
+def record(usage: TokenUsage, services: ServiceRegistry = service_registry) -> None:
     """Keep what a call consumed, and never let that stop the caller."""
     try:
         usage_recorder(services).record(usage)
@@ -69,16 +69,16 @@ def record_completion(
             return
 
         provider, _, _ = model.rpartition("/")
-        owner_type, owner_id, subject_type, subject_id = ModelUsage.owed_by(
+        owner_type, owner_id, subject_type, subject_id = TokenUsage.owed_by(
             **attribution
         )
-        usage = ModelUsage(
+        usage = TokenUsage(
             provider=provider,
             model=model,
             input_tokens=given,
             output_tokens=answered,
             reported_total=total,
-            cost_micro=ModelUsage.micro(cost),
+            cost_micro=TokenUsage.micro(cost),
             purpose=purpose,
             owner_type=owner_type,
             owner_id=owner_id,
@@ -93,7 +93,7 @@ def record_completion(
 
 
 __all__ = [
-    "ModelUsage",
+    "TokenUsage",
     "SQLUsageRecorder",
     "UsageRecorder",
     "record",

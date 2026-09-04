@@ -725,10 +725,10 @@ def test_a_review_records_what_it_spent_against_the_repository(
     from sqlmodel import Session, SQLModel, select
 
     from src.core.model.settings import Choice, SettingsModelSource
-    from src.models.model_usage import ModelUsageRecord
+    from src.models.token_usage import TokenUsageRecord
 
     engine = create_engine(f"sqlite:///{tmp_path / 'usage.db'}")
-    SQLModel.metadata.create_all(engine, tables=[ModelUsageRecord.__table__])
+    SQLModel.metadata.create_all(engine, tables=[TokenUsageRecord.__table__])
 
     mock_get_sha.return_value = None
     mock_github = MagicMock()
@@ -772,7 +772,7 @@ def test_a_review_records_what_it_spent_against_the_repository(
     assert result["status"] == "success"
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     assert len(kept) == 1
     assert kept[0].purpose == "review"

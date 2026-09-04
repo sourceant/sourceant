@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .models import ModelUsage
+from .models import TokenUsage
 
 
 @runtime_checkable
@@ -13,4 +13,4 @@ class UsageRecorder(Protocol):
     implementation is expected to absorb its own failures.
     """
 
-    def record(self, usage: ModelUsage) -> None: ...
+    def record(self, usage: TokenUsage) -> None: ...

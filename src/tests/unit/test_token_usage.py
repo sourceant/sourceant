@@ -9,7 +9,7 @@ from sqlmodel import Session, SQLModel, select
 from src.core.model.settings import Choice, SettingsModelSource
 from src.core.usage import record_completion
 from src.llms.litellm_provider import LiteLLMProvider
-from src.models.model_usage import ModelUsageRecord
+from src.models.token_usage import TokenUsageRecord
 
 
 def _answered(prompt_tokens=120, completion_tokens=30, cost=0.0004):
@@ -25,7 +25,7 @@ def _answered(prompt_tokens=120, completion_tokens=30, cost=0.0004):
 
 def _kept(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'usage.db'}")
-    SQLModel.metadata.create_all(engine, tables=[ModelUsageRecord.__table__])
+    SQLModel.metadata.create_all(engine, tables=[TokenUsageRecord.__table__])
     return engine
 
 
@@ -42,7 +42,7 @@ def test_a_call_records_what_it_consumed_and_for_whom(tmp_path):
             assert provider.generate_text("anything") == "an answer"
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     assert len(kept) == 1
     assert kept[0].model == "gemini/gemini-2.5-flash"
@@ -85,7 +85,7 @@ def test_two_repositories_are_not_billed_to_one(tmp_path):
                 source.model_for(repository="two/b").generate_text("x")
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     assert [one.owner_id for one in kept] == ["one/a", "two/b"]
 
@@ -106,7 +106,7 @@ def test_a_provider_that_names_the_counts_differently_is_still_read(tmp_path):
         )
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     assert len(kept) == 1
     assert kept[0].input_tokens == 90
@@ -130,7 +130,7 @@ def test_an_answer_that_reports_nothing_is_not_a_call_that_cost_nothing(tmp_path
         )
 
     with Session(engine) as session:
-        assert session.exec(select(ModelUsageRecord)).all() == []
+        assert session.exec(select(TokenUsageRecord)).all() == []
 
 
 def test_a_provider_that_reports_only_a_total_is_still_recorded(tmp_path):
@@ -145,7 +145,7 @@ def test_a_provider_that_reports_only_a_total_is_still_recorded(tmp_path):
         record_completion(answered, model="m", purpose="review")
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     assert len(kept) == 1
     assert kept[0].reported_total == 4321
@@ -163,7 +163,7 @@ def test_a_real_answer_is_read_the_way_the_provider_builds_it(tmp_path):
         record_completion(answered, model="m", purpose="review", repository="a/b")
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     assert (kept[0].input_tokens, kept[0].output_tokens) == (120, 30)
     assert (kept[0].owner_type, kept[0].owner_id) == ("repository", "a/b")
@@ -189,7 +189,7 @@ def test_an_answer_it_cannot_read_does_not_destroy_the_answer(tmp_path):
             assert provider.generate_text("anything") == "an answer"
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     # What could be read is kept, and what could not is left at nothing rather
     # than guessed at.
@@ -209,7 +209,7 @@ def test_the_provider_is_kept_apart_from_the_model(tmp_path):
         record_completion(answered, model="gemini/gemini-2.5-flash", purpose="review")
 
     with Session(engine) as session:
-        kept = session.exec(select(ModelUsageRecord)).all()
+        kept = session.exec(select(TokenUsageRecord)).all()
 
     assert kept[0].provider == "gemini"
     assert kept[0].model == "gemini/gemini-2.5-flash"
@@ -217,28 +217,28 @@ def test_the_provider_is_kept_apart_from_the_model(tmp_path):
 
 def test_money_is_kept_whole(tmp_path):
     """A bill is a sum of many rows, and a float drifts as they add up."""
-    from src.core.usage import ModelUsage
+    from src.core.usage import TokenUsage
 
-    assert ModelUsage.micro(0.0731) == 73_100
-    assert ModelUsage.micro(0.0000001) == 0
-    assert ModelUsage.micro(None) is None
+    assert TokenUsage.micro(0.0731) == 73_100
+    assert TokenUsage.micro(0.0000001) == 0
+    assert TokenUsage.micro(None) is None
 
 
 def test_a_workspace_owes_for_it_and_the_repository_is_what_it_was_about():
     """Naming the owner by kind is what lets the kind change later."""
-    from src.core.usage import ModelUsage
+    from src.core.usage import TokenUsage
 
-    assert ModelUsage.owed_by(repository="a/b") == ("repository", "a/b", None, None)
-    assert ModelUsage.owed_by(workspace="73", repository="a/b") == (
+    assert TokenUsage.owed_by(repository="a/b") == ("repository", "a/b", None, None)
+    assert TokenUsage.owed_by(workspace="73", repository="a/b") == (
         "workspace",
         "73",
         "repository",
         "a/b",
     )
-    assert ModelUsage.owed_by(organization="acme", repository="a/b") == (
+    assert TokenUsage.owed_by(organization="acme", repository="a/b") == (
         "organization",
         "acme",
         "repository",
         "a/b",
     )
-    assert ModelUsage.owed_by() == (None, None, None, None)
+    assert TokenUsage.owed_by() == (None, None, None, None)

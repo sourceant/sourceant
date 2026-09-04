@@ -3,7 +3,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "model_usage_001"
+revision = "token_usage_001"
 down_revision = "review_findings_001"
 branch_labels = None
 depends_on = None
@@ -11,7 +11,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "model_usage",
+        "token_usage",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("provider", sa.String(length=255), nullable=False, server_default=""),
         sa.Column("model", sa.String(length=255), nullable=False),
@@ -31,27 +31,27 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_model_usage_model", "model_usage", ["model"])
-    op.create_index("ix_model_usage_provider", "model_usage", ["provider"])
+    op.create_index("ix_token_usage_model", "token_usage", ["model"])
+    op.create_index("ix_token_usage_provider", "token_usage", ["provider"])
     op.create_index(
-        "ix_model_usage_owner_when",
-        "model_usage",
+        "ix_token_usage_owner_when",
+        "token_usage",
         ["owner_type", "owner_id", "created_at"],
     )
     op.create_index(
-        "ix_model_usage_owner_purpose",
-        "model_usage",
+        "ix_token_usage_owner_purpose",
+        "token_usage",
         ["owner_type", "owner_id", "purpose"],
     )
     op.create_index(
-        "ix_model_usage_subject", "model_usage", ["subject_type", "subject_id"]
+        "ix_token_usage_subject", "token_usage", ["subject_type", "subject_id"]
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_model_usage_subject", table_name="model_usage")
-    op.drop_index("ix_model_usage_owner_purpose", table_name="model_usage")
-    op.drop_index("ix_model_usage_owner_when", table_name="model_usage")
-    op.drop_index("ix_model_usage_provider", table_name="model_usage")
-    op.drop_index("ix_model_usage_model", table_name="model_usage")
-    op.drop_table("model_usage")
+    op.drop_index("ix_token_usage_subject", table_name="token_usage")
+    op.drop_index("ix_token_usage_owner_purpose", table_name="token_usage")
+    op.drop_index("ix_token_usage_owner_when", table_name="token_usage")
+    op.drop_index("ix_token_usage_provider", table_name="token_usage")
+    op.drop_index("ix_token_usage_model", table_name="token_usage")
+    op.drop_table("token_usage")

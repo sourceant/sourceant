@@ -6,8 +6,8 @@ from sqlmodel import Field
 from src.models.base_model import BaseModel
 
 
-class ModelUsageRecord(BaseModel, table=True):
-    __tablename__ = "model_usage"
+class TokenUsageRecord(BaseModel, table=True):
+    __tablename__ = "token_usage"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     provider: str = Field(default="", index=True)
