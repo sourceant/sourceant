@@ -24,6 +24,6 @@ class Environment(Protocol):
         """
         ...
 
-    def model_for(self, workspace: str) -> Optional[LLMInterface]:
+    def provider_for(self, workspace: str) -> Optional[LLMInterface]:
         """The model billed to that workspace, or None if none is chosen."""
         ...

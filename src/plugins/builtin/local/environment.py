@@ -28,5 +28,5 @@ class LocalEnvironment:
         """Always the one workspace, whatever the claims say."""
         return LOCAL
 
-    def model_for(self, workspace: str) -> Optional[LLMInterface]:
-        return self._model.model_for(user=workspace or LOCAL)
+    def provider_for(self, workspace: str) -> Optional[LLMInterface]:
+        return self._model.provider_for(user=workspace or LOCAL)

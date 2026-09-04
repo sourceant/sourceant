@@ -20,15 +20,17 @@ class ChosenModel(SettingsModelSource):
     def __init__(self) -> None:
         super().__init__(fallback_model="")
 
-    def model_for(
+    def provider_for(
         self,
         *,
         repository: Optional[str] = None,
         organization: Optional[str] = None,
         user: Optional[str] = None,
+        workspace: Optional[str] = None,
     ) -> LLMInterface | None:
-        return super().model_for(
+        return super().provider_for(
             repository=repository,
             organization=organization,
             user=user or LOCAL,
+            workspace=workspace,
         )

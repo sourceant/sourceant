@@ -3,10 +3,11 @@
 from typing import Optional
 
 from src.core.services import ServiceRegistry, service_registry
+from src.core.workspace import workspace_holding
 from src.llms.llm_interface import LLMInterface
 
 from .interfaces import ModelSource
-from .settings import Choice, SettingsModelSource
+from .settings import LLMConfig, SettingsModelSource
 
 _core = SettingsModelSource()
 
@@ -19,23 +20,46 @@ def model_source(services: ServiceRegistry = service_registry) -> ModelSource:
         return _core
 
 
-def model_for(
+def config_for(
     *,
     repository: Optional[str] = None,
     organization: Optional[str] = None,
     user: Optional[str] = None,
+    workspace: Optional[str] = None,
+) -> LLMConfig | None:
+    """What to call and on whose account, for callers that do the call
+    themselves. The provider is synchronous; an async caller needs the parts."""
+    holder = workspace or (workspace_holding(repository) if repository else None)
+    return _core.config_for(
+        repository=repository,
+        organization=organization,
+        user=user,
+        workspace=holder,
+    )
+
+
+def provider_for(
+    *,
+    repository: Optional[str] = None,
+    organization: Optional[str] = None,
+    user: Optional[str] = None,
+    workspace: Optional[str] = None,
     services: ServiceRegistry = service_registry,
 ) -> LLMInterface | None:
-    """The model to ask for this repository, organisation or user."""
-    return model_source(services).model_for(
-        repository=repository, organization=organization, user=user
+    """The model to ask for this repository, workspace, organisation or user."""
+    return model_source(services).provider_for(
+        repository=repository,
+        organization=organization,
+        user=user,
+        workspace=workspace,
     )
 
 
 __all__ = [
-    "Choice",
+    "LLMConfig",
+    "config_for",
     "ModelSource",
     "SettingsModelSource",
-    "model_for",
     "model_source",
+    "provider_for",
 ]

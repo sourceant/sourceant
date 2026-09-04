@@ -37,8 +37,8 @@ def model_for_this_machine():
     """
     here = environment()
     if here is not None:
-        return here.model_for(here.workspace_for())
-    return SettingsModelSource(fallback_model="").model_for(user=WHOEVER_IS_HERE)
+        return here.provider_for(here.workspace_for())
+    return SettingsModelSource(fallback_model="").provider_for(user=WHOEVER_IS_HERE)
 
 
 @router.get("", dependencies=[Depends(require_local)])

@@ -13,10 +13,11 @@ class ModelSource(Protocol):
     that proposes or judges runs until one is.
     """
 
-    def model_for(
+    def provider_for(
         self,
         *,
         repository: Optional[str] = None,
         organization: Optional[str] = None,
         user: Optional[str] = None,
+        workspace: Optional[str] = None,
     ) -> LLMInterface | None: ...

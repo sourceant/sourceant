@@ -23,7 +23,7 @@ from src.core.change_context import (
     read_change,
 )
 from src.core.knowledge import KnowledgeQuery
-from src.core.model import model_for
+from src.core.model import provider_for
 from src.core.review import Told, reviewer
 from src.utils.logger import logger
 from src.core.skills import (
@@ -414,7 +414,7 @@ class WorkingTreeReviews:
             )
             return answer
 
-        provider = model_for(user=LOCAL)
+        provider = provider_for(user=LOCAL)
         if provider is None:
             raise ReviewRefused(
                 400,

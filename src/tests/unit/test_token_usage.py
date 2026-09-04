@@ -6,7 +6,7 @@ from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel, select
 
-from src.core.model.settings import Choice, SettingsModelSource
+from src.core.model.settings import LLMConfig, SettingsModelSource
 from src.core.usage import record_completion
 from src.llms.litellm_provider import LiteLLMProvider
 from src.models.token_usage import TokenUsageRecord
@@ -76,13 +76,13 @@ def test_two_repositories_are_not_billed_to_one(tmp_path):
 
     with patch.object(
         SettingsModelSource,
-        "choice_for",
-        return_value=Choice(name="m", token_limit=10),
+        "config_for",
+        return_value=LLMConfig(name="m", token_limit=10),
     ):
         with patch("src.core.usage.sql.get_engine", return_value=engine):
             with patch("litellm.completion", return_value=answered):
-                source.model_for(repository="one/a").generate_text("x")
-                source.model_for(repository="two/b").generate_text("x")
+                source.provider_for(repository="one/a").generate_text("x")
+                source.provider_for(repository="two/b").generate_text("x")
 
     with Session(engine) as session:
         kept = session.exec(select(TokenUsageRecord)).all()

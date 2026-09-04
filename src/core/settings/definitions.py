@@ -17,11 +17,16 @@ from src.models.config import ConfigType
 # Where a setting can be given a value. Order matters: the narrowest scope that
 # has a value wins, which is what lets a repository depart from its
 # organisation without detaching from it.
+#
+# An organisation here is the owner half of a repository's full name, so it is
+# whoever holds the namespace on the forge rather than whoever is paying. A
+# workspace is the account, and two of them can hold the same repository.
 USER = "user"
 REPOSITORY = "repository"
+WORKSPACE = "workspace"
 ORGANIZATION = "organization"
 
-SCOPE_ORDER: tuple[str, ...] = (USER, REPOSITORY, ORGANIZATION)
+SCOPE_ORDER: tuple[str, ...] = (USER, REPOSITORY, WORKSPACE, ORGANIZATION)
 
 
 @dataclass(frozen=True)
@@ -225,7 +230,7 @@ SETTINGS: tuple[Setting, ...] = (
             "anthropic/claude-sonnet-4-5 or openai/gpt-4o."
         ),
         type=ConfigType.STRING,
-        scopes=(USER, REPOSITORY, ORGANIZATION),
+        scopes=(USER, REPOSITORY, WORKSPACE),
         default="",
         group="Model",
     ),
@@ -237,7 +242,7 @@ SETTINGS: tuple[Setting, ...] = (
             "that provider and nowhere else, and never read back."
         ),
         type=ConfigType.STRING,
-        scopes=(USER, REPOSITORY, ORGANIZATION),
+        scopes=(USER, WORKSPACE),
         default="",
         group="Model",
         secret=True,
@@ -250,7 +255,7 @@ SETTINGS: tuple[Setting, ...] = (
             "one or a model running on this machine. Left empty otherwise."
         ),
         type=ConfigType.STRING,
-        scopes=(USER, REPOSITORY, ORGANIZATION),
+        scopes=(USER, REPOSITORY, WORKSPACE),
         default="",
         group="Model",
     ),
@@ -262,7 +267,7 @@ SETTINGS: tuple[Setting, ...] = (
             "a file at a time instead of whole."
         ),
         type=ConfigType.INT,
-        scopes=(USER, REPOSITORY, ORGANIZATION),
+        scopes=(USER, REPOSITORY, WORKSPACE),
         default=DEFAULT_TOKEN_LIMIT,
         group="Model",
     ),
@@ -363,7 +368,7 @@ class Resolved:
 
     key: str
     value: Any
-    # "user", "repository", "organization", or "default".
+    # "user", "repository", "workspace", "organization", or "default".
     source: str
     # The scope the value was read from, absent when it is the default.
     source_id: str | None = None
