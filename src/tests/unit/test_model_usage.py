@@ -46,7 +46,7 @@ def test_a_call_records_what_it_consumed_and_for_whom(tmp_path):
 
     assert len(kept) == 1
     assert kept[0].model == "gemini/gemini-2.5-flash"
-    assert kept[0].repository == "sourceant/cli"
+    assert (kept[0].owner_type, kept[0].owner_id) == ("repository", "sourceant/cli")
     assert kept[0].input_tokens == 120
     assert kept[0].output_tokens == 30
     assert kept[0].cost_micro == 400
@@ -97,7 +97,7 @@ def test_a_provider_that_names_the_counts_differently_is_still_read(tmp_path):
     assert len(kept) == 1
     assert kept[0].input_tokens == 90
     assert kept[0].output_tokens == 15
-    assert kept[0].repository == "a/b"
+    assert (kept[0].owner_type, kept[0].owner_id) == ("repository", "a/b")
     assert kept[0].cost_micro is None
 
 
@@ -152,7 +152,7 @@ def test_a_real_answer_is_read_the_way_the_provider_builds_it(tmp_path):
         kept = session.exec(select(ModelUsageRecord)).all()
 
     assert (kept[0].input_tokens, kept[0].output_tokens) == (120, 30)
-    assert kept[0].repository == "a/b"
+    assert (kept[0].owner_type, kept[0].owner_id) == ("repository", "a/b")
 
 
 def test_an_answer_it_cannot_read_does_not_destroy_the_answer(tmp_path):
@@ -208,3 +208,23 @@ def test_money_is_kept_whole(tmp_path):
     assert ModelUsage.micro(0.0731) == 73_100
     assert ModelUsage.micro(0.0000001) == 0
     assert ModelUsage.micro(None) is None
+
+
+def test_a_workspace_owes_for_it_and_the_repository_is_what_it_was_about():
+    """Naming the owner by kind is what lets the kind change later."""
+    from src.core.usage import ModelUsage
+
+    assert ModelUsage.owed_by(repository="a/b") == ("repository", "a/b", None, None)
+    assert ModelUsage.owed_by(workspace="73", repository="a/b") == (
+        "workspace",
+        "73",
+        "repository",
+        "a/b",
+    )
+    assert ModelUsage.owed_by(organization="acme", repository="a/b") == (
+        "organization",
+        "acme",
+        "repository",
+        "a/b",
+    )
+    assert ModelUsage.owed_by() == (None, None, None, None)

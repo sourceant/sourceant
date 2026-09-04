@@ -53,10 +53,10 @@ class SQLUsageRecorder:
                         reported_total=usage.reported_total,
                         cost_micro=usage.cost_micro,
                         currency=usage.currency,
-                        workspace=usage.workspace,
-                        repository=usage.repository,
-                        organization=usage.organization,
-                        for_user=usage.user,
+                        owner_type=usage.owner_type,
+                        owner_id=usage.owner_id,
+                        subject_type=usage.subject_type,
+                        subject_id=usage.subject_id,
                     )
                 )
                 session.commit()

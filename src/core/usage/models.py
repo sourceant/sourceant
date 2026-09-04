@@ -29,10 +29,13 @@ class ModelUsage:
     currency: str = "USD"
     #: What asked, e.g. "review" or "initialization", for reading a bill back.
     purpose: str = ""
-    workspace: Optional[str] = None
-    repository: Optional[str] = None
-    organization: Optional[str] = None
-    user: Optional[str] = None
+    #: Who owes for it, named by kind so the kind can change without the table
+    #: changing. A workspace where one is known, and what asked otherwise.
+    owner_type: Optional[str] = None
+    owner_id: Optional[str] = None
+    #: What the call was about, where that is not the owner itself.
+    subject_type: Optional[str] = None
+    subject_id: Optional[str] = None
 
     @property
     def total_tokens(self) -> int:
@@ -42,3 +45,21 @@ class ModelUsage:
     def micro(cost: Optional[float]) -> Optional[int]:
         """A provider's decimal cost as whole millionths."""
         return None if cost is None else round(cost * 1_000_000)
+
+    @staticmethod
+    def owed_by(**scopes: Optional[str]) -> tuple:
+        """Who owes for a call, and what it was about, from the scopes given.
+
+        A workspace pays where one is known. Until one reaches here, whatever
+        names the work stands in for it, and the repository becomes the subject
+        as soon as something broader owns the call.
+        """
+        order = ("workspace", "organization", "user", "repository")
+        named = [(kind, scopes.get(kind)) for kind in order if scopes.get(kind)]
+        if not named:
+            return (None, None, None, None)
+        owner_type, owner_id = named[0]
+        repository = scopes.get("repository")
+        if repository and owner_type != "repository":
+            return (owner_type, owner_id, "repository", repository)
+        return (owner_type, owner_id, None, None)

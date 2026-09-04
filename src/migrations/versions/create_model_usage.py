@@ -23,10 +23,10 @@ def upgrade() -> None:
         sa.Column(
             "currency", sa.String(length=3), nullable=False, server_default="USD"
         ),
-        sa.Column("workspace", sa.String(length=255), nullable=True),
-        sa.Column("repository", sa.String(length=255), nullable=True),
-        sa.Column("organization", sa.String(length=255), nullable=True),
-        sa.Column("for_user", sa.String(length=255), nullable=True),
+        sa.Column("owner_type", sa.String(length=255), nullable=True),
+        sa.Column("owner_id", sa.String(length=255), nullable=True),
+        sa.Column("subject_type", sa.String(length=255), nullable=True),
+        sa.Column("subject_id", sa.String(length=255), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -34,20 +34,24 @@ def upgrade() -> None:
     op.create_index("ix_model_usage_model", "model_usage", ["model"])
     op.create_index("ix_model_usage_provider", "model_usage", ["provider"])
     op.create_index(
-        "ix_model_usage_repository_when", "model_usage", ["repository", "created_at"]
+        "ix_model_usage_owner_when",
+        "model_usage",
+        ["owner_type", "owner_id", "created_at"],
     )
     op.create_index(
-        "ix_model_usage_repository_purpose", "model_usage", ["repository", "purpose"]
+        "ix_model_usage_owner_purpose",
+        "model_usage",
+        ["owner_type", "owner_id", "purpose"],
     )
     op.create_index(
-        "ix_model_usage_workspace_when", "model_usage", ["workspace", "created_at"]
+        "ix_model_usage_subject", "model_usage", ["subject_type", "subject_id"]
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_model_usage_workspace_when", table_name="model_usage")
-    op.drop_index("ix_model_usage_repository_purpose", table_name="model_usage")
-    op.drop_index("ix_model_usage_repository_when", table_name="model_usage")
+    op.drop_index("ix_model_usage_subject", table_name="model_usage")
+    op.drop_index("ix_model_usage_owner_purpose", table_name="model_usage")
+    op.drop_index("ix_model_usage_owner_when", table_name="model_usage")
     op.drop_index("ix_model_usage_provider", table_name="model_usage")
     op.drop_index("ix_model_usage_model", table_name="model_usage")
     op.drop_table("model_usage")

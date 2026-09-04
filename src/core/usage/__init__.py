@@ -69,6 +69,9 @@ def record_completion(
             return
 
         provider, _, _ = model.rpartition("/")
+        owner_type, owner_id, subject_type, subject_id = ModelUsage.owed_by(
+            **attribution
+        )
         usage = ModelUsage(
             provider=provider,
             model=model,
@@ -77,7 +80,10 @@ def record_completion(
             reported_total=total,
             cost_micro=ModelUsage.micro(cost),
             purpose=purpose,
-            **attribution,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            subject_type=subject_type,
+            subject_id=subject_id,
         )
     except Exception:
         logger.warning("Could not read what a model call consumed", exc_info=True)
