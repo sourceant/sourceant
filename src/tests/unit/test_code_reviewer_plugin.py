@@ -698,3 +698,88 @@ class TestPreviewResponseIsSerializable:
             "file_path": "catalog.py",
             "start_line": 1,
         }
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+def test_a_review_records_what_it_spent_against_the_repository(
+    mock_github_cls,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    """A review is the reason any of this is recorded, so drive one.
+
+    Every other test here replaces the model outright, so nothing has ever
+    shown that reviewing a pull request leaves a record, or that the record
+    names the repository the review was for.
+    """
+    import asyncio
+
+    from litellm.types.utils import Choices, Message, ModelResponse, Usage
+    from sqlalchemy import create_engine
+    from sqlmodel import Session, SQLModel, select
+
+    from src.core.model.settings import Choice, SettingsModelSource
+    from src.models.token_usage import TokenUsageRecord
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'usage.db'}")
+    SQLModel.metadata.create_all(engine, tables=[TokenUsageRecord.__table__])
+
+    mock_get_sha.return_value = None
+    mock_github = MagicMock()
+    mock_github_cls.return_value = mock_github
+    mock_github.get_diff.return_value = _DIFF
+    mock_github.post_review.return_value = {"status": "success"}
+    mock_github.get_existing_bot_review_comments.return_value = []
+
+    answered = ModelResponse(
+        choices=[
+            Choices(
+                message=Message(
+                    content=CodeReview(
+                        verdict=Verdict.COMMENT, code_suggestions=[]
+                    ).model_dump_json()
+                )
+            )
+        ],
+        usage=Usage(prompt_tokens=900, completion_tokens=120),
+    )
+    answered._hidden_params = {"response_cost": 0.0012}
+
+    with (
+        patch.object(
+            SettingsModelSource,
+            "choice_for",
+            return_value=Choice(name="gemini/gemini-2.5-flash", token_limit=1_000_000),
+        ),
+        patch("litellm.completion", return_value=answered),
+        patch("src.core.usage.sql.get_engine", return_value=engine),
+    ):
+        result = asyncio.get_event_loop().run_until_complete(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                event_type="pull_request.opened",
+                repository_full_name="test_owner/test_repo",
+            )
+        )
+
+    assert result["status"] == "success"
+
+    with Session(engine) as session:
+        kept = session.exec(select(TokenUsageRecord)).all()
+
+    assert len(kept) == 1
+    assert kept[0].purpose == "review"
+    assert (kept[0].owner_type, kept[0].owner_id) == (
+        "repository",
+        "test_owner/test_repo",
+    )
+    assert (kept[0].input_tokens, kept[0].output_tokens) == (900, 120)
+    assert kept[0].cost_micro == 1_200
+    assert kept[0].provider == "gemini"

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from src.config.settings import DEFAULT_TOKEN_LIMIT, LLM_MODEL, LLM_TOKEN_LIMIT
@@ -26,14 +26,10 @@ class Choice:
 class SettingsModelSource:
     """Reads the model from settings: user, then repository, then organisation,
     then what the deployment was started with.
-
-    Providers are cached on the whole Choice, so editing a key takes effect on
-    the next call rather than after a restart.
     """
 
     fallback_model: str = LLM_MODEL
     fallback_token_limit: int = LLM_TOKEN_LIMIT
-    _built: dict = field(default_factory=dict, repr=False)
 
     def model_for(
         self,
@@ -47,15 +43,18 @@ class SettingsModelSource:
         )
         if choice is None:
             return None
-        if choice not in self._built:
-            logger.info(f"Asking {choice.name}")
-            self._built[choice] = LiteLLMProvider(
-                model=choice.name,
-                token_limit=choice.token_limit,
-                api_key=choice.api_key,
-                api_base=choice.base_url,
-            )
-        return self._built[choice]
+        logger.info(f"Asking {choice.name}")
+        return LiteLLMProvider(
+            model=choice.name,
+            token_limit=choice.token_limit,
+            api_key=choice.api_key,
+            api_base=choice.base_url,
+            attribution={
+                "repository": repository,
+                "organization": organization,
+                "user": user,
+            },
+        )
 
     def choice_for(
         self,
