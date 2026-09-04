@@ -82,7 +82,12 @@ def test_two_repositories_are_not_billed_to_one(tmp_path):
 
 
 def test_a_provider_that_names_the_counts_differently_is_still_read(tmp_path):
-    """The raw Anthropic client reports input_tokens and output_tokens."""
+    """The raw Anthropic client names the same two counts differently.
+
+    Its field names were read from anthropic 1.0.0, whose Usage carries
+    input_tokens and output_tokens. That package is not a dependency here, so
+    the shape stands in for it rather than being imported.
+    """
     engine = _kept(tmp_path)
     answered = SimpleNamespace(usage=SimpleNamespace(input_tokens=90, output_tokens=15))
 
