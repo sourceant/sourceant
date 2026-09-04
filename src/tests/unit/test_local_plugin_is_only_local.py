@@ -28,18 +28,28 @@ def test_it_is_on_where_somebody_is_running_it_themselves(monkeypatch):
     assert _metadata().enabled is True
 
 
-def test_a_hosted_deployment_still_resolves_the_model_it_was_started_with(
-    monkeypatch,
-):
-    """With the plugin off, nothing registers a source, so core's own answers."""
-    from src.core.model import model_source
-    from src.core.model.settings import SettingsModelSource
+def test_a_hosted_deployment_does_not_load_it(monkeypatch):
+    """What matters is the plugin manager skipping it, not the flag alone.
+
+    Enablement is read off the metadata when initialization runs, so asserting
+    the property while nothing loads it proves nothing about what a deployment
+    ends up with.
+    """
+    import asyncio
+
+    from src.core.plugins import PluginManager
     from src.core.services import ServiceRegistry
 
     monkeypatch.setattr(settings, "LOCAL_MODE", False)
-    empty = ServiceRegistry()
+    manager = PluginManager(services=ServiceRegistry())
+    module = importlib.import_module("src.plugins.builtin.local.plugin")
+    plugin = module.LocalPlugin({})
+    plugin.bind_services(manager.services)
 
-    source = model_source(empty)
+    async def run() -> bool:
+        if not plugin.metadata.enabled:
+            return False
+        await plugin.initialize()
+        return True
 
-    assert isinstance(source, SettingsModelSource)
-    assert source.fallback_model  # the deployment's own, not empty
+    assert asyncio.run(run()) is False

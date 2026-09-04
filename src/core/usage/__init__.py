@@ -10,7 +10,7 @@ from .interfaces import UsageRecorder
 from .models import ModelUsage
 from .sql import SQLUsageRecorder
 
-_core = SQLUsageRecorder()
+_core = SQLUsageRecorder(create_schema=True)
 
 
 def usage_recorder(services: ServiceRegistry = service_registry) -> UsageRecorder:
@@ -39,39 +39,49 @@ def record_completion(
 ) -> None:
     """Keep what an answer consumed, whatever shape it came back in.
 
-    Providers report the same two numbers under different names, and a caller
-    that has an answer should not have to know which. One that never reports
-    them records nothing rather than a row of zeroes, which would read as a
-    call that cost nothing.
+    Providers report the same numbers under different names, and a caller that
+    has an answer should not have to know which. An answer that reports none of
+    them and no cost records nothing, rather than a row of zeroes that would
+    read as a call that cost nothing.
+
+    The whole reading is guarded. The answer it describes has already been paid
+    for and is on its way back to somebody, so nothing here may raise into the
+    caller.
     """
-    counted = getattr(response, "usage", None)
-    if counted is None:
-        return
+    try:
+        counted = getattr(response, "usage", None)
 
-    def number(*names: str) -> int:
-        for name in names:
-            value = getattr(counted, name, None)
-            if value is not None:
-                return int(value)
-        return 0
+        def number(*names: str) -> int:
+            for name in names:
+                value = getattr(counted, name, None)
+                if isinstance(value, (int, float)):
+                    return int(value)
+            return 0
 
-    given = number("prompt_tokens", "input_tokens")
-    answered = number("completion_tokens", "output_tokens")
-    if not given and not answered:
-        return
+        given = number("prompt_tokens", "input_tokens")
+        answered = number("completion_tokens", "output_tokens")
+        total = number("total_tokens")
 
-    hidden = getattr(response, "_hidden_params", None) or {}
-    record(
-        ModelUsage(
+        hidden = getattr(response, "_hidden_params", None)
+        cost = hidden.get("response_cost") if isinstance(hidden, dict) else None
+
+        if not given and not answered and not total and cost is None:
+            return
+
+        usage = ModelUsage(
             model=model,
             input_tokens=given,
             output_tokens=answered,
-            cost=hidden.get("response_cost"),
+            reported_total=total,
+            cost=cost,
             purpose=purpose,
             **attribution,
-        ),
-        services,
-    )
+        )
+    except Exception:
+        logger.warning("Could not read what a model call consumed", exc_info=True)
+        return
+
+    record(usage, services)
 
 
 __all__ = [

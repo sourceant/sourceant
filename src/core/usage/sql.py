@@ -19,10 +19,28 @@ class SQLUsageRecorder:
     the bill must not turn a completed review into an error.
     """
 
+    def __init__(self, *, create_schema: bool = False) -> None:
+        self._created = not create_schema
+
+    def _ready(self, engine) -> None:
+        """Build the table where nothing else has.
+
+        Migrations are what a deployment runs, but a personal machine started
+        with `sourceant serve` runs none, and a missing table would drop every
+        row while only ever saying so in a log.
+        """
+        if self._created:
+            return
+        from src.models.model_usage import ModelUsageRecord
+
+        ModelUsageRecord.__table__.create(engine, checkfirst=True)
+        self._created = True
+
     def record(self, usage: ModelUsage) -> None:
         engine = get_engine()
         if engine is None:
             return
+        self._ready(engine)
         try:
             with Session(engine) as session:
                 session.add(
@@ -31,6 +49,7 @@ class SQLUsageRecorder:
                         purpose=usage.purpose,
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens,
+                        reported_total=usage.reported_total,
                         cost=usage.cost,
                         workspace=usage.workspace,
                         repository=usage.repository,

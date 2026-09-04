@@ -17,13 +17,14 @@ def upgrade() -> None:
         sa.Column("purpose", sa.String(length=255), nullable=False, server_default=""),
         sa.Column("input_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("output_tokens", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("reported_total", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("cost", sa.Float(), nullable=True),
         sa.Column("workspace", sa.String(length=255), nullable=True),
         sa.Column("repository", sa.String(length=255), nullable=True),
         sa.Column("organization", sa.String(length=255), nullable=True),
         sa.Column("for_user", sa.String(length=255), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_model_usage_model", "model_usage", ["model"])

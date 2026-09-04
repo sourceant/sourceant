@@ -18,6 +18,9 @@ class ModelUsage:
     model: str
     input_tokens: int
     output_tokens: int
+    #: What the provider called the total. Some report only this, and a total
+    #: with no split is still a real cost.
+    reported_total: int = 0
     #: What the provider says it cost, where it says so at all.
     cost: Optional[float] = None
     #: What asked, e.g. "review" or "initialization", for reading a bill back.
@@ -29,4 +32,4 @@ class ModelUsage:
 
     @property
     def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
+        return self.reported_total or (self.input_tokens + self.output_tokens)

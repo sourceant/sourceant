@@ -13,6 +13,7 @@ class ModelUsageRecord(BaseModel, table=True):
     purpose: str = Field(default="", index=True)
     input_tokens: int = Field(default=0)
     output_tokens: int = Field(default=0)
+    reported_total: int = Field(default=0)
     cost: Optional[float] = Field(default=None)
     workspace: Optional[str] = Field(default=None, index=True)
     repository: Optional[str] = Field(default=None, index=True)

@@ -117,3 +117,68 @@ def test_an_answer_that_reports_nothing_is_not_a_call_that_cost_nothing(tmp_path
 
     with Session(engine) as session:
         assert session.exec(select(ModelUsageRecord)).all() == []
+
+
+def test_a_provider_that_reports_only_a_total_is_still_recorded(tmp_path):
+    """litellm builds a Usage with a total and no split, and it still cost money."""
+    from litellm.types.utils import ModelResponse, Usage
+
+    engine = _kept(tmp_path)
+    answered = ModelResponse(usage=Usage(total_tokens=4321))
+    answered._hidden_params = {"response_cost": 0.0731}
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(answered, model="m", purpose="review")
+
+    with Session(engine) as session:
+        kept = session.exec(select(ModelUsageRecord)).all()
+
+    assert len(kept) == 1
+    assert kept[0].reported_total == 4321
+    assert kept[0].cost == 0.0731
+
+
+def test_a_real_answer_is_read_the_way_the_provider_builds_it(tmp_path):
+    """Every other fixture here is hand made, so one is built by litellm itself."""
+    from litellm.types.utils import ModelResponse, Usage
+
+    engine = _kept(tmp_path)
+    answered = ModelResponse(usage=Usage(prompt_tokens=120, completion_tokens=30))
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(answered, model="m", purpose="review", repository="a/b")
+
+    with Session(engine) as session:
+        kept = session.exec(select(ModelUsageRecord)).all()
+
+    assert (kept[0].input_tokens, kept[0].output_tokens) == (120, 30)
+    assert kept[0].repository == "a/b"
+
+
+def test_an_answer_it_cannot_read_does_not_destroy_the_answer(tmp_path):
+    """The call already happened, so nothing about counting it may raise.
+
+    The counts arrive as whatever the provider put there. Read outside a guard,
+    a shape it did not expect turned an answer the model had already produced
+    into a model error.
+    """
+    engine = _kept(tmp_path)
+    provider = LiteLLMProvider(model="m", token_limit=10)
+    unreadable = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="an answer"))],
+        usage=SimpleNamespace(prompt_tokens=lambda: 1, completion_tokens=2),
+        _hidden_params=SimpleNamespace(),
+    )
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        with patch("litellm.completion", return_value=unreadable):
+            assert provider.generate_text("anything") == "an answer"
+
+    with Session(engine) as session:
+        kept = session.exec(select(ModelUsageRecord)).all()
+
+    # What could be read is kept, and what could not is left at nothing rather
+    # than guessed at.
+    assert [(one.input_tokens, one.output_tokens, one.cost) for one in kept] == [
+        (0, 2, None)
+    ]
