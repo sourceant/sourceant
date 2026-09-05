@@ -5,13 +5,17 @@ that was being worked out in two places which disagreed about what to do when it
 was missing. One place, one answer.
 """
 
-from typing import Mapping, Optional
+from typing import List, Mapping, Optional
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from src.config.db import get_engine
+from src.config.settings import STATELESS_MODE
 from src.models.connected_repository import ConnectedRepository
+from src.models.repository import Repository
 from src.models.workspace import Workspace
+from src.utils.logger import logger
 
 
 def workspace_in(claims: Mapping) -> Optional[str]:
@@ -96,3 +100,45 @@ def connection_of(
             ConnectedRepository.repository_id == repository_id,
         )
     ).first()
+
+
+def workspaces_holding(repository: str) -> List[str]:
+    """Which workspaces have connected this repository, by the name they go by.
+
+    Opens its own session, unlike the rest of this module, because the callers
+    are settings lookups that reach here from wherever a model is chosen and
+    have no session of their own to lend.
+    """
+    if STATELESS_MODE:
+        return []
+    engine = get_engine()
+    if engine is None:
+        return []
+    try:
+        with Session(engine) as session:
+            held = session.exec(
+                select(Repository).where(Repository.full_name == repository)
+            ).first()
+            return [] if held is None else [w.external_ref for w in held.workspaces]
+    except Exception as error:
+        logger.warning(f"Could not read which workspaces hold {repository}: {error}")
+        return []
+
+
+def workspace_holding(repository: str) -> Optional[str]:
+    """The one workspace that connected this repository, when there is one.
+
+    Two workspaces may connect the same repository, and nothing on a webhook
+    says which of them a delivery is for. Guessing would charge one account for
+    another's work, so an ambiguous repository is treated as naming no
+    workspace at all and whatever needed one goes without.
+    """
+    held = workspaces_holding(repository)
+    if len(held) == 1:
+        return held[0]
+    if len(held) > 1:
+        logger.warning(
+            f"{repository} is connected by workspaces {', '.join(sorted(held))}; "
+            "nothing scoped to a workspace can be resolved for it"
+        )
+    return None

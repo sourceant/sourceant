@@ -14,7 +14,7 @@ from src.core.plugins import BasePlugin, PluginMetadata, PluginType
 from src.core.plugins import event_hooks
 
 from src.core.change_context import ChangeSet
-from src.core.model import model_for
+from src.core.model import provider_for
 from src.core.mcp import contribute_tools
 from src.core.review import Reviewer, WorkingTreeReviewer
 from src.plugins.builtin.code_reviewer.context import changed_files
@@ -379,7 +379,7 @@ class CodeReviewerPlugin(BasePlugin):
             parsed_files = parse_diff(raw_diff)
             line_mapper = LineMapper(parsed_files)
 
-            llm_instance = model_for(repository=repo_full_name)
+            llm_instance = provider_for(repository=repo_full_name)
             if llm_instance is None:
                 return {
                     "status": "error",

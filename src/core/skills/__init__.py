@@ -1,5 +1,5 @@
 from .catalogue import Catalogue
-from .checking import ModelSkillChecker
+from .checking import LLMSkillChecker
 from .filesystem import (
     ELSEWHERE,
     DirectorySkillSource,
@@ -47,7 +47,7 @@ __all__ = [
     "DirectorySkillSource",
     "ELSEWHERE",
     "ROLES",
-    "ModelSkillChecker",
+    "LLMSkillChecker",
     "PhraseSkillSelector",
     "Skill",
     "SkillChecker",

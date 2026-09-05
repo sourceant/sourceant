@@ -8,7 +8,7 @@ from src.core.skills import (
     Catalogue,
     Change,
     DirectorySkillSource,
-    ModelSkillChecker,
+    LLMSkillChecker,
     PhraseSkillSelector,
     Skill,
     SkillQuery,
@@ -562,7 +562,7 @@ class TestPuttingAChangeThroughASkill:
         return lambda prompt: json.dumps(payload)
 
     def test_a_breach_of_a_stated_rule_blocks(self):
-        checker = ModelSkillChecker(
+        checker = LLMSkillChecker(
             ask=self.answer(
                 {
                     "passed": False,
@@ -589,7 +589,7 @@ class TestPuttingAChangeThroughASkill:
         assert verdict.blocking[0].severity == BLOCKING
 
     def test_anything_not_stated_as_a_rule_only_advises(self):
-        checker = ModelSkillChecker(
+        checker = LLMSkillChecker(
             ask=self.answer(
                 {
                     "passed": True,
@@ -607,14 +607,14 @@ class TestPuttingAChangeThroughASkill:
         assert verdict.blocking == ()
 
     def test_an_answer_wrapped_in_a_fence_is_still_an_answer(self):
-        checker = ModelSkillChecker(
+        checker = LLMSkillChecker(
             ask=lambda prompt: '```json\n{"passed": false, "note": "No."}\n```'
         )
 
         assert checker.check(skill("commits", "Say why."), Change()).passed is False
 
     def test_nothing_usable_back_does_not_stop_the_work(self):
-        checker = ModelSkillChecker(ask=lambda prompt: "I could not tell.")
+        checker = LLMSkillChecker(ask=lambda prompt: "I could not tell.")
 
         verdict = checker.check(skill("commits", "Say why."), Change())
 

@@ -62,7 +62,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_synchronize_uses_incremental_diff(
         self,
         mock_llm,
@@ -115,7 +115,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_synchronize_falls_back_on_force_push(
         self,
         mock_llm,
@@ -162,7 +162,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_first_review_uses_full_diff(
         self,
         mock_llm,
@@ -209,7 +209,7 @@ class TestIncrementalReview:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_saves_review_record_on_success(
         self,
         mock_llm,
@@ -446,7 +446,7 @@ class TestPreviewResponseIsSerializable:
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_preview_run_renders_as_json(
         self,
         mock_llm,
@@ -510,7 +510,7 @@ class TestPreviewResponseIsSerializable:
         "src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_one_file
     )
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_preview_drops_a_missing_import_claim_disproved_by_post_change_file(
         self,
         mock_llm,
@@ -600,7 +600,7 @@ class TestPreviewResponseIsSerializable:
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
-    @patch("src.plugins.builtin.code_reviewer.plugin.model_for")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_review_receives_referenced_definition_source_from_durable_graph(
         self,
         mock_llm,
@@ -724,7 +724,7 @@ def test_a_review_records_what_it_spent_against_the_repository(
     from sqlalchemy import create_engine
     from sqlmodel import Session, SQLModel, select
 
-    from src.core.model.settings import Choice, SettingsModelSource
+    from src.core.model.settings import LLMConfig, SettingsLLMSource
     from src.models.token_usage import TokenUsageRecord
 
     engine = create_engine(f"sqlite:///{tmp_path / 'usage.db'}")
@@ -753,9 +753,11 @@ def test_a_review_records_what_it_spent_against_the_repository(
 
     with (
         patch.object(
-            SettingsModelSource,
-            "choice_for",
-            return_value=Choice(name="gemini/gemini-2.5-flash", token_limit=1_000_000),
+            SettingsLLMSource,
+            "config_for",
+            return_value=LLMConfig(
+                name="gemini/gemini-2.5-flash", token_limit=1_000_000
+            ),
         ),
         patch("litellm.completion", return_value=answered),
         patch("src.core.usage.sql.get_engine", return_value=engine),

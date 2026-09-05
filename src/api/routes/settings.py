@@ -1,4 +1,4 @@
-"""Read and change what a user, repository, or organization has configured.
+"""Read and change what a user, repository, workspace, or organization has configured.
 
 Every response says where a value came from, so a screen can show whether it is
 set here, inherited, or simply the shipped default, and can offer to go back to
@@ -13,10 +13,12 @@ from pydantic import BaseModel
 
 from src.auth import get_current_user
 from src.core.responses import success_response
+from src.core.workspace import workspace_in
 from src.core.settings import (
     ORGANIZATION,
     REPOSITORY,
     USER,
+    WORKSPACE,
     Resolved,
     clear_value,
     for_scope,
@@ -26,7 +28,7 @@ from src.core.settings import (
 
 router = APIRouter()
 
-Scope = Literal["user", "repository", "organization"]
+Scope = Literal["user", "repository", "workspace", "organization"]
 
 
 class SettingInput(BaseModel):
@@ -38,6 +40,22 @@ def _authorize_user_scope(scope: Scope, scope_id: str, user: dict) -> None:
         raise HTTPException(
             status_code=403, detail="User setting scope is not permitted"
         )
+    # A workspace holds the key everything is charged to, and the endpoint it
+    # is reached at is a setting like any other.
+    if scope == WORKSPACE and workspace_in(user) != scope_id:
+        raise HTTPException(
+            status_code=403, detail="Workspace setting scope is not permitted"
+        )
+
+
+def _resolved_at(scope: Scope, scope_id: str) -> tuple[Resolved, ...]:
+    if scope == USER:
+        return resolve_all(user=scope_id)
+    if scope == REPOSITORY:
+        return resolve_all(repository=scope_id)
+    if scope == WORKSPACE:
+        return resolve_all(workspace=scope_id)
+    return resolve_all(organization=scope_id)
 
 
 def _described(resolved: Resolved) -> dict:
@@ -84,12 +102,7 @@ async def read_settings(
 ):
     """Every setting that applies here, resolved, with where each came from."""
     _authorize_user_scope(scope, scope_id, user)
-    if scope == USER:
-        resolved = resolve_all(user=scope_id)
-    elif scope == REPOSITORY:
-        resolved = resolve_all(repository=scope_id)
-    else:
-        resolved = resolve_all(organization=scope_id)
+    resolved = _resolved_at(scope, scope_id)
     return success_response([_described(item) for item in resolved])
 
 
@@ -126,16 +139,11 @@ async def reset_setting(
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown setting: {key}")
 
-    if scope == USER:
-        resolved = resolve_all(user=scope_id)
-    elif scope == REPOSITORY:
-        resolved = resolve_all(repository=scope_id)
-    else:
-        resolved = resolve_all(organization=scope_id)
+    resolved = _resolved_at(scope, scope_id)
     current = next((item for item in resolved if item.key == key), None)
     if current is None:
         raise HTTPException(status_code=404, detail=f"Unknown setting: {key}")
     return success_response(_described(current))
 
 
-__all__ = ["router", "ORGANIZATION", "REPOSITORY", "USER"]
+__all__ = ["router", "ORGANIZATION", "REPOSITORY", "USER", "WORKSPACE"]

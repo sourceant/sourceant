@@ -22,8 +22,8 @@ def workspace_here(
     claims: Optional[dict] = None, services: ServiceRegistry = service_registry
 ) -> str:
     """The workspace this request acts in. LOCAL where no environment registered."""
-    here = environment(services)
-    return here.workspace_for(claims) if here is not None else LOCAL
+    deployment = environment(services)
+    return deployment.workspace_for(claims) if deployment is not None else LOCAL
 
 
 __all__ = [

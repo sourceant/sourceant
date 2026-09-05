@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
-from src.core.model import SettingsModelSource
+from src.core.model import SettingsLLMSource
+from src.core.settings.resolver import UNSTATED
 from src.llms.llm_interface import LLMInterface
 
 from src.core.environment import LOCAL
 
 
-class ChosenModel(SettingsModelSource):
+class ChosenLLM(SettingsLLMSource):
     """The chosen model, or None.
 
     Unlike a hosted deployment there is nothing to fall back to: the bill is
@@ -20,15 +21,32 @@ class ChosenModel(SettingsModelSource):
     def __init__(self) -> None:
         super().__init__(fallback_model="")
 
-    def model_for(
+    def provider_for(
         self,
         *,
         repository: Optional[str] = None,
         organization: Optional[str] = None,
         user: Optional[str] = None,
+        workspace: Optional[str] = None,
     ) -> LLMInterface | None:
-        return super().model_for(
+        return super().provider_for(
             repository=repository,
             organization=organization,
             user=user or LOCAL,
+            workspace=workspace,
+        )
+
+    def config_for(
+        self,
+        *,
+        repository: Optional[str] = None,
+        organization: Optional[str] = None,
+        user: Optional[str] = None,
+        workspace: Any = UNSTATED,
+    ):
+        return super().config_for(
+            repository=repository,
+            organization=organization,
+            user=user or LOCAL,
+            workspace=workspace,
         )

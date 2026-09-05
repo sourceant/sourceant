@@ -1,8 +1,9 @@
-"""Resolve a setting through user, repository, and organization scopes.
+"""Resolve a setting through user, repository, workspace, and organization scopes.
 
-A user value wins when supplied. Repository values otherwise inherit from their
-organization, and an organization inherits the shipped default. The answer carries
-its source so a screen can show whether it is set here or inherited.
+A user value wins when supplied. A repository otherwise inherits from the
+workspace holding it, a workspace from the organization, and an organization
+from the shipped default. The answer carries its source so a screen can show
+whether it is set here or inherited.
 """
 
 from __future__ import annotations
@@ -13,14 +14,21 @@ from src.core.settings.definitions import (
     ORGANIZATION,
     REPOSITORY,
     USER,
+    WORKSPACE,
     Resolved,
     Setting,
     for_scope,
     get,
 )
 from src.config.settings import STATELESS_MODE
+from src.core.workspace import workspace_holding
 from src.models.config import Config
 from src.utils.logger import logger
+
+#: Told nothing about the workspace, work it out from the repository. Told
+#: None, the caller has already worked it out and there is none, so looking
+#: again would repeat the query once per setting read.
+UNSTATED = object()
 
 
 def organization_of(repository: str) -> Optional[str]:
@@ -59,6 +67,7 @@ def resolve(
     repository: Optional[str] = None,
     organization: Optional[str] = None,
     user: Optional[str] = None,
+    workspace: Any = UNSTATED,
 ) -> Resolved:
     """Resolve one setting, narrowest scope first."""
     setting = get(key)
@@ -72,6 +81,16 @@ def resolve(
         value = _stored(setting, REPOSITORY, repository)
         if value is not None:
             return Resolved(key, value, REPOSITORY, repository, setting)
+
+    holder = (
+        (workspace_holding(repository) if repository else None)
+        if workspace is UNSTATED
+        else workspace
+    )
+    if holder:
+        value = _stored(setting, WORKSPACE, holder)
+        if value is not None:
+            return Resolved(key, value, WORKSPACE, holder, setting)
 
     owner = organization or (organization_of(repository) if repository else None)
     if owner:
@@ -87,20 +106,27 @@ def value_of(
     repository: Optional[str] = None,
     organization: Optional[str] = None,
     user: Optional[str] = None,
+    workspace: Any = UNSTATED,
 ) -> Any:
     """The resolved value alone, for callers that do not care where it came from."""
-    return resolve(key, repository, organization, user).value
+    return resolve(key, repository, organization, user, workspace).value
 
 
 def resolve_all(
     repository: Optional[str] = None,
     organization: Optional[str] = None,
     user: Optional[str] = None,
+    workspace: Any = UNSTATED,
 ) -> tuple[Resolved, ...]:
     """Every setting that applies to this scope, resolved."""
-    scope = USER if user else REPOSITORY if repository else ORGANIZATION
+    named = None if workspace is UNSTATED else workspace
+    scope = (
+        USER
+        if user
+        else REPOSITORY if repository else WORKSPACE if named else ORGANIZATION
+    )
     return tuple(
-        resolve(setting.key, repository, organization, user)
+        resolve(setting.key, repository, organization, user, workspace)
         for setting in for_scope(scope)
     )
 
