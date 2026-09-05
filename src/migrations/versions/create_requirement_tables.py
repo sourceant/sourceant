@@ -9,15 +9,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Sized for MySQL, which counts a key in bytes, allows 3072, and reserves four
+# per character. A composite key therefore cannot exceed 768 characters.
+SCOPE = 191
+SYMBOL = 255
+
+
 def upgrade() -> None:
     op.create_table(
         "requirements",
-        sa.Column("scope", sa.String(length=500), nullable=False),
+        sa.Column("scope", sa.String(length=SCOPE), nullable=False),
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("kind", sa.String(length=255), nullable=False),
         sa.Column("status", sa.String(length=255), nullable=False),
         sa.Column("summary", sa.Text(), nullable=False),
-        sa.Column("external_ref", sa.String(length=500), nullable=False),
+        sa.Column("external_ref", sa.String(length=SYMBOL), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
         sa.PrimaryKeyConstraint("scope", "id"),
     )
@@ -26,11 +32,11 @@ def upgrade() -> None:
     )
     op.create_table(
         "requirement_links",
-        sa.Column("scope", sa.String(length=500), nullable=False),
+        sa.Column("scope", sa.String(length=SCOPE), nullable=False),
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("requirement_id", sa.String(length=255), nullable=False),
         sa.Column("target_kind", sa.String(length=64), nullable=False),
-        sa.Column("target_id", sa.String(length=500), nullable=False),
+        sa.Column("target_id", sa.String(length=SYMBOL), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
         sa.PrimaryKeyConstraint("scope", "id"),
     )

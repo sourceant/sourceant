@@ -9,12 +9,18 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Sized for MySQL, which counts a key in bytes, allows 3072, and reserves four
+# per character. A composite key therefore cannot exceed 768 characters.
+SCOPE = 191
+SYMBOL = 255
+
+
 def upgrade() -> None:
     op.create_table(
         "code_nodes",
-        sa.Column("scope", sa.String(length=500), nullable=False),
-        sa.Column("id", sa.String(length=500), nullable=False),
-        sa.Column("file_path", sa.String(length=500), nullable=True),
+        sa.Column("scope", sa.String(length=SCOPE), nullable=False),
+        sa.Column("id", sa.String(length=SYMBOL), nullable=False),
+        sa.Column("file_path", sa.String(length=SYMBOL), nullable=True),
         sa.Column("properties", sa.Text(), nullable=False),
         sa.PrimaryKeyConstraint("scope", "id"),
     )
@@ -23,8 +29,8 @@ def upgrade() -> None:
     )
     op.create_table(
         "code_node_labels",
-        sa.Column("scope", sa.String(length=500), nullable=False),
-        sa.Column("node_id", sa.String(length=500), nullable=False),
+        sa.Column("scope", sa.String(length=SCOPE), nullable=False),
+        sa.Column("node_id", sa.String(length=SYMBOL), nullable=False),
         sa.Column("label", sa.String(length=255), nullable=False),
         sa.PrimaryKeyConstraint("scope", "node_id", "label"),
     )
@@ -33,10 +39,10 @@ def upgrade() -> None:
     )
     op.create_table(
         "code_edges",
-        sa.Column("scope", sa.String(length=500), nullable=False),
-        sa.Column("id", sa.String(length=500), nullable=False),
-        sa.Column("source_id", sa.String(length=500), nullable=False),
-        sa.Column("target_id", sa.String(length=500), nullable=False),
+        sa.Column("scope", sa.String(length=SCOPE), nullable=False),
+        sa.Column("id", sa.String(length=SYMBOL), nullable=False),
+        sa.Column("source_id", sa.String(length=SYMBOL), nullable=False),
+        sa.Column("target_id", sa.String(length=SYMBOL), nullable=False),
         sa.Column("type", sa.String(length=255), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
         sa.PrimaryKeyConstraint("scope", "id"),

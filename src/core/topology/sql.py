@@ -32,7 +32,7 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_type = Text().with_variant(String(500), "mysql")
+scope_type = Text().with_variant(String(191), "mysql")
 entity_table = Table(
     "topology_entities",
     metadata,

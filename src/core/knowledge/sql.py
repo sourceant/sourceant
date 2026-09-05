@@ -31,7 +31,7 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_type = Text().with_variant(String(500), "mysql")
+scope_type = Text().with_variant(String(191), "mysql")
 knowledge_table = Table(
     "knowledge_objects",
     metadata,
@@ -49,7 +49,7 @@ link_table = Table(
     Column("id", String(255), primary_key=True),
     Column("knowledge_id", String(255), nullable=False),
     Column("target_kind", String(64), nullable=False),
-    Column("target_id", String(500), nullable=False),
+    Column("target_id", String(255), nullable=False),
     Column("properties", Text, nullable=False),
 )
 
