@@ -15,7 +15,7 @@ from unittest.mock import patch
 import src.core.workspace as workspace_module
 from src.api.main import app
 from src.config.db import get_session
-from src.core.model import SettingsModelSource
+from src.core.model import SettingsLLMSource
 
 TEST_JWT_SECRET = "workspace-scoped-model-secret"
 
@@ -99,9 +99,7 @@ def test_a_workspace_key_is_the_key_its_repository_is_reviewed_with(client):
     assert _choose(client, "ws-a", "model.name", "moonshot/kimi-k2").status_code == 200
     assert _choose(client, "ws-a", "model.api_key", "ws-a-key").status_code == 200
 
-    provider = SettingsModelSource(fallback_model="").provider_for(
-        repository="acme/web"
-    )
+    provider = SettingsLLMSource(fallback_model="").provider_for(repository="acme/web")
     asked = _asked(provider)
 
     assert asked["model"] == "moonshot/kimi-k2"
@@ -112,9 +110,7 @@ def test_usage_for_that_call_is_owed_by_the_workspace(client):
     _connect(client, "ws-a", "acme/web")
     _choose(client, "ws-a", "model.name", "moonshot/kimi-k2")
 
-    provider = SettingsModelSource(fallback_model="").provider_for(
-        repository="acme/web"
-    )
+    provider = SettingsLLMSource(fallback_model="").provider_for(repository="acme/web")
     with patch("src.core.usage.record_completion") as recorded:
         _asked(provider)
 
@@ -127,9 +123,7 @@ def test_a_repository_two_workspaces_hold_resolves_to_neither_of_their_keys(clie
     _choose(client, "ws-a", "model.name", "moonshot/kimi-k2")
     _choose(client, "ws-a", "model.api_key", "ws-a-key")
 
-    provider = SettingsModelSource(fallback_model="").provider_for(
-        repository="acme/web"
-    )
+    provider = SettingsLLMSource(fallback_model="").provider_for(repository="acme/web")
 
     assert provider is None
 

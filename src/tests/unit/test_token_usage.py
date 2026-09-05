@@ -6,7 +6,7 @@ from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlmodel import Session, SQLModel, select
 
-from src.core.model.settings import LLMConfig, SettingsModelSource
+from src.core.model.settings import LLMConfig, SettingsLLMSource
 from src.core.usage import record_completion
 from src.llms.litellm_provider import LiteLLMProvider
 from src.models.token_usage import TokenUsageRecord
@@ -67,7 +67,7 @@ def test_recording_nowhere_to_keep_it_does_not_fail_the_call(tmp_path):
 def test_two_repositories_are_not_billed_to_one(tmp_path):
     """What one repository asked for must never be recorded against another."""
     engine = _kept(tmp_path)
-    source = SettingsModelSource()
+    source = SettingsLLMSource()
     answered = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
         usage=SimpleNamespace(prompt_tokens=5, completion_tokens=1),
@@ -75,7 +75,7 @@ def test_two_repositories_are_not_billed_to_one(tmp_path):
     )
 
     with patch.object(
-        SettingsModelSource,
+        SettingsLLMSource,
         "config_for",
         return_value=LLMConfig(name="m", token_limit=10),
     ):

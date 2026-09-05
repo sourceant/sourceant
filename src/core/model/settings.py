@@ -37,7 +37,7 @@ class LLMConfig:
 
 
 @dataclass
-class SettingsModelSource:
+class SettingsLLMSource:
     """Reads the model from settings: user, then repository, then the workspace
     holding that repository, then the organisation, then what the deployment was
     started with.

@@ -87,7 +87,7 @@ def _parse(answer: str) -> dict:
 
 
 @dataclass(frozen=True)
-class ModelSkillChecker:
+class LLMSkillChecker:
     """One skill, one change, one question.
 
     An unreadable answer is not a failure: a model that returned nothing usable

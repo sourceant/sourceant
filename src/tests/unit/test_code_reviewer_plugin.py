@@ -724,7 +724,7 @@ def test_a_review_records_what_it_spent_against_the_repository(
     from sqlalchemy import create_engine
     from sqlmodel import Session, SQLModel, select
 
-    from src.core.model.settings import LLMConfig, SettingsModelSource
+    from src.core.model.settings import LLMConfig, SettingsLLMSource
     from src.models.token_usage import TokenUsageRecord
 
     engine = create_engine(f"sqlite:///{tmp_path / 'usage.db'}")
@@ -753,7 +753,7 @@ def test_a_review_records_what_it_spent_against_the_repository(
 
     with (
         patch.object(
-            SettingsModelSource,
+            SettingsLLMSource,
             "config_for",
             return_value=LLMConfig(
                 name="gemini/gemini-2.5-flash", token_limit=1_000_000

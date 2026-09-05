@@ -11,14 +11,14 @@ from typing import Optional
 from src.core.environment import LOCAL
 from src.llms.llm_interface import LLMInterface
 
-from .model import ChosenModel
+from .llm import ChosenLLM
 
 
 class LocalEnvironment:
     """One workspace, and the model it chose."""
 
     def __init__(self) -> None:
-        self._model = ChosenModel()
+        self._model = ChosenLLM()
 
     @property
     def name(self) -> str:

@@ -6,16 +6,16 @@ from src.core.services import ServiceRegistry, service_registry
 from src.core.workspace import workspace_holding
 from src.llms.llm_interface import LLMInterface
 
-from .interfaces import ModelSource
-from .settings import LLMConfig, SettingsModelSource
+from .interfaces import LLMSource
+from .settings import LLMConfig, SettingsLLMSource
 
-_core = SettingsModelSource()
+_core = SettingsLLMSource()
 
 
-def model_source(services: ServiceRegistry = service_registry) -> ModelSource:
+def llm_source(services: ServiceRegistry = service_registry) -> LLMSource:
     """Whatever registered as a source, else core's settings-backed one."""
     try:
-        return services.resolve(ModelSource)
+        return services.resolve(LLMSource)
     except LookupError:
         return _core
 
@@ -47,7 +47,7 @@ def provider_for(
     services: ServiceRegistry = service_registry,
 ) -> LLMInterface | None:
     """The model to ask for this repository, workspace, organisation or user."""
-    return model_source(services).provider_for(
+    return llm_source(services).provider_for(
         repository=repository,
         organization=organization,
         user=user,
@@ -58,8 +58,8 @@ def provider_for(
 __all__ = [
     "LLMConfig",
     "config_for",
-    "ModelSource",
-    "SettingsModelSource",
-    "model_source",
+    "LLMSource",
+    "SettingsLLMSource",
+    "llm_source",
     "provider_for",
 ]

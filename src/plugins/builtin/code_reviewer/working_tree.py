@@ -29,7 +29,7 @@ from src.utils.logger import logger
 from src.core.skills import (
     BLOCKING,
     Change,
-    ModelSkillChecker,
+    LLMSkillChecker,
     PhraseSkillSelector,
     Skill,
     SkillVerdict,
@@ -460,7 +460,7 @@ class WorkingTreeReviews:
             paths=changes.paths,
             diff=changes.diff,
         )
-        checker = ModelSkillChecker(ask=provider.generate_text, model=provider.model)
+        checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
 
         whole = split(chosen)
         answer["skills"] = [skill_payload(skill) for skill in whole]

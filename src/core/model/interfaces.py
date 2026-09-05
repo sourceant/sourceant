@@ -6,7 +6,7 @@ from src.llms.llm_interface import LLMInterface
 
 
 @runtime_checkable
-class ModelSource(Protocol):
+class LLMSource(Protocol):
     """Which model to ask, at the scope asking.
 
     None means no model is named at any scope reaching this caller. Nothing

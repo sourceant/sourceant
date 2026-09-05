@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from src.core.model import SettingsModelSource
+from src.core.model import SettingsLLMSource
 from src.llms.llm_interface import LLMInterface
 
 from src.core.environment import LOCAL
 
 
-class ChosenModel(SettingsModelSource):
+class ChosenLLM(SettingsLLMSource):
     """The chosen model, or None.
 
     Unlike a hosted deployment there is nothing to fall back to: the bill is

@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from src.config import settings
 from src.config.db import get_engine
 from src.core.environment import Environment
-from src.core.model import ModelSource
+from src.core.model import LLMSource
 from src.core.plugins import BasePlugin, PluginMetadata, PluginType
 from src.core.repositories import RepositoryRegistry
 from src.core.review import FindingStore, SQLFindingStore
@@ -18,7 +18,7 @@ from src.utils.logger import logger
 
 from .environment import LocalEnvironment
 from .folders import RegisteredFolders
-from .model import ChosenModel
+from .llm import ChosenLLM
 from .skills import SkillsOnDisk
 
 
@@ -65,7 +65,7 @@ class LocalPlugin(BasePlugin):
         self.services.register(Environment, LocalEnvironment(), self.metadata.name)
         self.services.register(RepositoryRegistry, folders, self.metadata.name)
         self.services.register(SkillLibrary, SkillsOnDisk(folders), self.metadata.name)
-        self.services.register(ModelSource, ChosenModel(), self.metadata.name)
+        self.services.register(LLMSource, ChosenLLM(), self.metadata.name)
 
         findings = self._findings()
         if findings is not None:

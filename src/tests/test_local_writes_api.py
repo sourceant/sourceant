@@ -232,7 +232,7 @@ class TestLocalWrites(BaseTestCase):
                 )
 
         monkeypatch.setattr(
-            "src.api.routes.knowledge.model_for_this_machine", lambda: Answering()
+            "src.api.routes.knowledge.llm_for_this_machine", lambda: Answering()
         )
         self.register()
 
