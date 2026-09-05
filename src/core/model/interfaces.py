@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
+from src.core.settings.resolver import UNSTATED
 from src.llms.llm_interface import LLMInterface
 
 
@@ -21,3 +22,12 @@ class LLMSource(Protocol):
         user: Optional[str] = None,
         workspace: Optional[str] = None,
     ) -> LLMInterface | None: ...
+
+    def config_for(
+        self,
+        *,
+        repository: Optional[str] = None,
+        organization: Optional[str] = None,
+        user: Optional[str] = None,
+        workspace: Any = UNSTATED,
+    ) -> Any: ...

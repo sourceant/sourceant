@@ -26,11 +26,12 @@ def config_for(
     organization: Optional[str] = None,
     user: Optional[str] = None,
     workspace: Optional[str] = None,
+    services: ServiceRegistry = service_registry,
 ) -> LLMConfig | None:
     """What to call and on whose account, for callers that do the call
     themselves. The provider is synchronous; an async caller needs the parts."""
     holder = workspace or (workspace_holding(repository) if repository else None)
-    return _core.config_for(
+    return llm_source(services).config_for(
         repository=repository,
         organization=organization,
         user=user,
