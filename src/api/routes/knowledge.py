@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.routes.code import find_repository, registered, require_local
-from src.api.routes.local_settings import llm_for_this_machine
+from src.api.routes.local_settings import local_provider
 from src.core.environment import LOCAL
 from src.config.db import get_engine
 from src.core.knowledge.proposing import propose
@@ -226,7 +226,7 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
     items = [agreed(seed.knowledge, 1.0, threshold) for seed in seeds]
 
     if body.use_model:
-        provider = llm_for_this_machine()
+        provider = local_provider()
         if provider is None:
             raise HTTPException(
                 status_code=400,

@@ -27,8 +27,8 @@ from src.core.settings.resolver import clear_value, resolve_all, set_value
 router = APIRouter()
 
 
-def llm_for_this_machine():
-    """The model chosen here, or None.
+def local_provider():
+    """The model chosen here, ready to be asked, or None.
 
     Unlike a hosted deployment there is no fallback: the bill is the user's,
     so an unchosen model stays unchosen.
