@@ -37,7 +37,11 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_key_type = String(500)
+
+# Sized for MySQL, which allows 3072 bytes in a key and reserves four per
+# character. A column wider here would accept what the database then refuses.
+scope_key_type = String(191)
+symbol_type = String(255)
 
 # How much of a repository the writer holds before committing what it has. A
 # whole one does not fit: fifty thousand files come to some hundreds of
@@ -48,8 +52,8 @@ node_table = Table(
     "code_nodes",
     metadata,
     Column("scope", scope_key_type, primary_key=True),
-    Column("id", String(500), primary_key=True),
-    Column("file_path", String(500), nullable=True),
+    Column("id", symbol_type, primary_key=True),
+    Column("file_path", symbol_type, nullable=True),
     Column("properties", Text, nullable=False),
     Index("ix_code_nodes_scope_file_path", "scope", "file_path"),
 )
@@ -58,7 +62,7 @@ label_table = Table(
     "code_node_labels",
     metadata,
     Column("scope", scope_key_type, primary_key=True),
-    Column("node_id", String(500), primary_key=True),
+    Column("node_id", symbol_type, primary_key=True),
     Column("label", String(255), primary_key=True),
     Index("ix_code_node_labels_scope_label", "scope", "label"),
 )
@@ -67,9 +71,9 @@ edge_table = Table(
     "code_edges",
     metadata,
     Column("scope", scope_key_type, primary_key=True),
-    Column("id", String(500), primary_key=True),
-    Column("source_id", String(500), nullable=False),
-    Column("target_id", String(500), nullable=False),
+    Column("id", symbol_type, primary_key=True),
+    Column("source_id", symbol_type, nullable=False),
+    Column("target_id", symbol_type, nullable=False),
     Column("type", String(255), nullable=False),
     Column("properties", Text, nullable=False),
     Index("ix_code_edges_scope_source", "scope", "source_id"),

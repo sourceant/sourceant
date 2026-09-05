@@ -33,7 +33,9 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_key_type = String(500)
+# Sized for MySQL, which allows 3072 bytes in a key and reserves four per
+# character. A column wider here would accept what the database then refuses.
+scope_key_type = String(191)
 
 requirement_table = Table(
     "requirements",
@@ -43,7 +45,7 @@ requirement_table = Table(
     Column("kind", String(255), nullable=False),
     Column("status", String(255), nullable=False),
     Column("summary", Text, nullable=False),
-    Column("external_ref", String(500), nullable=False),
+    Column("external_ref", String(255), nullable=False),
     Column("properties", Text, nullable=False),
     Index("ix_requirements_scope_external_ref", "scope", "external_ref"),
 )
@@ -55,7 +57,7 @@ link_table = Table(
     Column("id", String(255), primary_key=True),
     Column("requirement_id", String(255), nullable=False),
     Column("target_kind", String(64), nullable=False),
-    Column("target_id", String(500), nullable=False),
+    Column("target_id", String(255), nullable=False),
     Column("properties", Text, nullable=False),
     Index("ix_requirement_links_scope_requirement", "scope", "requirement_id"),
     Index("ix_requirement_links_scope_target", "scope", "target_id"),

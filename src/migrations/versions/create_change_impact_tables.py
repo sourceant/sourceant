@@ -9,14 +9,24 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# MySQL counts a key in bytes, allows 3072 of them, and reserves four per
+# character, so a composite key cannot exceed 768 characters. The mapping below
+# is keyed on five columns, which is what makes these tighter than elsewhere: a
+# kind is a word, a revision is a commit hash, and the rest are qualified names.
+SCOPE = 191
+KIND = 64
+REVISION = 64
+NAME = 191
+
+
 def upgrade() -> None:
     op.create_table(
         "impact_code_mappings",
-        sa.Column("scope", sa.String(length=500), nullable=False),
-        sa.Column("change_kind", sa.String(length=255), nullable=False),
-        sa.Column("change_id", sa.String(length=500), nullable=False),
-        sa.Column("revision", sa.String(length=255), nullable=False),
-        sa.Column("entity_id", sa.String(length=255), nullable=False),
+        sa.Column("scope", sa.String(length=SCOPE), nullable=False),
+        sa.Column("change_kind", sa.String(length=KIND), nullable=False),
+        sa.Column("change_id", sa.String(length=NAME), nullable=False),
+        sa.Column("revision", sa.String(length=REVISION), nullable=False),
+        sa.Column("entity_id", sa.String(length=NAME), nullable=False),
         sa.PrimaryKeyConstraint(
             "scope", "change_kind", "change_id", "revision", "entity_id"
         ),
@@ -28,7 +38,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "compatibility_checks",
-        sa.Column("scope", sa.String(length=500), nullable=False),
+        sa.Column("scope", sa.String(length=SCOPE), nullable=False),
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("provider_entity_id", sa.String(length=255), nullable=False),
         sa.Column("consumer_entity_id", sa.String(length=255), nullable=False),

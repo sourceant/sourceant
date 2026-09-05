@@ -9,18 +9,24 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Sized for MySQL, which counts a key in bytes, allows 3072, and reserves four
+# per character. A composite key therefore cannot exceed 768 characters.
+SCOPE = 191
+SYMBOL = 255
+
+
 def upgrade() -> None:
     op.create_table(
         "knowledge_links",
         sa.Column(
             "scope",
-            sa.Text().with_variant(sa.String(length=500), "mysql"),
+            sa.Text().with_variant(sa.String(length=SCOPE), "mysql"),
             nullable=False,
         ),
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("knowledge_id", sa.String(length=255), nullable=False),
         sa.Column("target_kind", sa.String(length=64), nullable=False),
-        sa.Column("target_id", sa.String(length=500), nullable=False),
+        sa.Column("target_id", sa.String(length=SYMBOL), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
         sa.PrimaryKeyConstraint("scope", "id"),
     )

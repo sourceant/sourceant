@@ -29,16 +29,19 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_key_type = String(500)
+# Sized for MySQL, which allows 3072 bytes in a key and reserves four per
+# character. A column wider here would accept what the database then refuses.
+scope_key_type = String(191)
+name_type = String(191)
 
 mapping_table = Table(
     "impact_code_mappings",
     metadata,
     Column("scope", scope_key_type, primary_key=True),
-    Column("change_kind", String(255), primary_key=True),
-    Column("change_id", String(500), primary_key=True),
-    Column("revision", String(255), primary_key=True),
-    Column("entity_id", String(255), primary_key=True),
+    Column("change_kind", String(64), primary_key=True),
+    Column("change_id", name_type, primary_key=True),
+    Column("revision", String(64), primary_key=True),
+    Column("entity_id", name_type, primary_key=True),
     Index("ix_impact_code_mappings_scope_change", "scope", "change_kind", "change_id"),
 )
 

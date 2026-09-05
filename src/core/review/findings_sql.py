@@ -31,7 +31,7 @@ metadata = MetaData()
 findings_table = Table(
     "review_findings",
     metadata,
-    Column("scope", Text, primary_key=True),
+    Column("scope", String(191), primary_key=True),
     Column("id", String(128), primary_key=True),
     Column("state", String(32), nullable=False, index=True),
     Column("summary", Text, nullable=False, default=""),
