@@ -19,7 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.routes.code import find_repository, registered, require_local
-from src.api.routes.local_settings import WHOEVER_IS_HERE, model_for_this_machine
+from src.api.routes.local_settings import model_for_this_machine
+from src.core.environment import LOCAL
 from src.config.db import get_engine
 from src.core.knowledge.proposing import propose
 from src.core.knowledge.seeding import read
@@ -160,7 +161,7 @@ def accept_above() -> float:
     from src.core.settings.resolver import resolve
 
     try:
-        return float(resolve("knowledge.accept_above", user=WHOEVER_IS_HERE).value or 0)
+        return float(resolve("knowledge.accept_above", user=LOCAL).value or 0)
     except Exception:  # noqa: BLE001 - a store that cannot answer accepts nothing
         return 0.0
 

@@ -97,11 +97,11 @@ def where(scope: str, repository: str) -> Path:
 
 def elsewhere() -> tuple[str, ...]:
     """The folders somebody told this machine to look in as well."""
-    from src.api.routes.local_settings import WHOEVER_IS_HERE
+    from src.core.environment import LOCAL
     from src.core.settings.resolver import resolve
 
     try:
-        named = str(resolve("skills.paths", user=WHOEVER_IS_HERE).value or "")
+        named = str(resolve("skills.paths", user=LOCAL).value or "")
     except Exception:  # noqa: BLE001 - a store that cannot answer is no folders
         return ()
     return tuple(line.strip() for line in named.splitlines() if line.strip())

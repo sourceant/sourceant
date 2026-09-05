@@ -2,7 +2,9 @@
 
 The settings API proper is scoped to a user, repository or organisation and
 answers to a signed token. There is no sign-in here, so these routes are the
-same store at the user scope with one fixed identity.
+same store at the user scope under one fixed identity. Nothing about the
+computer feeds into it, because a renamed machine would otherwise lose what was
+configured on it.
 
 Gated like the rest of the local surface. See ``code.py``.
 """
@@ -16,17 +18,13 @@ from pydantic import BaseModel
 
 from src.api.routes.code import require_local
 from src.api.routes.settings import _described
-from src.core.environment import environment
+from src.core.environment import LOCAL, environment
 from src.core.model import SettingsModelSource
 from src.core.responses import success_response
 from src.core.settings.definitions import USER
 from src.core.settings.resolver import clear_value, resolve_all, set_value
 
 router = APIRouter()
-
-# The scope has to be something, and anything derived from the computer would
-# move the settings when it is renamed.
-WHOEVER_IS_HERE = "local"
 
 
 def model_for_this_machine():
@@ -35,10 +33,10 @@ def model_for_this_machine():
     Unlike a hosted deployment there is no fallback: the bill is the user's,
     so an unchosen model stays unchosen.
     """
-    here = environment()
-    if here is not None:
-        return here.provider_for(here.workspace_for())
-    return SettingsModelSource(fallback_model="").provider_for(user=WHOEVER_IS_HERE)
+    deployment = environment()
+    if deployment is not None:
+        return deployment.provider_for(deployment.workspace_for())
+    return SettingsModelSource(fallback_model="").provider_for(user=LOCAL)
 
 
 @router.get("", dependencies=[Depends(require_local)])
@@ -49,7 +47,7 @@ def read_local_settings():
     ``settings.py``.
     """
     return success_response(
-        [_described(resolved) for resolved in resolve_all(user=WHOEVER_IS_HERE)]
+        [_described(resolved) for resolved in resolve_all(user=LOCAL)]
     )
 
 
@@ -61,9 +59,7 @@ class ValueInput(BaseModel):
 def write_local_setting(key: str, body: ValueInput):
     """Give one setting a value."""
     try:
-        return success_response(
-            _described(set_value(USER, WHOEVER_IS_HERE, key, body.value))
-        )
+        return success_response(_described(set_value(USER, LOCAL, key, body.value)))
     except KeyError as error:
         raise HTTPException(
             status_code=404, detail=f"No setting called {key}"
@@ -76,7 +72,7 @@ def write_local_setting(key: str, body: ValueInput):
 def reset_local_setting(key: str):
     """Put one setting back to its default."""
     try:
-        clear_value(USER, WHOEVER_IS_HERE, key)
+        clear_value(USER, LOCAL, key)
     except KeyError as error:
         raise HTTPException(
             status_code=404, detail=f"No setting called {key}"
