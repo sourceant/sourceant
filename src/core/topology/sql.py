@@ -6,6 +6,7 @@ from threading import RLock
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Engine,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     select,
 )
 
+from src.core import scopes
 from src.core.scope import Scope
 
 from .memory import InMemoryTopologyRepository
@@ -32,11 +34,10 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_type = Text().with_variant(String(500), "mysql")
 entity_table = Table(
     "topology_entities",
     metadata,
-    Column("scope", scope_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("kind", String(255), nullable=False),
     Column("status", String(255), nullable=False),
@@ -48,7 +49,7 @@ entity_table = Table(
 relationship_table = Table(
     "topology_relationships",
     metadata,
-    Column("scope", scope_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("source_id", String(255), nullable=False),
     Column("target_id", String(255), nullable=False),
@@ -67,12 +68,12 @@ class SQLTopologyRepository:
         self._lock = RLock()
         self._memory = InMemoryTopologyRepository()
         if create_schema:
+            scopes.ensure(engine)
             metadata.create_all(engine)
         self._refresh()
 
     def put_entity(self, scope: Scope, entity: TopologyEntity) -> None:
         values = {
-            "scope": self._scope_key(scope),
             "id": entity.id,
             "kind": entity.kind,
             "status": entity.status,
@@ -83,9 +84,10 @@ class SQLTopologyRepository:
         }
         with self._lock:
             with self._engine.begin() as connection:
+                values["scope_id"] = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(entity_table).where(
-                        entity_table.c.scope == values["scope"],
+                        entity_table.c.scope_id == values["scope_id"],
                         entity_table.c.id == entity.id,
                     )
                 )
@@ -96,7 +98,6 @@ class SQLTopologyRepository:
         self, scope: Scope, relationship: TopologyRelationship
     ) -> None:
         values = {
-            "scope": self._scope_key(scope),
             "id": relationship.id,
             "source_id": relationship.source_id,
             "target_id": relationship.target_id,
@@ -111,9 +112,10 @@ class SQLTopologyRepository:
             self._refresh()
             self._memory.put_relationship(scope, relationship)
             with self._engine.begin() as connection:
+                values["scope_id"] = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(relationship_table).where(
-                        relationship_table.c.scope == values["scope"],
+                        relationship_table.c.scope_id == values["scope_id"],
                         relationship_table.c.id == relationship.id,
                     )
                 )
@@ -121,7 +123,7 @@ class SQLTopologyRepository:
             self._refresh()
 
     def remove_entity(self, scope: Scope, entity_id: str) -> bool:
-        scope_key = self._scope_key(scope)
+        scope_key = scopes.known_id(self._engine, scope)
         with self._lock:
             self._refresh()
             if not self._memory.remove_entity(scope, entity_id):
@@ -129,14 +131,14 @@ class SQLTopologyRepository:
             with self._engine.begin() as connection:
                 connection.execute(
                     delete(relationship_table).where(
-                        relationship_table.c.scope == scope_key,
+                        relationship_table.c.scope_id == scope_key,
                         (relationship_table.c.source_id == entity_id)
                         | (relationship_table.c.target_id == entity_id),
                     )
                 )
                 connection.execute(
                     delete(entity_table).where(
-                        entity_table.c.scope == scope_key,
+                        entity_table.c.scope_id == scope_key,
                         entity_table.c.id == entity_id,
                     )
                 )
@@ -144,7 +146,7 @@ class SQLTopologyRepository:
             return True
 
     def remove_relationship(self, scope: Scope, relationship_id: str) -> bool:
-        scope_key = self._scope_key(scope)
+        scope_key = scopes.known_id(self._engine, scope)
         with self._lock:
             self._refresh()
             if not self._memory.remove_relationship(scope, relationship_id):
@@ -152,7 +154,7 @@ class SQLTopologyRepository:
             with self._engine.begin() as connection:
                 connection.execute(
                     delete(relationship_table).where(
-                        relationship_table.c.scope == scope_key,
+                        relationship_table.c.scope_id == scope_key,
                         relationship_table.c.id == relationship_id,
                     )
                 )
@@ -185,9 +187,9 @@ class SQLTopologyRepository:
     def _refresh(self) -> None:
         memory = InMemoryTopologyRepository()
         with self._engine.connect() as connection:
-            for row in connection.execute(select(entity_table)).mappings():
+            for row in connection.execute(scopes.with_scope(entity_table)).mappings():
                 memory.put_entity(
-                    self._decode_scope(row["scope"]),
+                    scopes.read(row["qualifiers"]),
                     TopologyEntity(
                         row["id"],
                         row["kind"],
@@ -198,9 +200,11 @@ class SQLTopologyRepository:
                         self._decode_evidence(row["evidence"]),
                     ),
                 )
-            for row in connection.execute(select(relationship_table)).mappings():
+            for row in connection.execute(
+                scopes.with_scope(relationship_table)
+            ).mappings():
                 memory.put_relationship(
-                    self._decode_scope(row["scope"]),
+                    scopes.read(row["qualifiers"]),
                     TopologyRelationship(
                         row["id"],
                         row["source_id"],
@@ -214,14 +218,6 @@ class SQLTopologyRepository:
                     ),
                 )
         self._memory = memory
-
-    @staticmethod
-    def _scope_key(scope: Scope) -> str:
-        return json.dumps(scope.values, separators=(",", ":"))
-
-    @staticmethod
-    def _decode_scope(value: str) -> Scope:
-        return Scope(tuple(tuple(item) for item in json.loads(value)))
 
     @staticmethod
     def _encode(value: Mapping[str, Any]) -> str:

@@ -13,8 +13,9 @@ def upgrade() -> None:
     op.create_table(
         "knowledge_links",
         sa.Column(
-            "scope",
-            sa.Text().with_variant(sa.String(length=500), "mysql"),
+            "scope_id",
+            sa.BigInteger(),
+            sa.ForeignKey("scopes.id"),
             nullable=False,
         ),
         sa.Column("id", sa.String(length=255), nullable=False),
@@ -22,15 +23,15 @@ def upgrade() -> None:
         sa.Column("target_kind", sa.String(length=64), nullable=False),
         sa.Column("target_id", sa.String(length=500), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("scope", "id"),
+        sa.PrimaryKeyConstraint("scope_id", "id"),
     )
     op.create_index(
         "ix_knowledge_links_scope_knowledge",
         "knowledge_links",
-        ["scope", "knowledge_id"],
+        ["scope_id", "knowledge_id"],
     )
     op.create_index(
-        "ix_knowledge_links_scope_target", "knowledge_links", ["scope", "target_id"]
+        "ix_knowledge_links_scope_target", "knowledge_links", ["scope_id", "target_id"]
     )
 
 

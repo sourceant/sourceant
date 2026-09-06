@@ -18,13 +18,23 @@ PROJECT = Scope.from_mapping({"project": "one"})
 OTHER_PROJECT = Scope.from_mapping({"project": "two"})
 
 
-def test_sql_topology_scope_keys_compile_for_supported_databases():
+def _mysql_key_bytes(table) -> int:
+    """What MySQL counts the primary key as, reserving four bytes a character."""
+    total = 0
+    for column in table.primary_key:
+        kind = column.type.dialect_impl(mysql.dialect())
+        total += (kind.length * 4) if getattr(kind, "length", None) else 8
+    return total
+
+
+def test_a_scope_is_carried_as_a_number_so_the_key_fits_every_database():
     for table in (entity_table, relationship_table):
         mysql_ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
         postgres_ddl = str(CreateTable(table).compile(dialect=postgresql.dialect()))
 
-        assert "scope VARCHAR(500) NOT NULL" in mysql_ddl
-        assert "scope TEXT NOT NULL" in postgres_ddl
+        assert "scope_id BIGINT NOT NULL" in mysql_ddl
+        assert "scope_id BIGINT NOT NULL" in postgres_ddl
+        assert _mysql_key_bytes(table) <= 3072
 
 
 def test_sql_topology_survives_restart_and_preserves_scope(tmp_path):

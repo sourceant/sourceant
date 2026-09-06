@@ -6,6 +6,7 @@ from threading import RLock
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Column,
     Engine,
     MetaData,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     select,
 )
 
+from src.core import scopes
 from src.core.scope import Scope
 from src.core.sql_support import rows_for
 
@@ -31,11 +33,10 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_type = Text().with_variant(String(500), "mysql")
 knowledge_table = Table(
     "knowledge_objects",
     metadata,
-    Column("scope", scope_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("kind", String(255), nullable=False),
     Column("status", String(255), nullable=False),
@@ -45,18 +46,18 @@ knowledge_table = Table(
 link_table = Table(
     "knowledge_links",
     metadata,
-    Column("scope", scope_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("knowledge_id", String(255), nullable=False),
     Column("target_kind", String(64), nullable=False),
-    Column("target_id", String(500), nullable=False),
+    Column("target_id", String(255), nullable=False),
     Column("properties", Text, nullable=False),
 )
 
 relationship_table = Table(
     "knowledge_relationships",
     metadata,
-    Column("scope", scope_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("source_id", String(255), nullable=False),
     Column("target_id", String(255), nullable=False),
@@ -72,12 +73,12 @@ class SQLKnowledgeRepository:
         self._lock = RLock()
         self._memory = InMemoryKnowledgeRepository()
         if create_schema:
+            scopes.ensure(engine)
             metadata.create_all(engine)
         self._refresh()
 
     def put(self, scope: Scope, knowledge: KnowledgeObject) -> None:
         values = {
-            "scope": self._scope_key(scope),
             "id": knowledge.id,
             "kind": knowledge.kind,
             "status": knowledge.status,
@@ -86,9 +87,10 @@ class SQLKnowledgeRepository:
         }
         with self._lock:
             with self._engine.begin() as connection:
+                values["scope_id"] = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(knowledge_table).where(
-                        knowledge_table.c.scope == values["scope"],
+                        knowledge_table.c.scope_id == values["scope_id"],
                         knowledge_table.c.id == knowledge.id,
                     )
                 )
@@ -99,7 +101,6 @@ class SQLKnowledgeRepository:
         self, scope: Scope, relationship: KnowledgeRelationship
     ) -> None:
         values = {
-            "scope": self._scope_key(scope),
             "id": relationship.id,
             "source_id": relationship.source_id,
             "target_id": relationship.target_id,
@@ -111,9 +112,10 @@ class SQLKnowledgeRepository:
             self._refresh()
             self._memory.put_relationship(scope, relationship)
             with self._engine.begin() as connection:
+                values["scope_id"] = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(relationship_table).where(
-                        relationship_table.c.scope == values["scope"],
+                        relationship_table.c.scope_id == values["scope_id"],
                         relationship_table.c.id == relationship.id,
                     )
                 )
@@ -121,37 +123,37 @@ class SQLKnowledgeRepository:
             self._refresh()
 
     def remove(self, scope: Scope, knowledge_id: str) -> None:
-        key = self._scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         with self._lock:
             with self._engine.begin() as connection:
                 connection.execute(
                     delete(link_table).where(
-                        link_table.c.scope == key,
+                        link_table.c.scope_id == key,
                         link_table.c.knowledge_id == knowledge_id,
                     )
                 )
                 connection.execute(
                     delete(relationship_table).where(
-                        relationship_table.c.scope == key,
+                        relationship_table.c.scope_id == key,
                         (relationship_table.c.source_id == knowledge_id)
                         | (relationship_table.c.target_id == knowledge_id),
                     )
                 )
                 connection.execute(
                     delete(knowledge_table).where(
-                        knowledge_table.c.scope == key,
+                        knowledge_table.c.scope_id == key,
                         knowledge_table.c.id == knowledge_id,
                     )
                 )
             self._refresh()
 
     def put_link(self, scope: Scope, link: KnowledgeLink) -> None:
-        key = self._scope_key(scope)
         with self._lock:
             with self._engine.begin() as connection:
+                key = scopes.remembered(connection, scope)
                 known = connection.execute(
                     select(knowledge_table.c.id).where(
-                        knowledge_table.c.scope == key,
+                        knowledge_table.c.scope_id == key,
                         knowledge_table.c.id == link.knowledge_id,
                     )
                 ).first()
@@ -161,12 +163,12 @@ class SQLKnowledgeRepository:
                     )
                 connection.execute(
                     delete(link_table).where(
-                        link_table.c.scope == key, link_table.c.id == link.id
+                        link_table.c.scope_id == key, link_table.c.id == link.id
                     )
                 )
                 connection.execute(
                     link_table.insert().values(
-                        scope=key,
+                        scope_id=key,
                         id=link.id,
                         knowledge_id=link.knowledge_id,
                         target_kind=link.target_kind,
@@ -178,13 +180,13 @@ class SQLKnowledgeRepository:
     def get_links(
         self, scope: Scope, knowledge_ids: frozenset[str]
     ) -> tuple[KnowledgeLink, ...]:
-        key = self._scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         with self._engine.connect() as connection:
             if not knowledge_ids:
                 rows = list(
                     connection.execute(
                         select(link_table)
-                        .where(link_table.c.scope == key)
+                        .where(link_table.c.scope_id == key)
                         .order_by(link_table.c.id)
                     ).mappings()
                 )
@@ -193,7 +195,7 @@ class SQLKnowledgeRepository:
                     knowledge_ids,
                     lambda chunk: connection.execute(
                         select(link_table).where(
-                            link_table.c.scope == key,
+                            link_table.c.scope_id == key,
                             link_table.c.knowledge_id.in_(chunk),
                         )
                     ).mappings(),
@@ -215,7 +217,7 @@ class SQLKnowledgeRepository:
     ) -> frozenset[str]:
         if not paths:
             return frozenset()
-        key = self._scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         with self._engine.connect() as connection:
             return frozenset(
                 row[0]
@@ -223,7 +225,7 @@ class SQLKnowledgeRepository:
                     paths,
                     lambda chunk: connection.execute(
                         select(link_table.c.knowledge_id).where(
-                            link_table.c.scope == key,
+                            link_table.c.scope_id == key,
                             link_table.c.target_id.in_(chunk),
                         )
                     ),
@@ -253,9 +255,11 @@ class SQLKnowledgeRepository:
     def _refresh(self) -> None:
         memory = InMemoryKnowledgeRepository()
         with self._engine.connect() as connection:
-            for row in connection.execute(select(knowledge_table)).mappings():
+            for row in connection.execute(
+                scopes.with_scope(knowledge_table)
+            ).mappings():
                 memory.put(
-                    self._decode_scope(row["scope"]),
+                    scopes.read(row["qualifiers"]),
                     KnowledgeObject(
                         row["id"],
                         row["kind"],
@@ -264,9 +268,11 @@ class SQLKnowledgeRepository:
                         json.loads(row["properties"]),
                     ),
                 )
-            for row in connection.execute(select(relationship_table)).mappings():
+            for row in connection.execute(
+                scopes.with_scope(relationship_table)
+            ).mappings():
                 memory.put_relationship(
-                    self._decode_scope(row["scope"]),
+                    scopes.read(row["qualifiers"]),
                     KnowledgeRelationship(
                         row["id"],
                         row["source_id"],
@@ -277,14 +283,6 @@ class SQLKnowledgeRepository:
                     ),
                 )
         self._memory = memory
-
-    @staticmethod
-    def _scope_key(scope: Scope) -> str:
-        return json.dumps(scope.values, separators=(",", ":"))
-
-    @staticmethod
-    def _decode_scope(value: str) -> Scope:
-        return Scope(tuple(tuple(item) for item in json.loads(value)))
 
     @staticmethod
     def _encode(value: Mapping[str, Any]) -> str:

@@ -26,11 +26,20 @@ def _engine(tmp_path, name):
 
 
 def _counted(engine):
-    counted = {"n": 0}
+    """Statements, with the ones asking after a scope counted separately.
+
+    A scope is the same for every row in a write, so looking one up must not
+    grow with the number of rows. Counting them apart keeps that visible
+    instead of hiding it in the total.
+    """
+    counted = {"n": 0, "scopes": 0}
 
     @event.listens_for(engine, "before_cursor_execute")
     def _count(conn, cursor, statement, parameters, context, executemany):
-        counted["n"] += 1
+        if " scopes" in statement:
+            counted["scopes"] += 1
+        else:
+            counted["n"] += 1
 
     return counted
 
@@ -146,6 +155,8 @@ def test_impact_seeds_ask_once_per_kind_not_once_per_file(tmp_path):
 
     assert store.resolve(SCOPE, changes) == ("system:billing",)
     assert counted["n"] == 1
+    # One hundred changed files, and the scope is looked up once.
+    assert counted["scopes"] == 1
 
 
 def test_impact_seeds_over_thousands_of_changed_files(tmp_path):
@@ -161,3 +172,21 @@ def test_impact_seeds_over_thousands_of_changed_files(tmp_path):
     store.put_mapping(SCOPE, changes[0], ("system:billing",))
 
     assert store.resolve(SCOPE, changes) == ("system:billing",)
+
+
+def test_indexing_asks_for_the_scope_once_not_once_per_node(tmp_path):
+    """Every node in a flush shares one scope, so the lookups must not scale
+    with the nodes. Asking per row turned a flush of thousands into thousands
+    of extra round trips."""
+    engine = _engine(tmp_path, "code-scope.db")
+    store = SQLCodeIndexRepository(engine, create_schema=True)
+    counted = _counted(engine)
+
+    with store.bulk_writes():
+        for index in range(MANY):
+            store.put_node(
+                SCOPE,
+                CodeNode(f"file:src/f{index}.py", frozenset({"File"}), {}),
+            )
+
+    assert counted["scopes"] < 20

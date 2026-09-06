@@ -10,25 +10,38 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Keyed on five columns, which is what makes these narrower than the
+    # same kind of column elsewhere: a kind is a word and a revision is a
+    # commit hash, and together they have to stay inside 3072 bytes.
     op.create_table(
         "impact_code_mappings",
-        sa.Column("scope", sa.String(length=500), nullable=False),
-        sa.Column("change_kind", sa.String(length=255), nullable=False),
-        sa.Column("change_id", sa.String(length=500), nullable=False),
-        sa.Column("revision", sa.String(length=255), nullable=False),
+        sa.Column(
+            "scope_id",
+            sa.BigInteger(),
+            sa.ForeignKey("scopes.id"),
+            nullable=False,
+        ),
+        sa.Column("change_kind", sa.String(length=64), nullable=False),
+        sa.Column("change_id", sa.String(length=383), nullable=False),
+        sa.Column("revision", sa.String(length=64), nullable=False),
         sa.Column("entity_id", sa.String(length=255), nullable=False),
         sa.PrimaryKeyConstraint(
-            "scope", "change_kind", "change_id", "revision", "entity_id"
+            "scope_id", "change_kind", "change_id", "revision", "entity_id"
         ),
     )
     op.create_index(
         "ix_impact_code_mappings_scope_change",
         "impact_code_mappings",
-        ["scope", "change_kind", "change_id"],
+        ["scope_id", "change_kind", "change_id"],
     )
     op.create_table(
         "compatibility_checks",
-        sa.Column("scope", sa.String(length=500), nullable=False),
+        sa.Column(
+            "scope_id",
+            sa.BigInteger(),
+            sa.ForeignKey("scopes.id"),
+            nullable=False,
+        ),
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("provider_entity_id", sa.String(length=255), nullable=False),
         sa.Column("consumer_entity_id", sa.String(length=255), nullable=False),
@@ -41,17 +54,17 @@ def upgrade() -> None:
         sa.Column("stale", sa.Boolean(), nullable=False),
         sa.Column("evidence", sa.Text(), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("scope", "id"),
+        sa.PrimaryKeyConstraint("scope_id", "id"),
     )
     op.create_index(
         "ix_compatibility_checks_scope_provider",
         "compatibility_checks",
-        ["scope", "provider_entity_id"],
+        ["scope_id", "provider_entity_id"],
     )
     op.create_index(
         "ix_compatibility_checks_scope_consumer",
         "compatibility_checks",
-        ["scope", "consumer_entity_id"],
+        ["scope_id", "consumer_entity_id"],
     )
 
 

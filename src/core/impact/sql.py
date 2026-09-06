@@ -5,6 +5,7 @@ from threading import RLock
 from typing import Any, Mapping
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Engine,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     select,
 )
 
+from src.core import scopes
 from src.core.scope import Scope
 from src.core.sql_support import rows_for
 from src.core.topology import TopologyEvidence
@@ -29,23 +31,26 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_key_type = String(500)
 
+# Five columns in one key, so these are narrower than elsewhere. MySQL allows
+# 3072 bytes and reserves four per character; a kind is a word, a revision a hash.
 mapping_table = Table(
     "impact_code_mappings",
     metadata,
-    Column("scope", scope_key_type, primary_key=True),
-    Column("change_kind", String(255), primary_key=True),
-    Column("change_id", String(500), primary_key=True),
-    Column("revision", String(255), primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
+    Column("change_kind", String(64), primary_key=True),
+    Column("change_id", String(383), primary_key=True),
+    Column("revision", String(64), primary_key=True),
     Column("entity_id", String(255), primary_key=True),
-    Index("ix_impact_code_mappings_scope_change", "scope", "change_kind", "change_id"),
+    Index(
+        "ix_impact_code_mappings_scope_change", "scope_id", "change_kind", "change_id"
+    ),
 )
 
 check_table = Table(
     "compatibility_checks",
     metadata,
-    Column("scope", scope_key_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("provider_entity_id", String(255), nullable=False),
     Column("consumer_entity_id", String(255), nullable=False),
@@ -58,8 +63,8 @@ check_table = Table(
     Column("stale", Boolean, nullable=False),
     Column("evidence", Text, nullable=False),
     Column("properties", Text, nullable=False),
-    Index("ix_compatibility_checks_scope_provider", "scope", "provider_entity_id"),
-    Index("ix_compatibility_checks_scope_consumer", "scope", "consumer_entity_id"),
+    Index("ix_compatibility_checks_scope_provider", "scope_id", "provider_entity_id"),
+    Index("ix_compatibility_checks_scope_consumer", "scope_id", "consumer_entity_id"),
 )
 
 
@@ -68,6 +73,7 @@ class SQLImpactSeedRepository:
         self._engine = engine
         self._lock = RLock()
         if create_schema:
+            scopes.ensure(engine)
             metadata.create_all(engine)
 
     def put_mapping(
@@ -78,12 +84,12 @@ class SQLImpactSeedRepository:
     ) -> None:
         if not entity_ids or any(not item for item in entity_ids):
             raise ValueError("topology identities are required")
-        key = _scope_key(scope)
         with self._lock:
             with self._engine.begin() as connection:
+                key = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(mapping_table).where(
-                        mapping_table.c.scope == key,
+                        mapping_table.c.scope_id == key,
                         mapping_table.c.change_kind == change.kind,
                         mapping_table.c.change_id == change.id,
                         mapping_table.c.revision == change.revision,
@@ -93,7 +99,7 @@ class SQLImpactSeedRepository:
                     mapping_table.insert(),
                     [
                         {
-                            "scope": key,
+                            "scope_id": key,
                             "change_kind": change.kind,
                             "change_id": change.id,
                             "revision": change.revision,
@@ -108,7 +114,7 @@ class SQLImpactSeedRepository:
     ) -> tuple[str, ...]:
         if not changes:
             return ()
-        key = _scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         # Grouped by kind and revision, which a single change set almost always
         # shares, so this asks once rather than once per changed file.
         grouped: dict[tuple[str, str], set[str]] = {}
@@ -122,7 +128,7 @@ class SQLImpactSeedRepository:
                     identities,
                     lambda chunk, kind=kind, revision=revision: connection.execute(
                         select(mapping_table.c.entity_id).where(
-                            mapping_table.c.scope == key,
+                            mapping_table.c.scope_id == key,
                             mapping_table.c.change_kind == kind,
                             mapping_table.c.revision == revision,
                             mapping_table.c.change_id.in_(chunk),
@@ -138,21 +144,22 @@ class SQLCompatibilityCheckRepository:
         self._engine = engine
         self._lock = RLock()
         if create_schema:
+            scopes.ensure(engine)
             metadata.create_all(engine)
 
     def put_evidence(self, scope: Scope, evidence: CompatibilityCheck) -> None:
-        key = _scope_key(scope)
         with self._lock:
             with self._engine.begin() as connection:
+                key = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(check_table).where(
-                        check_table.c.scope == key,
+                        check_table.c.scope_id == key,
                         check_table.c.id == evidence.id,
                     )
                 )
                 connection.execute(
                     check_table.insert().values(
-                        scope=key,
+                        scope_id=key,
                         id=evidence.id,
                         provider_entity_id=evidence.provider_entity_id,
                         consumer_entity_id=evidence.consumer_entity_id,
@@ -169,10 +176,10 @@ class SQLCompatibilityCheckRepository:
                 )
 
     def read(self, query: CompatibilityCheckQuery) -> tuple[CompatibilityCheck, ...]:
-        key = _scope_key(query.scope)
+        key = scopes.known_id(self._engine, query.scope)
         wanted = sorted(query.entity_ids)
         statement = select(check_table).where(
-            check_table.c.scope == key,
+            check_table.c.scope_id == key,
             check_table.c.provider_entity_id.in_(wanted),
             check_table.c.consumer_entity_id.in_(wanted),
             check_table.c.confidence >= query.minimum_confidence,
@@ -232,10 +239,6 @@ def _encode_evidence(items: tuple[TopologyEvidence, ...]) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
-
-
-def _scope_key(scope: Scope) -> str:
-    return json.dumps(scope.values, separators=(",", ":"))
 
 
 def _encode(value: Mapping[str, Any]) -> str:
