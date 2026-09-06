@@ -6,12 +6,13 @@ inheriting.
 """
 
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.auth import get_current_user
+from src.core.model.catalogue import offered, refused
 from src.core.responses import success_response
 from src.core.workspace import workspace_in
 from src.core.settings import (
@@ -33,6 +34,14 @@ Scope = Literal["user", "repository", "workspace", "organization"]
 
 class SettingInput(BaseModel):
     value: Any
+
+
+class ModelCheck(BaseModel):
+    model: str
+    api_key: str
+    # Optional, and null rather than absent when it reaches here through a
+    # gateway that turns empty strings into nulls on the way.
+    base_url: Optional[str] = ""
 
 
 def _authorize_user_scope(scope: Scope, scope_id: str, user: dict) -> None:
@@ -83,6 +92,26 @@ def _described(resolved: Resolved) -> dict:
         "choices": list(setting.choices) if setting else [],
         "group": setting.group if setting else "General",
     }
+
+
+@router.get("/models")
+async def models(user: dict = Depends(get_current_user)):
+    """Every model that can be named here, by provider."""
+    return success_response(offered())
+
+
+@router.post("/models/check")
+async def check_model(
+    payload: ModelCheck,
+    user: dict = Depends(get_current_user),
+):
+    """Whether a key can use a model, asked of the provider rather than guessed.
+
+    A provider's catalogue says what exists. What an account may use is a
+    subset, and the two only differ when somebody is already waiting.
+    """
+    why = refused(payload.model, payload.api_key, payload.base_url or "")
+    return success_response({"usable": why is None, "reason": why})
 
 
 @router.get("/catalogue")
