@@ -95,6 +95,7 @@ class InMemoryJobStore:
                 "claimed_at": None,
                 "error": "",
                 "created_at": now,
+                "finished_at": None,
             }
             return job_id
 
@@ -196,6 +197,7 @@ class InMemoryJobStore:
             if outcome.succeeded:
                 row["state"] = SUCCEEDED
                 row["error"] = ""
+                row["finished_at"] = now
                 self._settle(row, failed=False)
             elif outcome.retry and row["attempt"] < row["max_attempts"]:
                 wait = outcome.retry_in
@@ -208,6 +210,7 @@ class InMemoryJobStore:
                 exhausted = row["attempt"] >= row["max_attempts"]
                 row["state"] = DEAD if exhausted else FAILED
                 row["error"] = outcome.error
+                row["finished_at"] = now
                 self._settle(row, failed=True)
             row["lease_until"] = None
             row["leased_by"] = None
@@ -277,6 +280,25 @@ class InMemoryJobStore:
             ]
             rows.sort(key=lambda row: (-row["priority"], row["id"]))
             return [self._read(row) for row in rows[:limit]]
+
+    def prune(self, keep_finished_for_days: int = 14) -> int:
+        """Clear away jobs finished long enough ago to be of no interest."""
+        with self._lock:
+            now = self._now()
+            cleared = 0
+            if keep_finished_for_days > 0:
+                cutoff = now - timedelta(days=keep_finished_for_days)
+                for job_id, row in list(self._jobs.items()):
+                    finished = row.get("finished_at")
+                    if row["state"] in (SUCCEEDED, FAILED, DEAD, CANCELLED) and (
+                        finished is not None and finished < cutoff
+                    ):
+                        del self._jobs[job_id]
+                        cleared += 1
+            for key, lock in list(self._locks.items()):
+                if lock["expires_at"] <= now:
+                    del self._locks[key]
+            return cleared
 
     def cancel(self, job_id: int) -> bool:
         with self._lock:

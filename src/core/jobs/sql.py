@@ -610,6 +610,33 @@ class SQLJobStore:
         with self._engine.connect() as connection:
             return [_as_job(row) for row in connection.execute(query).all()]
 
+    def prune(self, keep_finished_for_days: int = 14) -> int:
+        """Clear away jobs finished long enough ago to be of no interest.
+
+        Zero keeps them for ever, which is what the setting offers and also how
+        this table becomes the largest one in the database.
+        """
+        with self._engine.begin() as connection:
+            now = self._clock(connection)
+            cleared = 0
+            if keep_finished_for_days > 0:
+                cutoff = now - timedelta(days=keep_finished_for_days)
+                cleared = connection.execute(
+                    delete(job_table).where(
+                        and_(
+                            job_table.c.state.in_((SUCCEEDED, FAILED, DEAD, CANCELLED)),
+                            job_table.c.finished_at.is_not(None),
+                            job_table.c.finished_at < cutoff,
+                        )
+                    )
+                ).rowcount
+            # A lock outliving its job would hold work back for ever, and the
+            # claim only passes over ones that have not expired yet.
+            connection.execute(
+                delete(job_lock_table).where(job_lock_table.c.expires_at <= now)
+            )
+            return cleared or 0
+
     def cancel(self, job_id: int) -> bool:
         with self._engine.begin() as connection:
             return (

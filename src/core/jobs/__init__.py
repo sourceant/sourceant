@@ -55,6 +55,7 @@ from .models import (
     Lease,
 )
 from .sql import SQLJobStore
+from .sweep import Sweeper
 from .worker import Worker
 
 _core = None
@@ -159,6 +160,7 @@ __all__ = [
     "RateLimited",
     "SQLJobStore",
     "SUCCEEDED",
+    "Sweeper",
     "Throttled",
     "WITHIN_HOURS",
     "WITHIN_MINUTES",

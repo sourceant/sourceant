@@ -207,3 +207,30 @@ def test_a_delayed_job_is_not_offered_before_it_is_due(store, clock):
     assert store.claim(WITHIN_SECONDS, "worker-1", 5) == []
     clock.ahead(31)
     assert len(store.claim(WITHIN_SECONDS, "worker-1", 5)) == 1
+
+
+def test_finished_work_is_cleared_away_but_work_still_waiting_is_not(store, clock):
+    """Nothing clears this table on its own, so without pruning it grows for
+    as long as the deployment runs."""
+    done = store.enqueue(_asked())
+    (lease,) = store.claim(WITHIN_SECONDS, "worker-1", 5)
+    store.finish(lease, JobOutcome.ok())
+    waiting = store.enqueue(_asked(dedupe_slot="still-wanted"))
+
+    clock.ahead(15 * 24 * 60 * 60)
+    cleared = store.prune(keep_finished_for_days=14)
+
+    assert cleared == 1
+    assert store.read(done) is None
+    assert store.read(waiting).state == QUEUED
+
+
+def test_keeping_them_for_ever_is_a_choice_that_is_honoured(store, clock):
+    store.enqueue(_asked())
+    (lease,) = store.claim(WITHIN_SECONDS, "worker-1", 5)
+    store.finish(lease, JobOutcome.ok())
+
+    clock.ahead(400 * 24 * 60 * 60)
+
+    assert store.prune(keep_finished_for_days=0) == 0
+    assert store.read(lease.job.id) is not None
