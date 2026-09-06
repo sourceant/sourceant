@@ -32,6 +32,7 @@ from .interfaces import (
     JobWakeup,
 )
 from .memory import InMemoryJobQueue, InMemoryJobStore
+from .middleware import RateLimited, Throttled
 from .models import (
     BY_NOBODY,
     BY_REPOSITORY,
@@ -54,6 +55,7 @@ from .models import (
     Lease,
 )
 from .sql import SQLJobStore
+from .worker import Worker
 
 _core = None
 
@@ -154,11 +156,14 @@ __all__ = [
     "Lease",
     "QUEUED",
     "RUNNING",
+    "RateLimited",
     "SQLJobStore",
     "SUCCEEDED",
+    "Throttled",
     "WITHIN_HOURS",
     "WITHIN_MINUTES",
     "WITHIN_SECONDS",
+    "Worker",
     "backoff_after",
     "enqueue",
     "handler_for",
