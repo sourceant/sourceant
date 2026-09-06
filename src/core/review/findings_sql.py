@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    BigInteger,
     Column,
     DateTime,
     Engine,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     select,
 )
 
+from src.core import scopes
 from src.core.scope import Scope
 
 from .findings import FindingQuery, FindingResult, ReviewFinding
@@ -31,7 +33,7 @@ metadata = MetaData()
 findings_table = Table(
     "review_findings",
     metadata,
-    Column("scope", Text, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(128), primary_key=True),
     Column("state", String(32), nullable=False, index=True),
     Column("summary", Text, nullable=False, default=""),
@@ -44,11 +46,6 @@ findings_table = Table(
 )
 
 
-def _written(scope: Scope) -> str:
-    """A scope as one string, since it is matched whole and never queried into."""
-    return json.dumps(sorted(scope.values))
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -59,18 +56,19 @@ class SQLFindingStore:
     def __init__(self, engine: Engine, *, create_schema: bool = False) -> None:
         self._engine = engine
         if create_schema:
+            scopes.ensure(engine)
             metadata.create_all(engine)
 
     def put_finding(self, scope: Scope, finding: ReviewFinding) -> None:
         """File one. A state already set survives, however often it is raised."""
-        written = _written(scope)
         now = _now()
         with self._engine.begin() as connection:
+            written = scopes.remembered(connection, scope)
             existing = (
                 connection.execute(
                     select(findings_table).where(
                         and_(
-                            findings_table.c.scope == written,
+                            findings_table.c.scope_id == written,
                             findings_table.c.id == finding.id,
                         )
                     )
@@ -84,7 +82,7 @@ class SQLFindingStore:
                     findings_table.update()
                     .where(
                         and_(
-                            findings_table.c.scope == written,
+                            findings_table.c.scope_id == written,
                             findings_table.c.id == finding.id,
                         )
                     )
@@ -100,7 +98,7 @@ class SQLFindingStore:
 
             connection.execute(
                 findings_table.insert().values(
-                    scope=written,
+                    scope_id=written,
                     id=finding.id,
                     state=finding.state,
                     summary=finding.summary,
@@ -115,12 +113,13 @@ class SQLFindingStore:
         """Set a state. The only thing that does; filing never changes one."""
         if not state:
             raise ValueError("a finding needs a state")
+        known = scopes.known_id(self._engine, scope)
         with self._engine.begin() as connection:
             done = connection.execute(
                 findings_table.update()
                 .where(
                     and_(
-                        findings_table.c.scope == _written(scope),
+                        findings_table.c.scope_id == known,
                         findings_table.c.id == identifier,
                     )
                 )
@@ -129,12 +128,13 @@ class SQLFindingStore:
         return done.rowcount > 0
 
     def get_finding(self, scope: Scope, identifier: str) -> ReviewFinding | None:
+        known = scopes.known_id(self._engine, scope)
         with self._engine.begin() as connection:
             row = (
                 connection.execute(
                     select(findings_table).where(
                         and_(
-                            findings_table.c.scope == _written(scope),
+                            findings_table.c.scope_id == known,
                             findings_table.c.id == identifier,
                         )
                     )
@@ -145,7 +145,8 @@ class SQLFindingStore:
         return _read(row) if row else None
 
     def search(self, query: FindingQuery) -> FindingResult:
-        where = [findings_table.c.scope == _written(query.scope)]
+        known = scopes.known_id(self._engine, query.scope)
+        where = [findings_table.c.scope_id == known]
         if query.states:
             where.append(findings_table.c.state.in_(sorted(query.states)))
 

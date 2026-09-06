@@ -5,6 +5,7 @@ from threading import RLock
 from typing import Any, Mapping
 
 from sqlalchemy import (
+    BigInteger,
     Column,
     Engine,
     Index,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     select,
 )
 
+from src.core import scopes
 from src.core.scope import Scope
 from src.core.sql_support import rows_for
 
@@ -33,32 +35,31 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_key_type = String(500)
 
 requirement_table = Table(
     "requirements",
     metadata,
-    Column("scope", scope_key_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("kind", String(255), nullable=False),
     Column("status", String(255), nullable=False),
     Column("summary", Text, nullable=False),
-    Column("external_ref", String(500), nullable=False),
+    Column("external_ref", String(255), nullable=False),
     Column("properties", Text, nullable=False),
-    Index("ix_requirements_scope_external_ref", "scope", "external_ref"),
+    Index("ix_requirements_scope_external_ref", "scope_id", "external_ref"),
 )
 
 link_table = Table(
     "requirement_links",
     metadata,
-    Column("scope", scope_key_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("requirement_id", String(255), nullable=False),
     Column("target_kind", String(64), nullable=False),
-    Column("target_id", String(500), nullable=False),
+    Column("target_id", String(255), nullable=False),
     Column("properties", Text, nullable=False),
-    Index("ix_requirement_links_scope_requirement", "scope", "requirement_id"),
-    Index("ix_requirement_links_scope_target", "scope", "target_id"),
+    Index("ix_requirement_links_scope_requirement", "scope_id", "requirement_id"),
+    Index("ix_requirement_links_scope_target", "scope_id", "target_id"),
 )
 
 
@@ -67,21 +68,22 @@ class SQLRequirementsRepository:
         self._engine = engine
         self._lock = RLock()
         if create_schema:
+            scopes.ensure(engine)
             metadata.create_all(engine)
 
     def put(self, scope: Scope, requirement: Requirement) -> None:
-        key = _scope_key(scope)
         with self._lock:
             with self._engine.begin() as connection:
+                key = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(requirement_table).where(
-                        requirement_table.c.scope == key,
+                        requirement_table.c.scope_id == key,
                         requirement_table.c.id == requirement.id,
                     )
                 )
                 connection.execute(
                     requirement_table.insert().values(
-                        scope=key,
+                        scope_id=key,
                         id=requirement.id,
                         kind=requirement.kind,
                         status=requirement.status,
@@ -92,12 +94,12 @@ class SQLRequirementsRepository:
                 )
 
     def put_link(self, scope: Scope, link: RequirementLink) -> None:
-        key = _scope_key(scope)
         with self._lock:
             with self._engine.begin() as connection:
+                key = scopes.remembered(connection, scope)
                 known = connection.execute(
                     select(requirement_table.c.id).where(
-                        requirement_table.c.scope == key,
+                        requirement_table.c.scope_id == key,
                         requirement_table.c.id == link.requirement_id,
                     )
                 ).first()
@@ -105,12 +107,12 @@ class SQLRequirementsRepository:
                     raise ValueError("a link needs a requirement in the same scope")
                 connection.execute(
                     delete(link_table).where(
-                        link_table.c.scope == key, link_table.c.id == link.id
+                        link_table.c.scope_id == key, link_table.c.id == link.id
                     )
                 )
                 connection.execute(
                     link_table.insert().values(
-                        scope=key,
+                        scope_id=key,
                         id=link.id,
                         requirement_id=link.requirement_id,
                         target_kind=link.target_kind,
@@ -120,25 +122,25 @@ class SQLRequirementsRepository:
                 )
 
     def remove(self, scope: Scope, requirement_id: str) -> None:
-        key = _scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         with self._lock:
             with self._engine.begin() as connection:
                 connection.execute(
                     delete(link_table).where(
-                        link_table.c.scope == key,
+                        link_table.c.scope_id == key,
                         link_table.c.requirement_id == requirement_id,
                     )
                 )
                 connection.execute(
                     delete(requirement_table).where(
-                        requirement_table.c.scope == key,
+                        requirement_table.c.scope_id == key,
                         requirement_table.c.id == requirement_id,
                     )
                 )
 
     def search(self, query: RequirementQuery) -> RequirementResult:
-        key = _scope_key(query.scope)
-        statement = select(requirement_table).where(requirement_table.c.scope == key)
+        key = scopes.known_id(self._engine, query.scope)
+        statement = select(requirement_table).where(requirement_table.c.scope_id == key)
         if query.ids:
             statement = statement.where(
                 requirement_table.c.id.in_(sorted(query.ids)),
@@ -176,13 +178,13 @@ class SQLRequirementsRepository:
     def get_links(
         self, scope: Scope, requirement_ids: frozenset[str]
     ) -> tuple[RequirementLink, ...]:
-        key = _scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         with self._engine.connect() as connection:
             if not requirement_ids:
                 rows = list(
                     connection.execute(
                         select(link_table)
-                        .where(link_table.c.scope == key)
+                        .where(link_table.c.scope_id == key)
                         .order_by(link_table.c.id)
                     ).mappings()
                 )
@@ -191,7 +193,7 @@ class SQLRequirementsRepository:
                     requirement_ids,
                     lambda chunk: connection.execute(
                         select(link_table).where(
-                            link_table.c.scope == key,
+                            link_table.c.scope_id == key,
                             link_table.c.requirement_id.in_(chunk),
                         )
                     ).mappings(),
@@ -200,7 +202,7 @@ class SQLRequirementsRepository:
         return tuple(found[key] for key in sorted(found))
 
     def coverage(self, query: CoverageQuery) -> CoverageReport:
-        key = _scope_key(query.scope)
+        key = scopes.known_id(self._engine, query.scope)
         requirement_ids = set(query.requirement_ids)
         if query.paths:
             with self._engine.connect() as connection:
@@ -208,7 +210,7 @@ class SQLRequirementsRepository:
                     query.paths,
                     lambda chunk: connection.execute(
                         select(link_table.c.requirement_id).where(
-                            link_table.c.scope == key,
+                            link_table.c.scope_id == key,
                             link_table.c.target_id.in_(chunk),
                         )
                     ),
@@ -223,7 +225,7 @@ class SQLRequirementsRepository:
                     requirement_ids,
                     lambda chunk: connection.execute(
                         select(requirement_table).where(
-                            requirement_table.c.scope == key,
+                            requirement_table.c.scope_id == key,
                             requirement_table.c.id.in_(chunk),
                         )
                     ).mappings(),
@@ -286,10 +288,6 @@ def _link_from_row(row: Mapping[str, Any]) -> RequirementLink:
         target_id=row["target_id"],
         properties=json.loads(row["properties"]),
     )
-
-
-def _scope_key(scope: Scope) -> str:
-    return json.dumps(scope.values, separators=(",", ":"))
 
 
 def _encode(value: Mapping[str, Any]) -> str:

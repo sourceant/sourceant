@@ -13,8 +13,9 @@ def upgrade() -> None:
     op.create_table(
         "topology_entities",
         sa.Column(
-            "scope",
-            sa.Text().with_variant(sa.String(length=500), "mysql"),
+            "scope_id",
+            sa.BigInteger(),
+            sa.ForeignKey("scopes.id"),
             nullable=False,
         ),
         sa.Column("id", sa.String(length=255), nullable=False),
@@ -24,13 +25,14 @@ def upgrade() -> None:
         sa.Column("stale", sa.Boolean(), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
         sa.Column("evidence", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("scope", "id"),
+        sa.PrimaryKeyConstraint("scope_id", "id"),
     )
     op.create_table(
         "topology_relationships",
         sa.Column(
-            "scope",
-            sa.Text().with_variant(sa.String(length=500), "mysql"),
+            "scope_id",
+            sa.BigInteger(),
+            sa.ForeignKey("scopes.id"),
             nullable=False,
         ),
         sa.Column("id", sa.String(length=255), nullable=False),
@@ -42,7 +44,7 @@ def upgrade() -> None:
         sa.Column("stale", sa.Boolean(), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
         sa.Column("evidence", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("scope", "id"),
+        sa.PrimaryKeyConstraint("scope_id", "id"),
     )
 
 

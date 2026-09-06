@@ -7,6 +7,7 @@ from threading import RLock
 from typing import Any, Mapping
 
 from sqlalchemy import (
+    BigInteger,
     Column,
     Engine,
     Index,
@@ -20,6 +21,7 @@ from sqlalchemy import (
     select,
 )
 
+from src.core import scopes
 from src.core.scope import Scope
 from src.core.sql_support import chunked, rows_for
 
@@ -37,7 +39,6 @@ from .models import (
 )
 
 metadata = MetaData()
-scope_key_type = String(500)
 
 # How much of a repository the writer holds before committing what it has. A
 # whole one does not fit: fifty thousand files come to some hundreds of
@@ -47,33 +48,33 @@ CHECKPOINT = 20_000
 node_table = Table(
     "code_nodes",
     metadata,
-    Column("scope", scope_key_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(500), primary_key=True),
     Column("file_path", String(500), nullable=True),
     Column("properties", Text, nullable=False),
-    Index("ix_code_nodes_scope_file_path", "scope", "file_path"),
+    Index("ix_code_nodes_scope_file_path", "scope_id", "file_path"),
 )
 
 label_table = Table(
     "code_node_labels",
     metadata,
-    Column("scope", scope_key_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("node_id", String(500), primary_key=True),
     Column("label", String(255), primary_key=True),
-    Index("ix_code_node_labels_scope_label", "scope", "label"),
+    Index("ix_code_node_labels_scope_label", "scope_id", "label"),
 )
 
 edge_table = Table(
     "code_edges",
     metadata,
-    Column("scope", scope_key_type, primary_key=True),
+    Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(500), primary_key=True),
     Column("source_id", String(500), nullable=False),
     Column("target_id", String(500), nullable=False),
     Column("type", String(255), nullable=False),
     Column("properties", Text, nullable=False),
-    Index("ix_code_edges_scope_source", "scope", "source_id"),
-    Index("ix_code_edges_scope_target", "scope", "target_id"),
+    Index("ix_code_edges_scope_source", "scope_id", "source_id"),
+    Index("ix_code_edges_scope_target", "scope_id", "target_id"),
 )
 
 
@@ -92,6 +93,7 @@ class SQLCodeIndexRepository:
         self._buffer: dict[str, list] | None = None
         self._checkpoint_every = CHECKPOINT
         if create_schema:
+            scopes.ensure(engine)
             metadata.create_all(engine)
 
     @contextmanager
@@ -147,21 +149,21 @@ class SQLCodeIndexRepository:
                 self._write_edges(connection, [(scope, edge)])
 
     def clear(self, scope: Scope) -> None:
-        key = _scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         with self._lock:
             with self._engine.begin() as connection:
                 for table in (node_table, label_table, edge_table):
-                    connection.execute(delete(table).where(table.c.scope == key))
+                    connection.execute(delete(table).where(table.c.scope_id == key))
 
     def remove_path(self, scope: Scope, file_path: str) -> None:
-        key = _scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         with self._lock:
             with self._engine.begin() as connection:
                 ids = [
                     row[0]
                     for row in connection.execute(
                         select(node_table.c.id).where(
-                            node_table.c.scope == key,
+                            node_table.c.scope_id == key,
                             node_table.c.file_path == file_path,
                         )
                     )
@@ -171,7 +173,7 @@ class SQLCodeIndexRepository:
                 for chunk in chunked(ids):
                     connection.execute(
                         delete(edge_table).where(
-                            edge_table.c.scope == key,
+                            edge_table.c.scope_id == key,
                             or_(
                                 edge_table.c.source_id.in_(chunk),
                                 edge_table.c.target_id.in_(chunk),
@@ -180,28 +182,28 @@ class SQLCodeIndexRepository:
                     )
                     connection.execute(
                         delete(label_table).where(
-                            label_table.c.scope == key,
+                            label_table.c.scope_id == key,
                             label_table.c.node_id.in_(chunk),
                         )
                     )
                     connection.execute(
                         delete(node_table).where(
-                            node_table.c.scope == key, node_table.c.id.in_(chunk)
+                            node_table.c.scope_id == key, node_table.c.id.in_(chunk)
                         )
                     )
 
     def file_digests(self, scope: Scope) -> dict[str, str]:
-        key = _scope_key(scope)
+        key = scopes.known_id(self._engine, scope)
         digests: dict[str, str] = {}
         with self._engine.connect() as connection:
             for row in connection.execute(
                 select(node_table.c.file_path, node_table.c.properties)
                 .join(
                     label_table,
-                    (label_table.c.scope == node_table.c.scope)
+                    (label_table.c.scope_id == node_table.c.scope_id)
                     & (label_table.c.node_id == node_table.c.id),
                 )
-                .where(node_table.c.scope == key, label_table.c.label == "File")
+                .where(node_table.c.scope_id == key, label_table.c.label == "File")
             ):
                 path, properties = row[0], json.loads(row[1])
                 digest = properties.get("digest")
@@ -210,8 +212,8 @@ class SQLCodeIndexRepository:
         return digests
 
     def search(self, query: CodeSearch) -> CodeSearchResult:
-        key = _scope_key(query.scope)
-        statement = select(node_table).where(node_table.c.scope == key)
+        key = scopes.known_id(self._engine, query.scope)
+        statement = select(node_table).where(node_table.c.scope_id == key)
         if query.node_ids:
             statement = statement.where(node_table.c.id.in_(sorted(query.node_ids)))
         path = query.properties.get("file_path")
@@ -275,7 +277,7 @@ class SQLCodeIndexRepository:
         )
 
     def traverse(self, traversal: CodeTraversal) -> CodeTraversalResult:
-        key = _scope_key(traversal.scope)
+        key = scopes.known_id(self._engine, traversal.scope)
         nodes: list[CodeNode] = []
         edges: dict[str, CodeEdge] = {}
         visited: set[str] = set()
@@ -329,8 +331,8 @@ class SQLCodeIndexRepository:
         )
 
     def graph(self, query: CodeGraphQuery) -> CodeGraphResult:
-        key = _scope_key(query.scope)
-        statement = select(node_table).where(node_table.c.scope == key)
+        key = scopes.known_id(self._engine, query.scope)
+        statement = select(node_table).where(node_table.c.scope_id == key)
         if query.path_prefix:
             statement = statement.where(
                 node_table.c.file_path.like(
@@ -375,23 +377,24 @@ class SQLCodeIndexRepository:
                 self._write_edges(connection, buffered["edges"])
 
     def _write_nodes(self, connection, entries) -> None:
-        by_key: dict[tuple[str, str], tuple[Scope, CodeNode]] = {}
+        numbered = _numbered(connection, (scope for scope, _ in entries))
+        by_key: dict[tuple[int, str], tuple[Scope, CodeNode]] = {}
         for scope, node in entries:
-            by_key[(_scope_key(scope), node.id)] = (scope, node)
-        by_scope: dict[str, list[str]] = {}
+            by_key[(numbered[scope], node.id)] = (scope, node)
+        by_scope: dict[int, list[str]] = {}
         for scope_key, node_id in by_key:
             by_scope.setdefault(scope_key, []).append(node_id)
         for scope_key, node_ids in by_scope.items():
             for chunk in chunked(node_ids):
                 connection.execute(
                     delete(node_table).where(
-                        node_table.c.scope == scope_key,
+                        node_table.c.scope_id == scope_key,
                         node_table.c.id.in_(chunk),
                     )
                 )
                 connection.execute(
                     delete(label_table).where(
-                        label_table.c.scope == scope_key,
+                        label_table.c.scope_id == scope_key,
                         label_table.c.node_id.in_(chunk),
                     )
                 )
@@ -401,7 +404,7 @@ class SQLCodeIndexRepository:
             path = node.properties.get("file_path")
             node_rows.append(
                 {
-                    "scope": scope_key,
+                    "scope_id": scope_key,
                     "id": node_id,
                     "file_path": path if isinstance(path, str) else None,
                     "properties": _encode(node.properties),
@@ -409,24 +412,25 @@ class SQLCodeIndexRepository:
             )
             for label in sorted(node.labels):
                 label_rows.append(
-                    {"scope": scope_key, "node_id": node_id, "label": label}
+                    {"scope_id": scope_key, "node_id": node_id, "label": label}
                 )
         connection.execute(node_table.insert(), node_rows)
         if label_rows:
             connection.execute(label_table.insert(), label_rows)
 
     def _write_edges(self, connection, entries) -> None:
-        by_key: dict[tuple[str, str], tuple[Scope, CodeEdge]] = {}
+        numbered = _numbered(connection, (scope for scope, _ in entries))
+        by_key: dict[tuple[int, str], tuple[Scope, CodeEdge]] = {}
         for scope, edge in entries:
-            by_key[(_scope_key(scope), edge.id)] = (scope, edge)
-        by_scope: dict[str, list[str]] = {}
+            by_key[(numbered[scope], edge.id)] = (scope, edge)
+        by_scope: dict[int, list[str]] = {}
         for scope_key, edge_id in by_key:
             by_scope.setdefault(scope_key, []).append(edge_id)
         for scope_key, edge_ids in by_scope.items():
             for chunk in chunked(edge_ids):
                 connection.execute(
                     delete(edge_table).where(
-                        edge_table.c.scope == scope_key,
+                        edge_table.c.scope_id == scope_key,
                         edge_table.c.id.in_(chunk),
                     )
                 )
@@ -434,7 +438,7 @@ class SQLCodeIndexRepository:
             edge_table.insert(),
             [
                 {
-                    "scope": scope_key,
+                    "scope_id": scope_key,
                     "id": edge_id,
                     "source_id": edge.source_id,
                     "target_id": edge.target_id,
@@ -446,15 +450,22 @@ class SQLCodeIndexRepository:
         )
 
     def _require_endpoints(self, connection, entries) -> None:
-        wanted: dict[str, set[str]] = {}
-        for scope, edge in entries:
-            wanted.setdefault(_scope_key(scope), set()).update(
+        held = list(entries)
+        buffered = list(self._buffer["nodes"]) if self._buffer is not None else []
+        numbered = _numbered(
+            connection,
+            (scope for scope, _ in held + buffered),
+        )
+        wanted: dict[int, set[str]] = {}
+        for scope, edge in held:
+            wanted.setdefault(numbered[scope], set()).update(
                 (edge.source_id, edge.target_id)
             )
         pending = {scope_key: set(ids) for scope_key, ids in wanted.items() if ids}
-        if self._buffer is not None:
-            for scope, node in self._buffer["nodes"]:
-                pending.get(_scope_key(scope), set()).discard(node.id)
+        for scope, node in buffered:
+            waiting = pending.get(numbered[scope])
+            if waiting is not None:
+                waiting.discard(node.id)
         for scope_key, ids in pending.items():
             if not ids:
                 continue
@@ -462,7 +473,7 @@ class SQLCodeIndexRepository:
                 row[0]
                 for row in connection.execute(
                     select(node_table.c.id).where(
-                        node_table.c.scope == scope_key,
+                        node_table.c.scope_id == scope_key,
                         node_table.c.id.in_(sorted(ids)),
                     )
                 )
@@ -475,14 +486,14 @@ class SQLCodeIndexRepository:
                 )
 
     def _labels_for(
-        self, connection, scope_key: str, node_ids
+        self, connection, scope_key: int, node_ids
     ) -> dict[str, frozenset[str]]:
         grouped: dict[str, set[str]] = {}
         for row in rows_for(
             node_ids,
             lambda chunk: connection.execute(
                 select(label_table.c.node_id, label_table.c.label).where(
-                    label_table.c.scope == scope_key,
+                    label_table.c.scope_id == scope_key,
                     label_table.c.node_id.in_(chunk),
                 )
             ),
@@ -497,7 +508,7 @@ class SQLCodeIndexRepository:
                 node_ids,
                 lambda chunk: connection.execute(
                     select(node_table).where(
-                        node_table.c.scope == scope_key,
+                        node_table.c.scope_id == scope_key,
                         node_table.c.id.in_(chunk),
                     )
                 ).mappings(),
@@ -509,7 +520,7 @@ class SQLCodeIndexRepository:
     ) -> list[CodeEdge]:
         if not node_ids:
             return []
-        statement = select(edge_table).where(edge_table.c.scope == scope_key)
+        statement = select(edge_table).where(edge_table.c.scope_id == scope_key)
         if traversal.direction == "outbound":
             statement = statement.where(edge_table.c.source_id.in_(node_ids))
         elif traversal.direction == "inbound":
@@ -536,7 +547,7 @@ class SQLCodeIndexRepository:
 
         def _for(chunk):
             statement = select(edge_table).where(
-                edge_table.c.scope == scope_key,
+                edge_table.c.scope_id == scope_key,
                 edge_table.c.source_id.in_(chunk),
             )
             if edge_types:
@@ -552,12 +563,21 @@ class SQLCodeIndexRepository:
         return tuple(found[key] for key in sorted(found))
 
 
-def _with_labels(statement, scope_key: str, labels, id_column):
+def _numbered(connection, asked) -> dict[Scope, int]:
+    """A number for each distinct scope, asked for once however many rows share it."""
+    found: dict[Scope, int] = {}
+    for scope in asked:
+        if scope not in found:
+            found[scope] = scopes.remembered(connection, scope)
+    return found
+
+
+def _with_labels(statement, scope_key: int, labels, id_column):
     for label in sorted(labels):
         statement = statement.where(
             select(label_table.c.label)
             .where(
-                label_table.c.scope == scope_key,
+                label_table.c.scope_id == scope_key,
                 label_table.c.node_id == id_column,
                 label_table.c.label == label,
             )
@@ -566,13 +586,13 @@ def _with_labels(statement, scope_key: str, labels, id_column):
     return statement
 
 
-def _with_any_label(statement, scope_key: str, labels, id_column):
+def _with_any_label(statement, scope_key: int, labels, id_column):
     if not labels:
         return statement
     return statement.where(
         select(label_table.c.label)
         .where(
-            label_table.c.scope == scope_key,
+            label_table.c.scope_id == scope_key,
             label_table.c.node_id == id_column,
             label_table.c.label.in_(sorted(labels)),
         )
@@ -609,10 +629,6 @@ def _edge_from_row(row: Mapping[str, Any]) -> CodeEdge:
         type=row["type"],
         properties=json.loads(row["properties"]),
     )
-
-
-def _scope_key(scope: Scope) -> str:
-    return json.dumps(scope.values, separators=(",", ":"))
 
 
 def _encode(value: Mapping[str, Any]) -> str:
