@@ -284,9 +284,12 @@ def _distinct(
         return place
 
     around = _busiest_name(member_ids, by_id, neighbours)
-    candidate = f"{place}/{around}" if place else around
+    base = f"{place}/{around}" if place else around
+    candidate = base
+    suffix = len(taken) + 1
     while candidate in taken:
-        candidate += "'"
+        candidate = f"{base} ({suffix})"
+        suffix += 1
     taken.add(candidate)
     return candidate
 

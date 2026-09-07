@@ -1,0 +1,1202 @@
+[
+  {
+    "id": "file:metadata/An.stop/ar/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ar/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1791
+  },
+  {
+    "id": "file:metadata/An.stop/ba/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ba/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1802
+  },
+  {
+    "id": "file:metadata/An.stop/ca/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ca/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1813
+  },
+  {
+    "id": "file:metadata/An.stop/cs/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/cs/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1824
+  },
+  {
+    "id": "file:metadata/An.stop/da/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/da/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1835
+  },
+  {
+    "id": "file:metadata/An.stop/de/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/de/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1846
+  },
+  {
+    "id": "file:metadata/An.stop/en-GB/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/en-GB/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1857
+  },
+  {
+    "id": "file:metadata/An.stop/en-US/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/en-US/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1868
+  },
+  {
+    "id": "file:metadata/An.stop/eo/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/eo/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1879
+  },
+  {
+    "id": "file:metadata/An.stop/es/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/es/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1891
+  },
+  {
+    "id": "file:metadata/An.stop/fr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/fr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1902
+  },
+  {
+    "id": "file:metadata/An.stop/ga/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ga/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1913
+  },
+  {
+    "id": "file:metadata/An.stop/gd/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/gd/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1924
+  },
+  {
+    "id": "file:metadata/An.stop/he/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/he/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1935
+  },
+  {
+    "id": "file:metadata/An.stop/hr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/hr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1946
+  },
+  {
+    "id": "file:metadata/An.stop/id/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/id/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1957
+  },
+  {
+    "id": "file:metadata/An.stop/is/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/is/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1968
+  },
+  {
+    "id": "file:metadata/An.stop/it/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/it/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1979
+  },
+  {
+    "id": "file:metadata/An.stop/ja/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ja/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 1990
+  },
+  {
+    "id": "file:metadata/An.stop/nb/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/nb/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2002
+  },
+  {
+    "id": "file:metadata/An.stop/nl/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/nl/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2013
+  },
+  {
+    "id": "file:metadata/An.stop/pl/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/pl/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2024
+  },
+  {
+    "id": "file:metadata/An.stop/pt-BR/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/pt-BR/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2035
+  },
+  {
+    "id": "file:metadata/An.stop/pt-PT/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/pt-PT/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2046
+  },
+  {
+    "id": "file:metadata/An.stop/pt/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/pt/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2057
+  },
+  {
+    "id": "file:metadata/An.stop/ro/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ro/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2068
+  },
+  {
+    "id": "file:metadata/An.stop/ru/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ru/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2079
+  },
+  {
+    "id": "file:metadata/An.stop/sq/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/sq/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2090
+  },
+  {
+    "id": "file:metadata/An.stop/sr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/sr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2101
+  },
+  {
+    "id": "file:metadata/An.stop/sw/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/sw/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2113
+  },
+  {
+    "id": "file:metadata/An.stop/ta/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/ta/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2124
+  },
+  {
+    "id": "file:metadata/An.stop/tr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/tr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2135
+  },
+  {
+    "id": "file:metadata/An.stop/uk/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/uk/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2146
+  },
+  {
+    "id": "file:metadata/An.stop/zh-CN/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/zh-CN/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2157
+  },
+  {
+    "id": "file:metadata/An.stop/zh-TW/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/An.stop/zh-TW/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2168
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ar/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ar/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2225
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ba/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ba/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2236
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ca/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ca/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2247
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/cs/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/cs/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2258
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/da/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/da/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2269
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/de/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/de/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2280
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/en-GB/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/en-GB/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2291
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/en-US/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/en-US/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2302
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/eo/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/eo/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2313
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/es/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/es/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2324
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/eu/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/eu/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2336
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/fr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/fr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2347
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ga/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ga/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2358
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/gd/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/gd/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2369
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/he/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/he/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2391
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/hr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/hr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2402
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/id/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/id/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2413
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/is/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/is/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2424
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/it/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/it/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2435
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ja/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ja/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2447
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/nb/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/nb/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2458
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/nl/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/nl/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2469
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/pl/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/pl/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2480
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/pt-BR/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/pt-BR/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2491
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/pt-PT/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/pt-PT/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2502
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/pt/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/pt/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2513
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ro/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ro/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2524
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ru/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ru/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2535
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/sq/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/sq/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2546
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/sr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/sr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2558
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/sw/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/sw/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2569
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/ta/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/ta/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2580
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/tr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/tr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2591
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/uk/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/uk/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2602
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/zh-CN/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/zh-CN/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2613
+  },
+  {
+    "id": "file:metadata/a2dp.Vol/zh-TW/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/a2dp.Vol/zh-TW/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2624
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/ar/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/ar/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2746
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/ba/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/ba/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2757
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/ca/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/ca/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2768
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/cs/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/cs/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2780
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/de/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/de/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2791
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/en-GB/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/en-GB/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2802
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/en-US/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/en-US/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2813
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/eo/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/eo/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2824
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/es/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/es/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2835
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/fr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/fr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2846
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/ga/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/ga/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2857
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/gd/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/gd/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2868
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/he/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/he/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2879
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/hr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/hr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2891
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/id/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/id/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2902
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/is/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/is/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2913
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/it/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/it/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2924
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/ja/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/ja/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2935
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/nb/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/nb/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2946
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/nl/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/nl/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2957
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/pl/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/pl/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2968
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/pt-BR/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/pt-BR/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2979
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/pt-PT/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/pt-PT/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 2990
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/pt/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/pt/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 3002
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/ro/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/ro/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 3013
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/ru/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/ru/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 3024
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/sq/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/sq/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 3035
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/sr/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/sr/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 3046
+  },
+  {
+    "id": "file:metadata/acr.browser.lightning/sw/summary.txt",
+    "name": "summary.txt",
+    "kind": "file",
+    "path": "metadata/acr.browser.lightning/sw/summary.txt",
+    "labels": [
+      "File"
+    ],
+    "language": "vimdoc",
+    "degree": 0,
+    "community": 3057
+  }
+]
