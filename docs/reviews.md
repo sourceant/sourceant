@@ -60,6 +60,9 @@ Reuse is best effort: when Redis is unavailable the review is simply generated a
 | `POSITIVE_SENTIMENT_THRESHOLD` | `0.3` | How positive a comment must read to be treated as praise and dropped |
 | `REVIEW_MISSING_EXISTING_CODE_POLICY` | `drop` | What happens to a suggestion with no anchoring code: `drop`, `warn`, `keep` |
 | `LLM_TOKEN_LIMIT` | `131072` | Diff size that still fits a single-pass review |
+| `MODEL_PROBE_TIMEOUT` | `15` | Seconds a provider gets to answer a model check |
+| `MODEL_RESOLVE_TIMEOUT` | `5` | Seconds a custom endpoint's name gets to resolve |
+| `MODEL_ENDPOINTS_MAY_BE_PRIVATE` | `false` | Accept a model endpoint on a private address |
 
 ### Limits
 
