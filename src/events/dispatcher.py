@@ -9,7 +9,6 @@ from rq import Queue
 
 from src.config.settings import (
     QUEUE_MODE,
-    VALID_QUEUE_MODES,
     REDIS_HOST,
     REDIS_PORT,
 )
@@ -79,10 +78,7 @@ class EventDispatcher:
                 )
             background_tasks.add_task(self._process_event_sync, event)
         else:
-            raise ValueError(
-                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be one of "
-                f"{', '.join(VALID_QUEUE_MODES)}."
-            )
+            raise ValueError(f"Nothing here dispatches with QUEUE_MODE {QUEUE_MODE!r}")
 
     def deliver(self, event: Event) -> Dict[str, Any]:
         """Do what a delivery asks for, here, in the caller's process.

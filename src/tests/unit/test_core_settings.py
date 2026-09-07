@@ -161,3 +161,29 @@ class TestOrganizationOf:
 
     def test_has_no_organisation_without_one(self):
         assert organization_of("dashboard") is None
+
+
+class TestASettingThatMustBeOneOfAFew:
+    def test_the_fallback_is_taken_when_nothing_is_set(self, monkeypatch):
+        from src.config.settings import choice
+
+        monkeypatch.delenv("A_MODE", raising=False)
+
+        assert choice("A_MODE", ("one", "two"), "two") == "two"
+
+    def test_a_value_nothing_handles_stops_the_process(self, monkeypatch):
+        """Left to run, it would turn up later as work that quietly never
+        happens rather than as anything anyone could see."""
+        from src.config.settings import choice
+
+        monkeypatch.setenv("A_MODE", "three")
+
+        with pytest.raises(ValueError, match="one, two"):
+            choice("A_MODE", ("one", "two"), "one")
+
+    def test_it_is_read_however_it_was_typed(self, monkeypatch):
+        from src.config.settings import choice
+
+        monkeypatch.setenv("A_MODE", "  ONE ")
+
+        assert choice("A_MODE", ("one", "two"), "two") == "one"
