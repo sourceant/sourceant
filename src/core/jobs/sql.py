@@ -262,12 +262,12 @@ class SQLJobStore:
             # longer waiting. A job asking for its own successor holds its key
             # until it finishes, so leaving it would mean the successor is
             # never asked for at all.
-            connection.execute(
-                update(job_table)
-                .where(job_table.c.id == existing.id)
-                .values(dedupe_slot=f"job:{uuid.uuid4()}")
-            )
             with connection.begin_nested():
+                connection.execute(
+                    update(job_table)
+                    .where(job_table.c.id == existing.id)
+                    .values(dedupe_slot=f"job:{uuid.uuid4()}")
+                )
                 return connection.execute(
                     job_table.insert().values(**values)
                 ).inserted_primary_key[0]
