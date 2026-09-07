@@ -396,6 +396,9 @@ class CodeReviewerPlugin(BasePlugin):
             existing_comments = github.get_existing_bot_review_comments(
                 repository.owner, repository.name, pull_request.number
             )
+            previous_summary = github.get_previous_review_summary(
+                repository.owner, repository.name, pull_request.number
+            )
             content_cache: Dict[str, str | None] = {}
 
             def read_changed_file(path: str) -> str | None:
@@ -435,6 +438,7 @@ class CodeReviewerPlugin(BasePlugin):
                 provider=llm_instance,
                 read_content=read_changed_file,
                 existing_comments=existing_comments,
+                previous_summary=previous_summary,
                 code_scope=code_scope,
                 metadata=pr_metadata,
             )

@@ -129,7 +129,7 @@ Your task is to analyze code diffs and provide precise, structured, and actionab
     REVIEW_PROMPT = """## Pull Request Metadata
 {pr_metadata}
 
-{existing_comments}{requirements}{knowledge}{impact}## Bounded Structural Context
+{existing_comments}{previous_summary}{requirements}{knowledge}{impact}## Bounded Structural Context
 This deterministic graph contains relevant post-change files, symbols, direct relationships, and bounded source excerpts from referenced definitions. Use source excerpts to verify behavioral assumptions about referenced code before reporting an issue. An omitted node or excerpt is not proof that code or behavior does not exist.
 
 {code_context}
@@ -163,7 +163,9 @@ The diff below uses a decoupled format where removed and added code are shown in
     SUMMARIZE_REVIEW_PROMPT = """
     #
 
-    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **JSON format**, conforming to the `CodeReviewSummary` schema.
+    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary in **JSON format**, conforming to the `CodeReviewSummary` schema.
+
+    {previous_summary}The summary describes the pull request as a whole, not only the most recent push to it. A reader arriving at it should learn what the change does and what still stands, not what happened since last time.
 
     The JSON object should have the following structure:
     ```json
