@@ -9,6 +9,17 @@ from src.events.delivery import KIND, Deliveries
 from src.models.repository_event import RepositoryEvent
 from src.tests.base_test import BaseTestCase
 
+
+def _failed_with(store, wanted: str) -> bool:
+    import sqlalchemy as sa
+
+    from src.core.jobs.sql import job_table
+
+    with store._engine.connect() as connection:
+        errors = connection.execute(sa.select(job_table.c.error)).scalars().all()
+    return any(wanted in (error or "") for error in errors)
+
+
 WEBHOOK = {
     "action": "opened",
     "pull_request": {
@@ -85,6 +96,27 @@ class TestDeliveriesOnTheJobsTable(BaseTestCase):
             event_hooks._event_subscribers.pop("pull_request.opened", None)
 
         assert seen == ["pull_request.opened"]
+
+    def test_a_delivery_no_subscriber_could_act_on_is_recorded_as_failed(self):
+        from src.core.plugins import event_hooks
+
+        def refuse(event_type, data):
+            raise RuntimeError("the signing key is a directory")
+
+        event_hooks.subscribe_to_events(
+            "test_subscriber", refuse, ["pull_request.opened"]
+        )
+        try:
+            self._deliver()
+
+            services = ServiceRegistry()
+            services.contribute(JobHandler, Deliveries(), "sourceant_core")
+            worker = Worker(job_store(), WITHIN_SECONDS, services=services)
+            worker.work(max_jobs=len(job_store().pending(lane=WITHIN_SECONDS)))
+        finally:
+            event_hooks._event_subscribers.pop("pull_request.opened", None)
+
+        assert _failed_with(job_store(), "the signing key is a directory")
 
     def test_a_worker_tells_the_subscribers_what_arrived(self):
         from src.core.plugins import event_hooks

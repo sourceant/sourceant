@@ -84,9 +84,13 @@ class EventDispatcher:
                 f"{', '.join(VALID_QUEUE_MODES)}."
             )
 
-    def deliver(self, event: Event) -> None:
-        """Do what a delivery asks for, here, in the caller's process."""
-        self._process_event_sync(event)
+    def deliver(self, event: Event) -> Dict[str, Any]:
+        """Do what a delivery asks for, here, in the caller's process.
+
+        Answers with what each subscriber said, so that a delivery nobody could
+        act on is not mistaken for one that was acted on.
+        """
+        return self._process_event_sync(event) or {}
 
     def _without_waiting(self, event: Event) -> None:
         """Do the delivery after this request, or in it where that is all there is."""
@@ -96,21 +100,21 @@ class EventDispatcher:
             return
         self.deliver(event)
 
-    async def _process_event(self, event: Event):
+    async def _process_event(self, event: Event) -> Dict[str, Any]:
         if not isinstance(event, RepositoryEvent):
             logger.error(f"Unhandled event type: {event}")
-            return
+            return {}
 
         repository_event: RepositoryEventModel = event.data
         logger.info(
             f"Broadcasting repository event: {repository_event.type} on {repository_event.repository_full_name}"
         )
 
-        await self._broadcast_event_to_subscribers(repository_event)
+        return await self._broadcast_event_to_subscribers(repository_event)
 
     async def _broadcast_event_to_subscribers(
         self, repository_event: RepositoryEventModel
-    ):
+    ) -> Dict[str, Any]:
         try:
             if repository_event.action:
                 event_type = f"{repository_event.type}.{repository_event.action}"
@@ -175,9 +179,11 @@ class EventDispatcher:
             )
 
             logger.debug(f"Event broadcast results: {list(broadcast_results.keys())}")
+            return broadcast_results
 
         except Exception as e:
             logger.error(f"Error broadcasting event to subscribers: {e}", exc_info=True)
+            return {"sourceant_core": {"error": str(e)}}
 
     def _extract_user_context_github_app(
         self, payload: Dict
@@ -243,7 +249,7 @@ class EventDispatcher:
         await plugin_manager.initialize_plugins()
         await plugin_manager.start_plugins()
 
-    def _process_event_sync(self, event: Event):
+    def _process_event_sync(self, event: Event) -> Optional[Dict[str, Any]]:
         import asyncio
 
         try:
@@ -254,6 +260,6 @@ class EventDispatcher:
 
         if loop.is_running():
             asyncio.create_task(self._process_event(event))
-        else:
-            loop.run_until_complete(self._ensure_plugins_loaded())
-            loop.run_until_complete(self._process_event(event))
+            return None
+        loop.run_until_complete(self._ensure_plugins_loaded())
+        return loop.run_until_complete(self._process_event(event))

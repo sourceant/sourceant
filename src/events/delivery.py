@@ -11,7 +11,7 @@ again.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from src.config.settings import whole_number
 from src.core.jobs.models import (
@@ -77,7 +77,13 @@ class Deliveries:
         from src.events.dispatcher import EventDispatcher
         from src.events.repository_event import RepositoryEvent
 
-        EventDispatcher().deliver(RepositoryEvent(event))
+        said = EventDispatcher().deliver(RepositoryEvent(event))
+        refused = _refusals(said)
+        if refused:
+            # Recorded as done, a delivery nobody could act on looks the same as
+            # one that was acted on, and the review that never appeared has
+            # nothing behind it to say why.
+            return JobOutcome.failed("; ".join(refused))
         return JobOutcome.ok()
 
     @staticmethod
@@ -90,3 +96,12 @@ class Deliveries:
         if event is None:
             logger.error(f"Delivery {event_id} is gone, so job {job.id} has nothing")
         return event
+
+
+def _refusals(said: Mapping[str, Any]) -> list[str]:
+    """What each subscriber said went wrong, if anything did."""
+    return [
+        f"{who}: {answer['error']}"
+        for who, answer in (said or {}).items()
+        if isinstance(answer, Mapping) and answer.get("error")
+    ]
