@@ -1,5 +1,8 @@
 """Finding the parts of a graph that belong together, and naming them."""
 
+import json
+from pathlib import Path
+
 from src.core.code_index import CodeEdge, CodeNode
 
 from src.core.code_index.clustering import (
@@ -128,3 +131,23 @@ class TestCountingTheLines:
         counted = degrees([node("a")], joined([("a", "elsewhere")]))
 
         assert counted == {"a": 1}
+
+
+def test_repeated_file_names_have_short_unique_community_names():
+    captured = json.loads(
+        (Path(__file__).parents[1] / "fixtures" / "fdroid-graph-nodes.json").read_text()
+    )
+    nodes = [
+        CodeNode(
+            item["id"],
+            frozenset(item["labels"]),
+            {"name": item["name"], "file_path": item["path"]},
+        )
+        for item in captured
+    ]
+    result = Modularity().cluster(nodes, [])
+    names = [part.name for part in result.communities]
+
+    assert len(names) == len(set(names)) == len(nodes)
+    assert max(map(len, names)) < 50
+    assert result == Modularity().cluster(nodes, [])
