@@ -150,16 +150,16 @@ def test_a_provider_that_stops_answering_does_not_hold_the_request(client):
 def test_a_mistyped_timeout_does_not_stop_the_process_starting(monkeypatch):
     """It is read at import, so anything that raises takes the deployment down
     before it serves a request."""
-    from src.core.model.catalogue import _seconds
+    from src.config.settings import whole_number
 
     monkeypatch.setenv("A_TIMEOUT", "half a minute")
-    assert _seconds("A_TIMEOUT", 15) == 15
+    assert whole_number("A_TIMEOUT", 15) == 15
 
     monkeypatch.setenv("A_TIMEOUT", "0")
-    assert _seconds("A_TIMEOUT", 15) == 15
+    assert whole_number("A_TIMEOUT", 15) == 15
 
     monkeypatch.setenv("A_TIMEOUT", "45")
-    assert _seconds("A_TIMEOUT", 15) == 45
+    assert whole_number("A_TIMEOUT", 15) == 45
 
 
 def test_the_key_is_never_read_back(client):

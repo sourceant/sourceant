@@ -345,6 +345,40 @@ SETTINGS: tuple[Setting, ...] = (
         group="Skills",
         listed=True,
     ),
+    # How much background work runs at once, and how much of it any one
+    # customer may have. The cap is what stops a large backlog belonging to one
+    # workspace from being the only thing running.
+    Setting(
+        key="jobs.per_workspace",
+        label="Jobs at once for one workspace",
+        description=(
+            "How many pieces of background work may run at the same time for a "
+            "single workspace. Everyone gets an equal turn up to this number, "
+            "so a large backlog waits rather than crowding everybody else out."
+        ),
+        type=ConfigType.INT,
+        scopes=(WORKSPACE, ORGANIZATION),
+        default=3,
+        minimum=1,
+        maximum=100,
+        group="Background work",
+    ),
+    Setting(
+        key="jobs.keep_finished_for",
+        label="Keep finished jobs for",
+        description=(
+            "How many days a finished job is kept before it is cleared away. "
+            "Zero keeps them for ever, which makes this the largest table in "
+            "the database soon enough."
+        ),
+        type=ConfigType.INT,
+        scopes=(ORGANIZATION,),
+        default=14,
+        minimum=0,
+        maximum=365,
+        unit="days",
+        group="Background work",
+    ),
 )
 
 BY_KEY: Mapping[str, Setting] = {setting.key: setting for setting in SETTINGS}

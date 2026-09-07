@@ -11,7 +11,9 @@ from src.config.settings import (
     QUEUE_MODE,
     REDIS_HOST,
     REDIS_PORT,
+    whole_number,
 )
+
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github_webhook_parser import GitHubWebhookParser
@@ -23,6 +25,10 @@ from src.utils.logger import logger
 bg_tasks_cv: ContextVar[Optional[BackgroundTasks]] = ContextVar(
     "bg_tasks", default=None
 )
+
+# How long a delivery may take. A review of a large change asks a model
+# several times and outlasts the queue's own default of 180 seconds.
+DELIVERY_TIMEOUT = whole_number("QUEUE_DELIVERY_TIMEOUT", 1800)
 
 q = None
 if QUEUE_MODE == "redis":
@@ -50,7 +56,9 @@ class EventDispatcher:
         if QUEUE_MODE in ["redis", "redislite"]:
             if not q:
                 raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
-            q.enqueue(self._process_event_sync, event)
+            # Unstated, this takes the queue's default of 180 seconds and the
+            # job is stopped partway through with nothing recorded.
+            q.enqueue(self._process_event_sync, event, job_timeout=DELIVERY_TIMEOUT)
 
         elif QUEUE_MODE == "request":
             background_tasks = bg_tasks_cv.get()

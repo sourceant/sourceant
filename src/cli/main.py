@@ -13,6 +13,7 @@ from src.utils.logger import logger
 from src.utils.migration_paths import migrations_root, resolve_version_locations
 from alembic.config import Config, CommandLine
 
+from src.cli.work_command import work_command
 from src.cli.index_commands import (
     index_command,
     repo_group,
@@ -97,6 +98,7 @@ cli.add_command(repo_group)
 cli.add_command(index_command)
 cli.add_command(requirements_group)
 cli.add_command(serve_command)
+cli.add_command(work_command)
 
 if __name__ == "__main__":
     cli()
