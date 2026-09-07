@@ -37,16 +37,16 @@ def _seconds(name: str, fallback: int) -> int:
 
 # How long a provider gets to answer a check. Unbounded, a provider that has
 # stopped answering holds the thread until something else gives up first.
-PROBE_SECONDS = _seconds("MODEL_PROBE_TIMEOUT", 15)
+PROBE_SECONDS = _seconds("LLM_PROBE_TIMEOUT", 15)
 
 # How long a name gets to resolve, for the same reason.
-RESOLVE_SECONDS = _seconds("MODEL_RESOLVE_TIMEOUT", 5)
+RESOLVE_SECONDS = _seconds("LLM_RESOLVE_TIMEOUT", 5)
 
 # A deployment running its own models reaches them on an address only it can
 # see, so an operator can say so and have private addresses accepted. Off by
 # default, because anywhere a person other than the operator names an endpoint,
 # turning it on hands them this server as a way to reach that network.
-PRIVATE_ENDPOINTS = os.getenv("MODEL_ENDPOINTS_MAY_BE_PRIVATE", "").lower() in (
+PRIVATE_ENDPOINTS = os.getenv("LLM_ALLOW_PRIVATE_ENDPOINTS", "").lower() in (
     "1",
     "true",
     "yes",
