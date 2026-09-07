@@ -306,6 +306,11 @@ class InMemoryJobStore:
             if row is None or row["state"] != QUEUED:
                 return False
             row["state"] = CANCELLED
+            # Cancelled is an ending like any other: it releases the key so the
+            # same work can be asked for again, and it is dated so that tidying
+            # up eventually reaches it.
+            row["finished_at"] = self._now()
+            row["dedupe_slot"] = f"job:{uuid.uuid4()}"
             return True
 
     def _takeable(self, row: dict, now: datetime) -> bool:

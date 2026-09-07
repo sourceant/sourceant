@@ -12,7 +12,12 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "jobs",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer, "sqlite"),
+            autoincrement=True,
+            nullable=False,
+        ),
         sa.Column("lane", sa.String(length=64), nullable=False),
         sa.Column("kind", sa.String(length=255), nullable=False),
         sa.Column("tenant", sa.String(length=255), nullable=False, server_default=""),
@@ -62,7 +67,12 @@ def upgrade() -> None:
 
     op.create_table(
         "job_batches",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer, "sqlite"),
+            autoincrement=True,
+            nullable=False,
+        ),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("tenant", sa.String(length=255), nullable=False, server_default=""),
         sa.Column("total", sa.Integer(), nullable=False, server_default="0"),

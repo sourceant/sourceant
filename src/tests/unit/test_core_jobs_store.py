@@ -234,3 +234,17 @@ def test_keeping_them_for_ever_is_a_choice_that_is_honoured(store, clock):
 
     assert store.prune(keep_finished_for_days=0) == 0
     assert store.read(lease.job.id) is not None
+
+
+def test_cancelling_gives_the_key_back_and_can_be_cleared_away(store, clock):
+    """Cancelled is an ending. Held open, the key blocks the same work from ever
+    being asked for again, and nothing tidying up would ever reach the row."""
+    first = store.enqueue(_asked(dedupe_slot="refresh:9"))
+
+    assert store.cancel(first) is True
+
+    second = store.enqueue(_asked(dedupe_slot="refresh:9"))
+    assert second != first
+
+    clock.ahead(15 * 24 * 60 * 60)
+    assert store.prune(keep_finished_for_days=14) == 1

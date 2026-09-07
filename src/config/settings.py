@@ -42,7 +42,12 @@ def whole_number(name: str, fallback: int) -> int:
                 f"{name} is not a whole number, using {fallback}"
             )
         return fallback
-    return number if number > 0 else fallback
+    if number > 0:
+        return number
+    logging.getLogger(__name__).warning(
+        f"{name} must be greater than zero, using {fallback}"
+    )
+    return fallback
 
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")

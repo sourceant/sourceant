@@ -108,7 +108,6 @@ class Worker:
             return self._store.claim(self._lane, self._name, 1)
         except Exception:
             logger.warning(f"{self._name} could not claim work", exc_info=True)
-            self._stopping.wait(self._poll)
             return []
 
     def perform(self, lease: Lease) -> JobOutcome:
@@ -168,7 +167,13 @@ class Worker:
             return self._overran(job, lease, beating)
         if not answer:
             return JobOutcome.failed("the job stopped without saying how")
-        return answer[0]
+        said = answer[0]
+        if not isinstance(said, JobOutcome):
+            logger.error(
+                f"{job.kind} answered with {type(said).__name__}, not an outcome"
+            )
+            return JobOutcome.failed(f"{job.kind} did not say how it went")
+        return said
 
     def _overran(self, job: Job, lease: Lease, beating: "_Heartbeat") -> JobOutcome:
         """Record a job that outran its deadline, then take the process down.

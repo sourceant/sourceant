@@ -127,3 +127,23 @@ def test_a_worker_asked_to_stop_does_not_take_more_work(store, services):
 
     assert worker.work() == 0
     assert handler.ran == []
+
+
+def test_a_handler_that_answers_with_something_else_is_a_failure(store, services):
+    """A handler is somebody else's code. One that returns nothing, or the wrong
+    thing, must not take the worker down on the way to recording it."""
+
+    class Confused:
+        kind = "test.work"
+
+        def run(self, job):
+            return "done!"
+
+    services.contribute(JobHandler, Confused(), "test")
+    job_id = store.enqueue(_asked())
+
+    _worker(store, services).work(max_jobs=1)
+
+    kept = store.read(job_id)
+    assert kept.state == "dead"
+    assert "did not say how it went" in kept.error

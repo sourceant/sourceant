@@ -43,3 +43,17 @@ def test_a_sweep_that_cannot_tidy_says_so_and_is_tried_again():
 
     assert outcome.succeeded is False
     assert outcome.retry is True
+
+
+def test_a_tidy_that_cannot_ask_for_the_next_one_is_tried_again():
+    """Each tidy asks for the next, so one that fails silently is the end of all
+    tidying, and the table grows from then on with nothing saying why."""
+
+    class Deaf(InMemoryJobStore):
+        def enqueue(self, request, *, session=None):
+            raise RuntimeError("no")
+
+    outcome = Sweeper(Deaf()).run()
+
+    assert outcome.succeeded is False
+    assert outcome.retry is True

@@ -58,7 +58,10 @@ class Sweeper:
             return JobOutcome.failed(f"{type(error).__name__}: {error}", retry=True)
         if cleared:
             logger.info(f"Cleared {cleared} finished jobs")
-        self.arrange(store)
+        if self.arrange(store) is None:
+            # Each tidy asks for the next, so one that cannot is the end of all
+            # tidying. Failing here has it tried again instead.
+            return JobOutcome.failed("could not ask for the next tidy", retry=True)
         return JobOutcome.ok()
 
     def arrange(self, store=None) -> Optional[int]:

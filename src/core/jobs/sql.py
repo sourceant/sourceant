@@ -639,11 +639,19 @@ class SQLJobStore:
 
     def cancel(self, job_id: int) -> bool:
         with self._engine.begin() as connection:
+            now = self._clock(connection)
             return (
                 connection.execute(
                     update(job_table)
                     .where(and_(job_table.c.id == job_id, job_table.c.state == QUEUED))
-                    .values(state=CANCELLED)
+                    .values(
+                        state=CANCELLED,
+                        # Cancelled is an ending like any other: it releases the
+                        # key so the same work can be asked for again, and it is
+                        # dated so that tidying up eventually reaches it.
+                        finished_at=now,
+                        dedupe_slot=f"job:{uuid.uuid4()}",
+                    )
                 ).rowcount
                 == 1
             )
