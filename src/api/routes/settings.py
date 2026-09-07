@@ -6,12 +6,13 @@ inheriting.
 """
 
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl, SecretStr, field_validator
 
 from src.auth import get_current_user
+from src.core.model.catalogue import offered, reachable, refused
 from src.core.responses import success_response
 from src.core.workspace import workspace_in
 from src.core.settings import (
@@ -33,6 +34,35 @@ Scope = Literal["user", "repository", "workspace", "organization"]
 
 class SettingInput(BaseModel):
     value: Any
+
+
+class ModelCheck(BaseModel):
+    model: str
+    #: Never read back and never logged, so it cannot reach a trace by accident.
+    api_key: SecretStr
+    # Optional, and null rather than absent when it reaches here through a
+    # gateway that turns empty strings into nulls on the way.
+    base_url: Optional[HttpUrl] = None
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _absent_rather_than_empty(cls, given):
+        """An empty string is nobody's endpoint, so it is not read as one."""
+        return given or None
+
+    @field_validator("base_url", mode="after")
+    @classmethod
+    def _somewhere_a_provider_lives(cls, given: Optional[HttpUrl]):
+        """Refuse an endpoint that is not on the public internet.
+
+        A well-formed address still says nothing about where it points, and
+        whatever is named here is a host this server then sends a request to,
+        carrying the key it was given.
+        """
+        if given is None:
+            return None
+        reachable(str(given))
+        return given
 
 
 def _authorize_user_scope(scope: Scope, scope_id: str, user: dict) -> None:
@@ -83,6 +113,32 @@ def _described(resolved: Resolved) -> dict:
         "choices": list(setting.choices) if setting else [],
         "group": setting.group if setting else "General",
     }
+
+
+# Both of these wait on something outside this process, and neither awaits it.
+# Declared without async, they are run on a thread and the loop stays free.
+@router.get("/models")
+def models(user: dict = Depends(get_current_user)):
+    """Every model that can be named here, by provider."""
+    return success_response(offered())
+
+
+@router.post("/models/check")
+def check_model(
+    payload: ModelCheck,
+    user: dict = Depends(get_current_user),
+):
+    """Whether a key can use a model, asked of the provider rather than guessed.
+
+    A provider's catalogue says what exists. What an account may use is a
+    subset, and the two only differ when somebody is already waiting.
+    """
+    why = refused(
+        payload.model,
+        payload.api_key.get_secret_value(),
+        str(payload.base_url) if payload.base_url else "",
+    )
+    return success_response({"usable": why is None, "reason": why})
 
 
 @router.get("/catalogue")

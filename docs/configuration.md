@@ -22,6 +22,16 @@ GEMINI_API_KEY=your_gemini_api_key
 
 `LLM_TOKEN_LIMIT` (default `131072`) is the diff size that still fits a single-pass review. Raise it to match a model with a larger window; a diff above it is reviewed file by file instead.
 
+Choosing a model in the interface checks the key against the provider first, so a model the account cannot use is refused there rather than halfway through a scan. Three variables bound that check:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `LLM_PROBE_TIMEOUT` | `15` | Seconds a provider gets to answer the check |
+| `LLM_RESOLVE_TIMEOUT` | `5` | Seconds a custom endpoint's name gets to resolve |
+| `LLM_ALLOW_PRIVATE_ENDPOINTS` | `false` | Accept an endpoint on a private address |
+
+Leave the last one off unless the people naming endpoints are the same people who run the deployment. It is what lets a custom endpoint point at a machine only this server can reach, so turning it on where anyone else can set a model hands them this server as a way into that network.
+
 ### GitHub App
 
 Required to post anything to GitHub. All three are needed, and the integration refuses to start without them:
