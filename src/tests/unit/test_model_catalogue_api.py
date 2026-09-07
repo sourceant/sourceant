@@ -96,3 +96,61 @@ def test_a_null_base_url_is_taken_as_none_given(client):
     assert answered.status_code == 200
     assert answered.json()["data"]["usable"] is True
     assert "api_base" not in called.call_args.kwargs
+
+
+def test_an_endpoint_only_this_machine_can_see_is_refused(client):
+    """Whatever is named here is somewhere the server then sends a request to,
+    carrying the key it was given, so anybody who can reach this could otherwise
+    use it to knock on addresses only this machine can see."""
+    answered = client.post(
+        "/api/settings/models/check",
+        headers=_headers(),
+        json={
+            "model": "moonshot/kimi-k2.7-code",
+            "api_key": "a-key",
+            "base_url": "http://127.0.0.1:11434/v1",
+        },
+    )
+
+    assert answered.status_code == 422
+    assert "public internet" in answered.text
+
+
+def test_an_endpoint_that_is_not_a_web_address_is_refused(client):
+    answered = client.post(
+        "/api/settings/models/check",
+        headers=_headers(),
+        json={
+            "model": "moonshot/kimi-k2.7-code",
+            "api_key": "a-key",
+            "base_url": "file:///etc/passwd",
+        },
+    )
+
+    assert answered.status_code == 422
+
+
+def test_a_provider_that_stops_answering_does_not_hold_the_request(client):
+    """Unbounded, one unresponsive endpoint keeps a thread until something else
+    gives up first."""
+    with patch("litellm.completion", return_value=object()) as called:
+        client.post(
+            "/api/settings/models/check",
+            headers=_headers(),
+            json={"model": "moonshot/kimi-k2.7-code", "api_key": "a-key"},
+        )
+
+    assert called.call_args.kwargs["timeout"] > 0
+
+
+def test_the_key_is_never_read_back(client):
+    """It is written like any other credential and answered with never, so it
+    cannot reach a log the first time somebody debugs this screen."""
+    with patch("litellm.completion", return_value=object()):
+        answered = client.post(
+            "/api/settings/models/check",
+            headers=_headers(),
+            json={"model": "moonshot/kimi-k2.7-code", "api_key": "sk-not-in-here"},
+        )
+
+    assert "sk-not-in-here" not in answered.text
