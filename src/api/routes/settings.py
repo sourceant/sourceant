@@ -9,7 +9,7 @@ from dataclasses import asdict
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, SecretStr, field_validator
+from pydantic import BaseModel, HttpUrl, SecretStr, field_validator
 
 from src.auth import get_current_user
 from src.core.model.catalogue import offered, reachable, refused
@@ -42,20 +42,27 @@ class ModelCheck(BaseModel):
     api_key: SecretStr
     # Optional, and null rather than absent when it reaches here through a
     # gateway that turns empty strings into nulls on the way.
-    base_url: Optional[str] = ""
+    base_url: Optional[HttpUrl] = None
 
-    @field_validator("base_url")
+    @field_validator("base_url", mode="before")
     @classmethod
-    def _somewhere_a_provider_lives(cls, given: Optional[str]) -> str:
-        """Refuse an endpoint that is not a provider on the public internet.
+    def _absent_rather_than_empty(cls, given):
+        """An empty string is nobody's endpoint, so it is not read as one."""
+        return given or None
 
-        Whatever is named here is a host this server then sends a request to,
-        carrying the key it was given. Left open, anybody who can reach this can
-        use it to knock on addresses only this machine can see.
+    @field_validator("base_url", mode="after")
+    @classmethod
+    def _somewhere_a_provider_lives(cls, given: Optional[HttpUrl]):
+        """Refuse an endpoint that is not on the public internet.
+
+        A well-formed address still says nothing about where it points, and
+        whatever is named here is a host this server then sends a request to,
+        carrying the key it was given.
         """
-        if not given:
-            return ""
-        return reachable(given)
+        if given is None:
+            return None
+        reachable(str(given))
+        return given
 
 
 def _authorize_user_scope(scope: Scope, scope_id: str, user: dict) -> None:
@@ -129,7 +136,7 @@ def check_model(
     why = refused(
         payload.model,
         payload.api_key.get_secret_value(),
-        payload.base_url or "",
+        str(payload.base_url) if payload.base_url else "",
     )
     return success_response({"usable": why is None, "reason": why})
 
