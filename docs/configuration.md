@@ -77,20 +77,17 @@ SourceAnt owns its schema through Alembic migrations, applied with `sourceant db
 ### Queue
 
 ```env
-QUEUE_MODE=redis
-REDIS_HOST=redis
-REDIS_PORT=6379
+QUEUE_MODE=database
 ```
 
 | Mode | Behaviour |
 |---|---|
-| `database` | Work is kept in your own database, in lanes named by how long it may wait. Needs a `sourceant work` process per lane |
-| `redis` (default) | Redis-backed queue. Needs a separate `rq` worker process |
+| `database` (default) | Work is kept in your own database, in lanes named by how long it may wait. Needs a `sourceant work` process per lane |
+| `redis` | Redis-backed queue. Needs a separate `rq` worker process, `REDIS_HOST` and `REDIS_PORT` |
 | `redislite` | File-backed queue in-process. No Redis server needed |
-| `request` | FastAPI background tasks. Simplest for development; queued work is lost on restart |
+| `request` | FastAPI background tasks, and the default when `STATELESS_MODE` is on. Queued work is lost on restart |
 
-`database` is the one to pick where several customers share an instance. A
-webhook goes in the `within_seconds` lane and a repository scan in
+A webhook goes in the `within_seconds` lane and a repository scan in
 `within_hours`, so a review is never stuck behind a scan, and every workspace
 gets an equal turn up to `jobs.per_workspace`. A worker that is killed loses
 nothing: its claim lapses and the job is offered again.
@@ -101,7 +98,9 @@ sourceant work --lane within_seconds
 
 An invalid value fails at startup rather than silently falling back.
 
-Redis also holds generated reviews so the same commit is not reviewed twice. That cache is best effort: when Redis is unavailable the review is generated again.
+### Review reuse
+
+A generated review is kept per revision so the same commit is not reviewed twice, in the same database by default. Set `REVIEW_CACHE=redis` to keep it in Redis instead, with `REDIS_HOST` and `REDIS_PORT`. Either way it is best effort: when the store is unavailable the review is generated again.
 
 ### Review behaviour
 

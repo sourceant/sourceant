@@ -28,8 +28,8 @@ help:
 	@echo "  prod-push    Push production Docker image to GHCR"
 	@echo ""
 	@echo "Worker:"
-	@echo "  worker       Start the RQ worker"
-	@echo "  work         Start a jobs-table worker (LANE=within_seconds)"
+	@echo "  work         Start a worker (LANE=within_seconds)"
+	@echo "  worker       Start an RQ worker, with QUEUE_MODE=redis"
 
 up:
 	docker compose up -d
@@ -67,8 +67,8 @@ prod-build:
 prod-push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
 
-worker:
-	docker compose exec app rq worker --url redis://redis:6379
-
 work:
 	docker compose exec app sourceant work --lane $(LANE)
+
+worker:
+	docker compose exec app rq worker --url redis://redis:6379

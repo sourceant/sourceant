@@ -26,8 +26,8 @@ Run at least one worker against the same configuration, or queued reviews are ne
 ```bash
 docker run -d --name sourceant-worker \
   -v /path/to/.env:/app/.env \
-  --entrypoint rq \
-  ghcr.io/sourceant/sourceant:latest worker --url redis://your-redis:6379
+  --entrypoint sourceant \
+  ghcr.io/sourceant/sourceant:latest work --lane within_seconds
 ```
 
 ### Docker Compose
@@ -58,14 +58,14 @@ make prod-push
 |---|---|
 | `sourceant db upgrade head` | Apply migrations |
 | `sourceant db --help` | Every database subcommand |
+| `sourceant work --lane within_seconds` | Run a queue worker |
 | `rq worker --url redis://redis:6379` | Run a queue worker, with `QUEUE_MODE=redis` |
-| `sourceant work --lane within_seconds` | Run a queue worker, with `QUEUE_MODE=database` |
 
 ### Checklist for a production instance
 
 - `DATABASE_URL` points at PostgreSQL, and migrations have been applied.
 - `GITHUB_SECRET` is set, and matches the secret on the webhook.
 - `JWT_SECRET` is set, and matches whatever else signs the tokens this instance verifies.
-- `QUEUE_MODE=redis` with at least one worker running, or `QUEUE_MODE=database` with one `sourceant work` process per lane.
+- At least one `sourceant work` process per lane, or `QUEUE_MODE=redis` with an `rq` worker.
 - `LOG_DRIVER=console`, so your platform collects the logs.
 - `APP_ENV=production` and `DEBUG_MODE=false`.

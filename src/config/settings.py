@@ -14,8 +14,10 @@ REQUIRE_GATEWAY = os.getenv("REQUIRE_GATEWAY", "false").lower() == "true"
 # 'sourceant serve' turns it on, being the local command. Deployments run
 # uvicorn directly and leave it off unless an operator means otherwise.
 LOCAL_MODE = os.getenv("SOURCEANT_LOCAL", "false").lower() == "true"
-QUEUE_MODE = os.getenv("QUEUE_MODE", "redis")
 VALID_QUEUE_MODES = ["database", "redis", "request", "redislite"]
+# A deployment that keeps nothing has nowhere to put background work, so it
+# does the work in the request that asked for it.
+QUEUE_MODE = os.getenv("QUEUE_MODE", "request" if STATELESS_MODE else "database")
 if QUEUE_MODE not in VALID_QUEUE_MODES:
     raise ValueError(
         f"Invalid QUEUE_MODE: {QUEUE_MODE}. Must be one of {VALID_QUEUE_MODES}"

@@ -75,7 +75,7 @@ def _check_queue() -> tuple[str, str | None]:
         return OK, f"{len(waiting)} queued"
 
     if dispatcher.q is None:
-        return SKIPPED, "no queue mode configured"
+        return SKIPPED, f"{QUEUE_MODE} needs no queue server"
 
     dispatcher.redis_conn.ping()
     return OK, f"{len(dispatcher.q)} queued"
