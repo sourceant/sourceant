@@ -13,7 +13,7 @@ get the saving.
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import sqlalchemy as sa
@@ -87,15 +87,22 @@ def _read_from_redis(key: str) -> Optional[Dict[str, Any]]:
 
 
 def _now(connection) -> datetime:
-    """Now, according to the database.
+    """Now, according to the database, in UTC and without a timezone on it.
 
     What writes a review and what reads it back are not the same process and
     need not agree on the time. Reading the deadline against one clock and
     setting it by another expires a review that has only just been kept.
+
+    Postgres answers with a timezone and SQLite without one, and the column
+    holds neither, so the timezone is resolved here rather than left to differ
+    by engine.
     """
-    return connection.execute(
+    moment = connection.execute(
         sa.select(sa.func.current_timestamp(type_=sa.DateTime))
     ).scalar()
+    if moment.tzinfo is None:
+        return moment
+    return moment.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _read_from_database(key: str) -> Optional[Dict[str, Any]]:

@@ -71,8 +71,10 @@ def _check_queue() -> tuple[str, str | None]:
     if QUEUE_MODE == "database":
         from src.core.jobs import job_store
 
-        waiting = job_store().pending(limit=100)
-        return OK, f"{len(waiting)} queued"
+        looked_at = 100
+        waiting = len(job_store().pending(limit=looked_at))
+        more = "+" if waiting == looked_at else ""
+        return OK, f"{waiting}{more} queued"
 
     if dispatcher.q is None:
         return SKIPPED, f"{QUEUE_MODE} needs no queue server"
