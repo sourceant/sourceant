@@ -118,6 +118,39 @@ class TestDeliveriesOnTheJobsTable(BaseTestCase):
 
         assert _failed_with(job_store(), "the signing key is a directory")
 
+    def test_a_delivery_a_gate_refuses_reaches_no_subscriber(self):
+        from unittest.mock import patch
+
+        from src.core.admission import Admission, DeliveryGate
+        from src.core.plugins import event_hooks
+
+        seen = []
+        event_hooks.subscribe_to_events(
+            "test_subscriber",
+            lambda event_type, data: seen.append(event_type),
+            ["pull_request.opened"],
+        )
+
+        class Refuses:
+            def admits(self, delivery):
+                return Admission.reject("this repository is not onboarded")
+
+        services = ServiceRegistry()
+        services.contribute(DeliveryGate, Refuses(), "test")
+        services.contribute(JobHandler, Deliveries(services), "sourceant_core")
+
+        try:
+            self._deliver()
+            with patch("src.events.delivery._say") as said:
+                worker = Worker(job_store(), INTERACTIVE, services=services)
+                worker.work(max_jobs=len(job_store().pending(lane=INTERACTIVE)))
+        finally:
+            event_hooks._event_subscribers.pop("pull_request.opened", None)
+
+        assert seen == []
+        assert said.called
+        assert _failed_with(job_store(), "this repository is not onboarded")
+
     def test_a_worker_tells_the_subscribers_what_arrived(self):
         from src.core.plugins import event_hooks
 
