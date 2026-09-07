@@ -100,7 +100,7 @@ An invalid value fails at startup rather than silently falling back.
 
 ### Review reuse
 
-A generated review is kept per revision so the same commit is not reviewed twice, in the same database by default. Set `REVIEW_CACHE=redis` to keep it in Redis instead, with `REDIS_HOST` and `REDIS_PORT`. Either way it is best effort: when the store is unavailable the review is generated again.
+A generated review is kept per revision so the same commit is not reviewed twice, in the same database by default. Set `REVIEW_CACHE=redis` to keep it in Redis instead, with `REDIS_HOST` and `REDIS_PORT`. An invalid value fails at startup. Either way the cache is best effort: when the store is unavailable the review is generated again.
 
 ### Review behaviour
 

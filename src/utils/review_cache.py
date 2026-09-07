@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 
 from src.config.db import get_engine
 from src.config.settings import REDIS_HOST, REDIS_PORT
@@ -26,7 +27,12 @@ from src.utils.logger import logger
 
 SECONDS_PER_DAY = 24 * 60 * 60
 
+VALID_REVIEW_CACHES = ["database", "redis"]
 REVIEW_CACHE = os.getenv("REVIEW_CACHE", "database").lower()
+if REVIEW_CACHE not in VALID_REVIEW_CACHES:
+    raise ValueError(
+        f"Invalid REVIEW_CACHE: {REVIEW_CACHE}. Must be one of {VALID_REVIEW_CACHES}"
+    )
 
 _client = None
 _unavailable = False
@@ -80,6 +86,18 @@ def _read_from_redis(key: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _now(connection) -> datetime:
+    """Now, according to the database.
+
+    What writes a review and what reads it back are not the same process and
+    need not agree on the time. Reading the deadline against one clock and
+    setting it by another expires a review that has only just been kept.
+    """
+    return connection.execute(
+        sa.select(sa.func.current_timestamp(type_=sa.DateTime))
+    ).scalar()
+
+
 def _read_from_database(key: str) -> Optional[Dict[str, Any]]:
     engine = get_engine()
     if engine is None:
@@ -90,7 +108,7 @@ def _read_from_database(key: str) -> Optional[Dict[str, Any]]:
                 sa.select(_table().c.payload).where(
                     sa.and_(
                         _table().c.key == key,
-                        _table().c.expires_at > sa.func.current_timestamp(),
+                        _table().c.expires_at > _now(connection),
                     )
                 )
             ).scalar()
@@ -139,31 +157,37 @@ def _write_to_database(key: str, ttl: int, payload: Dict[str, Any]) -> None:
     engine = get_engine()
     if engine is None:
         return
-    now = datetime.utcnow()
-    values = {
-        "key": key,
-        "payload": json.dumps(payload),
-        "expires_at": now + timedelta(seconds=ttl),
-        "created_at": now,
-        "updated_at": now,
-    }
     try:
         with engine.begin() as connection:
+            now = _now(connection)
+            kept = {
+                "payload": json.dumps(payload),
+                "expires_at": now + timedelta(seconds=ttl),
+                "updated_at": now,
+            }
             written = connection.execute(
-                sa.update(_table())
-                .where(_table().c.key == key)
-                .values(
-                    payload=values["payload"],
-                    expires_at=values["expires_at"],
-                    updated_at=now,
-                )
+                sa.update(_table()).where(_table().c.key == key).values(**kept)
             ).rowcount
             if not written:
-                connection.execute(sa.insert(_table()).values(**values))
-            connection.execute(
-                sa.delete(_table()).where(
-                    _table().c.expires_at <= sa.func.current_timestamp()
-                )
-            )
+                _first(connection, key, now, kept)
+            connection.execute(sa.delete(_table()).where(_table().c.expires_at <= now))
     except Exception as e:
         logger.warning(f"Could not write the review cache: {e}")
+
+
+def _first(connection, key: str, now: datetime, kept: Dict[str, Any]) -> None:
+    """Keep a review nothing has kept before.
+
+    Two reviews of the same revision can reach here at once, both finding
+    nothing to update. The second is not an error: it is the same review, so it
+    takes the row the first made.
+    """
+    try:
+        with connection.begin_nested():
+            connection.execute(
+                sa.insert(_table()).values(key=key, created_at=now, **kept)
+            )
+    except IntegrityError:
+        connection.execute(
+            sa.update(_table()).where(_table().c.key == key).values(**kept)
+        )
