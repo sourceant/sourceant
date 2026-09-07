@@ -89,13 +89,13 @@ class LiteLLMProvider(LLMInterface):
         return "\n\n".join(parts)
 
     @staticmethod
-    def _format_previous_review(previous_review: Optional[str]) -> str:
+    def _format_previous_summary(previous_summary: Optional[str]) -> str:
         """What this reviewer already said about the whole change.
 
         A pass is given only what changed since the one before it, so its own
         position on the change reaches it from here or not at all.
         """
-        if not previous_review:
+        if not previous_summary:
             return ""
         return (
             "## What You Already Said About This Pull Request\n"
@@ -103,7 +103,7 @@ class LiteLLMProvider(LLMInterface):
             "it. If a change was made because you asked for it, say so rather "
             "than asking for it to be undone. Raise something only if it is "
             "still true of the code in front of you now.\n\n"
-            f"{previous_review}\n\n"
+            f"{previous_summary}\n\n"
         )
 
     @staticmethod
@@ -135,7 +135,7 @@ class LiteLLMProvider(LLMInterface):
         parsed_files: Optional[List[ParsedDiff]] = None,
         pr_metadata: Optional[dict] = None,
         existing_comments: Optional[list] = None,
-        previous_review: Optional[str] = None,
+        previous_summary: Optional[str] = None,
         code_context: Optional[str] = None,
         requirements: Optional[str] = None,
         knowledge: Optional[str] = None,
@@ -147,13 +147,13 @@ class LiteLLMProvider(LLMInterface):
 
         metadata_str = self.format_pr_metadata(pr_metadata)
         existing_comments_str = self._format_existing_comments(existing_comments)
-        previous_review_str = self._format_previous_review(previous_review)
+        previous_summary_str = self._format_previous_summary(previous_summary)
 
         user_text = Prompts.REVIEW_PROMPT.format(
             diff=decoupled_diff,
             pr_metadata=metadata_str,
             existing_comments=existing_comments_str,
-            previous_review=previous_review_str,
+            previous_summary=previous_summary_str,
             code_context=code_context or "No structural context is available.",
             requirements=requirements or "",
             knowledge=knowledge or "",

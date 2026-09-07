@@ -10,12 +10,12 @@ from src.llms.litellm_provider import LiteLLMProvider
 
 
 def test_nothing_is_said_about_a_pull_request_reviewed_for_the_first_time():
-    assert LiteLLMProvider._format_previous_review(None) == ""
-    assert LiteLLMProvider._format_previous_review("") == ""
+    assert LiteLLMProvider._format_previous_summary(None) == ""
+    assert LiteLLMProvider._format_previous_summary("") == ""
 
 
 def test_what_was_said_before_is_put_in_front_of_the_next_reading():
-    said = LiteLLMProvider._format_previous_review(
+    said = LiteLLMProvider._format_previous_summary(
         "Make the two defaults agree with each other."
     )
 

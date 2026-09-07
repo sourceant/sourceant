@@ -93,7 +93,7 @@ class CodeReviewer:
         provider: Any,
         read_content: Callable[[str], str | None] | None = None,
         existing_comments: Sequence[dict] | None = None,
-        previous_review: str | None = None,
+        previous_summary: str | None = None,
         told: Sequence[Told] = (),
         code_scope: Scope | None = None,
         metadata: dict | None = None,
@@ -147,7 +147,7 @@ class CodeReviewer:
                 evidence,
                 metadata,
                 existing_comments,
-                previous_review,
+                previous_summary,
                 sections,
                 read_content,
                 file_limit,
@@ -166,7 +166,7 @@ class CodeReviewer:
             evidence,
             metadata,
             existing_comments,
-            previous_review,
+            previous_summary,
             sections,
             read_content,
             file_limit,
@@ -239,7 +239,7 @@ class CodeReviewer:
         evidence,
         metadata,
         existing_comments,
-        previous_review,
+        previous_summary,
         sections,
         read_content,
         file_limit,
@@ -260,7 +260,7 @@ class CodeReviewer:
             parsed_files=parsed_files,
             pr_metadata=metadata,
             existing_comments=list(existing_comments or []) or None,
-            previous_review=previous_review,
+            previous_summary=previous_summary,
             code_context=code_context,
             requirements=sections.requirements,
             knowledge=sections.knowledge,
@@ -301,7 +301,7 @@ class CodeReviewer:
         evidence,
         metadata,
         existing_comments,
-        previous_review,
+        previous_summary,
         sections,
         read_content,
         file_limit,
@@ -330,7 +330,7 @@ class CodeReviewer:
                 parsed_files=batch,
                 pr_metadata=metadata,
                 existing_comments=about_these or None,
-                previous_review=previous_review,
+                previous_summary=previous_summary,
                 code_context=self._context(
                     changes, readers, paths, read_content, file_limit, code_scope
                 ),
@@ -359,7 +359,7 @@ class CodeReviewer:
                 summary_from(suggestions)
                 if rejections
                 else provider.generate_summary(
-                    suggestions, previous_summary=previous_review
+                    suggestions, previous_summary=previous_summary
                 )
             ),
             verdict=verdict_from(suggestions),

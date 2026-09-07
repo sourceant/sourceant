@@ -18,6 +18,11 @@ class Reviewer(Protocol):
     Implemented by the code_reviewer plugin. Arguments are what only a caller
     knows: which model to ask, how to read a file at the revision under review,
     what has already been said about it, and anything else it wants passed on.
+
+    `existing_comments` are the lines this reviewer has already commented on.
+    `previous_summary` is what it last said about the change as a whole, which
+    is kept separately because it is a comment on the pull request rather than
+    on any line of it.
     """
 
     def review(
@@ -27,7 +32,7 @@ class Reviewer(Protocol):
         provider: Any,
         read_content: Callable[[str], str | None] | None = None,
         existing_comments: Sequence[dict] | None = None,
-        previous_review: str | None = None,
+        previous_summary: str | None = None,
         told: Sequence[Told] = (),
         code_scope: Scope | None = None,
         metadata: dict | None = None,
