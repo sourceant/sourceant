@@ -11,11 +11,6 @@ FROM python:3.10-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl git && \
     rm -rf /var/lib/apt/lists/*
 
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then PKG_ARCH="x86_64-unknown-linux-gnu"; elif [ "$ARCH" = "aarch64" ]; then PKG_ARCH="aarch64-unknown-linux-gnu"; fi && \
-    curl -fsSL -L "https://github.com/mohsen1/yek/releases/latest/download/yek-${PKG_ARCH}.tar.gz" \
-    | tar xz --strip-components=1 -C /usr/local/bin
-
 WORKDIR /app
 
 RUN useradd --create-home appuser
