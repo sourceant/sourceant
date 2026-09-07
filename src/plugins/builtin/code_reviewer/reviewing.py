@@ -282,7 +282,9 @@ class CodeReviewer:
         if full_review:
             return CodeReview(
                 summary=(
-                    summary_from(suggestions) if rejections else full_review.summary
+                    summary_from(suggestions, full_review.summary)
+                    if rejections
+                    else full_review.summary
                 ),
                 verdict=verdict,
                 code_suggestions=suggestions,
@@ -355,12 +357,8 @@ class CodeReviewer:
                 )
 
         return CodeReview(
-            summary=(
-                summary_from(suggestions)
-                if rejections
-                else provider.generate_summary(
-                    suggestions, previous_summary=previous_summary
-                )
+            summary=provider.generate_summary(
+                suggestions, previous_summary=previous_summary
             ),
             verdict=verdict_from(suggestions),
             code_suggestions=suggestions,
@@ -418,7 +416,16 @@ class CodeReviewer:
         return result
 
 
-def summary_from(suggestions: List) -> CodeReviewSummary:
+def summary_from(
+    suggestions: List, written: CodeReviewSummary | None = None
+) -> CodeReviewSummary:
+    """The findings that survived, under whatever was written about the change.
+
+    What was written about the change is not a claim about a defect, so a
+    finding that failed its evidence check is no reason to lose it. Dropped
+    with the findings, a review of a change nobody could fault reads exactly
+    like a review that found nothing to say.
+    """
     critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
     critical = [
         suggestion.comment
@@ -430,14 +437,14 @@ def summary_from(suggestions: List) -> CodeReviewSummary:
         for suggestion in suggestions
         if suggestion.category not in critical_categories
     ]
-    overview = (
+    counted = (
         f"Review found {len(suggestions)} actionable issue(s)."
         if suggestions
         else "No actionable issues were found."
     )
     return CodeReviewSummary(
-        overview=overview,
-        key_improvements=[],
+        overview=(written.overview if written and written.overview else counted),
+        key_improvements=list(written.key_improvements) if written else [],
         minor_suggestions=minor,
         critical_issues=critical,
     )
