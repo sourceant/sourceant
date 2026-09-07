@@ -33,6 +33,13 @@ from .models import Job, JobOutcome, Lease
 #: understood as intended rather than as a crash.
 DEADLINE_EXIT = 75
 
+#: Told to the supervisor when the claim on the job in hand was taken by
+#: somebody else, which means two copies of it are running.
+LOST_EXIT = 76
+
+#: How often the wait on a job looks up to see whether the claim is still ours.
+WATCH_SECONDS = 1.0
+
 
 class Worker:
     """Claims work for one lane and does it."""
@@ -161,7 +168,13 @@ class Worker:
 
         doing = threading.Thread(target=perform, name=f"job-{job.id}", daemon=True)
         doing.start()
-        doing.join(timeout=job.deadline_seconds)
+
+        left = float(job.deadline_seconds)
+        while left > 0 and doing.is_alive():
+            doing.join(timeout=min(WATCH_SECONDS, left))
+            left -= WATCH_SECONDS
+            if beating.lost and doing.is_alive():
+                return self._taken(job, beating)
 
         if doing.is_alive():
             return self._overran(job, lease, beating)
@@ -195,6 +208,21 @@ class Worker:
             logger.warning("Could not record the job that overran", exc_info=True)
         self._halt(DEADLINE_EXIT)
         return JobOutcome.failed(f"went past {job.deadline_seconds}s")
+
+    def _taken(self, job: Job, beating: "_Heartbeat") -> JobOutcome:
+        """Stop once the claim has gone to somebody else.
+
+        Another worker is running this job now. The copy here cannot be halted
+        from this thread, so the process goes and takes it with it, which is
+        the only way two of them do not write over each other.
+        """
+        logger.error(
+            f"The claim on job {job.id} ({job.kind}) went to another worker; "
+            f"{self._name} is stopping so this copy cannot carry on"
+        )
+        beating.stop()
+        self._halt(LOST_EXIT)
+        return JobOutcome.failed("the claim on this job was taken")
 
     def _handler(self, kind: str) -> Optional[JobHandler]:
         for handler in self._services.contributions(JobHandler):

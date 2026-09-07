@@ -82,7 +82,7 @@ def test_a_job_is_claimed_run_and_finished(store):
 def test_work_from_a_killed_worker_is_offered_again_once_its_lease_lapses(store, clock):
     """This is the whole point. A worker that is killed writes nothing, so
     nothing running inside it can be what recovers the job."""
-    job_id = store.enqueue(_asked())
+    job_id = store.enqueue(_asked(max_attempts=2))
     (first,) = store.claim(WITHIN_SECONDS, "worker-1", 5)
     assert first.job.id == job_id
 
