@@ -10,19 +10,42 @@ from __future__ import annotations
 import ipaddress
 import os
 import socket
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as TookTooLong
 from functools import lru_cache
 from typing import Optional
 from urllib.parse import urlparse
 
 from src.utils.logger import logger
 
+
+def _seconds(name: str, fallback: int) -> int:
+    """A whole number of seconds from the environment, or the fallback.
+
+    Read at import, so anything that raises here takes the process down before
+    it serves a request. A mistyped variable is worth a line in the log and a
+    sensible default, not a deployment that will not start.
+    """
+    given = os.getenv(name, "")
+    try:
+        seconds = int(given)
+    except ValueError:
+        if given:
+            logger.warning(f"{name} is not a number of seconds, using {fallback}")
+        return fallback
+    return seconds if seconds > 0 else fallback
+
+
 # How long a provider gets to answer a check. Unbounded, a provider that has
 # stopped answering holds the thread until something else gives up first.
-PROBE_SECONDS = int(os.getenv("MODEL_PROBE_TIMEOUT", "15"))
+PROBE_SECONDS = _seconds("MODEL_PROBE_TIMEOUT", 15)
+
+# How long a name gets to resolve, for the same reason.
+RESOLVE_SECONDS = _seconds("MODEL_RESOLVE_TIMEOUT", 5)
 
 # A deployment running its own models reaches them on an address only it can
-# see, so it has to be able to say so. Off by default, because anywhere a person
-# other than the operator can name an endpoint, this is the whole attack.
+# see, so an operator can say so and have private addresses accepted. Off by
+# default, because anywhere a person other than the operator names an endpoint,
+# turning it on hands them this server as a way to reach that network.
 PRIVATE_ENDPOINTS = os.getenv("MODEL_ENDPOINTS_MAY_BE_PRIVATE", "").lower() in (
     "1",
     "true",
@@ -75,11 +98,23 @@ def reachable(url: str) -> str:
 
 
 def _addresses(host: str) -> list:
-    """Every address a name answers with, because one of them is enough."""
+    """Every address a name answers with, because one of them is enough.
+
+    Resolving has no timeout of its own, so it is waited on rather than called
+    directly. The lookup itself cannot be cancelled; this bounds how long
+    anybody waits on it, not how long it runs.
+    """
+    asking = ThreadPoolExecutor(max_workers=1)
     try:
-        found = socket.getaddrinfo(host, None)
+        found = asking.submit(socket.getaddrinfo, host, None).result(
+            timeout=RESOLVE_SECONDS
+        )
+    except TookTooLong as slow:
+        raise ValueError("base_url did not resolve in time") from slow
     except socket.gaierror as unknown:
         raise ValueError("base_url does not resolve") from unknown
+    finally:
+        asking.shutdown(wait=False)
     return [ipaddress.ip_address(entry[4][0]) for entry in found]
 
 
@@ -100,6 +135,11 @@ def refused(model: str, api_key: str, base_url: str = "") -> Optional[str]:
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=1,
             timeout=PROBE_SECONDS,
+            # One question, asked once. Retrying a provider that is not
+            # answering turns a bounded wait into several of them, and the
+            # client underneath retries on its own unless it is told not to.
+            num_retries=0,
+            max_retries=0,
             **asked,
         )
         return None

@@ -132,15 +132,34 @@ def test_an_endpoint_that_is_not_a_web_address_is_refused(client):
 
 def test_a_provider_that_stops_answering_does_not_hold_the_request(client):
     """Unbounded, one unresponsive endpoint keeps a thread until something else
-    gives up first."""
+    gives up first, and a client that retries on its own turns one wait into
+    several."""
     with patch("litellm.completion", return_value=object()) as called:
-        client.post(
+        answered = client.post(
             "/api/settings/models/check",
             headers=_headers(),
             json={"model": "moonshot/kimi-k2.7-code", "api_key": "a-key"},
         )
 
+    assert answered.status_code == 200
     assert called.call_args.kwargs["timeout"] > 0
+    assert called.call_args.kwargs["num_retries"] == 0
+    assert called.call_args.kwargs["max_retries"] == 0
+
+
+def test_a_mistyped_timeout_does_not_stop_the_process_starting(monkeypatch):
+    """It is read at import, so anything that raises takes the deployment down
+    before it serves a request."""
+    from src.core.model.catalogue import _seconds
+
+    monkeypatch.setenv("A_TIMEOUT", "half a minute")
+    assert _seconds("A_TIMEOUT", 15) == 15
+
+    monkeypatch.setenv("A_TIMEOUT", "0")
+    assert _seconds("A_TIMEOUT", 15) == 15
+
+    monkeypatch.setenv("A_TIMEOUT", "45")
+    assert _seconds("A_TIMEOUT", 15) == 45
 
 
 def test_the_key_is_never_read_back(client):
