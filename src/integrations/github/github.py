@@ -310,6 +310,31 @@ class GitHub(ProviderAdapter):
             logger.warning(f"Could not fetch existing bot review comments: {e}")
             return []
 
+    def get_previous_review_summary(
+        self, owner: str, repo: str, pr_number: int
+    ) -> Optional[str]:
+        """What this reviewer last said about the whole pull request.
+
+        A review reads its own line comments back so it does not repeat one.
+        The summary is an issue comment rather than a line comment, so it was
+        never read back at all, and a later pass could ask for the opposite of
+        what an earlier pass asked for without ever seeing the contradiction.
+        """
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            found = self._find_overview_comment(owner, repo, pr_number, headers)
+        except Exception as error:
+            logger.warning(f"Could not read the previous review summary: {error}")
+            return None
+        if not found:
+            return None
+        return (found.get("body") or "").replace(COMMENT_MARKER, "").strip() or None
+
     def _find_overview_comment(
         self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]
     ) -> Optional[Dict[str, Any]]:

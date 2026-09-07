@@ -27,6 +27,7 @@ class Reviewer(Protocol):
         provider: Any,
         read_content: Callable[[str], str | None] | None = None,
         existing_comments: Sequence[dict] | None = None,
+        previous_review: str | None = None,
         told: Sequence[Told] = (),
         code_scope: Scope | None = None,
         metadata: dict | None = None,
