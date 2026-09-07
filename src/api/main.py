@@ -68,6 +68,7 @@ app = FastAPI(
 )
 
 from src.api.routes import code as code_endpoints
+from src.api.routes import jobs as job_endpoints
 from src.api.routes import knowledge as knowledge_endpoints
 from src.api.routes import local_reviews as local_review_endpoints
 from src.api.routes import local_settings as local_settings_endpoints
@@ -94,6 +95,7 @@ app.include_router(
     local_settings_endpoints.router, prefix="/api/local/settings", tags=["settings"]
 )
 app.include_router(skill_endpoints.router, prefix="/api/skills", tags=["skills"])
+app.include_router(job_endpoints.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(
     local_review_endpoints.router, prefix="/api/local/reviews", tags=["reviews"]
 )
