@@ -145,6 +145,23 @@ def _naive(moment: datetime) -> datetime:
     return moment.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _offerable(now: datetime):
+    """Work a claim may take: never started, or abandoned with a try to spare.
+
+    A claim that has lapsed is only offered again while the job has an attempt
+    left. Without that, work asked for once runs twice whenever the worker
+    holding it is killed, which is the one thing `max_attempts=1` is for.
+    """
+    return or_(
+        and_(job_table.c.state == QUEUED, job_table.c.available_at <= now),
+        and_(
+            job_table.c.state == RUNNING,
+            job_table.c.lease_until <= now,
+            job_table.c.attempt < job_table.c.max_attempts,
+        ),
+    )
+
+
 class SQLJobStore:
     """Jobs kept in a database, claimed by compare and swap."""
 
@@ -233,11 +250,27 @@ class SQLJobStore:
                 ).inserted_primary_key[0]
         except IntegrityError:
             existing = connection.execute(
-                select(job_table.c.id).where(job_table.c.dedupe_slot == slot)
-            ).scalar()
+                select(job_table.c.id, job_table.c.state).where(
+                    job_table.c.dedupe_slot == slot
+                )
+            ).one_or_none()
             if existing is None:
                 raise
-            return existing
+            if existing.state == QUEUED:
+                return existing.id
+            # The key says at most one job waits under it, and this one is no
+            # longer waiting. A job asking for its own successor holds its key
+            # until it finishes, so leaving it would mean the successor is
+            # never asked for at all.
+            connection.execute(
+                update(job_table)
+                .where(job_table.c.id == existing.id)
+                .values(dedupe_slot=f"job:{uuid.uuid4()}")
+            )
+            with connection.begin_nested():
+                return connection.execute(
+                    job_table.insert().values(**values)
+                ).inserted_primary_key[0]
 
     def claim(self, lane: str, worker: str, budget: int) -> Sequence[Lease]:
         """Take up to `budget` jobs for this worker, fairly.
@@ -256,7 +289,8 @@ class SQLJobStore:
                 delete(job_lock_table).where(job_lock_table.c.expires_at <= now)
             )
             held |= self._locked(connection, now)
-            candidates = self._candidates(connection, lane, now)
+            spent = [who for who, count in busy.items() if count >= self._cap]
+            candidates = self._candidates(connection, lane, now, spent)
 
         chosen = share(
             candidates,
@@ -290,11 +324,7 @@ class SQLJobStore:
             .group_by(job_table.c.tenant)
         ).all()
         busy = {tenant: count for tenant, count, _ in rows}
-        last_served = {
-            tenant: _naive(claimed).timestamp()
-            for tenant, _, claimed in rows
-            if claimed is not None
-        }
+        last_served = self._turns(connection, lane, now)
         running_keys = connection.execute(
             select(job_table.c.exclusive_key).where(
                 and_(
@@ -306,6 +336,31 @@ class SQLJobStore:
         ).scalars()
         return busy, set(running_keys), last_served
 
+    def _turns(self, connection, lane: str, now: datetime) -> dict:
+        """When each tenant last had a turn, whether or not it still holds one.
+
+        Reading this from what is running would forget a tenant the moment its
+        job ended, and a tenant that has just been served would then sort as
+        one that never has.
+        """
+        recent = now - timedelta(days=1)
+        rows = connection.execute(
+            select(job_table.c.tenant, func.max(job_table.c.claimed_at))
+            .where(
+                and_(
+                    job_table.c.lane == lane,
+                    job_table.c.claimed_at.is_not(None),
+                    job_table.c.claimed_at > recent,
+                )
+            )
+            .group_by(job_table.c.tenant)
+        ).all()
+        return {
+            tenant: _naive(claimed).timestamp()
+            for tenant, claimed in rows
+            if claimed is not None
+        }
+
     def _locked(self, connection, now: datetime) -> set:
         return set(
             connection.execute(
@@ -313,28 +368,28 @@ class SQLJobStore:
             ).scalars()
         )
 
-    def _candidates(self, connection, lane: str, now: datetime) -> list:
-        """Queued and due, or running on a claim that has lapsed."""
+    def _candidates(
+        self, connection, lane: str, now: datetime, spent: Sequence[str] = ()
+    ) -> list:
+        """Queued and due, or running on a claim that has lapsed.
+
+        A tenant already at its cap is left out rather than filtered later. A
+        window filled with work nobody may start yet hides everybody else's,
+        and the worker takes nothing while another tenant waits.
+        """
         query = (
             select(job_table.c.id, job_table.c.tenant, job_table.c.exclusive_key)
             .where(
                 and_(
                     job_table.c.lane == lane,
-                    or_(
-                        and_(
-                            job_table.c.state == QUEUED,
-                            job_table.c.available_at <= now,
-                        ),
-                        and_(
-                            job_table.c.state == RUNNING,
-                            job_table.c.lease_until <= now,
-                        ),
-                    ),
+                    _offerable(now),
                 )
             )
             .order_by(job_table.c.priority.desc(), job_table.c.id)
             .limit(self._window)
         )
+        if spent:
+            query = query.where(job_table.c.tenant.notin_(list(spent)))
         if self._engine.dialect.name in SKIPS_LOCKED:
             query = query.with_for_update(skip_locked=True)
         return [
@@ -363,21 +418,7 @@ class SQLJobStore:
 
             claimed = connection.execute(
                 update(job_table)
-                .where(
-                    and_(
-                        job_table.c.id == job_id,
-                        or_(
-                            and_(
-                                job_table.c.state == QUEUED,
-                                job_table.c.available_at <= now,
-                            ),
-                            and_(
-                                job_table.c.state == RUNNING,
-                                job_table.c.lease_until <= now,
-                            ),
-                        ),
-                    )
-                )
+                .where(and_(job_table.c.id == job_id, _offerable(now)))
                 .values(
                     state=RUNNING,
                     leased_by=worker,
@@ -630,12 +671,44 @@ class SQLJobStore:
                         )
                     )
                 ).rowcount
+            self._bury(connection, now)
             # A lock outliving its job would hold work back for ever, and the
             # claim only passes over ones that have not expired yet.
             connection.execute(
                 delete(job_lock_table).where(job_lock_table.c.expires_at <= now)
             )
             return cleared or 0
+
+    def _bury(self, connection, now: datetime) -> None:
+        """Settle work whose worker went away with no attempt left.
+
+        The claim will not offer it again, so without this it stays running for
+        ever and its dedupe key stays taken.
+        """
+        abandoned = connection.execute(
+            select(job_table).where(
+                and_(
+                    job_table.c.state == RUNNING,
+                    job_table.c.lease_until <= now,
+                    job_table.c.attempt >= job_table.c.max_attempts,
+                )
+            )
+        ).all()
+        for row in abandoned:
+            self._unlock(connection, row)
+            connection.execute(
+                update(job_table)
+                .where(job_table.c.id == row.id)
+                .values(
+                    state=DEAD,
+                    error="the worker holding this went away",
+                    finished_at=now,
+                    lease_until=None,
+                    leased_by=None,
+                    dedupe_slot=f"job:{uuid.uuid4()}",
+                )
+            )
+            self._settle(connection, row, now, failed=True)
 
     def cancel(self, job_id: int) -> bool:
         with self._engine.begin() as connection:

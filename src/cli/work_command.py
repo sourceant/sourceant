@@ -8,8 +8,10 @@ cannot be stopped. Running several is a matter for whatever starts them.
 import click
 
 from src.config.db import get_engine
-from src.core.jobs import WITHIN_SECONDS, LANES, job_store
+from src.core.jobs import LANES, WITHIN_MINUTES, WITHIN_SECONDS, JobHandler, job_store
+from src.core.jobs.sweep import Sweeper
 from src.core.jobs.worker import Worker
+from src.core.services import service_registry
 from src.utils.logger import logger
 
 
@@ -43,7 +45,13 @@ def work_command(lane, name, poll, max_jobs, max_time):
             "Background work runs in the request that asked for it instead."
         )
 
-    worker = Worker(job_store(), lane, name=name, poll_seconds=poll)
+    store = job_store()
+    sweeper = Sweeper(store)
+    service_registry.contribute(JobHandler, sweeper, "sourceant_core")
+    if lane == WITHIN_MINUTES:
+        sweeper.arrange(store)
+
+    worker = Worker(store, lane, name=name, poll_seconds=poll)
     worker.attend()
     logger.info(f"{worker.name} is working the {lane} lane")
     done = worker.work(max_jobs=max_jobs, max_time=max_time)
