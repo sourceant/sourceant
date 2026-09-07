@@ -334,12 +334,11 @@ class GitHub(ProviderAdapter):
         return (found.get("body") or "").replace(COMMENT_MARKER, "").strip() or None
 
     @staticmethod
-    def _reader(repository: str):
+    def _llm_for(repository: str):
         """The model this repository is configured to use.
 
         Whatever reads a comment here has to be the same model that wrote the
-        review, or an instance answers to two providers at once and only one of
-        them is the one the operator chose.
+        review, or an instance answers to two providers at once.
         """
         from src.core.model import provider_for
 
@@ -665,7 +664,7 @@ class GitHub(ProviderAdapter):
                 existing_comment = self._find_overview_comment(
                     repository.owner, repository.name, pull_request.number, headers
                 )
-                if existing_comment and not self._reader(
+                if existing_comment and not self._llm_for(
                     repository.full_name
                 ).is_summary_different(
                     summary_a=existing_comment["body"],
@@ -766,7 +765,7 @@ class GitHub(ProviderAdapter):
                 existing_comment = self._find_overview_comment(
                     repository.owner, repository.name, pull_request.number, headers
                 )
-                if not existing_comment or self._reader(
+                if not existing_comment or self._llm_for(
                     repository.full_name
                 ).is_summary_different(
                     summary_a=existing_comment["body"],

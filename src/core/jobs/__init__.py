@@ -76,7 +76,7 @@ def _default():
             logger.info("No database, so background work is kept in this process only.")
             _core = InMemoryJobStore()
         else:
-            _core = SQLJobStore(engine, create_schema=True)
+            _core = SQLJobStore(engine)
     return _core
 
 
