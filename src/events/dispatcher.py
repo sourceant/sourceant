@@ -9,11 +9,13 @@ from rq import Queue
 
 from src.config.settings import (
     QUEUE_MODE,
+    VALID_QUEUE_MODES,
     REDIS_HOST,
     REDIS_PORT,
-    whole_number,
 )
 
+from src.core.jobs import enqueue
+from src.events.delivery import DELIVERY_TIMEOUT, delivery_of
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github_webhook_parser import GitHubWebhookParser
@@ -26,10 +28,6 @@ bg_tasks_cv: ContextVar[Optional[BackgroundTasks]] = ContextVar(
     "bg_tasks", default=None
 )
 
-# How long a delivery may take. A review of a large change asks a model
-# several times and outlasts the queue's own default of 180 seconds.
-DELIVERY_TIMEOUT = whole_number("QUEUE_DELIVERY_TIMEOUT", 1800)
-
 q = None
 if QUEUE_MODE == "redis":
     logger.info("Using Redis for event queue.")
@@ -39,6 +37,8 @@ elif QUEUE_MODE == "redislite":
     logger.info("Using RedisLite for event queue.")
     redis_conn = RedisLite()
     q = Queue(connection=redis_conn)
+elif QUEUE_MODE == "database":
+    logger.info("Using the jobs table for event queue.")
 elif QUEUE_MODE == "request":
     logger.info("Using request-scoped background tasks for event processing.")
 else:
@@ -60,6 +60,10 @@ class EventDispatcher:
             # job is stopped partway through with nothing recorded.
             q.enqueue(self._process_event_sync, event, job_timeout=DELIVERY_TIMEOUT)
 
+        elif QUEUE_MODE == "database":
+            job_id = enqueue(delivery_of(event.data))
+            logger.info(f"Delivery queued as job {job_id}")
+
         elif QUEUE_MODE == "request":
             background_tasks = bg_tasks_cv.get()
             if not background_tasks:
@@ -69,8 +73,13 @@ class EventDispatcher:
             background_tasks.add_task(self._process_event_sync, event)
         else:
             raise ValueError(
-                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be 'redis', 'redislite', or 'request'."
+                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be one of "
+                f"{', '.join(VALID_QUEUE_MODES)}."
             )
+
+    def deliver(self, event: Event) -> None:
+        """Do what a delivery asks for, here, in the caller's process."""
+        self._process_event_sync(event)
 
     async def _process_event(self, event: Event):
         if not isinstance(event, RepositoryEvent):

@@ -1,7 +1,8 @@
 IMAGE_NAME ?= ghcr.io/sourceant/sourceant
 IMAGE_TAG ?= latest
+LANE ?= within_seconds
 
-.PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker prod-build prod-push
+.PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker work prod-build prod-push
 
 help:
 	@echo "Usage: make [target]"
@@ -28,6 +29,7 @@ help:
 	@echo ""
 	@echo "Worker:"
 	@echo "  worker       Start the RQ worker"
+	@echo "  work         Start a jobs-table worker (LANE=within_seconds)"
 
 up:
 	docker compose up -d
@@ -67,3 +69,6 @@ prod-push:
 
 worker:
 	docker compose exec app rq worker --url redis://redis:6379
+
+work:
+	docker compose exec app sourceant work --lane $(LANE)

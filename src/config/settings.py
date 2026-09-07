@@ -15,7 +15,7 @@ REQUIRE_GATEWAY = os.getenv("REQUIRE_GATEWAY", "false").lower() == "true"
 # uvicorn directly and leave it off unless an operator means otherwise.
 LOCAL_MODE = os.getenv("SOURCEANT_LOCAL", "false").lower() == "true"
 QUEUE_MODE = os.getenv("QUEUE_MODE", "redis")
-VALID_QUEUE_MODES = ["redis", "request", "redislite"]
+VALID_QUEUE_MODES = ["database", "redis", "request", "redislite"]
 if QUEUE_MODE not in VALID_QUEUE_MODES:
     raise ValueError(
         f"Invalid QUEUE_MODE: {QUEUE_MODE}. Must be one of {VALID_QUEUE_MODES}"
