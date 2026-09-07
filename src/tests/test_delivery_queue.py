@@ -65,6 +65,27 @@ class TestDeliveriesOnTheJobsTable(BaseTestCase):
 
         assert self._queued().max_attempts == 1
 
+    def test_a_delivery_nothing_wrote_down_is_still_done(self):
+        from unittest.mock import patch
+
+        from src.core.plugins import event_hooks
+
+        seen = []
+        event_hooks.subscribe_to_events(
+            "test_subscriber",
+            lambda event_type, data: seen.append(event_type),
+            ["pull_request.opened"],
+        )
+        try:
+            with patch(
+                "src.controllers.repository_event_controller.STATELESS_MODE", True
+            ):
+                self._deliver()
+        finally:
+            event_hooks._event_subscribers.pop("pull_request.opened", None)
+
+        assert seen == ["pull_request.opened"]
+
     def test_a_worker_tells_the_subscribers_what_arrived(self):
         from src.core.plugins import event_hooks
 

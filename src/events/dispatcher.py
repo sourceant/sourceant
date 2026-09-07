@@ -55,6 +55,12 @@ class EventDispatcher:
 
         logger.info(f"Dispatching event: {event} (mode: {QUEUE_MODE})")
         if QUEUE_MODE == "database":
+            if event.data.id is None:
+                # A job names a delivery by its row, and nothing wrote one, so
+                # there is nothing for a worker to be given.
+                logger.info("This delivery was not written down, so it is done here")
+                self._without_waiting(event)
+                return
             job_id = enqueue(delivery_of(event.data))
             logger.info(f"Delivery queued as job {job_id}")
 
@@ -81,6 +87,14 @@ class EventDispatcher:
     def deliver(self, event: Event) -> None:
         """Do what a delivery asks for, here, in the caller's process."""
         self._process_event_sync(event)
+
+    def _without_waiting(self, event: Event) -> None:
+        """Do the delivery after this request, or in it where that is all there is."""
+        background_tasks = bg_tasks_cv.get()
+        if background_tasks:
+            background_tasks.add_task(self._process_event_sync, event)
+            return
+        self.deliver(event)
 
     async def _process_event(self, event: Event):
         if not isinstance(event, RepositoryEvent):
