@@ -8,20 +8,21 @@ cannot be stopped. Running several is a matter for whatever starts them.
 import click
 
 from src.config.db import get_engine
-from src.core.jobs import LANES, WITHIN_MINUTES, WITHIN_SECONDS, JobHandler, job_store
+from src.core.jobs import LANES, BACKGROUND, INTERACTIVE, JobHandler, job_store
 from src.core.jobs.sweep import Sweeper
 from src.core.jobs.worker import Worker
 from src.core.services import service_registry
+from src.events.delivery import Deliveries
 from src.utils.logger import logger
 
 
 @click.command(name="work")
 @click.option(
     "--lane",
-    default=WITHIN_SECONDS,
+    default=INTERACTIVE,
     type=click.Choice(LANES),
-    help="Which promise this worker keeps. Lanes are named by how long work in "
-    "them may wait.",
+    help="Which lane this worker takes. Lanes are named by who is waiting: "
+    "interactive, background, or batch.",
 )
 @click.option("--name", default="", help="What this worker calls itself in the logs.")
 @click.option(
@@ -48,7 +49,8 @@ def work_command(lane, name, poll, max_jobs, max_time):
     store = job_store()
     sweeper = Sweeper(store)
     service_registry.contribute(JobHandler, sweeper, "sourceant_core")
-    if lane == WITHIN_MINUTES:
+    service_registry.contribute(JobHandler, Deliveries(), "sourceant_core")
+    if lane == BACKGROUND:
         sweeper.arrange(store)
 
     worker = Worker(store, lane, name=name, poll_seconds=poll)

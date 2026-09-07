@@ -15,7 +15,7 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
-from src.core.jobs.models import WITHIN_SECONDS, JobRequest
+from src.core.jobs.models import INTERACTIVE, JobRequest
 from src.core.jobs.sql import SQLJobStore
 
 WORKER = textwrap.dedent("""
@@ -25,7 +25,7 @@ WORKER = textwrap.dedent("""
     from src.core.jobs.worker import Worker
     from src.core.jobs.interfaces import JobHandler
     from src.core.services import ServiceRegistry
-    from src.core.jobs.models import WITHIN_SECONDS, JobOutcome
+    from src.core.jobs.models import INTERACTIVE, JobOutcome
 
     class Forever:
         kind = "test.long"
@@ -36,7 +36,7 @@ WORKER = textwrap.dedent("""
     services = ServiceRegistry()
     services.contribute(JobHandler, Forever(), "test")
     store = SQLJobStore(sa.create_engine(sys.argv[1]), lease_seconds=2)
-    Worker(store, WITHIN_SECONDS, name="doomed", poll_seconds=0.1,
+    Worker(store, INTERACTIVE, name="doomed", poll_seconds=0.1,
            heartbeat_seconds=0.5, services=services).work()
     """)
 
@@ -46,7 +46,7 @@ def test_a_job_survives_the_worker_being_killed_outright(tmp_path):
     store = SQLJobStore(sa.create_engine(url), create_schema=True, lease_seconds=2)
     job_id = store.enqueue(
         JobRequest(
-            lane=WITHIN_SECONDS,
+            lane=INTERACTIVE,
             kind="test.long",
             tenant="acme",
             max_attempts=3,
@@ -80,7 +80,7 @@ def test_a_job_survives_the_worker_being_killed_outright(tmp_path):
         doomed.wait(timeout=10)
 
         _until(
-            lambda: store.claim(WITHIN_SECONDS, "worker-2", 1) != [],
+            lambda: store.claim(INTERACTIVE, "worker-2", 1) != [],
             "the lapsed claim to be offered again",
             wait=6,
         )

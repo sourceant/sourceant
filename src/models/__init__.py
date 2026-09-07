@@ -5,6 +5,7 @@ against whatever has been imported. Registering them all here means importing
 any one model is enough for the mapper to find the other.
 """
 
+from src.models.cached_review import CachedReview
 from src.models.code_review import CodeReview
 from src.models.config import Config
 from src.models.connected_repository import ConnectedRepository
@@ -16,6 +17,7 @@ from src.models.token_usage import TokenUsageRecord
 from src.models.workspace import Workspace
 
 __all__ = [
+    "CachedReview",
     "CodeReview",
     "Config",
     "ConnectedRepository",

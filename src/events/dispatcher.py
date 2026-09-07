@@ -9,11 +9,13 @@ from rq import Queue
 
 from src.config.settings import (
     QUEUE_MODE,
+    VALID_QUEUE_MODES,
     REDIS_HOST,
     REDIS_PORT,
-    whole_number,
 )
 
+from src.core.jobs import enqueue
+from src.events.delivery import DELIVERY_TIMEOUT, delivery_of
 from src.events.event import Event
 from src.events.repository_event import RepositoryEvent
 from src.integrations.github.github_webhook_parser import GitHubWebhookParser
@@ -26,12 +28,11 @@ bg_tasks_cv: ContextVar[Optional[BackgroundTasks]] = ContextVar(
     "bg_tasks", default=None
 )
 
-# How long a delivery may take. A review of a large change asks a model
-# several times and outlasts the queue's own default of 180 seconds.
-DELIVERY_TIMEOUT = whole_number("QUEUE_DELIVERY_TIMEOUT", 1800)
-
+# Redis is built wherever it is configured, not only where deliveries use it.
+# Work that has not moved to the jobs table is still asked for through this
+# queue.
 q = None
-if QUEUE_MODE == "redis":
+if QUEUE_MODE in ("redis", "database"):
     logger.info("Using Redis for event queue.")
     redis_conn = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
     q = Queue(connection=redis_conn)
@@ -53,7 +54,17 @@ class EventDispatcher:
             return
 
         logger.info(f"Dispatching event: {event} (mode: {QUEUE_MODE})")
-        if QUEUE_MODE in ["redis", "redislite"]:
+        if QUEUE_MODE == "database":
+            if event.data.id is None:
+                # A job names a delivery by its row, and nothing wrote one, so
+                # there is nothing for a worker to be given.
+                logger.info("This delivery was not written down, so it is done here")
+                self._without_waiting(event)
+                return
+            job_id = enqueue(delivery_of(event.data))
+            logger.info(f"Delivery queued as job {job_id}")
+
+        elif QUEUE_MODE in ["redis", "redislite"]:
             if not q:
                 raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
             # Unstated, this takes the queue's default of 180 seconds and the
@@ -69,24 +80,41 @@ class EventDispatcher:
             background_tasks.add_task(self._process_event_sync, event)
         else:
             raise ValueError(
-                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be 'redis', 'redislite', or 'request'."
+                f"Unknown QUEUE_MODE: '{QUEUE_MODE}'. Must be one of "
+                f"{', '.join(VALID_QUEUE_MODES)}."
             )
 
-    async def _process_event(self, event: Event):
+    def deliver(self, event: Event) -> Dict[str, Any]:
+        """Do what a delivery asks for, here, in the caller's process.
+
+        Answers with what each subscriber said, so that a delivery nobody could
+        act on is not mistaken for one that was acted on.
+        """
+        return self._process_event_sync(event) or {}
+
+    def _without_waiting(self, event: Event) -> None:
+        """Do the delivery after this request, or in it where that is all there is."""
+        background_tasks = bg_tasks_cv.get()
+        if background_tasks:
+            background_tasks.add_task(self._process_event_sync, event)
+            return
+        self.deliver(event)
+
+    async def _process_event(self, event: Event) -> Dict[str, Any]:
         if not isinstance(event, RepositoryEvent):
             logger.error(f"Unhandled event type: {event}")
-            return
+            return {}
 
         repository_event: RepositoryEventModel = event.data
         logger.info(
             f"Broadcasting repository event: {repository_event.type} on {repository_event.repository_full_name}"
         )
 
-        await self._broadcast_event_to_subscribers(repository_event)
+        return await self._broadcast_event_to_subscribers(repository_event)
 
     async def _broadcast_event_to_subscribers(
         self, repository_event: RepositoryEventModel
-    ):
+    ) -> Dict[str, Any]:
         try:
             if repository_event.action:
                 event_type = f"{repository_event.type}.{repository_event.action}"
@@ -151,9 +179,11 @@ class EventDispatcher:
             )
 
             logger.debug(f"Event broadcast results: {list(broadcast_results.keys())}")
+            return broadcast_results
 
         except Exception as e:
             logger.error(f"Error broadcasting event to subscribers: {e}", exc_info=True)
+            return {"sourceant_core": {"error": str(e)}}
 
     def _extract_user_context_github_app(
         self, payload: Dict
@@ -219,7 +249,7 @@ class EventDispatcher:
         await plugin_manager.initialize_plugins()
         await plugin_manager.start_plugins()
 
-    def _process_event_sync(self, event: Event):
+    def _process_event_sync(self, event: Event) -> Optional[Dict[str, Any]]:
         import asyncio
 
         try:
@@ -230,6 +260,6 @@ class EventDispatcher:
 
         if loop.is_running():
             asyncio.create_task(self._process_event(event))
-        else:
-            loop.run_until_complete(self._ensure_plugins_loaded())
-            loop.run_until_complete(self._process_event(event))
+            return None
+        loop.run_until_complete(self._ensure_plugins_loaded())
+        return loop.run_until_complete(self._process_event(event))

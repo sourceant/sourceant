@@ -65,10 +65,19 @@ def _check_database() -> tuple[str, str | None]:
 
 
 def _check_queue() -> tuple[str, str | None]:
+    from src.config.settings import QUEUE_MODE
     from src.events import dispatcher
 
+    if QUEUE_MODE == "database":
+        from src.core.jobs import job_store
+
+        looked_at = 100
+        waiting = len(job_store().pending(limit=looked_at))
+        more = "+" if waiting == looked_at else ""
+        return OK, f"{waiting}{more} queued"
+
     if dispatcher.q is None:
-        return SKIPPED, "no queue mode configured"
+        return SKIPPED, f"{QUEUE_MODE} needs no queue server"
 
     dispatcher.redis_conn.ping()
     return OK, f"{len(dispatcher.q)} queued"

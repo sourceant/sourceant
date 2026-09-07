@@ -1,7 +1,8 @@
 IMAGE_NAME ?= ghcr.io/sourceant/sourceant
 IMAGE_TAG ?= latest
+LANE ?= interactive
 
-.PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker prod-build prod-push
+.PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker work prod-build prod-push
 
 help:
 	@echo "Usage: make [target]"
@@ -27,7 +28,8 @@ help:
 	@echo "  prod-push    Push production Docker image to GHCR"
 	@echo ""
 	@echo "Worker:"
-	@echo "  worker       Start the RQ worker"
+	@echo "  work         Start a worker (LANE=interactive)"
+	@echo "  worker       Start an RQ worker, with QUEUE_MODE=redis"
 
 up:
 	docker compose up -d
@@ -64,6 +66,9 @@ prod-build:
 
 prod-push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
+
+work:
+	docker compose exec app sourceant work --lane $(LANE)
 
 worker:
 	docker compose exec app rq worker --url redis://redis:6379
