@@ -358,7 +358,9 @@ class CodeReviewer:
             summary=(
                 summary_from(suggestions)
                 if rejections
-                else provider.generate_summary(suggestions)
+                else provider.generate_summary(
+                    suggestions, previous_summary=previous_review
+                )
             ),
             verdict=verdict_from(suggestions),
             code_suggestions=suggestions,

@@ -163,7 +163,9 @@ The diff below uses a decoupled format where removed and added code are shown in
     SUMMARIZE_REVIEW_PROMPT = """
     #
 
-    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary of these suggestions in **JSON format**, conforming to the `CodeReviewSummary` schema.
+    You have been provided with a list of code review suggestions. Your task is to generate a concise, high-level summary in **JSON format**, conforming to the `CodeReviewSummary` schema.
+
+    {previous_summary}The summary describes the pull request as a whole, not only the most recent push to it. A reader arriving at it should learn what the change does and what still stands, not what happened since last time.
 
     The JSON object should have the following structure:
     ```json

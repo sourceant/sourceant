@@ -1,9 +1,8 @@
 """A review that reads its own last word before writing the next one.
 
-Line comments were read back so a suggestion was not repeated. The summary,
-which is where the reviewer states its position on the change as a whole, was
-never read back at all, so one pass could ask for the opposite of what an
-earlier pass asked for and neither pass could tell.
+A pass is given only what changed since the one before it, and a summary is an
+issue comment rather than a line comment. Neither its own position nor the
+change as a whole reaches it unless it is put there.
 """
 
 from src.integrations.github.github import COMMENT_MARKER
@@ -54,3 +53,19 @@ def test_a_pull_request_with_no_summary_yet_says_nothing(monkeypatch):
     assert (
         adapter.GitHub.get_previous_review_summary(reader, "acme", "billing", 1) is None
     )
+
+
+def test_a_summary_with_nothing_standing_before_it_says_nothing_extra():
+    assert LiteLLMProvider._standing_summary(None) == ""
+    assert LiteLLMProvider._standing_summary("") == ""
+
+
+def test_the_standing_summary_is_revised_rather_than_replaced():
+    """A pass is given only what changed since the one before it. A summary
+    written from that alone describes the newest commit rather than the change
+    a reader opens the overview for."""
+    said = LiteLLMProvider._standing_summary("It adds a queue and a worker.")
+
+    assert "It adds a queue and a worker." in said
+    assert "Revise it" in said
+    assert "latest push" in said

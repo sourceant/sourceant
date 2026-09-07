@@ -92,8 +92,8 @@ class LiteLLMProvider(LLMInterface):
     def _format_previous_review(previous_review: Optional[str]) -> str:
         """What this reviewer already said about the whole change.
 
-        Without it each pass reads a diff with no memory of its own position,
-        and can ask for the opposite of what it asked for last time.
+        A pass is given only what changed since the one before it, so its own
+        position on the change reaches it from here or not at all.
         """
         if not previous_review:
             return ""
@@ -184,8 +184,29 @@ class LiteLLMProvider(LLMInterface):
             )
             return None
 
+    @staticmethod
+    def _standing_summary(previous_summary: Optional[str]) -> str:
+        """What the summary said before this push, so the next one revises it.
+
+        A pass is given only what changed since the one before it, and a summary
+        written from that alone describes the newest commit rather than the
+        change a reader opens the overview for.
+        """
+        if not previous_summary:
+            return ""
+        return (
+            "The summary below already stands on this pull request. Revise it to "
+            "take account of the suggestions given, keeping what is still true "
+            "and dropping what has been addressed. Do not replace it with an "
+            "account of the latest push.\n\n"
+            f"{previous_summary}\n\n"
+        )
+
     def generate_summary(
-        self, suggestions: List[CodeSuggestion], as_text: bool = False
+        self,
+        suggestions: List[CodeSuggestion],
+        as_text: bool = False,
+        previous_summary: Optional[str] = None,
     ) -> Union[CodeReviewSummary, str]:
         if not suggestions:
             summary = CodeReviewSummary(
@@ -201,7 +222,10 @@ class LiteLLMProvider(LLMInterface):
             suggestions_text += f"- **File:** `{s.file_name}` (Line: {s.start_line})\n"
             suggestions_text += f"  - **Comment:** {s.comment}\n"
 
-        prompt = Prompts.SUMMARIZE_REVIEW_PROMPT.format(suggestions=suggestions_text)
+        prompt = Prompts.SUMMARIZE_REVIEW_PROMPT.format(
+            suggestions=suggestions_text,
+            previous_summary=self._standing_summary(previous_summary),
+        )
 
         if as_text:
             response = litellm.completion(

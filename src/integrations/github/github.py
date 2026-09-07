@@ -315,10 +315,8 @@ class GitHub(ProviderAdapter):
     ) -> Optional[str]:
         """What this reviewer last said about the whole pull request.
 
-        A review reads its own line comments back so it does not repeat one.
-        The summary is an issue comment rather than a line comment, so it was
-        never read back at all, and a later pass could ask for the opposite of
-        what an earlier pass asked for without ever seeing the contradiction.
+        A summary is an issue comment, so it is not among the line comments a
+        review reads back before writing the next one.
         """
         try:
             access_token = self.get_installation_access_token(owner, repo)
