@@ -28,7 +28,7 @@ Choosing a model in the interface checks the key against the provider first, so 
 |---|---|---|
 | `MODEL_PROBE_TIMEOUT` | `15` | Seconds a provider gets to answer the check |
 | `MODEL_RESOLVE_TIMEOUT` | `5` | Seconds a custom endpoint's name gets to resolve |
-| `MODEL_ENDPOINTS_MAY_BE_PRIVATE` | off | Accept an endpoint on a private address |
+| `MODEL_ENDPOINTS_MAY_BE_PRIVATE` | `false` | Accept an endpoint on a private address |
 
 Leave the last one off unless the people naming endpoints are the same people who run the deployment. It is what lets a custom endpoint point at a machine only this server can reach, so turning it on where anyone else can set a model hands them this server as a way into that network.
 
