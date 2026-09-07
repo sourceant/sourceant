@@ -1,6 +1,6 @@
 IMAGE_NAME ?= ghcr.io/sourceant/sourceant
 IMAGE_TAG ?= latest
-LANE ?= within_seconds
+LANE ?= interactive
 
 .PHONY: help up down build test lint lint-fix format logs shell db-upgrade worker work prod-build prod-push
 
@@ -28,7 +28,7 @@ help:
 	@echo "  prod-push    Push production Docker image to GHCR"
 	@echo ""
 	@echo "Worker:"
-	@echo "  work         Start a worker (LANE=within_seconds)"
+	@echo "  work         Start a worker (LANE=interactive)"
 	@echo "  worker       Start an RQ worker, with QUEUE_MODE=redis"
 
 up:

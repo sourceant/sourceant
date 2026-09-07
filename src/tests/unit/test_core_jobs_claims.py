@@ -13,8 +13,8 @@ from src.core.jobs.interfaces import JobHandler
 from src.core.jobs.models import (
     DEAD,
     RUNNING,
-    WITHIN_MINUTES,
-    WITHIN_SECONDS,
+    BACKGROUND,
+    INTERACTIVE,
     JobOutcome,
     JobRequest,
 )
@@ -42,39 +42,35 @@ def abandon(store: SQLJobStore, job_id: int) -> None:
 def test_work_asked_for_once_is_not_offered_again_after_a_worker_dies(tmp_path):
     store = store_at(tmp_path)
     job_id = store.enqueue(
-        JobRequest(lane=WITHIN_SECONDS, kind="test.once", max_attempts=1)
+        JobRequest(lane=INTERACTIVE, kind="test.once", max_attempts=1)
     )
 
-    assert [lease.job.id for lease in store.claim(WITHIN_SECONDS, "first", 1)] == [
-        job_id
-    ]
+    assert [lease.job.id for lease in store.claim(INTERACTIVE, "first", 1)] == [job_id]
     abandon(store, job_id)
 
-    assert store.claim(WITHIN_SECONDS, "second", 1) == []
+    assert store.claim(INTERACTIVE, "second", 1) == []
     assert store.read(job_id).attempt == 1
 
 
 def test_work_asked_for_twice_is_offered_again_after_a_worker_dies(tmp_path):
     store = store_at(tmp_path)
     job_id = store.enqueue(
-        JobRequest(lane=WITHIN_SECONDS, kind="test.twice", max_attempts=2)
+        JobRequest(lane=INTERACTIVE, kind="test.twice", max_attempts=2)
     )
 
-    store.claim(WITHIN_SECONDS, "first", 1)
+    store.claim(INTERACTIVE, "first", 1)
     abandon(store, job_id)
 
-    assert [lease.job.id for lease in store.claim(WITHIN_SECONDS, "second", 1)] == [
-        job_id
-    ]
+    assert [lease.job.id for lease in store.claim(INTERACTIVE, "second", 1)] == [job_id]
     assert store.read(job_id).attempt == 2
 
 
 def test_work_nobody_may_take_again_stops_saying_it_is_running(tmp_path):
     store = store_at(tmp_path)
     job_id = store.enqueue(
-        JobRequest(lane=WITHIN_SECONDS, kind="test.once", max_attempts=1)
+        JobRequest(lane=INTERACTIVE, kind="test.once", max_attempts=1)
     )
-    store.claim(WITHIN_SECONDS, "first", 1)
+    store.claim(INTERACTIVE, "first", 1)
     abandon(store, job_id)
 
     store.prune(0)
@@ -86,15 +82,15 @@ def test_a_backlog_for_one_tenant_does_not_hide_another_tenants_work(tmp_path):
     store = store_at(tmp_path, cap=1, worker_window=5)
     for _ in range(6):
         store.enqueue(
-            JobRequest(lane=WITHIN_SECONDS, kind="test.many").for_("busy-tenant")
+            JobRequest(lane=INTERACTIVE, kind="test.many").for_("busy-tenant")
         )
     waiting = store.enqueue(
-        JobRequest(lane=WITHIN_SECONDS, kind="test.one").for_("quiet-tenant")
+        JobRequest(lane=INTERACTIVE, kind="test.one").for_("quiet-tenant")
     )
 
-    store.claim(WITHIN_SECONDS, "first", 1)
+    store.claim(INTERACTIVE, "first", 1)
 
-    taken = [lease.job.id for lease in store.claim(WITHIN_SECONDS, "second", 1)]
+    taken = [lease.job.id for lease in store.claim(INTERACTIVE, "second", 1)]
     assert taken == [waiting]
 
 
@@ -102,13 +98,11 @@ def test_two_tenants_take_turns_rather_than_one_going_twice(tmp_path):
     store = store_at(tmp_path, cap=1)
     for tenant in ("a", "b"):
         for _ in range(2):
-            store.enqueue(
-                JobRequest(lane=WITHIN_SECONDS, kind="test.turns").for_(tenant)
-            )
+            store.enqueue(JobRequest(lane=INTERACTIVE, kind="test.turns").for_(tenant))
 
     served = []
     for _ in range(3):
-        for lease in store.claim(WITHIN_SECONDS, "worker", 1):
+        for lease in store.claim(INTERACTIVE, "worker", 1):
             served.append(lease.job.tenant)
             store.finish(lease, JobOutcome.ok())
 
@@ -119,21 +113,21 @@ def test_a_tidy_asks_for_the_next_one_while_it_is_still_running(tmp_path):
     store = store_at(tmp_path)
     sweeper = Sweeper(store, every_seconds=0)
     first = sweeper.arrange(store)
-    lease = store.claim(WITHIN_MINUTES, "worker", 1)[0]
+    lease = store.claim(BACKGROUND, "worker", 1)[0]
     assert lease.job.id == first
 
     outcome = sweeper.run(lease.job)
     store.finish(lease, outcome)
 
     assert outcome.succeeded
-    queued = [job for job in store.pending(lane=WITHIN_MINUTES) if job.id != first]
+    queued = [job for job in store.pending(lane=BACKGROUND) if job.id != first]
     assert len(queued) == 1
     assert queued[0].dedupe_slot == SWEEP_SLOT
 
 
 def test_a_worker_whose_claim_is_taken_stops_rather_than_carrying_on(tmp_path):
     store = store_at(tmp_path, lease_seconds=1)
-    store.enqueue(JobRequest(lane=WITHIN_SECONDS, kind="test.slow", max_attempts=2))
+    store.enqueue(JobRequest(lane=INTERACTIVE, kind="test.slow", max_attempts=2))
 
     running = threading.Event()
 
@@ -151,20 +145,20 @@ def test_a_worker_whose_claim_is_taken_stops_rather_than_carrying_on(tmp_path):
     halted = []
     worker = Worker(
         store,
-        WITHIN_SECONDS,
+        INTERACTIVE,
         name="first",
         poll_seconds=0.05,
         heartbeat_seconds=0.2,
         services=services,
         halt=halted.append,
     )
-    lease = store.claim(WITHIN_SECONDS, "first", 1)[0]
+    lease = store.claim(INTERACTIVE, "first", 1)[0]
     doing = threading.Thread(target=worker.perform, args=(lease,), daemon=True)
     doing.start()
     assert running.wait(5)
 
     abandon(store, lease.job.id)
-    store.claim(WITHIN_SECONDS, "second", 1)
+    store.claim(INTERACTIVE, "second", 1)
 
     doing.join(timeout=15)
     assert halted == [LOST_EXIT]

@@ -11,13 +11,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Mapping, Optional
 
-# Lanes are named by the latency they promise rather than by what runs in
-# them, so picking one answers how long the work may wait.
-WITHIN_SECONDS = "within_seconds"
-WITHIN_MINUTES = "within_minutes"
-WITHIN_HOURS = "within_hours"
+# Lanes are named by who is waiting rather than by what runs in them. Somebody
+# is watching for the result of interactive work, nobody is watching background
+# work, and batch work is measured in hours.
+INTERACTIVE = "interactive"
+BACKGROUND = "background"
+BATCH = "batch"
 
-LANES: tuple[str, ...] = (WITHIN_SECONDS, WITHIN_MINUTES, WITHIN_HOURS)
+LANES: tuple[str, ...] = (INTERACTIVE, BACKGROUND, BATCH)
 
 QUEUED = "queued"
 RUNNING = "running"

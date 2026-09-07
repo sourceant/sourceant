@@ -4,7 +4,7 @@ import pytest
 
 from src.core.jobs.interfaces import JobHandler, JobMiddleware
 from src.core.jobs.memory import InMemoryJobStore
-from src.core.jobs.models import WITHIN_SECONDS, JobOutcome, JobRequest
+from src.core.jobs.models import INTERACTIVE, JobOutcome, JobRequest
 from src.core.jobs.worker import DEADLINE_EXIT, Worker
 from src.core.services import ServiceRegistry
 
@@ -37,11 +37,11 @@ def store():
 
 
 def _worker(store, services, **over):
-    return Worker(store, WITHIN_SECONDS, name="worker-1", services=services, **over)
+    return Worker(store, INTERACTIVE, name="worker-1", services=services, **over)
 
 
 def _asked(**over):
-    asked = {"lane": WITHIN_SECONDS, "kind": "test.work", "tenant": "acme"}
+    asked = {"lane": INTERACTIVE, "kind": "test.work", "tenant": "acme"}
     asked.update(over)
     return JobRequest(**asked)
 

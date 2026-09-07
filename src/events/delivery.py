@@ -17,7 +17,7 @@ from src.config.settings import whole_number
 from src.core.jobs.models import (
     BY_REPOSITORY,
     BY_WORKSPACE,
-    WITHIN_SECONDS,
+    INTERACTIVE,
     Job,
     JobOutcome,
     JobRequest,
@@ -56,7 +56,7 @@ def delivery_of(event: RepositoryEventModel) -> JobRequest:
         )
     tenant, kind = tenant_for(event.repository_full_name or "")
     return JobRequest(
-        lane=WITHIN_SECONDS,
+        lane=INTERACTIVE,
         kind=KIND,
         payload={"repository_event_id": event.id},
         deadline_seconds=DELIVERY_TIMEOUT,

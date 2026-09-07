@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.core.jobs import WITHIN_SECONDS, JobHandler, job_store
+from src.core.jobs import INTERACTIVE, JobHandler, job_store
 from src.core.jobs.worker import Worker
 from src.core.services import ServiceRegistry
 from src.events.delivery import KIND, Deliveries
@@ -49,7 +49,7 @@ class TestDeliveriesOnTheJobsTable(BaseTestCase):
     def _queued(self):
         waiting = [
             job
-            for job in job_store().pending(lane=WITHIN_SECONDS, limit=100)
+            for job in job_store().pending(lane=INTERACTIVE, limit=100)
             if job.kind == KIND
         ]
         assert waiting, "the delivery left nothing to do"
@@ -111,8 +111,8 @@ class TestDeliveriesOnTheJobsTable(BaseTestCase):
 
             services = ServiceRegistry()
             services.contribute(JobHandler, Deliveries(), "sourceant_core")
-            worker = Worker(job_store(), WITHIN_SECONDS, services=services)
-            worker.work(max_jobs=len(job_store().pending(lane=WITHIN_SECONDS)))
+            worker = Worker(job_store(), INTERACTIVE, services=services)
+            worker.work(max_jobs=len(job_store().pending(lane=INTERACTIVE)))
         finally:
             event_hooks._event_subscribers.pop("pull_request.opened", None)
 
@@ -132,8 +132,8 @@ class TestDeliveriesOnTheJobsTable(BaseTestCase):
 
             services = ServiceRegistry()
             services.contribute(JobHandler, Deliveries(), "sourceant_core")
-            worker = Worker(job_store(), WITHIN_SECONDS, services=services)
-            worker.work(max_jobs=len(job_store().pending(lane=WITHIN_SECONDS)))
+            worker = Worker(job_store(), INTERACTIVE, services=services)
+            worker.work(max_jobs=len(job_store().pending(lane=INTERACTIVE)))
         finally:
             event_hooks._event_subscribers.pop("pull_request.opened", None)
 

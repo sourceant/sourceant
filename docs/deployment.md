@@ -27,7 +27,7 @@ Run at least one worker against the same configuration, or queued reviews are ne
 docker run -d --name sourceant-worker \
   -v /path/to/.env:/app/.env \
   --entrypoint sourceant \
-  ghcr.io/sourceant/sourceant:latest work --lane within_seconds
+  ghcr.io/sourceant/sourceant:latest work --lane interactive
 ```
 
 ### Docker Compose
@@ -58,7 +58,7 @@ make prod-push
 |---|---|
 | `sourceant db upgrade head` | Apply migrations |
 | `sourceant db --help` | Every database subcommand |
-| `sourceant work --lane within_seconds` | Run a queue worker |
+| `sourceant work --lane interactive` | Run a queue worker |
 | `rq worker --url redis://redis:6379` | Run a queue worker, with `QUEUE_MODE=redis` |
 
 ### Checklist for a production instance

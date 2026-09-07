@@ -16,7 +16,7 @@ from typing import Any, Optional
 from src.core.services import ServiceRegistry, service_registry
 from src.utils.logger import logger
 
-from .models import WITHIN_MINUTES, JobOutcome, JobRequest
+from .models import BACKGROUND, JobOutcome, JobRequest
 
 #: How often the tidying runs, and the key that stops two being queued at once.
 SWEEP_KIND = "jobs.sweep"
@@ -75,7 +75,7 @@ class Sweeper:
         try:
             return store.enqueue(
                 JobRequest(
-                    lane=WITHIN_MINUTES,
+                    lane=BACKGROUND,
                     kind=SWEEP_KIND,
                     dedupe_slot=SWEEP_SLOT,
                     delay_seconds=self._every,

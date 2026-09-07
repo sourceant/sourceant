@@ -34,19 +34,19 @@ from .interfaces import (
 from .memory import InMemoryJobQueue, InMemoryJobStore
 from .middleware import RateLimited, Throttled
 from .models import (
+    BACKGROUND,
+    BATCH,
     BY_NOBODY,
     BY_REPOSITORY,
     BY_WORKSPACE,
     CANCELLED,
     DEAD,
     FAILED,
+    INTERACTIVE,
     LANES,
     QUEUED,
     RUNNING,
     SUCCEEDED,
-    WITHIN_HOURS,
-    WITHIN_MINUTES,
-    WITHIN_SECONDS,
     Batch,
     Candidate,
     Job,
@@ -133,6 +133,8 @@ def middleware(
 
 
 __all__ = [
+    "BACKGROUND",
+    "BATCH",
     "BY_NOBODY",
     "BY_REPOSITORY",
     "BY_WORKSPACE",
@@ -141,6 +143,7 @@ __all__ = [
     "Candidate",
     "DEAD",
     "FAILED",
+    "INTERACTIVE",
     "InMemoryJobQueue",
     "InMemoryJobStore",
     "Job",
@@ -162,9 +165,6 @@ __all__ = [
     "SUCCEEDED",
     "Sweeper",
     "Throttled",
-    "WITHIN_HOURS",
-    "WITHIN_MINUTES",
-    "WITHIN_SECONDS",
     "Worker",
     "backoff_after",
     "enqueue",
