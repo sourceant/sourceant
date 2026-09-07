@@ -1,3 +1,4 @@
+import logging
 import os
 from dotenv import load_dotenv
 
@@ -24,13 +25,33 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not STATELESS_MODE and DATABASE_URL is None:
     DATABASE_URL = default_database_url()
 
+
+def whole_number(name: str, fallback: int) -> int:
+    """A positive whole number from the environment, or the fallback.
+
+    Read as the process starts, so anything that raises here stops a deployment
+    before it serves a request. A mistyped variable is worth a line in the log
+    and a sensible default, not a service that will not come up.
+    """
+    given = os.getenv(name, "")
+    try:
+        number = int(given)
+    except ValueError:
+        if given:
+            logging.getLogger(__name__).warning(
+                f"{name} is not a whole number, using {fallback}"
+            )
+        return fallback
+    return number if number > 0 else fallback
+
+
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_PORT = whole_number("REDIS_PORT", 6379)
 # 128K tokens - a conservative default compatible with most LLM providers
 DEFAULT_TOKEN_LIMIT = 131072
 
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini/gemini-2.5-flash")
-LLM_TOKEN_LIMIT = int(os.getenv("LLM_TOKEN_LIMIT", DEFAULT_TOKEN_LIMIT))
+LLM_TOKEN_LIMIT = whole_number("LLM_TOKEN_LIMIT", DEFAULT_TOKEN_LIMIT)
 LOG_DRIVER: str = os.getenv("LOG_DRIVER", "console")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FILE: str = os.getenv("LOG_FILE", "sourceant.log")

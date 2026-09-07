@@ -1,4 +1,3 @@
-import os
 from contextvars import ContextVar
 from typing import Optional, Dict, Any
 
@@ -12,6 +11,7 @@ from src.config.settings import (
     QUEUE_MODE,
     REDIS_HOST,
     REDIS_PORT,
+    whole_number,
 )
 
 from src.events.event import Event
@@ -28,7 +28,7 @@ bg_tasks_cv: ContextVar[Optional[BackgroundTasks]] = ContextVar(
 
 # How long a delivery may take. A review of a large change asks a model
 # several times and outlasts the queue's own default of 180 seconds.
-DELIVERY_TIMEOUT = int(os.getenv("DELIVERY_TIMEOUT", "1800"))
+DELIVERY_TIMEOUT = whole_number("QUEUE_DELIVERY_TIMEOUT", 1800)
 
 q = None
 if QUEUE_MODE == "redis":
