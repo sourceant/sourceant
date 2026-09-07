@@ -16,6 +16,28 @@ from src.events.delivery import Deliveries
 from src.utils.logger import logger
 
 
+def _plugins_are_up() -> None:
+    """Bring the plugins up before any work is claimed.
+
+    Left until the first job needed one, a plugin that decides whether work is
+    done at all is absent for that job and present for every one after it.
+    """
+    import asyncio
+    from pathlib import Path
+
+    from src.core.plugins import plugin_manager
+
+    import src as core
+
+    async def load() -> None:
+        plugin_manager.add_plugin_directory(Path(core.__file__).parent / "plugins")
+        await plugin_manager.load_all_plugins()
+        await plugin_manager.initialize_plugins()
+        await plugin_manager.start_plugins()
+
+    asyncio.run(load())
+
+
 @click.command(name="work")
 @click.option(
     "--lane",
@@ -45,6 +67,8 @@ def work_command(lane, name, poll, max_jobs, max_time):
             "There is no database here, so there is no queue to work. "
             "Background work runs in the request that asked for it instead."
         )
+
+    _plugins_are_up()
 
     store = job_store()
     sweeper = Sweeper(store)
