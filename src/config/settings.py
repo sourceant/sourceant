@@ -14,14 +14,27 @@ REQUIRE_GATEWAY = os.getenv("REQUIRE_GATEWAY", "false").lower() == "true"
 # 'sourceant serve' turns it on, being the local command. Deployments run
 # uvicorn directly and leave it off unless an operator means otherwise.
 LOCAL_MODE = os.getenv("SOURCEANT_LOCAL", "false").lower() == "true"
-VALID_QUEUE_MODES = ["database", "redis", "request", "redislite"]
+
+
+def choice(name: str, among: tuple[str, ...], fallback: str) -> str:
+    """One of a few known values from the environment, or the fallback.
+
+    Read as the process starts, so a value nothing here handles stops a
+    deployment rather than turning up later as work that quietly never happens.
+    """
+    given = os.getenv(name, "").strip().lower() or fallback
+    if given in among:
+        return given
+    raise ValueError(f"{name} must be one of {', '.join(among)}, not {given!r}")
+
+
 # A deployment that keeps nothing has nowhere to put background work, so it
 # does the work in the request that asked for it.
-QUEUE_MODE = os.getenv("QUEUE_MODE", "request" if STATELESS_MODE else "database")
-if QUEUE_MODE not in VALID_QUEUE_MODES:
-    raise ValueError(
-        f"Invalid QUEUE_MODE: {QUEUE_MODE}. Must be one of {VALID_QUEUE_MODES}"
-    )
+QUEUE_MODE = choice(
+    "QUEUE_MODE",
+    ("database", "redis", "redislite", "request"),
+    "request" if STATELESS_MODE else "database",
+)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not STATELESS_MODE and DATABASE_URL is None:

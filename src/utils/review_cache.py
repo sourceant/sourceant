@@ -12,7 +12,6 @@ get the saving.
 """
 
 import json
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -20,19 +19,14 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from src.config.db import get_engine
-from src.config.settings import REDIS_HOST, REDIS_PORT
+from src.config.settings import REDIS_HOST, REDIS_PORT, choice
 from src.core.settings import value_of
 from src.models.cached_review import CachedReview
 from src.utils.logger import logger
 
 SECONDS_PER_DAY = 24 * 60 * 60
 
-VALID_REVIEW_CACHES = ["database", "redis"]
-REVIEW_CACHE = os.getenv("REVIEW_CACHE", "database").lower()
-if REVIEW_CACHE not in VALID_REVIEW_CACHES:
-    raise ValueError(
-        f"Invalid REVIEW_CACHE: {REVIEW_CACHE}. Must be one of {VALID_REVIEW_CACHES}"
-    )
+REVIEW_CACHE = choice("REVIEW_CACHE", ("database", "redis"), "database")
 
 _client = None
 _unavailable = False
