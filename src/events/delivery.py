@@ -49,7 +49,6 @@ def tenant_for(repository: str) -> tuple[str, str]:
 
 
 def delivery_of(event: RepositoryEventModel) -> JobRequest:
-    """The job that does what this delivery asks for."""
     if event.id is None:
         raise ValueError(
             "A delivery is queued by its row, and this one was never written. "

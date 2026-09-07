@@ -28,8 +28,11 @@ bg_tasks_cv: ContextVar[Optional[BackgroundTasks]] = ContextVar(
     "bg_tasks", default=None
 )
 
+# Redis is built wherever it is configured, not only where deliveries use it.
+# Work that has not moved to the jobs table is still asked for through this
+# queue.
 q = None
-if QUEUE_MODE == "redis":
+if QUEUE_MODE in ("redis", "database"):
     logger.info("Using Redis for event queue.")
     redis_conn = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
     q = Queue(connection=redis_conn)
@@ -37,8 +40,6 @@ elif QUEUE_MODE == "redislite":
     logger.info("Using RedisLite for event queue.")
     redis_conn = RedisLite()
     q = Queue(connection=redis_conn)
-elif QUEUE_MODE == "database":
-    logger.info("Using the jobs table for event queue.")
 elif QUEUE_MODE == "request":
     logger.info("Using request-scoped background tasks for event processing.")
 else:
@@ -53,16 +54,16 @@ class EventDispatcher:
             return
 
         logger.info(f"Dispatching event: {event} (mode: {QUEUE_MODE})")
-        if QUEUE_MODE in ["redis", "redislite"]:
+        if QUEUE_MODE == "database":
+            job_id = enqueue(delivery_of(event.data))
+            logger.info(f"Delivery queued as job {job_id}")
+
+        elif QUEUE_MODE in ["redis", "redislite"]:
             if not q:
                 raise RuntimeError(f"{QUEUE_MODE} queue not initialized.")
             # Unstated, this takes the queue's default of 180 seconds and the
             # job is stopped partway through with nothing recorded.
             q.enqueue(self._process_event_sync, event, job_timeout=DELIVERY_TIMEOUT)
-
-        elif QUEUE_MODE == "database":
-            job_id = enqueue(delivery_of(event.data))
-            logger.info(f"Delivery queued as job {job_id}")
 
         elif QUEUE_MODE == "request":
             background_tasks = bg_tasks_cv.get()

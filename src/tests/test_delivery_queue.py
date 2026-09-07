@@ -85,3 +85,24 @@ class TestDeliveriesOnTheJobsTable(BaseTestCase):
             event_hooks._event_subscribers.pop("pull_request.opened", None)
 
         assert "pull_request.opened" in seen
+
+
+def test_work_that_has_not_moved_yet_still_has_its_redis_queue():
+    """A plugin asks for its own background work through this queue, so a mode
+    that stopped building it would stop that work rather than move it."""
+    import os
+    import subprocess
+    import sys
+
+    asked = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from src.events import dispatcher;"
+            "print('queue:', dispatcher.q is not None)",
+        ],
+        env={**os.environ, "QUEUE_MODE": "database"},
+        capture_output=True,
+        text=True,
+    )
+    assert "queue: True" in asked.stdout, asked.stderr
