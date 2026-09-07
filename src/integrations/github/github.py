@@ -18,6 +18,7 @@ from src.llms.llm_factory import llm
 
 COMMENT_MARKER = "<!-- SOURCEANT_REVIEW_SUMMARY -->"
 FALLBACK_COMMENT_MARKER = "<!-- SOURCEANT_FALLBACK_REVIEW -->"
+NOTICE_MARKER = "<!-- SOURCEANT_NOTICE -->"
 
 
 class GitHub(ProviderAdapter):
@@ -343,6 +344,68 @@ class GitHub(ProviderAdapter):
         from src.core.model import provider_for
 
         return provider_for(repository=repository) or llm()
+
+    def post_notice(self, owner: str, repo: str, pr_number: int, message: str) -> bool:
+        """Say something once on a pull request, whatever else happens on it.
+
+        Said again on every push, a notice about the pull request itself would
+        bury the conversation it is interrupting.
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.get_installation_access_token(owner, repo)}",
+                "Accept": "application/vnd.github.v3+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+        except Exception as e:
+            logger.error(f"Could not reach {owner}/{repo} to say anything: {e}")
+            return False
+        if self._find_marked_comment(owner, repo, pr_number, headers, NOTICE_MARKER):
+            logger.info(f"{owner}/{repo}#{pr_number} has already been told this")
+            return False
+        try:
+            response = requests.post(
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
+                headers=headers,
+                json={"body": f"{message}\n\n{NOTICE_MARKER}"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Could not post a notice on {owner}/{repo}: {e}")
+            return False
+
+    def _find_marked_comment(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        headers: Dict[str, str],
+        marker: str,
+    ) -> Optional[Dict[str, Any]]:
+        url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+        try:
+            for page in range(1, 11):
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    params={"per_page": 100, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                comments = response.json()
+                for comment in comments:
+                    if marker in comment.get("body", ""):
+                        return comment
+                # A marker on a page nobody read is a marker not found, and
+                # whatever it marks gets said again.
+                if len(comments) < 100:
+                    break
+            return None
+        except (requests.exceptions.RequestException, ValueError) as e:
+            logger.warning(f"Could not read the comments on {owner}/{repo}: {e}")
+            return None
 
     def _find_overview_comment(
         self, owner: str, repo: str, pr_number: int, headers: Dict[str, str]

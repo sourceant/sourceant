@@ -14,6 +14,8 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 from src.config.settings import whole_number
+from src.core.admission import Delivery, admits
+from src.core.services import ServiceRegistry, service_registry
 from src.core.jobs.models import (
     BY_REPOSITORY,
     BY_WORKSPACE,
@@ -69,10 +71,23 @@ class Deliveries:
 
     kind = KIND
 
+    def __init__(self, services: ServiceRegistry = service_registry) -> None:
+        self._services = services
+
     def run(self, job: Job) -> JobOutcome:
         event = self._event(job)
         if event is None:
             return JobOutcome.failed("this job names no delivery that still exists")
+
+        # Asked before any subscriber is told, so a delivery this deployment
+        # does not act on costs a decision rather than a diff and a review.
+        verdict = admits(
+            Delivery(repository=event.repository_full_name, event=_named(event)),
+            self._services,
+        )
+        if not verdict.accepted:
+            _say(event, verdict.reason)
+            return JobOutcome.failed(verdict.reason or "not acted on here")
 
         from src.events.dispatcher import EventDispatcher
         from src.events.repository_event import RepositoryEvent
@@ -105,3 +120,23 @@ def _refusals(said: Mapping[str, Any]) -> list[str]:
         for who, answer in (said or {}).items()
         if isinstance(answer, Mapping) and answer.get("error")
     ]
+
+
+def _named(event: RepositoryEventModel) -> str:
+    """The event as subscribers know it, action included where there is one."""
+    return f"{event.type}.{event.action}" if event.action else event.type
+
+
+def _say(event: RepositoryEventModel, reason: str) -> None:
+    """Repeat a refusal where whoever sent the delivery will see it."""
+    if not reason or not event.number:
+        return
+    owner, _, repo = event.repository_full_name.partition("/")
+    if not repo:
+        return
+    try:
+        from src.integrations.github.github import GitHub
+
+        GitHub().post_notice(owner, repo, event.number, reason)
+    except Exception:
+        logger.warning(f"Could not say why {event.repository_full_name} was refused")
