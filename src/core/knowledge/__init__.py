@@ -1,3 +1,4 @@
+from .characteristics import KnowledgeApplicability, KnowledgeBasis, KnowledgeImportance
 from .interfaces import (
     KnowledgeLinkReader,
     KnowledgeLinkWriter,
@@ -22,6 +23,9 @@ from .selection import LinkedKnowledgeSelector
 from .sql import SQLKnowledgeRepository
 
 __all__ = [
+    "KnowledgeApplicability",
+    "KnowledgeBasis",
+    "KnowledgeImportance",
     "InMemoryKnowledgeRepository",
     "KnowledgeLink",
     "KnowledgeLinkReader",
