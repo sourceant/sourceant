@@ -20,6 +20,8 @@ from src.core.review import Reviewer, WorkingTreeReviewer
 from src.plugins.builtin.code_reviewer.context import changed_files
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
 from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
+from src.plugins.builtin.code_reviewer.overview import pull_request_overview
+from src.models.code_review import CodeReviewSummary
 from src.plugins.builtin.code_reviewer.tools import ReviewTools
 from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.core.scope import Scope
@@ -359,22 +361,21 @@ class CodeReviewerPlugin(BasePlugin):
                         )
                         raw_diff = None
 
-            # Full diff fallback
-            if not raw_diff:
-                raw_diff = github.get_diff(
-                    owner=repository.owner,
-                    repo=repository.name,
-                    pr_number=pull_request.number,
-                    base_sha=pull_request.base_sha,
-                    head_sha=pull_request.head_sha,
-                )
-
-            if not raw_diff:
+            full_diff = github.get_diff(
+                owner=repository.owner,
+                repo=repository.name,
+                pr_number=pull_request.number,
+                base_sha=pull_request.base_sha,
+                head_sha=pull_request.head_sha,
+            )
+            if not full_diff:
                 return {
                     "status": "error",
                     "message": "No diff could be computed",
                     "error_type": "no_diff",
                 }
+
+            raw_diff = raw_diff or full_diff
 
             # Parse diff and create line mapper
             parsed_files = parse_diff(raw_diff)
@@ -462,6 +463,19 @@ class CodeReviewerPlugin(BasePlugin):
                     "message": "No diff could be computed",
                     "error_type": "no_diff",
                 }
+
+            overview = pull_request_overview(
+                full_diff, llm_instance, repo_full_name, pr_metadata
+            )
+            if final_review.summary is None:
+                final_review.summary = CodeReviewSummary(
+                    overview=overview,
+                    key_improvements=[],
+                    minor_suggestions=[],
+                    critical_issues=[],
+                )
+            else:
+                final_review.summary.overview = overview
 
             if existing_comments and final_review.code_suggestions:
                 before_count = len(final_review.code_suggestions)
