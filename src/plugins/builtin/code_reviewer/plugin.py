@@ -20,7 +20,7 @@ from src.core.review import Reviewer, WorkingTreeReviewer
 from src.plugins.builtin.code_reviewer.context import changed_files
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
 from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
-from src.plugins.builtin.code_reviewer.overview import summarize_pull_request
+from src.plugins.builtin.code_reviewer.overview import summarize_changes
 from src.plugins.builtin.code_reviewer.tools import ReviewTools
 from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.core.scope import Scope
@@ -485,7 +485,7 @@ class CodeReviewerPlugin(BasePlugin):
                     )
                     final_review.verdict = verdict_from(final_review.code_suggestions)
 
-            final_review.summary = summarize_pull_request(
+            final_review.summary = summarize_changes(
                 full_diff,
                 llm_instance,
                 repo_full_name,

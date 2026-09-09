@@ -8,6 +8,7 @@ from src.plugins.builtin.code_reviewer.plugin import CodeReviewerPlugin
 from src.models.code_review import (
     CodeReview,
     CodeReviewSummary,
+    CodeReviewOverview,
     CodeSuggestion,
     Side,
     SuggestionCategory,
@@ -841,7 +842,7 @@ def test_a_review_records_what_it_spent_against_the_repository(
                         ]
                     }
                 )
-                if kwargs.get("response_format") is CodeReviewSummary
+                if kwargs.get("response_format") is CodeReviewOverview
                 else answered
             ),
         ),

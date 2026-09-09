@@ -7,10 +7,10 @@ from src.plugins.builtin.code_reviewer.reviewing import (
     _batched,
 )
 from src.utils.diff_parser import parse_diff
-from src.models.code_review import CodeReviewSummary
+from src.models.code_review import CodeReviewSummary, summary_from
 
 
-def summarize_pull_request(diff, provider, repository, metadata=None, suggestions=()):
+def summarize_changes(diff, provider, repository, metadata=None, suggestions=()):
     batches = _batched(
         parse_diff(diff), CodeReviewer._budget(repository), provider.count_tokens
     )
@@ -46,4 +46,4 @@ def summarize_pull_request(diff, provider, repository, metadata=None, suggestion
             )
             for start in range(0, len(descriptions), 10)
         ]
-    return descriptions[0]
+    return summary_from(list(suggestions), descriptions[0])

@@ -12,6 +12,7 @@ from src.models.code_review import (
     Verdict,
     CodeReviewScores,
     CodeReviewSummary,
+    CodeReviewOverview,
 )
 
 
@@ -339,7 +340,7 @@ def test_summary_with_full_change_context_uses_the_existing_format(
     result = provider.generate_summary([], change_context=full_diff)
     assert result == summary
     call = mock_completion.completion.call_args.kwargs
-    assert call["response_format"] is CodeReviewSummary
+    assert call["response_format"] is CodeReviewOverview
     prompt = call["messages"][0]["content"]
     assert full_diff in prompt
     assert "**JSON format**" in prompt

@@ -9,8 +9,11 @@ from src.utils.diff_parser import ParsedDiff
 from src.utils.logger import logger
 from src.models.code_review import (
     CodeReview,
+    CodeReviewFindings,
     CodeSuggestion,
     CodeReviewSummary,
+    CodeReviewOverview,
+    summary_from,
 )
 
 
@@ -168,7 +171,7 @@ class LiteLLMProvider(LLMInterface):
                     {"role": "system", "content": Prompts.REVIEW_SYSTEM_PROMPT},
                     {"role": "user", "content": user_text},
                 ],
-                response_format=CodeReview,
+                response_format=CodeReviewFindings,
             )
 
             self._spent(response, "review")
@@ -220,6 +223,7 @@ class LiteLLMProvider(LLMInterface):
         suggestions_text = ""
         for s in suggestions:
             suggestions_text += f"- **File:** `{s.file_name}` (Line: {s.start_line})\n"
+            suggestions_text += f"  - **Category:** {s.category.value if s.category else 'Uncategorized'}\n"
             suggestions_text += f"  - **Comment:** {s.comment}\n"
 
         prompt = Prompts.SUMMARIZE_REVIEW_PROMPT.format(
@@ -241,12 +245,13 @@ class LiteLLMProvider(LLMInterface):
             **self._credentials(),
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            response_format=CodeReviewSummary,
+            response_format=CodeReviewOverview,
         )
         self._spent(response, "summary")
-        return CodeReviewSummary.model_validate_json(
+        written = CodeReviewOverview.model_validate_json(
             response.choices[0].message.content
         )
+        return summary_from(suggestions, written)
 
     def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         try:

@@ -8,16 +8,27 @@ import pytest
 
 from src.api.routes import reviews
 from src.core.plugins.plugin_registry import plugin_registry
-from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
+from src.models.code_review import (
+    CodeReview,
+    CodeReviewSummary,
+    CodeSuggestion,
+    SuggestionCategory,
+    Side,
+    Verdict,
+)
+from src.integrations.github.github import GitHub
 from src.plugins.builtin.code_reviewer import plugin as reviewer_plugin
-from src.plugins.builtin.code_reviewer.overview import summarize_pull_request
+from src.plugins.builtin.code_reviewer.overview import summarize_changes
 from src.tests.test_dashboard_backend_api import api as api
 
 FIXTURES = Path(__file__).parent / "fixtures/review-overview"
 
 
 @pytest.mark.parametrize("budget", [100000, 1])
-def test_http_preview_overview_reads_all_pr_changes(api, monkeypatch, budget):
+@pytest.mark.parametrize("with_findings", [False, True])
+def test_http_preview_overview_reads_all_pr_changes(
+    api, monkeypatch, budget, with_findings
+):
     client, headers, _, _ = api
     client.app.include_router(reviews.router, prefix="/api/reviews")
     monkeypatch.setattr(
@@ -41,9 +52,41 @@ def test_http_preview_overview_reads_all_pr_changes(api, monkeypatch, budget):
     monkeypatch.setattr(reviewer_plugin, "GitHub", lambda: github)
     provider = MagicMock()
     provider.count_tokens.side_effect = len
+    findings = (
+        [
+            CodeSuggestion(
+                file_name="src/core/topology/suggestions.py",
+                start_line=line,
+                end_line=line,
+                side=Side.RIGHT,
+                category=category,
+                comment=comment,
+                existing_code=existing,
+                suggested_code=replacement,
+            )
+            for line, category, comment, existing, replacement in (
+                (
+                    6,
+                    SuggestionCategory.BUG,
+                    "This fails for iterators consumed by the first traversal. Materialize repositories before traversing them again.",
+                    "    parents = {name: name for name in repositories}",
+                    "    repositories = tuple(repositories)\n    parents = {name: name for name in repositories}",
+                ),
+                (
+                    20,
+                    SuggestionCategory.CLARITY,
+                    "The accumulator name is unclear. Rename it to describe the repository groups.",
+                    "    groups = {}",
+                    "    repository_groups = {}",
+                ),
+            )
+        ]
+        if with_findings
+        else []
+    )
     provider.generate_code_review.return_value = CodeReview(
         verdict=Verdict.COMMENT,
-        code_suggestions=[],
+        code_suggestions=findings,
         summary=CodeReviewSummary(
             overview="Only changes priority.",
             key_improvements=[],
@@ -95,10 +138,23 @@ def test_http_preview_overview_reads_all_pr_changes(api, monkeypatch, budget):
     diffs = "\n".join(item.get("diff", "") for item in supplied)
     assert "def suggest_groups" in diffs
     assert 'sa.Column("priority"' in diffs
-    assert (
+    summary = CodeReviewSummary.model_validate(
         response.json()["data"]["review"]["summary"]
-        == provider.generate_summary.return_value.model_dump()
     )
+    assert summary.critical_issues == [
+        finding.comment
+        for finding in findings
+        if finding.category == SuggestionCategory.BUG
+    ]
+    assert summary.minor_suggestions == [
+        finding.comment
+        for finding in findings
+        if finding.category == SuggestionCategory.CLARITY
+    ]
+    rendered = GitHub._format_summary(None, summary)
+    assert ("### 💡 Minor Suggestions" in rendered) == with_findings
+    assert ("### 🚨 Critical Issues" in rendered) == with_findings
+    assert provider.generate_summary.call_count == (3 if budget == 1 else 1)
     provider.generate_text.assert_not_called()
     if budget == 1:
         assert len([item for item in supplied if "diff" in item]) == 2
@@ -113,6 +169,6 @@ def test_empty_overview_cannot_replace_the_standing_overview():
         overview=" ", key_improvements=[], minor_suggestions=[], critical_issues=[]
     )
     with pytest.raises(ValueError, match="did not produce"):
-        summarize_pull_request(
+        summarize_changes(
             (FIXTURES / "full.diff").read_text(), provider, "sourceant/sourceant"
         )

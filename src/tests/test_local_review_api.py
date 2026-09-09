@@ -66,7 +66,7 @@ class FakeModel(LLMInterface):
         self.told.append(called)
         return self.review
 
-    def generate_summary(self, suggestions):
+    def generate_summary(self, suggestions, **kwargs):
         return self.review.summary
 
     def is_summary_different(self, summary_a, summary_b):

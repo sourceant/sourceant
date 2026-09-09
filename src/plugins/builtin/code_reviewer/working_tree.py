@@ -8,6 +8,8 @@ Folders and skills are resolved from whatever registered them.
 
 from __future__ import annotations
 
+from src.plugins.builtin.code_reviewer.overview import summarize_changes
+
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
@@ -445,6 +447,14 @@ class WorkingTreeReviews:
                 # graph is filed under the repository alone.
                 code_scope=entry.scope,
             )
+            if review is not None:
+                review.summary = summarize_changes(
+                    changes.diff,
+                    provider,
+                    repository,
+                    {"title": changes.title, "description": changes.description},
+                    review.code_suggestions or (),
+                )
         except ReviewRefused:
             raise
         except Exception as error:  # noqa: BLE001 - whatever a provider raises
