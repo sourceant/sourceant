@@ -6,11 +6,11 @@ from src.core.scope import Scope
 
 from .models import (
     KnowledgeLink,
-    KnowledgeSelection,
     KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
+    KnowledgeSelection,
     KnowledgeSubgraph,
     KnowledgeTraversal,
 )
@@ -79,11 +79,11 @@ class KnowledgeLinkWriter(Protocol):
 
 @runtime_checkable
 class KnowledgeSelector(Protocol):
-    """Which recorded knowledge a change should be judged against.
+    """Select applicable knowledge within trusted scope and a result budget.
 
-    The core answers this from the links it holds, which is exact and shallow.
-    Reading intent out of a change is a different problem, and an installation
-    that can do it registers its own selector here.
+    Importance orders applicable knowledge. It does not establish relevance,
+    truth, or permission to cross scope boundaries. Backends provide selection;
+    paginated search alone cannot guarantee bounded, globally ranked retrieval.
     """
 
     def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]: ...

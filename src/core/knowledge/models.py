@@ -1,7 +1,10 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from src.core.scope import Scope
+
+from .characteristics import KnowledgeApplicability, KnowledgeBasis, KnowledgeImportance
 
 
 @dataclass(frozen=True)
@@ -11,6 +14,28 @@ class KnowledgeObject:
     status: str
     summary: str
     properties: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        KnowledgeImportance(self.properties.get("importance", "normal"))
+        KnowledgeApplicability(self.properties.get("applicability", "targets"))
+        basis = KnowledgeBasis(self.properties.get("basis", "statement"))
+        note = self.properties.get("evidence_note", "")
+        if not isinstance(note, str):
+            raise ValueError("evidence note must be text")
+        if basis == KnowledgeBasis.ABSENCE_OBSERVATION and not note.strip():
+            raise ValueError("absence observations require an evidence note")
+
+    @property
+    def importance(self) -> KnowledgeImportance:
+        return KnowledgeImportance(self.properties.get("importance", "normal"))
+
+    @property
+    def applicability(self) -> KnowledgeApplicability:
+        return KnowledgeApplicability(self.properties.get("applicability", "targets"))
+
+    @property
+    def basis(self) -> KnowledgeBasis:
+        return KnowledgeBasis(self.properties.get("basis", "statement"))
 
 
 @dataclass(frozen=True)
