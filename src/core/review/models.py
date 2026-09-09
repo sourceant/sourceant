@@ -5,11 +5,12 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Sections:
-    """The three named slots the review prompt keeps for context."""
+    """The named slots the review prompt keeps for context."""
 
     requirements: str | None = None
     knowledge: str | None = None
     impact: str | None = None
+    related_code: str | None = None
 
 
 @dataclass(frozen=True)

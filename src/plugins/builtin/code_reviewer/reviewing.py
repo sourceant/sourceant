@@ -20,6 +20,7 @@ from src.plugins.builtin.code_reviewer.context import (
     knowledge_section,
     known_for,
     prepare_code_context,
+    related_code_section,
     requirements_section,
 )
 from src.core.review_context import LazyChangedFileCodeIndex
@@ -127,6 +128,9 @@ class CodeReviewer:
                 [knowledge_section(known), *(one.rendered() for one in told)]
             ),
             impact=impact_section(known),
+            related_code=related_code_section(
+                changes, self.services, durable_code, read_content, code_scope
+            ),
         )
 
         evidence = self._evidence(changes, durable_code, read_content, code_scope)
@@ -261,7 +265,7 @@ class CodeReviewer:
             pr_metadata=metadata,
             existing_comments=list(existing_comments or []) or None,
             previous_summary=previous_summary,
-            code_context=code_context,
+            code_context=self._joined([code_context, sections.related_code]),
             requirements=sections.requirements,
             knowledge=sections.knowledge,
             impact=sections.impact,
@@ -333,8 +337,18 @@ class CodeReviewer:
                 pr_metadata=metadata,
                 existing_comments=about_these or None,
                 previous_summary=previous_summary,
-                code_context=self._context(
-                    changes, readers, paths, read_content, file_limit, code_scope
+                code_context=self._joined(
+                    [
+                        self._context(
+                            changes,
+                            readers,
+                            paths,
+                            read_content,
+                            file_limit,
+                            code_scope,
+                        ),
+                        sections.related_code,
+                    ]
                 ),
                 requirements=sections.requirements,
                 knowledge=sections.knowledge,
