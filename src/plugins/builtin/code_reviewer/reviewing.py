@@ -8,7 +8,7 @@ change reaches and the evidence claims are checked against are assembled here.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, List, Sequence
 
 from src.config.settings import APP_ENV
@@ -20,6 +20,7 @@ from src.plugins.builtin.code_reviewer.context import (
     knowledge_section,
     known_for,
     prepare_code_context,
+    related_code_section,
     requirements_section,
 )
 from src.core.review_context import LazyChangedFileCodeIndex
@@ -31,12 +32,14 @@ from src.core.review_evidence import (
     StructuralReviewEvidenceValidator,
 )
 from src.core.scope import Scope
+from src.core.skills import Change, PhraseSkillSelector, Skill, SkillSource, SkillType
+from src.core.review.fingerprint import of_code, of_words
 from src.core.review.models import Sections, Told
 from src.core.services import ServiceRegistry, service_registry
 from src.core.settings.resolver import value_of
 from src.models.code_review import (
     CodeReview,
-    CodeReviewSummary,
+    summary_from,
     Side,
     SuggestionCategory,
     Verdict,
@@ -95,6 +98,7 @@ class CodeReviewer:
         existing_comments: Sequence[dict] | None = None,
         previous_summary: str | None = None,
         told: Sequence[Told] = (),
+        skills: Sequence[Skill] = (),
         code_scope: Scope | None = None,
         metadata: dict | None = None,
     ) -> CodeReview | None:
@@ -127,6 +131,9 @@ class CodeReviewer:
                 [knowledge_section(known), *(one.rendered() for one in told)]
             ),
             impact=impact_section(known),
+            related_code=related_code_section(
+                changes, self.services, durable_code, read_content, code_scope
+            ),
         )
 
         evidence = self._evidence(changes, durable_code, read_content, code_scope)
@@ -136,41 +143,105 @@ class CodeReviewer:
         budget = self._budget(repository)
         total = sum(provider.count_tokens(one.diff_text) for one in parsed_files)
 
-        if total <= budget:
-            logger.info("The whole change fits in one reading.")
-            return self._in_one_pass(
+        available = {skill.id: skill for skill in skills}
+        for source in self.services.contributions(SkillSource):
+            for skill in source.read():
+                available[skill.id] = skill
+        selected = PhraseSkillSelector().select(
+            tuple(available.values()),
+            Change(changes.title, changes.description, changes.paths, changes.diff),
+        )
+        guidance = [skill for skill in selected if skill.kind == SkillType.GUIDANCE]
+        if guidance:
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        *(
+                            Told(skill.name, skill.body).rendered()
+                            for skill in guidance
+                        ),
+                    ]
+                ),
+            )
+
+        def read(pass_sections):
+            if total <= budget:
+                logger.info("The whole change fits in one reading.")
+                return self._in_one_pass(
+                    provider,
+                    changes,
+                    parsed_files,
+                    line_mapper,
+                    readers,
+                    evidence,
+                    metadata,
+                    existing_comments,
+                    previous_summary,
+                    pass_sections,
+                    read_content,
+                    file_limit,
+                    code_scope,
+                )
+
+            batches = _batched(parsed_files, budget, provider.count_tokens)
+            logger.info(f"Reading {len(parsed_files)} files in {len(batches)} passes.")
+            return self._in_batches(
                 provider,
                 changes,
                 parsed_files,
+                batches,
                 line_mapper,
                 readers,
                 evidence,
                 metadata,
                 existing_comments,
                 previous_summary,
-                sections,
+                pass_sections,
                 read_content,
                 file_limit,
                 code_scope,
             )
 
-        batches = _batched(parsed_files, budget, provider.count_tokens)
-        logger.info(f"Reading {len(parsed_files)} files in {len(batches)} passes.")
-        return self._in_batches(
-            provider,
-            changes,
-            parsed_files,
-            batches,
-            line_mapper,
-            readers,
-            evidence,
-            metadata,
-            existing_comments,
-            previous_summary,
-            sections,
-            read_content,
-            file_limit,
-            code_scope,
+        answer = read(sections)
+        focused = [skill for skill in selected if skill.kind == SkillType.REVIEW_PASS]
+        combined = list(answer.code_suggestions or ())
+        for skill in focused:
+            instructions = (
+                "Review only the concern defined by this skill. Return the existing "
+                "structured review format. Report only findings supported by the "
+                "supplied source and diff, including whether an apparent conflict "
+                "has already been removed.\n\n" + skill.body
+            )
+            checked = read(
+                replace(
+                    sections,
+                    knowledge=self._joined(
+                        [
+                            sections.knowledge,
+                            Told(skill.name, instructions).rendered(),
+                        ]
+                    ),
+                )
+            )
+            combined.extend(checked.code_suggestions or ())
+        unique, seen = [], set()
+        for suggestion in combined:
+            anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
+            keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
+            if suggestion.suggested_code:
+                keys.add(
+                    (*anchor, of_code(suggestion.file_name, suggestion.suggested_code))
+                )
+            if not seen.intersection(keys):
+                unique.append(suggestion)
+                seen.update(keys)
+        return CodeReview(
+            summary=summary_from(unique, answer.summary),
+            verdict=verdict_from(unique),
+            code_suggestions=unique,
+            scores=answer.scores,
         )
 
     @staticmethod
@@ -261,7 +332,7 @@ class CodeReviewer:
             pr_metadata=metadata,
             existing_comments=list(existing_comments or []) or None,
             previous_summary=previous_summary,
-            code_context=code_context,
+            code_context=self._joined([code_context, sections.related_code]),
             requirements=sections.requirements,
             knowledge=sections.knowledge,
             impact=sections.impact,
@@ -281,11 +352,7 @@ class CodeReviewer:
         verdict = verdict_from(suggestions)
         if full_review:
             return CodeReview(
-                summary=(
-                    summary_from(suggestions, full_review.summary)
-                    if rejections
-                    else full_review.summary
-                ),
+                summary=summary_from(suggestions, full_review.summary),
                 verdict=verdict,
                 code_suggestions=suggestions,
                 scores=full_review.scores,
@@ -333,8 +400,18 @@ class CodeReviewer:
                 pr_metadata=metadata,
                 existing_comments=about_these or None,
                 previous_summary=previous_summary,
-                code_context=self._context(
-                    changes, readers, paths, read_content, file_limit, code_scope
+                code_context=self._joined(
+                    [
+                        self._context(
+                            changes,
+                            readers,
+                            paths,
+                            read_content,
+                            file_limit,
+                            code_scope,
+                        ),
+                        sections.related_code,
+                    ]
                 ),
                 requirements=sections.requirements,
                 knowledge=sections.knowledge,
@@ -357,9 +434,7 @@ class CodeReviewer:
                 )
 
         return CodeReview(
-            summary=provider.generate_summary(
-                suggestions, previous_summary=previous_summary
-            ),
+            summary=summary_from(suggestions),
             verdict=verdict_from(suggestions),
             code_suggestions=suggestions,
         )
@@ -414,40 +489,6 @@ class CodeReviewer:
                     continue
                 result.append(suggestion)
         return result
-
-
-def summary_from(
-    suggestions: List, written: CodeReviewSummary | None = None
-) -> CodeReviewSummary:
-    """The findings that survived, under whatever was written about the change.
-
-    What was written about the change is not a claim about a defect, so a
-    finding that failed its evidence check is no reason to lose it. Dropped
-    with the findings, a review of a change nobody could fault reads exactly
-    like a review that found nothing to say.
-    """
-    critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
-    critical = [
-        suggestion.comment
-        for suggestion in suggestions
-        if suggestion.category in critical_categories
-    ]
-    minor = [
-        suggestion.comment
-        for suggestion in suggestions
-        if suggestion.category not in critical_categories
-    ]
-    counted = (
-        f"Review found {len(suggestions)} actionable issue(s)."
-        if suggestions
-        else "No actionable issues were found."
-    )
-    return CodeReviewSummary(
-        overview=(written.overview if written and written.overview else counted),
-        key_improvements=list(written.key_improvements) if written else [],
-        minor_suggestions=minor,
-        critical_issues=critical,
-    )
 
 
 def verdict_from(suggestions: List) -> Verdict:

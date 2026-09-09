@@ -30,12 +30,16 @@ class LLMInterface(ABC):
 
     @abstractmethod
     def generate_summary(
-        self, suggestions: List[CodeSuggestion], as_text: bool = False
+        self,
+        suggestions: List[CodeSuggestion],
+        as_text: bool = False,
+        previous_summary: Optional[str] = None,
+        change_context: Optional[str] = None,
     ) -> Union[CodeReviewSummary, str]:
         pass
 
     @abstractmethod
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         pass
 
     @abstractmethod

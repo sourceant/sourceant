@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Mapping
 
 # What a skill is allowed to say about a change. A skill that only advises is
@@ -16,6 +17,17 @@ SEVERITIES = frozenset({ADVISORY, BLOCKING})
 # ignores what it does not recognise.
 NAMESPACE = "sourceant"
 REVIEW = "review"
+
+
+class SkillType(str, Enum):
+    GUIDANCE = "guidance"
+    REVIEW_PASS = "review-pass"
+
+
+class SkillScope(str, Enum):
+    SYSTEM = "system"
+    WORKSPACE = "workspace"
+    REPOSITORY = "repository"
 
 
 @dataclass(frozen=True)
@@ -48,6 +60,16 @@ class Skill:
     def __post_init__(self) -> None:
         if not self.id or not self.name:
             raise ValueError("a skill needs an id and a name")
+
+    @property
+    def kind(self) -> SkillType:
+        ours = self.metadata.get(NAMESPACE)
+        if isinstance(ours, Mapping):
+            try:
+                return SkillType(ours.get("type", SkillType.GUIDANCE))
+            except ValueError:
+                pass
+        return SkillType.GUIDANCE
 
     @property
     def reviews(self) -> bool | None:

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from copy import deepcopy
+from functools import wraps
+from threading import RLock
+from .batch import validate_hierarchy
 
 from src.core.scope import Scope
 
@@ -14,15 +18,62 @@ from .models import (
 )
 
 
+def _locked(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._batch_lock:
+            return method(self, *args, **kwargs)
+
+    return call
+
+
 class InMemoryTopologyRepository:
     def __init__(self) -> None:
+        self._batch_lock = RLock()
+        self._operations = {}
         self._entities: dict[tuple[Scope, str], TopologyEntity] = {}
         self._relationships: dict[tuple[Scope, str], TopologyRelationship] = {}
         self._adjacency: dict[tuple[Scope, str], set[str]] = defaultdict(set)
 
+    def apply_batch(self, scope, batch):
+        with self._batch_lock:
+            previous = self._operations.get((scope, batch.operation_id))
+            if previous is not None:
+                if previous != batch.digest:
+                    raise ValueError(
+                        "Operation ID was already used for another request"
+                    )
+                return
+            staged = InMemoryTopologyRepository()
+            staged._entities = deepcopy(self._entities)
+            staged._relationships = deepcopy(self._relationships)
+            staged._adjacency = deepcopy(self._adjacency)
+            for identifier in batch.remove_relationships:
+                staged.remove_relationship(scope, identifier)
+            for entity in batch.entities:
+                staged.put_entity(scope, entity)
+            for edge in batch.relationships:
+                staged.put_relationship(scope, edge)
+            validate_hierarchy(
+                [value for (key, _), value in staged._entities.items() if key == scope],
+                [
+                    value
+                    for (key, _), value in staged._relationships.items()
+                    if key == scope
+                ],
+            )
+            self._entities, self._relationships, self._adjacency = (
+                staged._entities,
+                staged._relationships,
+                staged._adjacency,
+            )
+            self._operations[(scope, batch.operation_id)] = batch.digest
+
+    @_locked
     def put_entity(self, scope: Scope, entity: TopologyEntity) -> None:
         self._entities[(scope, entity.id)] = entity
 
+    @_locked
     def put_relationship(
         self, scope: Scope, relationship: TopologyRelationship
     ) -> None:
@@ -43,6 +94,7 @@ class InMemoryTopologyRepository:
         self._adjacency[(scope, relationship.source_id)].add(relationship.id)
         self._adjacency[(scope, relationship.target_id)].add(relationship.id)
 
+    @_locked
     def remove_entity(self, scope: Scope, entity_id: str) -> bool:
         if (scope, entity_id) not in self._entities:
             return False
@@ -52,6 +104,7 @@ class InMemoryTopologyRepository:
         del self._entities[(scope, entity_id)]
         return True
 
+    @_locked
     def remove_relationship(self, scope: Scope, relationship_id: str) -> bool:
         relationship = self._relationships.pop((scope, relationship_id), None)
         if relationship is None:
@@ -60,6 +113,7 @@ class InMemoryTopologyRepository:
         self._adjacency[(scope, relationship.target_id)].discard(relationship.id)
         return True
 
+    @_locked
     def search(self, query: TopologyQuery) -> TopologyResult:
         matches = sorted(
             (
@@ -85,6 +139,7 @@ class InMemoryTopologyRepository:
             has_more=query.offset + len(entities) < len(matches),
         )
 
+    @_locked
     def get_relationships(
         self,
         scope: Scope,
@@ -108,6 +163,7 @@ class InMemoryTopologyRepository:
             )
         )
 
+    @_locked
     def traverse(self, traversal: TopologyTraversal) -> TopologySubgraph:
         scope = traversal.scope
         queue = deque(

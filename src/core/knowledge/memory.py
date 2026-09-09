@@ -50,6 +50,21 @@ class InMemoryKnowledgeRepository:
         self._adjacency[(scope, relationship.source_id)].add(relationship.id)
         self._adjacency[(scope, relationship.target_id)].add(relationship.id)
 
+    def remove_relationship(self, scope: Scope, relationship_id: str) -> bool:
+        previous = self._relationships.pop((scope, relationship_id), None)
+        if previous is None:
+            return False
+        self._adjacency[(scope, previous.source_id)].discard(previous.id)
+        self._adjacency[(scope, previous.target_id)].discard(previous.id)
+        return True
+
+    def remove(self, scope: Scope, knowledge_id: str) -> None:
+        previous = self._knowledge.pop((scope, knowledge_id), None)
+        if previous is not None:
+            self._by_scope_status[(scope, previous.status)].pop(knowledge_id, None)
+        for identifier in tuple(self._adjacency.get((scope, knowledge_id), ())):
+            self.remove_relationship(scope, identifier)
+
     def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]:
         candidates = chain.from_iterable(
             self._by_scope_status.get((selection.scope, status), {}).values()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 
@@ -55,3 +56,12 @@ class TokenUsage:
         if repository and owner_type != "repository":
             return (owner_type, owner_id, "repository", repository)
         return (owner_type, owner_id, None, None)
+
+
+@dataclass(frozen=True)
+class UsageQuery:
+    owner_type: str
+    owner_id: str
+    since: datetime
+    repository: str = ""
+    organization: str = ""

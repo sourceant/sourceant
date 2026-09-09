@@ -58,9 +58,7 @@ class TestHandleEventGuards:
     @patch("src.plugins.builtin.repo_manager.plugin.Config")
     def test_skips_non_github_app_events(self, mock_config, mock_github, plugin):
         event_data = {"auth_type": "oauth", "repository_event": {}, "payload": {}}
-        result = asyncio.get_event_loop().run_until_complete(
-            plugin._handle_event("pull_request.opened", event_data)
-        )
+        result = asyncio.run(plugin._handle_event("pull_request.opened", event_data))
         assert result["processed"] is False
         assert "OAuth" in result["reason"]
 
@@ -73,7 +71,7 @@ class TestHandleEventGuards:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", False
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
         assert result["processed"] is False
@@ -108,7 +106,7 @@ class TestPRDedup:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 
@@ -141,7 +139,7 @@ class TestPRDedup:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 
@@ -175,7 +173,7 @@ class TestPRDedup:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 
@@ -215,7 +213,7 @@ class TestIssueDedup:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("issues.opened", mock_issue_event_data)
             )
 
@@ -259,7 +257,7 @@ class TestAutoLabel:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 
@@ -301,7 +299,7 @@ class TestAutoLabel:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 
@@ -334,7 +332,7 @@ class TestAutoLabel:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("issues.opened", mock_issue_event_data)
             )
 
@@ -375,7 +373,7 @@ class TestDedupAndLabelTogether:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", True
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 
@@ -418,7 +416,7 @@ class TestConfigResolution:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", False
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 
@@ -450,7 +448,7 @@ class TestConfigResolution:
         with patch(
             "src.plugins.builtin.repo_manager.plugin.REPO_MANAGER_ENABLED", False
         ):
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 plugin._handle_event("pull_request.opened", mock_pr_event_data)
             )
 

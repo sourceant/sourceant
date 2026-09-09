@@ -129,6 +129,19 @@ class SQLKnowledgeRepository:
                 connection.execute(relationship_table.insert().values(**values))
             self._refresh()
 
+    def remove_relationship(self, scope: Scope, relationship_id: str) -> bool:
+        key = scopes.known_id(self._engine, scope)
+        with self._lock:
+            with self._engine.begin() as connection:
+                result = connection.execute(
+                    delete(relationship_table).where(
+                        relationship_table.c.scope_id == key,
+                        relationship_table.c.id == relationship_id,
+                    )
+                )
+            self._refresh()
+        return result.rowcount > 0
+
     def remove(self, scope: Scope, knowledge_id: str) -> None:
         key = scopes.known_id(self._engine, scope)
         with self._lock:

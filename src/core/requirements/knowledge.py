@@ -8,11 +8,22 @@ from src.core.knowledge import (
 )
 from src.core.scope import Scope
 
-from .models import CODE, KNOWLEDGE, TEST, TOPOLOGY, Requirement, RequirementLink
+from src.core.knowledge.interfaces import KnowledgeRelationshipRemover
+
+from .models import (
+    ARTIFACT,
+    CODE,
+    KNOWLEDGE,
+    TEST,
+    TOPOLOGY,
+    Requirement,
+    RequirementLink,
+)
 
 KIND = "requirement"
 
 RELATIONSHIP_TYPES = {
+    ARTIFACT: "described_by",
     CODE: "implemented_by",
     TEST: "verified_by",
     KNOWLEDGE: "relates_to",
@@ -66,8 +77,27 @@ class KnowledgeBackedRequirements:
 
     def put_link(self, scope: Scope, link: RequirementLink) -> None:
         self._requirements.put_link(scope, link)
-        if link.target_kind == KNOWLEDGE:
+        if isinstance(self._knowledge, KnowledgeRelationshipRemover):
+            self._knowledge.remove_relationship(scope, f"requirement-link:{link.id}")
+        if link.target_kind == ARTIFACT:
+            self._knowledge.put(
+                scope,
+                KnowledgeObject(
+                    id=link.target_id,
+                    kind="artifact",
+                    status="active",
+                    summary=str(link.properties.get("name") or link.target_id),
+                    properties=dict(link.properties),
+                ),
+            )
+        if link.target_kind in {KNOWLEDGE, ARTIFACT}:
             self._knowledge.put_relationship(scope, as_knowledge_relationship(link))
+
+    def remove_link(self, scope: Scope, link_id: str) -> bool:
+        removed = self._requirements.remove_link(scope, link_id)
+        if isinstance(self._knowledge, KnowledgeRelationshipRemover):
+            self._knowledge.remove_relationship(scope, f"requirement-link:{link_id}")
+        return removed
 
     def remove(self, scope: Scope, requirement_id: str) -> None:
         self._requirements.remove(scope, requirement_id)

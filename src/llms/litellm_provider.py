@@ -9,9 +9,11 @@ from src.utils.diff_parser import ParsedDiff
 from src.utils.logger import logger
 from src.models.code_review import (
     CodeReview,
-    Verdict,
+    CodeReviewFindings,
     CodeSuggestion,
     CodeReviewSummary,
+    CodeReviewOverview,
+    summary_from,
 )
 
 
@@ -169,7 +171,7 @@ class LiteLLMProvider(LLMInterface):
                     {"role": "system", "content": Prompts.REVIEW_SYSTEM_PROMPT},
                     {"role": "user", "content": user_text},
                 ],
-                response_format=CodeReview,
+                response_format=CodeReviewFindings,
             )
 
             self._spent(response, "review")
@@ -207,8 +209,9 @@ class LiteLLMProvider(LLMInterface):
         suggestions: List[CodeSuggestion],
         as_text: bool = False,
         previous_summary: Optional[str] = None,
+        change_context: Optional[str] = None,
     ) -> Union[CodeReviewSummary, str]:
-        if not suggestions:
+        if not suggestions and not change_context:
             summary = CodeReviewSummary(
                 overview="Great work! I have no suggestions for improvement.",
                 key_improvements=[],
@@ -220,11 +223,13 @@ class LiteLLMProvider(LLMInterface):
         suggestions_text = ""
         for s in suggestions:
             suggestions_text += f"- **File:** `{s.file_name}` (Line: {s.start_line})\n"
+            suggestions_text += f"  - **Category:** {s.category.value if s.category else 'Uncategorized'}\n"
             suggestions_text += f"  - **Comment:** {s.comment}\n"
 
         prompt = Prompts.SUMMARIZE_REVIEW_PROMPT.format(
             suggestions=suggestions_text,
             previous_summary=self._standing_summary(previous_summary),
+            change_context=change_context or "",
         )
 
         if as_text:
@@ -240,21 +245,22 @@ class LiteLLMProvider(LLMInterface):
             **self._credentials(),
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            response_format=CodeReviewSummary,
+            response_format=CodeReviewOverview,
         )
         self._spent(response, "summary")
-        return CodeReviewSummary.model_validate_json(
+        written = CodeReviewOverview.model_validate_json(
             response.choices[0].message.content
         )
+        return summary_from(suggestions, written)
 
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         try:
             response = litellm.completion(
                 **self._credentials(),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
-            self._spent(response, "text")
+            self._spent(response, purpose)
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"An error occurred during text generation: {e}")

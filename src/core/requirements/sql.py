@@ -44,7 +44,9 @@ requirement_table = Table(
     Column("kind", String(255), nullable=False),
     Column("status", String(255), nullable=False),
     Column("summary", Text, nullable=False),
-    Column("external_ref", String(255), nullable=False),
+    Column("priority", String(255), nullable=False, default=""),
+    Index("ix_requirements_scope_priority", "scope_id", "priority"),
+    Column("external_ref", String(500), nullable=False),
     Column("properties", Text, nullable=False),
     Index("ix_requirements_scope_external_ref", "scope_id", "external_ref"),
 )
@@ -56,7 +58,7 @@ link_table = Table(
     Column("id", String(255), primary_key=True),
     Column("requirement_id", String(255), nullable=False),
     Column("target_kind", String(64), nullable=False),
-    Column("target_id", String(255), nullable=False),
+    Column("target_id", String(500), nullable=False),
     Column("properties", Text, nullable=False),
     Index("ix_requirement_links_scope_requirement", "scope_id", "requirement_id"),
     Index("ix_requirement_links_scope_target", "scope_id", "target_id"),
@@ -88,6 +90,7 @@ class SQLRequirementsRepository:
                         kind=requirement.kind,
                         status=requirement.status,
                         summary=requirement.summary,
+                        priority=requirement.priority,
                         external_ref=requirement.external_ref,
                         properties=_encode(requirement.properties),
                     )
@@ -121,6 +124,16 @@ class SQLRequirementsRepository:
                     )
                 )
 
+    def remove_link(self, scope: Scope, link_id: str) -> bool:
+        key = scopes.known_id(self._engine, scope)
+        with self._lock, self._engine.begin() as connection:
+            result = connection.execute(
+                delete(link_table).where(
+                    link_table.c.scope_id == key, link_table.c.id == link_id
+                )
+            )
+            return result.rowcount > 0
+
     def remove(self, scope: Scope, requirement_id: str) -> None:
         key = scopes.known_id(self._engine, scope)
         with self._lock:
@@ -152,6 +165,10 @@ class SQLRequirementsRepository:
         if query.statuses:
             statement = statement.where(
                 requirement_table.c.status.in_(sorted(query.statuses)),
+            )
+        if query.priorities:
+            statement = statement.where(
+                requirement_table.c.priority.in_(sorted(query.priorities))
             )
         if query.external_refs:
             statement = statement.where(
@@ -275,6 +292,7 @@ def _requirement_from_row(row: Mapping[str, Any]) -> Requirement:
         kind=row["kind"],
         status=row["status"],
         summary=row["summary"],
+        priority=row["priority"],
         external_ref=row["external_ref"],
         properties=json.loads(row["properties"]),
     )

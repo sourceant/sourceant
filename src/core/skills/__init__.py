@@ -10,6 +10,7 @@ from .filesystem import (
     listed,
     machine_home,
     read_front_matter,
+    skill_from_markdown,
     references,
     sources_for,
 )
@@ -29,6 +30,8 @@ from .models import (
     REVIEW,
     Change,
     Skill,
+    SkillScope,
+    SkillType,
     SkillFinding,
     SkillQuery,
     SkillResult,
@@ -36,6 +39,7 @@ from .models import (
 )
 from .selection import PhraseSkillSelector
 from .writing import SkillWriteError, remove_skill, write_skill
+from .writing import _rendered as render_skill
 
 __all__ = [
     "ADVISORY",
@@ -50,6 +54,8 @@ __all__ = [
     "LLMSkillChecker",
     "PhraseSkillSelector",
     "Skill",
+    "SkillScope",
+    "SkillType",
     "SkillChecker",
     "SkillFinding",
     "SkillQuery",
@@ -71,6 +77,8 @@ __all__ = [
     "machine_home",
     "matches",
     "read_front_matter",
+    "skill_from_markdown",
+    "render_skill",
     "references",
     "repository_skills",
     "remove_skill",

@@ -101,7 +101,9 @@ def _addresses(host: str) -> list:
     return [ipaddress.ip_address(entry[4][0]) for entry in found]
 
 
-def refused(model: str, api_key: str, base_url: str = "") -> Optional[str]:
+def refused(
+    model: str, api_key: str, base_url: str = "", *, attribution: dict | None = None
+) -> Optional[str]:
     """Why this key cannot use this model, or None when it can.
 
     A provider lists what exists; an account is entitled to a subset of it. The
@@ -114,7 +116,7 @@ def refused(model: str, api_key: str, base_url: str = "") -> Optional[str]:
     if base_url:
         asked["api_base"] = base_url
     try:
-        litellm.completion(
+        response = litellm.completion(
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=1,
             timeout=PROBE_SECONDS,
@@ -124,6 +126,11 @@ def refused(model: str, api_key: str, base_url: str = "") -> Optional[str]:
             num_retries=0,
             max_retries=0,
             **asked,
+        )
+        from src.core.usage import record_completion
+
+        record_completion(
+            response, model=model, purpose="model-probe", **(attribution or {})
         )
         return None
     except Exception as error:

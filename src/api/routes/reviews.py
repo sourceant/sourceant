@@ -39,6 +39,12 @@ async def rerun_review(
     from src.models.pull_request import PullRequest
     from src.models.repository import Repository
 
+    from src.api.routes.requirements import connected_names
+    from src.core.workspace import workspace_of
+
+    workspace = workspace_of(user)
+    if data.repo not in connected_names(user):
+        raise HTTPException(403, "Repository is outside this workspace")
     github_token = user.get("github_token")
     if not github_token:
         raise HTTPException(status_code=400, detail="No GitHub token available")
@@ -61,7 +67,9 @@ async def rerun_review(
 
     head_sha = (pr.get("head") or {}).get("sha")
     if not data.post and not data.refresh:
-        cached = get_cached_review(data.repo, data.number, head_sha)
+        cached = get_cached_review(
+            data.repo, data.number, head_sha, workspace=workspace
+        )
         if cached:
             return success_response({**cached, "cached": True})
 
@@ -93,9 +101,12 @@ async def rerun_review(
         event_type=None,
         repository_full_name=data.repo,
         post=data.post,
+        workspace=workspace,
     )
     if result.get("status") == "success":
-        save_cached_review(data.repo, data.number, head_sha, result)
+        save_cached_review(
+            data.repo, data.number, head_sha, result, workspace=workspace
+        )
     return success_response({**result, "cached": False})
 
 

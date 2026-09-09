@@ -122,7 +122,7 @@ class CodeReviewScores(BaseModel):
     )
 
 
-class CodeReviewSummary(BaseModel):
+class CodeReviewOverview(BaseModel):
     """Represents a structured summary of the code review."""
 
     overview: str = Field(
@@ -133,6 +133,9 @@ class CodeReviewSummary(BaseModel):
         ...,
         description="A list of key improvements, which may contain references to paths.",
     )
+
+
+class CodeReviewSummary(CodeReviewOverview):
     minor_suggestions: List[str] = Field(
         ...,
         description="A list of minor suggestions and potential enhancements (nice to haves).",
@@ -176,4 +179,42 @@ class CodeReview(BaseModel):
     verdict: Verdict = Field(..., description="The overall verdict of the code review.")
     scores: Optional[CodeReviewScores] = Field(
         None, description="A set of scores for different aspects of the code review."
+    )
+
+
+class CodeReviewFindings(CodeReview):
+    summary: None = None
+
+
+def summary_from(
+    suggestions: List, written: CodeReviewOverview | None = None
+) -> CodeReviewSummary:
+    """The findings that survived, under whatever was written about the change.
+
+    What was written about the change is not a claim about a defect, so a
+    finding that failed its evidence check is no reason to lose it. Dropped
+    with the findings, a review of a change nobody could fault reads exactly
+    like a review that found nothing to say.
+    """
+    critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
+    critical = [
+        suggestion.comment
+        for suggestion in suggestions
+        if suggestion.category in critical_categories
+    ]
+    minor = [
+        suggestion.comment
+        for suggestion in suggestions
+        if suggestion.category not in critical_categories
+    ]
+    counted = (
+        f"Review found {len(suggestions)} actionable issue(s)."
+        if suggestions
+        else "No actionable issues were found."
+    )
+    return CodeReviewSummary(
+        overview=(written.overview if written and written.overview else counted),
+        key_improvements=list(written.key_improvements) if written else [],
+        minor_suggestions=minor,
+        critical_issues=critical,
     )

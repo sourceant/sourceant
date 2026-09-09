@@ -32,6 +32,7 @@ class Surface:
     # Whether this server can read files off a disk the caller is sitting at.
     reaches_checkout: bool = False
     transport_security: Optional[TransportSecuritySettings] = None
+    requirement_scope_resolver: Optional[Callable[[Scope], Scope]] = None
 
     def __post_init__(self) -> None:
         if bool(self.auth) != bool(self.token_verifier):
@@ -72,11 +73,13 @@ def hosted_surface(
     auth: AuthSettings,
     token_verifier: TokenVerifier,
     scope_resolver: Callable[[Scope], Scope],
+    requirement_scope_resolver: Optional[Callable[[Scope], Scope]] = None,
 ) -> Surface:
     return Surface(
         environment=HOSTED,
         auth=auth,
         token_verifier=token_verifier,
         scope_resolver=scope_resolver,
+        requirement_scope_resolver=requirement_scope_resolver,
         reaches_checkout=False,
     )

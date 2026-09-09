@@ -137,6 +137,7 @@ def check_model(
         payload.model,
         payload.api_key.get_secret_value(),
         str(payload.base_url) if payload.base_url else "",
+        attribution={"workspace": workspace_in(user), "user": str(user["user_id"])},
     )
     return success_response({"usable": why is None, "reason": why})
 

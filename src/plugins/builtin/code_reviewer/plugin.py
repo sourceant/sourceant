@@ -20,6 +20,7 @@ from src.core.review import Reviewer, WorkingTreeReviewer
 from src.plugins.builtin.code_reviewer.context import changed_files
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
 from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
+from src.plugins.builtin.code_reviewer.overview import summarize_changes
 from src.plugins.builtin.code_reviewer.tools import ReviewTools
 from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.core.scope import Scope
@@ -315,6 +316,7 @@ class CodeReviewerPlugin(BasePlugin):
         event_type: Optional[str] = None,
         repository_full_name: Optional[str] = None,
         post: bool = True,
+        workspace: str | None = None,
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -358,28 +360,30 @@ class CodeReviewerPlugin(BasePlugin):
                         )
                         raw_diff = None
 
-            # Full diff fallback
-            if not raw_diff:
-                raw_diff = github.get_diff(
-                    owner=repository.owner,
-                    repo=repository.name,
-                    pr_number=pull_request.number,
-                    base_sha=pull_request.base_sha,
-                    head_sha=pull_request.head_sha,
-                )
-
-            if not raw_diff:
+            full_diff = github.get_diff(
+                owner=repository.owner,
+                repo=repository.name,
+                pr_number=pull_request.number,
+                base_sha=pull_request.base_sha,
+                head_sha=pull_request.head_sha,
+            )
+            if not full_diff:
                 return {
                     "status": "error",
                     "message": "No diff could be computed",
                     "error_type": "no_diff",
                 }
 
+            raw_diff = raw_diff or full_diff
+
             # Parse diff and create line mapper
             parsed_files = parse_diff(raw_diff)
             line_mapper = LineMapper(parsed_files)
 
-            llm_instance = provider_for(repository=repo_full_name)
+            from src.core.workspace import workspace_holding
+
+            workspace = workspace or workspace_holding(repo_full_name)
+            llm_instance = provider_for(repository=repo_full_name, workspace=workspace)
             if llm_instance is None:
                 return {
                     "status": "error",
@@ -425,9 +429,28 @@ class CodeReviewerPlugin(BasePlugin):
                     "error_type": "no_diff",
                 }
 
+            from src.core.skills import SkillLibrary
+
+            try:
+                skill_library = self.services.resolve(SkillLibrary)
+            except LookupError:
+                review_skills = ()
+            else:
+                review_skills = skill_library.all(workspace or "", repo_full_name)
+
             final_review = CodeReviewer(services=self.services).review(
                 ChangeSet(
                     scope=Scope.from_mapping({"repository": repo_full_name}),
+                    requirement_scopes=(
+                        (
+                            Scope.from_mapping(
+                                {"workspace": workspace, "repository": repo_full_name}
+                            ),
+                            Scope.from_mapping({"workspace": workspace}),
+                        )
+                        if workspace
+                        else ()
+                    ),
                     files=changed,
                     revision=pull_request.head_sha or "",
                     base_revision=pull_request.base_sha or "",
@@ -436,6 +459,7 @@ class CodeReviewerPlugin(BasePlugin):
                     diff=raw_diff,
                 ),
                 provider=llm_instance,
+                skills=review_skills,
                 read_content=read_changed_file,
                 existing_comments=existing_comments,
                 previous_summary=previous_summary,
@@ -460,6 +484,14 @@ class CodeReviewerPlugin(BasePlugin):
                         f"Filtered {removed} duplicate suggestion(s) already posted on PR"
                     )
                     final_review.verdict = verdict_from(final_review.code_suggestions)
+
+            final_review.summary = summarize_changes(
+                full_diff,
+                llm_instance,
+                repo_full_name,
+                pr_metadata,
+                final_review.code_suggestions or (),
+            )
 
             # Apply review guards
             guards = [DuplicateApprovalGuard()]

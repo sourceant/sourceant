@@ -67,6 +67,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from src.api.routes import requirements, artifacts, usage
 from src.api.routes import code as code_endpoints
 from src.api.routes import jobs as job_endpoints
 from src.api.routes import knowledge as knowledge_endpoints
@@ -101,3 +102,10 @@ app.include_router(
 )
 if mcp_http_app is not None:
     app.mount("/mcp", mcp_http_app)
+
+
+app.include_router(
+    requirements.router, prefix="/api/requirements", tags=["requirements"]
+)
+app.include_router(artifacts.router, prefix="/api/artifacts", tags=["artifacts"])
+app.include_router(usage.router, prefix="/api/usage", tags=["usage"])

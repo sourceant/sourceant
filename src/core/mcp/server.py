@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
@@ -69,6 +68,10 @@ def create_mcp_server(
     resolve_scope = (surface.scope_resolver if surface else None) or (
         lambda scope: scope
     )
+
+    requirement_scope = (
+        surface.requirement_scope_resolver if surface else None
+    ) or resolve_scope
 
     @server.tool(
         name="search_code",
@@ -202,7 +205,7 @@ def create_mcp_server(
             ),
             requirements=(
                 RequirementQuery(
-                    active_scope,
+                    requirement_scope(Scope.from_mapping(scope)),
                     ids=frozenset(requirement_ids),
                     limit=limit,
                 )
@@ -434,7 +437,7 @@ def create_mcp_server(
     ) -> dict[str, Any]:
         repository = _require_requirements(requirements)
         item = Requirement(id, kind, status, summary, external_ref, properties or {})
-        repository.put(resolve_scope(Scope.from_mapping(scope)), item)
+        repository.put(requirement_scope(Scope.from_mapping(scope)), item)
         return asdict(item)
 
     @server.tool(
@@ -457,7 +460,7 @@ def create_mcp_server(
         link = RequirementLink(
             id, requirement_id, target_kind, target_id, properties or {}
         )
-        repository.put_link(resolve_scope(Scope.from_mapping(scope)), link)
+        repository.put_link(requirement_scope(Scope.from_mapping(scope)), link)
         return asdict(link)
 
     @server.tool(
@@ -477,7 +480,7 @@ def create_mcp_server(
         repository = _require_requirements(requirements)
         result = repository.search(
             RequirementQuery(
-                scope=resolve_scope(Scope.from_mapping(scope)),
+                scope=requirement_scope(Scope.from_mapping(scope)),
                 ids=frozenset(ids or ()),
                 kinds=frozenset(kinds or ()),
                 statuses=frozenset(statuses or ()),
@@ -504,7 +507,7 @@ def create_mcp_server(
         repository = _require_requirements(requirements)
         report = repository.coverage(
             CoverageQuery(
-                scope=resolve_scope(Scope.from_mapping(scope)),
+                scope=requirement_scope(Scope.from_mapping(scope)),
                 requirement_ids=frozenset(requirement_ids or ()),
                 paths=frozenset(paths or ()),
             )

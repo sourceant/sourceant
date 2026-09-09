@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from unittest.mock import patch, MagicMock
@@ -6,6 +7,8 @@ from unittest.mock import patch, MagicMock
 from src.plugins.builtin.code_reviewer.plugin import CodeReviewerPlugin
 from src.models.code_review import (
     CodeReview,
+    CodeReviewSummary,
+    CodeReviewOverview,
     CodeSuggestion,
     Side,
     SuggestionCategory,
@@ -51,6 +54,7 @@ def pull_request():
     pr = MagicMock(spec=PullRequest)
     pr.number = 1
     pr.title = "Test PR"
+    pr.body = None
     pr.draft = False
     pr.merged = False
     pr.base_sha = "base_sha_abc"
@@ -77,13 +81,22 @@ class TestIncrementalReview:
 
         mock_github = MagicMock()
         mock_github_cls.return_value = mock_github
-        mock_github.get_diff_between_shas.return_value = _DIFF
-        mock_github.get_diff.return_value = _DIFF
+        fixtures = Path(__file__).parents[1] / "fixtures/review-overview"
+        latest_diff = (fixtures / "latest.diff").read_text()
+        full_diff = (fixtures / "full.diff").read_text()
+        mock_github.get_diff_between_shas.return_value = latest_diff
+        mock_github.get_diff.return_value = full_diff
 
         mock_llm_instance = MagicMock()
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -94,7 +107,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -109,7 +122,22 @@ class TestIncrementalReview:
             base_sha="prev_sha_123",
             head_sha="head_sha_def",
         )
-        mock_github.get_diff.assert_not_called()
+        mock_github.get_diff.assert_called_once_with(
+            owner="test_owner",
+            repo="test_repo",
+            pr_number=1,
+            base_sha="base_sha_abc",
+            head_sha="head_sha_def",
+        )
+        assert (
+            mock_llm_instance.generate_code_review.call_args.kwargs["diff"]
+            == latest_diff
+        )
+        overview_prompt = mock_llm_instance.generate_summary.call_args.kwargs[
+            "change_context"
+        ]
+        assert "def suggest_groups" in overview_prompt
+        assert "priority" in overview_prompt
         assert result["status"] == "success"
 
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
@@ -137,6 +165,12 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -147,7 +181,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -183,6 +217,12 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -193,7 +233,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -230,6 +270,12 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.APPROVE,
@@ -240,7 +286,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -468,6 +514,12 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
         mock_llm_instance.generate_code_review.return_value = CodeReview(
             verdict=Verdict.REQUEST_CHANGES,
             code_suggestions=[
@@ -486,7 +538,7 @@ class TestPreviewResponseIsSerializable:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -536,6 +588,12 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
         mock_llm_instance.generate_code_review.return_value = CodeReview(
             verdict=Verdict.REQUEST_CHANGES,
             code_suggestions=[
@@ -569,7 +627,7 @@ class TestPreviewResponseIsSerializable:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -663,6 +721,12 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
         mock_llm_instance.generate_code_review.return_value = CodeReview(
             verdict=Verdict.COMMENT,
             code_suggestions=[],
@@ -670,7 +734,7 @@ class TestPreviewResponseIsSerializable:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -759,10 +823,32 @@ def test_a_review_records_what_it_spent_against_the_repository(
                 name="gemini/gemini-2.5-flash", token_limit=1_000_000
             ),
         ),
-        patch("litellm.completion", return_value=answered),
+        patch(
+            "litellm.completion",
+            side_effect=lambda **kwargs: (
+                answered.model_copy(
+                    update={
+                        "choices": [
+                            Choices(
+                                message=Message(
+                                    content=CodeReviewSummary(
+                                        overview="The full pull request overview.",
+                                        key_improvements=[],
+                                        minor_suggestions=[],
+                                        critical_issues=[],
+                                    ).model_dump_json()
+                                )
+                            )
+                        ]
+                    }
+                )
+                if kwargs.get("response_format") is CodeReviewOverview
+                else answered
+            ),
+        ),
         patch("src.core.usage.sql.get_engine", return_value=engine),
     ):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -776,7 +862,9 @@ def test_a_review_records_what_it_spent_against_the_repository(
     with Session(engine) as session:
         kept = session.exec(select(TokenUsageRecord)).all()
 
-    assert len(kept) == 1
+    assert len(kept) == 2
+    assert {record.purpose for record in kept} == {"review", "summary"}
+    assert all(record.owner_id == "test_owner/test_repo" for record in kept)
     assert kept[0].purpose == "review"
     assert (kept[0].owner_type, kept[0].owner_id) == (
         "repository",

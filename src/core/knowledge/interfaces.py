@@ -87,3 +87,8 @@ class KnowledgeSelector(Protocol):
     """
 
     def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]: ...
+
+
+@runtime_checkable
+class KnowledgeRelationshipRemover(Protocol):
+    def remove_relationship(self, scope: Scope, relationship_id: str) -> bool: ...

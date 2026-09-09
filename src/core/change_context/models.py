@@ -32,6 +32,7 @@ class ChangeSet:
     diff: str = ""
     depth: int = 2
     limit: int = 50
+    requirement_scopes: tuple[Scope, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.files:

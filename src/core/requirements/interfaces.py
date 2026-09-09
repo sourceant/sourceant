@@ -34,6 +34,8 @@ class RequirementsWriter(Protocol):
 
     def remove(self, scope: Scope, requirement_id: str) -> None: ...
 
+    def remove_link(self, scope: Scope, link_id: str) -> bool: ...
+
 
 @runtime_checkable
 class RequirementsRepository(RequirementsReader, RequirementsWriter, Protocol):
