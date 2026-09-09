@@ -2,7 +2,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "topology_operations_001"
-down_revision = "requirement_priority_001"
+down_revision = "cached_reviews_001"
 branch_labels = None
 depends_on = None
 

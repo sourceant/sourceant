@@ -21,6 +21,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("kind", sa.String(length=255), nullable=False),
         sa.Column("status", sa.String(length=255), nullable=False),
+        sa.Column("priority", sa.String(255), nullable=False, server_default=""),
         sa.Column("summary", sa.Text(), nullable=False),
         sa.Column("external_ref", sa.String(length=500), nullable=False),
         sa.Column("properties", sa.Text(), nullable=False),
@@ -30,6 +31,9 @@ def upgrade() -> None:
         "ix_requirements_scope_external_ref",
         "requirements",
         ["scope_id", "external_ref"],
+    )
+    op.create_index(
+        "ix_requirements_scope_priority", "requirements", ["scope_id", "priority"]
     )
     op.create_table(
         "requirement_links",
@@ -65,4 +69,5 @@ def downgrade() -> None:
     )
     op.drop_table("requirement_links")
     op.drop_index("ix_requirements_scope_external_ref", table_name="requirements")
+    op.drop_index("ix_requirements_scope_priority", table_name="requirements")
     op.drop_table("requirements")

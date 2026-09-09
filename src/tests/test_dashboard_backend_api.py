@@ -317,37 +317,6 @@ async def test_http_writes_are_visible_over_mcp_and_review_selection(api):
     assert selected.requirements[0].id == "reviewed"
 
 
-def test_priority_migration_preserves_legacy_values(tmp_path):
-    import json
-    import sqlalchemy as sa
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-    from src.migrations.versions import requirement_priority
-
-    engine = create_engine(f"sqlite:///{tmp_path / 'migration.db'}")
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "CREATE TABLE requirements (scope_id BIGINT, id VARCHAR(255), properties TEXT)"
-        )
-        connection.execute(
-            sa.text("INSERT INTO requirements VALUES (:scope, :id, :properties)"),
-            {
-                "scope": 1,
-                "id": "legacy",
-                "properties": json.dumps(
-                    {"priority": "must", "rationale": "Keep behavior"}
-                ),
-            },
-        )
-        with Operations.context(MigrationContext.configure(connection)):
-            requirement_priority.upgrade()
-        row = connection.execute(
-            sa.text("SELECT priority, properties FROM requirements")
-        ).one()
-        assert row.priority == "must"
-        assert json.loads(row.properties)["rationale"] == "Keep behavior"
-
-
 def test_suggestions_disclose_name_only_evidence():
     from src.core.topology.suggestions import suggest_groups
 

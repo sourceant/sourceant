@@ -17,8 +17,8 @@ Search accepts `ids`, `kinds`, `statuses`, `priorities`, `limit` (up to 100), an
 `offset`. Responses contain `data`; search also reports `total` and `has_more`.
 Coverage keeps `code_links` and `test_links` separate.
 
-Priority is indexed and remains available in `properties.priority`. The new
-migration preserves existing values. Other properties remain unchanged.
+Priority is indexed and remains available in `properties.priority`. The beta
+schema creates the column with the original requirements table.
 
 `POST /api/requirements/import` accepts `{ "repo": "owner/repository" }` and
 reads GitHub issues bearing `requirement` or `acceptance-criteria` labels with
