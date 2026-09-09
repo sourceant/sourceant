@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from fnmatch import fnmatchcase
+from heapq import nsmallest
 from threading import RLock
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Column,
     Engine,
@@ -13,14 +16,18 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    case,
+    cast,
     delete,
     select,
+    type_coerce,
 )
 
 from src.core import scopes
 from src.core.scope import Scope
-from src.core.sql_support import rows_for
+from src.core.sql_support import chunked, rows_for
 
+from .characteristics import KnowledgeImportance
 from .memory import InMemoryKnowledgeRepository
 from .models import (
     KnowledgeLink,
@@ -28,6 +35,7 @@ from .models import (
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
+    KnowledgeSelection,
     KnowledgeSubgraph,
     KnowledgeTraversal,
 )
@@ -75,7 +83,6 @@ class SQLKnowledgeRepository:
         if create_schema:
             scopes.ensure(engine)
             metadata.create_all(engine)
-        self._refresh()
 
     def put(self, scope: Scope, knowledge: KnowledgeObject) -> None:
         values = {
@@ -231,6 +238,96 @@ class SQLKnowledgeRepository:
                     ),
                 )
             )
+
+    def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]:
+        properties = (
+            cast(knowledge_table.c.properties, JSON)
+            if self._engine.dialect.name == "postgresql"
+            else type_coerce(knowledge_table.c.properties, JSON)
+        )
+        importance = case(
+            {level.value: level.priority for level in KnowledgeImportance},
+            value=properties["importance"].as_string(),
+            else_=KnowledgeImportance.NORMAL.priority,
+        )
+        id_order = knowledge_table.c.id.collate(
+            {"postgresql": "C", "mysql": "utf8mb4_bin"}.get(
+                self._engine.dialect.name, "BINARY"
+            )
+        )
+        selected: dict[str, KnowledgeObject] = {}
+
+        def retain(rows):
+            for row in rows:
+                item = KnowledgeObject(
+                    row["id"],
+                    row["kind"],
+                    row["status"],
+                    row["summary"],
+                    json.loads(row["properties"]),
+                )
+                selected[item.id] = item
+            best = nsmallest(
+                selection.limit,
+                selected.values(),
+                key=lambda item: (-item.importance.priority, item.id),
+            )
+            selected.clear()
+            selected.update((item.id, item) for item in best)
+
+        with self._engine.connect() as connection:
+            key = scopes.known(connection, selection.scope)
+            if key is None:
+                return ()
+            ranked = (
+                select(knowledge_table)
+                .where(
+                    knowledge_table.c.scope_id == key,
+                    knowledge_table.c.status.in_(("active", "accepted", "approved")),
+                )
+                .order_by(importance.desc(), id_order)
+            )
+            retain(
+                connection.execute(
+                    ranked.where(
+                        properties["applicability"].as_string() == "scope"
+                    ).limit(selection.limit)
+                ).mappings()
+            )
+            for paths in chunked(selection.paths):
+                linked = select(link_table.c.knowledge_id).where(
+                    link_table.c.scope_id == key,
+                    link_table.c.target_id.in_(paths),
+                )
+                retain(
+                    connection.execute(
+                        ranked.where(knowledge_table.c.id.in_(linked)).limit(
+                            selection.limit
+                        )
+                    ).mappings()
+                )
+            if selection.paths:
+                # Glob semantics stay identical across SQL dialects. Stream only
+                # path-bearing candidates in rank order and stop after enough matches.
+                candidates = ranked.where(properties["paths"].as_string().is_not(None))
+                with connection.execution_options(yield_per=100).execute(
+                    candidates
+                ) as rows:
+                    matched = 0
+                    for row in rows.mappings():
+                        patterns = json.loads(row["properties"]).get("paths", ())
+                        if any(
+                            path == pattern
+                            or path.startswith(pattern.rstrip("/") + "/")
+                            or fnmatchcase(path, pattern)
+                            for path in selection.paths
+                            for pattern in patterns
+                        ):
+                            retain((row,))
+                            matched += 1
+                            if matched == selection.limit:
+                                break
+        return tuple(selected.values())
 
     def search(self, query: KnowledgeQuery) -> KnowledgeResult:
         with self._lock:

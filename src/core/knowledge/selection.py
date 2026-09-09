@@ -3,7 +3,7 @@ from __future__ import annotations
 from fnmatch import fnmatchcase
 
 from .characteristics import KnowledgeApplicability
-from .interfaces import KnowledgeLinkReader, KnowledgeReader
+from .interfaces import KnowledgeLinkReader, KnowledgeReader, KnowledgeSelector
 from .models import KnowledgeObject, KnowledgeQuery, KnowledgeSelection
 
 
@@ -12,6 +12,8 @@ class LinkedKnowledgeSelector:
         self._knowledge = knowledge
 
     def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]:
+        if isinstance(self._knowledge, KnowledgeSelector):
+            return self._knowledge.select(selection)
         identities = frozenset()
         if selection.paths and isinstance(self._knowledge, KnowledgeLinkReader):
             identities = self._knowledge.knowledge_ids_for_paths(
