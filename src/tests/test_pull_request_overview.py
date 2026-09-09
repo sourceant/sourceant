@@ -10,7 +10,7 @@ from src.api.routes import reviews
 from src.core.plugins.plugin_registry import plugin_registry
 from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
 from src.plugins.builtin.code_reviewer import plugin as reviewer_plugin
-from src.plugins.builtin.code_reviewer.overview import pull_request_overview
+from src.plugins.builtin.code_reviewer.overview import summarize_pull_request
 from src.tests.test_dashboard_backend_api import api as api
 
 FIXTURES = Path(__file__).parent / "fixtures/review-overview"
@@ -51,11 +51,11 @@ def test_http_preview_overview_reads_all_pr_changes(api, monkeypatch, budget):
             critical_issues=[],
         ),
     )
-    provider.generate_summary.return_value = (
-        provider.generate_code_review.return_value.summary
-    )
-    provider.generate_text.return_value = (
-        "Adds system suggestions and requirement priority."
+    provider.generate_summary.return_value = CodeReviewSummary(
+        overview="Adds system suggestions and requirement priority.",
+        key_improvements=["Groups related repositories."],
+        minor_suggestions=[],
+        critical_issues=[],
     )
     monkeypatch.setattr(reviewer_plugin, "provider_for", lambda **kwargs: provider)
     monkeypatch.setattr(
@@ -88,16 +88,18 @@ def test_http_preview_overview_reads_all_pr_changes(api, monkeypatch, budget):
         == "Adds system suggestions and requirement priority."
     )
     supplied = [
-        json.loads(call.args[0].split("\n\n", 1)[1])
-        for call in provider.generate_text.call_args_list
+        json.loads(call.kwargs["change_context"])
+        for call in provider.generate_summary.call_args_list
+        if "change_context" in call.kwargs
     ]
     diffs = "\n".join(item.get("diff", "") for item in supplied)
     assert "def suggest_groups" in diffs
     assert 'sa.Column("priority"' in diffs
-    assert all(
-        call.kwargs["purpose"] == "summary"
-        for call in provider.generate_text.call_args_list
+    assert (
+        response.json()["data"]["review"]["summary"]
+        == provider.generate_summary.return_value.model_dump()
     )
+    provider.generate_text.assert_not_called()
     if budget == 1:
         assert len([item for item in supplied if "diff" in item]) == 2
         assert len(supplied[-1]["parts_of_the_same_pull_request"]) == 2
@@ -107,8 +109,10 @@ def test_http_preview_overview_reads_all_pr_changes(api, monkeypatch, budget):
 def test_empty_overview_cannot_replace_the_standing_overview():
     provider = MagicMock()
     provider.count_tokens.return_value = 1
-    provider.generate_text.return_value = " "
+    provider.generate_summary.return_value = CodeReviewSummary(
+        overview=" ", key_improvements=[], minor_suggestions=[], critical_issues=[]
+    )
     with pytest.raises(ValueError, match="did not produce"):
-        pull_request_overview(
+        summarize_pull_request(
             (FIXTURES / "full.diff").read_text(), provider, "sourceant/sourceant"
         )

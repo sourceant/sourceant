@@ -317,3 +317,31 @@ class TestDecoupledDiffInReview:
         messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
         user_content = messages[1]["content"]
         assert "__old hunk__" in user_content or "__new hunk__" in user_content
+
+
+def test_summary_with_full_change_context_uses_the_existing_format(
+    provider, mock_completion
+):
+    from pathlib import Path
+
+    full_diff = (
+        Path(__file__).parents[1] / "fixtures/review-overview/full.diff"
+    ).read_text()
+    summary = CodeReviewSummary(
+        overview="Adds system suggestions and requirement priority.",
+        key_improvements=["Groups related repositories."],
+        minor_suggestions=[],
+        critical_issues=[],
+    )
+    mock_completion.completion.return_value = _make_completion_response(
+        summary.model_dump_json()
+    )
+    result = provider.generate_summary([], change_context=full_diff)
+    assert result == summary
+    call = mock_completion.completion.call_args.kwargs
+    assert call["response_format"] is CodeReviewSummary
+    prompt = call["messages"][0]["content"]
+    assert full_diff in prompt
+    assert "**JSON format**" in prompt
+    assert "**GitHub-flavored Markdown**" in prompt
+    assert '"key_improvements"' in prompt

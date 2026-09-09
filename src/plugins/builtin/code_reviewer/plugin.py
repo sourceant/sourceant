@@ -20,8 +20,7 @@ from src.core.review import Reviewer, WorkingTreeReviewer
 from src.plugins.builtin.code_reviewer.context import changed_files
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
 from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
-from src.plugins.builtin.code_reviewer.overview import pull_request_overview
-from src.models.code_review import CodeReviewSummary
+from src.plugins.builtin.code_reviewer.overview import summarize_pull_request
 from src.plugins.builtin.code_reviewer.tools import ReviewTools
 from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.core.scope import Scope
@@ -464,19 +463,6 @@ class CodeReviewerPlugin(BasePlugin):
                     "error_type": "no_diff",
                 }
 
-            overview = pull_request_overview(
-                full_diff, llm_instance, repo_full_name, pr_metadata
-            )
-            if final_review.summary is None:
-                final_review.summary = CodeReviewSummary(
-                    overview=overview,
-                    key_improvements=[],
-                    minor_suggestions=[],
-                    critical_issues=[],
-                )
-            else:
-                final_review.summary.overview = overview
-
             if existing_comments and final_review.code_suggestions:
                 before_count = len(final_review.code_suggestions)
                 final_review.code_suggestions = self._filter_duplicate_suggestions(
@@ -488,6 +474,14 @@ class CodeReviewerPlugin(BasePlugin):
                         f"Filtered {removed} duplicate suggestion(s) already posted on PR"
                     )
                     final_review.verdict = verdict_from(final_review.code_suggestions)
+
+            final_review.summary = summarize_pull_request(
+                full_diff,
+                llm_instance,
+                repo_full_name,
+                pr_metadata,
+                final_review.code_suggestions or (),
+            )
 
             # Apply review guards
             guards = [DuplicateApprovalGuard()]

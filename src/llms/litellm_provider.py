@@ -206,8 +206,9 @@ class LiteLLMProvider(LLMInterface):
         suggestions: List[CodeSuggestion],
         as_text: bool = False,
         previous_summary: Optional[str] = None,
+        change_context: Optional[str] = None,
     ) -> Union[CodeReviewSummary, str]:
-        if not suggestions:
+        if not suggestions and not change_context:
             summary = CodeReviewSummary(
                 overview="Great work! I have no suggestions for improvement.",
                 key_improvements=[],
@@ -224,6 +225,7 @@ class LiteLLMProvider(LLMInterface):
         prompt = Prompts.SUMMARIZE_REVIEW_PROMPT.format(
             suggestions=suggestions_text,
             previous_summary=self._standing_summary(previous_summary),
+            change_context=change_context or "",
         )
 
         if as_text:

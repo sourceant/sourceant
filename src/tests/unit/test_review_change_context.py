@@ -21,7 +21,7 @@ from src.core.knowledge import (
 )
 from src.core.scope import Scope
 from src.core.services import ServiceRegistry
-from src.models.code_review import CodeReview, Verdict
+from src.models.code_review import CodeReview, CodeReviewSummary, Verdict
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.plugins.builtin.code_reviewer.plugin import CodeReviewerPlugin
@@ -115,6 +115,12 @@ def _run(plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_s
     mock_llm.return_value = instance
     instance.count_tokens.return_value = 100
     instance.token_limit = 1000000
+    instance.generate_summary.return_value = CodeReviewSummary(
+        overview="Adds bounded retries.",
+        key_improvements=[],
+        minor_suggestions=[],
+        critical_issues=[],
+    )
     instance.generate_code_review.return_value = CodeReview(
         verdict=Verdict.COMMENT, code_suggestions=[]
     )
@@ -487,6 +493,12 @@ def test_a_change_with_nothing_readable_still_reviews(
     mock_llm.return_value = instance
     instance.count_tokens.return_value = 10
     instance.token_limit = 1000000
+    instance.generate_summary.return_value = CodeReviewSummary(
+        overview="Adds bounded retries.",
+        key_improvements=[],
+        minor_suggestions=[],
+        critical_issues=[],
+    )
     instance.generate_code_review.return_value = CodeReview(
         verdict=Verdict.COMMENT, code_suggestions=[]
     )

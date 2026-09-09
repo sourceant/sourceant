@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 from src.plugins.builtin.code_reviewer.plugin import CodeReviewerPlugin
 from src.models.code_review import (
     CodeReview,
+    CodeReviewSummary,
     CodeSuggestion,
     Side,
     SuggestionCategory,
@@ -88,7 +89,12 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.generate_text.return_value = "The full pull request overview."
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -125,7 +131,9 @@ class TestIncrementalReview:
             mock_llm_instance.generate_code_review.call_args.kwargs["diff"]
             == latest_diff
         )
-        overview_prompt = mock_llm_instance.generate_text.call_args.args[0]
+        overview_prompt = mock_llm_instance.generate_summary.call_args.kwargs[
+            "change_context"
+        ]
         assert "def suggest_groups" in overview_prompt
         assert "priority" in overview_prompt
         assert result["status"] == "success"
@@ -155,7 +163,12 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.generate_text.return_value = "The full pull request overview."
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -202,7 +215,12 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.generate_text.return_value = "The full pull request overview."
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.COMMENT,
@@ -250,7 +268,12 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.generate_text.return_value = "The full pull request overview."
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
 
         review = CodeReview(
             verdict=Verdict.APPROVE,
@@ -489,7 +512,12 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.generate_text.return_value = "The full pull request overview."
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
         mock_llm_instance.generate_code_review.return_value = CodeReview(
             verdict=Verdict.REQUEST_CHANGES,
             code_suggestions=[
@@ -558,7 +586,12 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.generate_text.return_value = "The full pull request overview."
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
         mock_llm_instance.generate_code_review.return_value = CodeReview(
             verdict=Verdict.REQUEST_CHANGES,
             code_suggestions=[
@@ -686,7 +719,12 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
-        mock_llm_instance.generate_text.return_value = "The full pull request overview."
+        mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
         mock_llm_instance.generate_code_review.return_value = CodeReview(
             verdict=Verdict.COMMENT,
             code_suggestions=[],
@@ -783,7 +821,29 @@ def test_a_review_records_what_it_spent_against_the_repository(
                 name="gemini/gemini-2.5-flash", token_limit=1_000_000
             ),
         ),
-        patch("litellm.completion", return_value=answered),
+        patch(
+            "litellm.completion",
+            side_effect=lambda **kwargs: (
+                answered.model_copy(
+                    update={
+                        "choices": [
+                            Choices(
+                                message=Message(
+                                    content=CodeReviewSummary(
+                                        overview="The full pull request overview.",
+                                        key_improvements=[],
+                                        minor_suggestions=[],
+                                        critical_issues=[],
+                                    ).model_dump_json()
+                                )
+                            )
+                        ]
+                    }
+                )
+                if kwargs.get("response_format") is CodeReviewSummary
+                else answered
+            ),
+        ),
         patch("src.core.usage.sql.get_engine", return_value=engine),
     ):
         result = asyncio.run(
