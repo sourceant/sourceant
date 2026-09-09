@@ -53,6 +53,7 @@ def pull_request():
     pr = MagicMock(spec=PullRequest)
     pr.number = 1
     pr.title = "Test PR"
+    pr.body = None
     pr.draft = False
     pr.merged = False
     pr.base_sha = "base_sha_abc"

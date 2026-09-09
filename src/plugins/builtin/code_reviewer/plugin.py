@@ -429,6 +429,15 @@ class CodeReviewerPlugin(BasePlugin):
                     "error_type": "no_diff",
                 }
 
+            from src.core.skills import SkillLibrary
+
+            try:
+                skill_library = self.services.resolve(SkillLibrary)
+            except LookupError:
+                review_skills = ()
+            else:
+                review_skills = skill_library.all(workspace or "", repo_full_name)
+
             final_review = CodeReviewer(services=self.services).review(
                 ChangeSet(
                     scope=Scope.from_mapping({"repository": repo_full_name}),
@@ -450,6 +459,7 @@ class CodeReviewerPlugin(BasePlugin):
                     diff=raw_diff,
                 ),
                 provider=llm_instance,
+                skills=review_skills,
                 read_content=read_changed_file,
                 existing_comments=existing_comments,
                 previous_summary=previous_summary,

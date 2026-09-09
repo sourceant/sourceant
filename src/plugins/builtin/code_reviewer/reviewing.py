@@ -8,7 +8,7 @@ change reaches and the evidence claims are checked against are assembled here.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, List, Sequence
 
 from src.config.settings import APP_ENV
@@ -32,6 +32,8 @@ from src.core.review_evidence import (
     StructuralReviewEvidenceValidator,
 )
 from src.core.scope import Scope
+from src.core.skills import Change, PhraseSkillSelector, Skill, SkillSource, SkillType
+from src.core.review.fingerprint import of_code, of_words
 from src.core.review.models import Sections, Told
 from src.core.services import ServiceRegistry, service_registry
 from src.core.settings.resolver import value_of
@@ -96,6 +98,7 @@ class CodeReviewer:
         existing_comments: Sequence[dict] | None = None,
         previous_summary: str | None = None,
         told: Sequence[Told] = (),
+        skills: Sequence[Skill] = (),
         code_scope: Scope | None = None,
         metadata: dict | None = None,
     ) -> CodeReview | None:
@@ -140,41 +143,107 @@ class CodeReviewer:
         budget = self._budget(repository)
         total = sum(provider.count_tokens(one.diff_text) for one in parsed_files)
 
-        if total <= budget:
-            logger.info("The whole change fits in one reading.")
-            return self._in_one_pass(
+        available = {skill.id: skill for skill in skills}
+        for source in self.services.contributions(SkillSource):
+            for skill in source.read():
+                available[skill.id] = skill
+        selected = PhraseSkillSelector().select(
+            tuple(available.values()),
+            Change(changes.title, changes.description, changes.paths, changes.diff),
+        )
+        guidance = [skill for skill in selected if skill.kind == SkillType.GUIDANCE]
+        if guidance:
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        *(
+                            Told(skill.name, skill.body).rendered()
+                            for skill in guidance
+                        ),
+                    ]
+                ),
+            )
+
+        def read(pass_sections):
+            if total <= budget:
+                logger.info("The whole change fits in one reading.")
+                return self._in_one_pass(
+                    provider,
+                    changes,
+                    parsed_files,
+                    line_mapper,
+                    readers,
+                    evidence,
+                    metadata,
+                    existing_comments,
+                    previous_summary,
+                    pass_sections,
+                    read_content,
+                    file_limit,
+                    code_scope,
+                )
+
+            batches = _batched(parsed_files, budget, provider.count_tokens)
+            logger.info(f"Reading {len(parsed_files)} files in {len(batches)} passes.")
+            return self._in_batches(
                 provider,
                 changes,
                 parsed_files,
+                batches,
                 line_mapper,
                 readers,
                 evidence,
                 metadata,
                 existing_comments,
                 previous_summary,
-                sections,
+                pass_sections,
                 read_content,
                 file_limit,
                 code_scope,
             )
 
-        batches = _batched(parsed_files, budget, provider.count_tokens)
-        logger.info(f"Reading {len(parsed_files)} files in {len(batches)} passes.")
-        return self._in_batches(
-            provider,
-            changes,
-            parsed_files,
-            batches,
-            line_mapper,
-            readers,
-            evidence,
-            metadata,
-            existing_comments,
-            previous_summary,
-            sections,
-            read_content,
-            file_limit,
-            code_scope,
+        answer = read(sections)
+        focused = [skill for skill in selected if skill.kind == SkillType.REVIEW_PASS]
+        if not focused:
+            return answer
+        combined = list(answer.code_suggestions or ())
+        for skill in focused:
+            instructions = (
+                "Review only the concern defined by this skill. Return the existing "
+                "structured review format. Report only findings supported by the "
+                "supplied source and diff, including whether an apparent conflict "
+                "has already been removed.\n\n" + skill.body
+            )
+            checked = read(
+                replace(
+                    sections,
+                    knowledge=self._joined(
+                        [
+                            sections.knowledge,
+                            Told(skill.name, instructions).rendered(),
+                        ]
+                    ),
+                )
+            )
+            combined.extend(checked.code_suggestions or ())
+        unique, seen = [], set()
+        for suggestion in combined:
+            anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
+            keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
+            if suggestion.suggested_code:
+                keys.add(
+                    (*anchor, of_code(suggestion.file_name, suggestion.suggested_code))
+                )
+            if not seen.intersection(keys):
+                unique.append(suggestion)
+                seen.update(keys)
+        return CodeReview(
+            summary=summary_from(unique, answer.summary),
+            verdict=verdict_from(unique),
+            code_suggestions=unique,
+            scores=answer.scores,
         )
 
     @staticmethod

@@ -40,7 +40,7 @@ from src.core.skills import (
 from src.core.environment import LOCAL
 from src.core.repositories import registry
 from src.core.services import ServiceRegistry, service_registry
-from src.core.skills import SkillLibrary
+from src.core.skills import SkillLibrary, SkillType
 
 MAX_SKILLS = 5
 MAX_KNOWLEDGE = 25
@@ -124,10 +124,7 @@ def on_disk(root: Path):
 
 
 def told(recorded, skills) -> tuple[Told, ...]:
-    """Recorded decisions and skills, as prose under headings.
-
-    The reviewer has no vocabulary for a skill, so each arrives as text.
-    """
+    """Recorded decisions and skills, as prose under headings."""
     sections: list[Told] = []
 
     if recorded:
@@ -437,7 +434,13 @@ class WorkingTreeReviews:
                 replace(changes, title=changes.title or f"Work on {where['branch']}"),
                 provider=provider,
                 read_content=on_disk(root),
-                told=told(recorded, chosen),
+                told=told(
+                    recorded,
+                    [skill for skill in chosen if skill.kind == SkillType.GUIDANCE],
+                ),
+                skills=tuple(
+                    skill for skill in chosen if skill.kind == SkillType.REVIEW_PASS
+                ),
                 # A checkout is indexed as it is, not as a commit, so the
                 # graph is filed under the repository alone.
                 code_scope=entry.scope,
@@ -462,16 +465,19 @@ class WorkingTreeReviews:
         )
         checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
 
-        whole = split(chosen)
-        answer["skills"] = [skill_payload(skill) for skill in whole]
+        whole = split([skill for skill in chosen if skill.kind == SkillType.GUIDANCE])
+        focused = [skill for skill in chosen if skill.kind == SkillType.REVIEW_PASS]
+        answer["skills"] = [skill_payload(skill) for skill in (*whole, *focused)]
 
         # Concurrent: asked in turn, five rules is a minute, which is long
         # enough for something in between to time out.
         try:
-            with ThreadPoolExecutor(max_workers=len(whole)) as pool:
-                verdicts = list(
-                    pool.map(lambda skill: checker.check(skill, subject), whole)
-                )
+            verdicts = []
+            if whole:
+                with ThreadPoolExecutor(max_workers=len(whole)) as pool:
+                    verdicts = list(
+                        pool.map(lambda skill: checker.check(skill, subject), whole)
+                    )
         except Exception as error:  # noqa: BLE001 - whatever a provider raises
             raise ReviewRefused(502, str(error)) from error
 

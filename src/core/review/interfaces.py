@@ -4,6 +4,7 @@ from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 
 from src.core.change_context import ChangeSet
 from src.core.scope import Scope
+from src.core.skills.models import Skill
 from src.models.code_review import CodeReview
 
 from .findings import FindingQuery, FindingResult, ReviewFinding
@@ -34,6 +35,7 @@ class Reviewer(Protocol):
         existing_comments: Sequence[dict] | None = None,
         previous_summary: str | None = None,
         told: Sequence[Told] = (),
+        skills: Sequence[Skill] = (),
         code_scope: Scope | None = None,
         metadata: dict | None = None,
     ) -> CodeReview | None: ...

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from .matching import any_match
-from .models import Change, Skill
+from .models import Change, Skill, SkillScope
 
 # Letters rather than ASCII: skills and the prose around code are written
 # in whatever language somebody works in, and matching on A to Z splits
@@ -166,7 +166,10 @@ class PhraseSkillSelector:
             (stated if said else maybe).append(skill)
 
         # What somebody stated comes first and is not competed with.
-        chosen = sorted(stated, key=lambda skill: skill.id)[:limit]
+        chosen = sorted(
+            stated,
+            key=lambda skill: (skill.origin != SkillScope.SYSTEM.value, skill.id),
+        )[:limit]
         room = limit - len(chosen)
         if room <= 0 or not subject:
             return tuple(chosen)

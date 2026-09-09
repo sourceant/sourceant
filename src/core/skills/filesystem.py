@@ -130,6 +130,25 @@ def listed(value: Any) -> tuple[str, ...]:
     return ()
 
 
+def skill_from_markdown(
+    text: str, identifier: str, *, origin: str = "", path: str = ""
+) -> Skill:
+    fields, body = read_front_matter(text)
+    metadata = fields.get("metadata")
+    return Skill(
+        id=identifier,
+        name=str(fields.get("name") or identifier.rsplit("/", 1)[-1]),
+        description=str(fields.get("description") or ""),
+        body=body[:MAX_BODY],
+        path=path,
+        origin=origin,
+        paths=listed(fields.get("paths")),
+        metadata=metadata if isinstance(metadata, dict) else {},
+        automatic=not bool(fields.get("disable-model-invocation")),
+        properties={key: value for key, value in fields.items() if key not in KNOWN},
+    )
+
+
 @dataclass(frozen=True)
 class DirectorySkillSource:
     """Every skill kept under one directory.
@@ -205,25 +224,9 @@ class DirectorySkillSource:
             except (OSError, UnicodeDecodeError):
                 continue
 
-            fields, body = read_front_matter(text)
-            identifier = relative.as_posix()
-            metadata = fields.get("metadata")
             skills.append(
-                Skill(
-                    id=identifier,
-                    name=str(fields.get("name") or relative.name),
-                    description=str(fields.get("description") or ""),
-                    body=body[:MAX_BODY],
-                    path=str(manifest),
-                    origin=self.origin,
-                    paths=listed(fields.get("paths")),
-                    metadata=metadata if isinstance(metadata, dict) else {},
-                    # The format's own way of saying only a person may start
-                    # this. Nothing here chooses it on anybody's behalf.
-                    automatic=not bool(fields.get("disable-model-invocation")),
-                    properties={
-                        key: value for key, value in fields.items() if key not in KNOWN
-                    },
+                skill_from_markdown(
+                    text, relative.as_posix(), origin=self.origin, path=str(manifest)
                 )
             )
         return tuple(skills)
