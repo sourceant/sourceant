@@ -1,12 +1,17 @@
 from collections import defaultdict, deque
+from fnmatch import fnmatchcase
+from heapq import nsmallest
+from itertools import chain
 
 from src.core.scope import Scope
 
+from .characteristics import KnowledgeApplicability
 from .models import (
     KnowledgeObject,
     KnowledgeQuery,
     KnowledgeRelationship,
     KnowledgeResult,
+    KnowledgeSelection,
     KnowledgeSubgraph,
     KnowledgeTraversal,
 )
@@ -15,11 +20,18 @@ from .models import (
 class InMemoryKnowledgeRepository:
     def __init__(self) -> None:
         self._knowledge: dict[tuple[Scope, str], KnowledgeObject] = {}
+        self._by_scope_status: dict[tuple[Scope, str], dict[str, KnowledgeObject]] = (
+            defaultdict(dict)
+        )
         self._relationships: dict[tuple[Scope, str], KnowledgeRelationship] = {}
         self._adjacency: dict[tuple[Scope, str], set[str]] = defaultdict(set)
 
     def put(self, scope: Scope, knowledge: KnowledgeObject) -> None:
+        previous = self._knowledge.get((scope, knowledge.id))
+        if previous is not None:
+            self._by_scope_status[(scope, previous.status)].pop(knowledge.id, None)
         self._knowledge[(scope, knowledge.id)] = knowledge
+        self._by_scope_status[(scope, knowledge.status)][knowledge.id] = knowledge
 
     def put_relationship(
         self, scope: Scope, relationship: KnowledgeRelationship
@@ -37,6 +49,31 @@ class InMemoryKnowledgeRepository:
         self._relationships[key] = relationship
         self._adjacency[(scope, relationship.source_id)].add(relationship.id)
         self._adjacency[(scope, relationship.target_id)].add(relationship.id)
+
+    def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]:
+        candidates = chain.from_iterable(
+            self._by_scope_status.get((selection.scope, status), {}).values()
+            for status in ("active", "accepted", "approved")
+        )
+        applicable = (
+            item
+            for item in candidates
+            if item.applicability == KnowledgeApplicability.SCOPE
+            or any(
+                path == pattern
+                or path.startswith(pattern.rstrip("/") + "/")
+                or fnmatchcase(path, pattern)
+                for path in selection.paths
+                for pattern in item.properties.get("paths", ())
+            )
+        )
+        return tuple(
+            nsmallest(
+                selection.limit,
+                applicable,
+                key=lambda item: (-item.importance.priority, item.id),
+            )
+        )
 
     def search(self, query: KnowledgeQuery) -> KnowledgeResult:
         matches = [

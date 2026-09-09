@@ -1,50 +1,14 @@
 from __future__ import annotations
 
-from fnmatch import fnmatchcase
-
-from .characteristics import KnowledgeApplicability
-from .interfaces import KnowledgeLinkReader, KnowledgeReader, KnowledgeSelector
-from .models import KnowledgeObject, KnowledgeQuery, KnowledgeSelection
+from .interfaces import KnowledgeSelector
+from .models import KnowledgeObject, KnowledgeSelection
 
 
 class LinkedKnowledgeSelector:
-    def __init__(self, knowledge: KnowledgeReader) -> None:
+    def __init__(self, knowledge: KnowledgeSelector) -> None:
+        if not isinstance(knowledge, KnowledgeSelector):
+            raise TypeError("Knowledge selection requires a KnowledgeSelector backend")
         self._knowledge = knowledge
 
     def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]:
-        if isinstance(self._knowledge, KnowledgeSelector):
-            return self._knowledge.select(selection)
-        identities = frozenset()
-        if selection.paths and isinstance(self._knowledge, KnowledgeLinkReader):
-            identities = self._knowledge.knowledge_ids_for_paths(
-                selection.scope, frozenset(selection.paths)
-            )
-        selected = []
-        offset = 0
-        while True:
-            page = self._knowledge.search(
-                KnowledgeQuery(
-                    scope=selection.scope,
-                    statuses=frozenset({"active", "accepted", "approved"}),
-                    limit=100,
-                    offset=offset,
-                )
-            )
-            for item in page.items:
-                applicable = item.applicability == KnowledgeApplicability.SCOPE
-                linked = item.id in identities
-                paths = item.properties.get("paths", ())
-                matched = any(
-                    path == pattern
-                    or path.startswith(pattern.rstrip("/") + "/")
-                    or fnmatchcase(path, pattern)
-                    for path in selection.paths
-                    for pattern in paths
-                )
-                if applicable or linked or matched:
-                    selected.append(item)
-            if not page.has_more or not page.items:
-                break
-            offset += len(page.items)
-        selected.sort(key=lambda item: (-item.importance.priority, item.id))
-        return tuple(selected[: selection.limit])
+        return self._knowledge.select(selection)

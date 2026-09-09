@@ -82,7 +82,8 @@ class KnowledgeSelector(Protocol):
     """Select applicable knowledge within trusted scope and a result budget.
 
     Importance orders applicable knowledge. It does not establish relevance,
-    truth, or permission to cross scope boundaries.
+    truth, or permission to cross scope boundaries. Backends provide selection;
+    paginated search alone cannot guarantee bounded, globally ranked retrieval.
     """
 
     def select(self, selection: KnowledgeSelection) -> tuple[KnowledgeObject, ...]: ...

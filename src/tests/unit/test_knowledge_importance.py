@@ -289,3 +289,120 @@ def test_sql_selection_breaks_importance_ties_by_id(selection_store):
         )
     selected = LinkedKnowledgeSelector(store).select(KnowledgeSelection(scope, limit=2))
     assert [item.id for item in selected] == ["B", "Z"]
+
+
+def test_memory_selection_uses_one_scoped_pass_and_tracks_replacements(monkeypatch):
+    from src.core.knowledge import InMemoryKnowledgeRepository
+
+    store = InMemoryKnowledgeRepository()
+    scope = Scope.from_mapping({"repository": "one"})
+    other = Scope.from_mapping({"repository": "two"})
+    for i in range(105):
+        store.put(
+            scope,
+            KnowledgeObject(
+                str(i),
+                "rule",
+                "active",
+                "Low",
+                {
+                    "applicability": "scope",
+                    "importance": "low",
+                },
+            ),
+        )
+        store.put(
+            other,
+            KnowledgeObject(
+                str(i),
+                "rule",
+                "active",
+                "Outside",
+                {
+                    "applicability": "scope",
+                    "importance": "critical",
+                },
+            ),
+        )
+    store.put(
+        scope,
+        KnowledgeObject(
+            "important",
+            "rule",
+            "active",
+            "High",
+            {
+                "paths": ["src/**"],
+                "importance": "critical",
+            },
+        ),
+    )
+
+    def no_paged_search(query):
+        pytest.fail("Selection must not repeatedly page through search")
+
+    monkeypatch.setattr(store, "search", no_paged_search)
+    selection = KnowledgeSelection(scope, ("src/app.py",), limit=1)
+    assert LinkedKnowledgeSelector(store).select(selection)[0].id == "important"
+    store.put(
+        scope,
+        KnowledgeObject(
+            "important",
+            "rule",
+            "rejected",
+            "Invalid",
+            {
+                "paths": ["src/**"],
+                "importance": "critical",
+            },
+        ),
+    )
+    assert LinkedKnowledgeSelector(store).select(selection)[0].id == "0"
+
+
+def test_selection_requires_a_backend_selector():
+    class SearchOnly:
+        def search(self, query):
+            pytest.fail("Search is not a selection capability")
+
+    with pytest.raises(TypeError, match="KnowledgeSelector"):
+        LinkedKnowledgeSelector(SearchOnly())
+
+
+def test_sql_glob_matches_replace_an_already_full_selection(selection_store):
+    _, store, scope = selection_store
+    for i in range(2):
+        store.put(
+            scope,
+            KnowledgeObject(
+                f"low-{i}",
+                "rule",
+                "active",
+                "Low",
+                {
+                    "applicability": "scope",
+                    "importance": "low",
+                },
+            ),
+        )
+        store.put(
+            scope,
+            KnowledgeObject(
+                f"critical-{i}",
+                "rule",
+                "active",
+                "High",
+                {
+                    "paths": ["src/**"],
+                    "importance": "critical",
+                },
+            ),
+        )
+    selected = LinkedKnowledgeSelector(store).select(
+        KnowledgeSelection(
+            scope,
+            ("src/app.py",),
+            limit=2,
+        )
+    )
+    assert [item.id for item in selected] == ["critical-0", "critical-1"]
