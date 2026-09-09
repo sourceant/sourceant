@@ -315,6 +315,7 @@ class CodeReviewerPlugin(BasePlugin):
         event_type: Optional[str] = None,
         repository_full_name: Optional[str] = None,
         post: bool = True,
+        workspace: str | None = None,
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -379,7 +380,10 @@ class CodeReviewerPlugin(BasePlugin):
             parsed_files = parse_diff(raw_diff)
             line_mapper = LineMapper(parsed_files)
 
-            llm_instance = provider_for(repository=repo_full_name)
+            from src.core.workspace import workspace_holding
+
+            workspace = workspace or workspace_holding(repo_full_name)
+            llm_instance = provider_for(repository=repo_full_name, workspace=workspace)
             if llm_instance is None:
                 return {
                     "status": "error",
@@ -428,6 +432,16 @@ class CodeReviewerPlugin(BasePlugin):
             final_review = CodeReviewer(services=self.services).review(
                 ChangeSet(
                     scope=Scope.from_mapping({"repository": repo_full_name}),
+                    requirement_scopes=(
+                        (
+                            Scope.from_mapping(
+                                {"workspace": workspace, "repository": repo_full_name}
+                            ),
+                            Scope.from_mapping({"workspace": workspace}),
+                        )
+                        if workspace
+                        else ()
+                    ),
                     files=changed,
                     revision=pull_request.head_sha or "",
                     base_revision=pull_request.base_sha or "",

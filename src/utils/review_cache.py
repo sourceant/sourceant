@@ -12,6 +12,7 @@ get the saving.
 """
 
 import json
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -49,8 +50,15 @@ def _redis():
     return _client
 
 
-def _key(repo_full_name: str, pr_number: int, head_sha: str) -> str:
-    return f"review:{repo_full_name}:{pr_number}:{head_sha}"
+def _key(
+    repo_full_name: str, pr_number: int, head_sha: str, workspace: str | None = None
+) -> str:
+    prefix = (
+        f"workspace:{hashlib.sha256(workspace.encode()).hexdigest()}:"
+        if workspace
+        else ""
+    )
+    return f"{prefix}review:{repo_full_name}:{pr_number}:{head_sha}"
 
 
 def _table():
@@ -58,11 +66,15 @@ def _table():
 
 
 def get_review(
-    repo_full_name: str, pr_number: int, head_sha: Optional[str]
+    repo_full_name: str,
+    pr_number: int,
+    head_sha: Optional[str],
+    *,
+    workspace: str | None = None,
 ) -> Optional[Dict[str, Any]]:
     if not head_sha:
         return None
-    key = _key(repo_full_name, pr_number, head_sha)
+    key = _key(repo_full_name, pr_number, head_sha, workspace)
     if REVIEW_CACHE == "redis":
         return _read_from_redis(key)
     return _read_from_database(key)
@@ -130,6 +142,8 @@ def save_review(
     pr_number: int,
     head_sha: Optional[str],
     payload: Dict[str, Any],
+    *,
+    workspace: str | None = None,
 ) -> None:
     if not head_sha:
         return
@@ -137,7 +151,7 @@ def save_review(
     # Reuse turned off entirely means nothing is worth storing.
     if ttl <= 0:
         return
-    key = _key(repo_full_name, pr_number, head_sha)
+    key = _key(repo_full_name, pr_number, head_sha, workspace)
     if REVIEW_CACHE == "redis":
         _write_to_redis(key, ttl, payload)
         return

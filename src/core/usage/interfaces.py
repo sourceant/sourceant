@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .models import TokenUsage
+from .models import TokenUsage, UsageQuery
 
 
 @runtime_checkable
@@ -14,3 +14,8 @@ class UsageRecorder(Protocol):
     """
 
     def record(self, usage: TokenUsage) -> None: ...
+
+
+@runtime_checkable
+class UsageReader(Protocol):
+    def read(self, query: UsageQuery) -> dict: ...

@@ -101,15 +101,20 @@ class DefaultChangeContextResolver:
         if self._requirements is None:
             return ()
         try:
-            return self._requirements.select(
-                RequirementSelection(
-                    scope=changes.scope,
-                    paths=changes.paths,
-                    title=changes.title,
-                    description=changes.description,
-                    diff=changes.diff,
+            found = []
+            for scope in changes.requirement_scopes or (changes.scope,):
+                found.extend(
+                    self._requirements.select(
+                        RequirementSelection(
+                            scope=scope,
+                            paths=changes.paths,
+                            title=changes.title,
+                            description=changes.description,
+                            diff=changes.diff,
+                        )
+                    )
                 )
-            )
+            return tuple(found[:20])
         except SQLAlchemyError:
             return ()
 

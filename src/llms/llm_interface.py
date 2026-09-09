@@ -35,7 +35,7 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         pass
 
     @abstractmethod

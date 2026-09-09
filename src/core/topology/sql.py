@@ -62,6 +62,15 @@ relationship_table = Table(
 )
 
 
+operation_table = Table(
+    "topology_operations",
+    metadata,
+    Column("scope_id", BigInteger, primary_key=True),
+    Column("id", String(255), primary_key=True),
+    Column("digest", String(64), nullable=False),
+)
+
+
 class SQLTopologyRepository:
     def __init__(self, engine: Engine, *, create_schema: bool = False) -> None:
         self._engine = engine
@@ -70,6 +79,102 @@ class SQLTopologyRepository:
         if create_schema:
             scopes.ensure(engine)
             metadata.create_all(engine)
+        self._refresh()
+
+    def apply_batch(self, scope, batch):
+        from .batch import validate_hierarchy
+
+        with self._lock, self._engine.begin() as connection:
+            scope_id = scopes.remembered(connection, scope)
+            connection.execute(
+                select(scopes.scope_table)
+                .where(scopes.scope_table.c.id == scope_id)
+                .with_for_update()
+            ).first()
+            previous = connection.execute(
+                select(operation_table.c.digest).where(
+                    operation_table.c.scope_id == scope_id,
+                    operation_table.c.id == batch.operation_id,
+                )
+            ).scalar_one_or_none()
+            if previous is not None:
+                if previous != batch.digest:
+                    raise ValueError(
+                        "Operation ID was already used for another request"
+                    )
+                return
+            for identifier in batch.remove_relationships:
+                connection.execute(
+                    delete(relationship_table).where(
+                        relationship_table.c.scope_id == scope_id,
+                        relationship_table.c.id == identifier,
+                    )
+                )
+            for entity in batch.entities:
+                connection.execute(
+                    delete(entity_table).where(
+                        entity_table.c.scope_id == scope_id,
+                        entity_table.c.id == entity.id,
+                    )
+                )
+                connection.execute(
+                    entity_table.insert().values(
+                        scope_id=scope_id,
+                        id=entity.id,
+                        kind=entity.kind,
+                        status=entity.status,
+                        confidence=entity.confidence,
+                        stale=entity.stale,
+                        properties=self._encode(entity.properties),
+                        evidence=self._encode_evidence(entity.evidence),
+                    )
+                )
+            ids = set(
+                connection.execute(
+                    select(entity_table.c.id).where(entity_table.c.scope_id == scope_id)
+                ).scalars()
+            )
+            for edge in batch.relationships:
+                if edge.source_id not in ids or edge.target_id not in ids:
+                    raise ValueError(
+                        "Relationship endpoints must exist in the same scope"
+                    )
+                connection.execute(
+                    delete(relationship_table).where(
+                        relationship_table.c.scope_id == scope_id,
+                        relationship_table.c.id == edge.id,
+                    )
+                )
+                connection.execute(
+                    relationship_table.insert().values(
+                        scope_id=scope_id,
+                        id=edge.id,
+                        source_id=edge.source_id,
+                        target_id=edge.target_id,
+                        type=edge.type,
+                        status=edge.status,
+                        confidence=edge.confidence,
+                        stale=edge.stale,
+                        properties=self._encode(edge.properties),
+                        evidence=self._encode_evidence(edge.evidence),
+                    )
+                )
+            edges = [
+                TopologyRelationship(
+                    row.id, row.source_id, row.target_id, row.type, row.status
+                )
+                for row in connection.execute(
+                    select(relationship_table).where(
+                        relationship_table.c.scope_id == scope_id
+                    )
+                )
+            ]
+            validate_hierarchy((), edges)
+            connection.execute(
+                operation_table.insert().values(
+                    scope_id=scope_id, id=batch.operation_id, digest=batch.digest
+                )
+            )
         self._refresh()
 
     def put_entity(self, scope: Scope, entity: TopologyEntity) -> None:

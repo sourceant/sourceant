@@ -119,7 +119,7 @@ def _run(plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_s
         verdict=Verdict.COMMENT, code_suggestions=[]
     )
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         plugin.generate_review(
             repository,
             pull_request,
@@ -491,7 +491,7 @@ def test_a_change_with_nothing_readable_still_reviews(
         verdict=Verdict.COMMENT, code_suggestions=[]
     )
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         plugin.generate_review(
             repository,
             pull_request,

@@ -6,9 +6,10 @@ from __future__ import annotations
 from src.core.services import ServiceRegistry, service_registry
 from src.utils.logger import logger
 
-from .interfaces import UsageRecorder
-from .models import TokenUsage
+from .interfaces import UsageRecorder, UsageReader
+from .models import TokenUsage, UsageQuery
 from .sql import SQLUsageRecorder
+from .reading import SQLUsageReader
 
 _core = SQLUsageRecorder(create_schema=True)
 
@@ -94,6 +95,9 @@ def record_completion(
 
 __all__ = [
     "TokenUsage",
+    "UsageQuery",
+    "UsageReader",
+    "SQLUsageReader",
     "SQLUsageRecorder",
     "UsageRecorder",
     "record",

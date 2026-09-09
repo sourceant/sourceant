@@ -29,6 +29,7 @@ from src.core.knowledge import (
 from src.core.mcp import Surface, create_mcp_server, hosted_surface, personal_surface
 from src.core.mcp.auth import (
     EntitledScopeResolver,
+    RequirementScopeResolver,
     SourceAntTokenVerifier,
     connected_repository_entitlement,
 )
@@ -123,6 +124,9 @@ def _hosted(issuer: str) -> Surface:
             issuer=values["issuer"],
             audience=values["audience"],
             required_scopes=required_scopes,
+        ),
+        requirement_scope_resolver=RequirementScopeResolver(
+            connected_repository_entitlement(get_engine())
         ),
         scope_resolver=EntitledScopeResolver(
             connected_repository_entitlement(get_engine())

@@ -94,7 +94,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -147,7 +147,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -193,7 +193,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -240,7 +240,7 @@ class TestIncrementalReview:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -486,7 +486,7 @@ class TestPreviewResponseIsSerializable:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -569,7 +569,7 @@ class TestPreviewResponseIsSerializable:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -670,7 +670,7 @@ class TestPreviewResponseIsSerializable:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,
@@ -762,7 +762,7 @@ def test_a_review_records_what_it_spent_against_the_repository(
         patch("litellm.completion", return_value=answered),
         patch("src.core.usage.sql.get_engine", return_value=engine),
     ):
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             plugin.generate_review(
                 repository,
                 pull_request,

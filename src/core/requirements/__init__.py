@@ -8,6 +8,7 @@ from .interfaces import (
 )
 from .knowledge import KnowledgeBackedRequirements, as_knowledge, knowledge_id
 from .models import (
+    ARTIFACT,
     CODE,
     KNOWLEDGE,
     TARGET_KINDS,
@@ -26,6 +27,7 @@ from .selection import LinkedRequirementSelector
 from .sql import SQLRequirementsRepository
 
 __all__ = [
+    "ARTIFACT",
     "CODE",
     "DEFAULT_LABELS",
     "KNOWLEDGE",

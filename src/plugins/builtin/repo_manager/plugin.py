@@ -268,7 +268,9 @@ class RepoManagerPlugin(BasePlugin):
                 existing_prs=existing_text,
             )
 
-            response = llm().generate_text(prompt)
+            response = llm(repository=f"{owner}/{repo}").generate_text(
+                prompt, purpose="repository-management"
+            )
             duplicates = self._parse_dedup_response(response)
 
             if duplicates:
@@ -315,7 +317,9 @@ class RepoManagerPlugin(BasePlugin):
                 existing_issues=existing_text,
             )
 
-            response = llm().generate_text(prompt)
+            response = llm(repository=f"{owner}/{repo}").generate_text(
+                prompt, purpose="repository-management"
+            )
             duplicates = self._parse_dedup_response(response)
 
             if duplicates:
@@ -366,7 +370,9 @@ class RepoManagerPlugin(BasePlugin):
                 available_labels=available_labels,
             )
 
-            response = llm().generate_text(prompt)
+            response = llm(repository=f"{owner}/{repo}").generate_text(
+                prompt, purpose="repository-management"
+            )
             suggested_labels = self._parse_label_response(response, label_names)
 
             if suggested_labels:
@@ -421,7 +427,7 @@ class RepoManagerPlugin(BasePlugin):
         for number in duplicates:
             lines.append(f"- #{number}")
 
-        lines.append(f"\nPlease review and close if this is a duplicate.")
+        lines.append("\nPlease review and close if this is a duplicate.")
         return "\n".join(lines)
 
     async def _post_or_update_comment(

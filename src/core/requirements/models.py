@@ -9,7 +9,8 @@ CODE = "code"
 TEST = "test"
 KNOWLEDGE = "knowledge"
 TOPOLOGY = "topology"
-TARGET_KINDS = frozenset({CODE, TEST, KNOWLEDGE, TOPOLOGY})
+ARTIFACT = "artifact"
+TARGET_KINDS = frozenset({CODE, TEST, KNOWLEDGE, TOPOLOGY, ARTIFACT})
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,17 @@ class Requirement:
     external_ref: str = ""
     properties: Mapping[str, Any] = field(default_factory=dict)
 
+    priority: str = ""
+
     def __post_init__(self) -> None:
+        priority = self.priority or str(self.properties.get("priority") or "")
+        if len(priority) > 255:
+            raise ValueError("priority must contain at most 255 characters")
+        object.__setattr__(self, "priority", priority)
+        if priority:
+            object.__setattr__(
+                self, "properties", {**self.properties, "priority": priority}
+            )
         if not self.id:
             raise ValueError("requirement id must not be empty")
         if not self.kind:
@@ -56,6 +67,7 @@ class RequirementQuery:
     external_refs: frozenset[str] = field(default_factory=frozenset)
     limit: int = 50
     offset: int = 0
+    priorities: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         if not 1 <= self.limit <= 100:
@@ -67,6 +79,7 @@ class RequirementQuery:
             ("kinds", self.kinds),
             ("statuses", self.statuses),
             ("external_refs", self.external_refs),
+            ("priorities", self.priorities),
         ):
             if len(values) > 100:
                 raise ValueError(f"{name} must contain at most 100 values")

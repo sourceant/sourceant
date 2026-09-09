@@ -96,7 +96,7 @@ class InferAssetInput(BaseModel):
 
 
 class InferInput(BaseModel):
-    assets: list[InferAssetInput] = Field(default_factory=list)
+    assets: list[InferAssetInput] = Field(default_factory=list, max_length=100)
     # Proposals are recorded as pending by default so they can be looked at in
     # place. Asking for a preview leaves the graph untouched.
     persist: bool = True
@@ -202,6 +202,26 @@ async def infer_relationships(
     github_token = user.get("github_token")
     if not github_token:
         raise HTTPException(status_code=400, detail="No GitHub token available")
+    from src.api.routes.requirements import connected_names
+
+    allowed = set(connected_names(user))
+    if any(asset.repository not in allowed for asset in payload.assets):
+        raise HTTPException(403, "Repository is outside this workspace")
+    if payload.assets:
+        existing = repository.search(
+            TopologyQuery(
+                scope=scope,
+                ids=frozenset(asset.entity_id for asset in payload.assets),
+                limit=100,
+            )
+        )
+        mapped = {
+            entity.id: entity.properties.get("name") for entity in existing.entities
+        }
+        if any(
+            mapped.get(asset.entity_id) != asset.repository for asset in payload.assets
+        ):
+            raise HTTPException(422, "Assets must name repositories in this workspace")
     if not payload.assets:
         return success_response({"proposed": [], "read": 0})
 
@@ -212,7 +232,26 @@ async def infer_relationships(
         ],
         github_token,
     )
-    proposals = infer_dependencies(manifests)
+    from dataclasses import replace
+
+    systems = (
+        {entity.id: entity.properties.get("system_id") for entity in existing.entities}
+        if payload.assets
+        else {}
+    )
+    proposals = tuple(
+        replace(
+            proposal,
+            properties={
+                **proposal.properties,
+                "system_id": systems.get(proposal.source_id),
+                "provenance": {
+                    "evidence": [asdict(item) for item in proposal.evidence]
+                },
+            },
+        )
+        for proposal in infer_dependencies(manifests)
+    )
 
     if payload.persist:
         for proposal in proposals:
@@ -283,7 +322,7 @@ async def search_entities(
         relationships = repository.get_relationships(
             scope, frozenset(entity.id for entity in result.entities)
         )
-    except ValueError as error:
+    except ValueError:
         logger.exception("Topology store unreachable during search")
         raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
     return success_response(
@@ -320,7 +359,129 @@ async def traverse(
         raise HTTPException(status_code=422, detail=str(error))
     try:
         result = repository.traverse(traversal)
-    except ValueError as error:
+    except ValueError:
         logger.exception("Topology store unreachable during traversal")
         raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
     return success_response(asdict(result))
+
+
+class BatchInput(BaseModel):
+    operation_id: str = Field(min_length=1, max_length=255)
+    entities: list[EntityInput] = Field(default_factory=list, max_length=200)
+    relationships: list[RelationshipInput] = Field(default_factory=list, max_length=400)
+    remove_relationships: list[str] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/batch")
+def apply_batch(
+    payload: BatchInput,
+    scope: Scope = Depends(get_scope),
+    repository=Depends(get_topology_repository),
+):
+    from src.core.topology.batch import TopologyBatch, TopologyBatchWriter
+
+    if not isinstance(repository, TopologyBatchWriter):
+        raise HTTPException(503, "Topology store does not support atomic writes")
+    try:
+        batch = TopologyBatch(
+            payload.operation_id,
+            tuple(
+                TopologyEntity(
+                    item.id,
+                    item.kind,
+                    item.status,
+                    item.confidence,
+                    item.stale,
+                    item.properties,
+                    _evidence(item.evidence),
+                )
+                for item in payload.entities
+            ),
+            tuple(
+                TopologyRelationship(
+                    item.id,
+                    item.source_id,
+                    item.target_id,
+                    item.type,
+                    item.status,
+                    item.confidence,
+                    item.stale,
+                    item.properties,
+                    _evidence(item.evidence),
+                )
+                for item in payload.relationships
+            ),
+            tuple(payload.remove_relationships),
+        )
+        repository.apply_batch(scope, batch)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    return success_response({"operation_id": payload.operation_id, "completed": True})
+
+
+class SuggestInput(BaseModel):
+    repositories: list[str] = Field(default_factory=list, max_length=100)
+
+
+@router.post("/suggest")
+async def suggest(
+    payload: SuggestInput,
+    user: dict = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
+    repository=Depends(get_topology_repository),
+):
+    from dataclasses import replace
+    from src.api.routes.requirements import connected_names
+    from src.core.topology.suggestions import suggest_groups
+
+    names = sorted(set(payload.repositories))
+    if not set(names).issubset(connected_names(user)):
+        raise HTTPException(403, "Repository is outside this workspace")
+    token = user.get("github_token")
+    if not token:
+        raise HTTPException(400, "No GitHub token available")
+    manifests = await read_manifests(
+        [{"entity_id": name, "repository": name} for name in names], token
+    )
+    entities = []
+    offset = 0
+    while True:
+        page = repository.search(TopologyQuery(scope=scope, limit=100, offset=offset))
+        entities.extend(page.entities)
+        if not page.has_more:
+            break
+        offset += 100
+    mapping = {}
+    for entity in entities:
+        candidates = {
+            item.source
+            for item in entity.evidence
+            if item.kind == "code_index" and item.source in names
+        }
+        if entity.kind == "repository" and entity.properties.get("name") in names:
+            candidates.add(entity.properties["name"])
+        if len(candidates) == 1:
+            mapping[entity.id] = candidates.pop()
+    edges = repository.get_relationships(scope, frozenset(mapping)) if mapping else ()
+    graph_edges = tuple(
+        replace(
+            edge,
+            source_id=mapping[edge.source_id],
+            target_id=mapping[edge.target_id],
+            properties={**edge.properties, "inferred_from": "code_graph"},
+        )
+        for edge in edges
+        if edge.source_id in mapping
+        and edge.target_id in mapping
+        and mapping[edge.source_id] != mapping[edge.target_id]
+        and edge.type != "contains"
+        and not edge.stale
+        and edge.evidence
+        and (edge.properties.get("provenance") or {}).get("read_from") == "code_index"
+    )
+    return success_response(
+        {
+            "groups": suggest_groups(names, manifests, graph_edges),
+            "read": len(manifests),
+        }
+    )

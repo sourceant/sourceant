@@ -142,3 +142,21 @@ def connected_repository_entitlement(engine) -> Callable[[str, str], str | None]
         return row.provider if row else None
 
     return entitled
+
+
+class RequirementScopeResolver:
+    def __init__(self, entitlement):
+        self._entitlement = entitlement
+
+    def __call__(self, scope: Scope) -> Scope:
+        token = get_access_token()
+        workspace = workspace_in(token.claims or {}) if token else None
+        if not workspace:
+            raise ValueError("this token names no workspace")
+        values = {"workspace": workspace}
+        repository = scope.get("repository")
+        if repository:
+            if self._entitlement(workspace, repository) is None:
+                raise ValueError("Repository is outside this workspace")
+            values["repository"] = repository
+        return Scope.from_mapping(values)

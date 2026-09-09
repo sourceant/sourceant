@@ -9,7 +9,6 @@ from src.utils.diff_parser import ParsedDiff
 from src.utils.logger import logger
 from src.models.code_review import (
     CodeReview,
-    Verdict,
     CodeSuggestion,
     CodeReviewSummary,
 )
@@ -247,14 +246,14 @@ class LiteLLMProvider(LLMInterface):
             response.choices[0].message.content
         )
 
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         try:
             response = litellm.completion(
                 **self._credentials(),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
-            self._spent(response, "text")
+            self._spent(response, purpose)
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"An error occurred during text generation: {e}")
