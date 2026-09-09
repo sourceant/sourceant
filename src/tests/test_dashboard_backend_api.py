@@ -1,5 +1,6 @@
 import hashlib
 import time
+from pathlib import Path
 
 import jwt
 import pytest
@@ -130,6 +131,38 @@ def test_artifact_roundtrip_limits_and_scoping(api, monkeypatch):
         ).status_code
         == 413
     )
+    assert (
+        len(client.get("/api/artifacts/requirements", headers=headers()).json()["data"])
+        == 1
+    )
+
+
+def test_word_document_roundtrip_and_unsupported_type(api):
+    client, headers, _, _ = api
+    body = (Path(__file__).parent / "fixtures/documents/test.docx").read_bytes()
+    media_type = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    response = client.post(
+        "/api/artifacts/requirements/word",
+        content=body,
+        headers={**headers(), "Content-Type": media_type},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    downloaded = client.get(
+        "/api/artifacts/requirements/word/" + data["key"]["version"], headers=headers()
+    )
+    assert downloaded.content == body
+    assert downloaded.headers["content-type"] == media_type
+    assert downloaded.headers["x-content-type-options"] == "nosniff"
+    assert "attachment" in downloaded.headers["content-disposition"]
+    rejected = client.post(
+        "/api/artifacts/requirements/unknown",
+        content=body,
+        headers={**headers(), "Content-Type": "application/octet-stream"},
+    )
+    assert rejected.status_code == 415
     assert (
         len(client.get("/api/artifacts/requirements", headers=headers()).json()["data"])
         == 1

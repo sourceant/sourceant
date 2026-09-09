@@ -37,7 +37,12 @@ contract. Use namespace `requirements` for requirement attachments.
 
 Set `ARTIFACT_MAX_UPLOAD_BYTES` on both gateway and core. The default is
 2,000,000 bytes. PHP and the reverse proxy must also permit the configured
-request size. PDF, PNG, JPEG, WebP, plain text, and Markdown are accepted.
+request size. Accepted formats are PDF; Word, Excel, and PowerPoint (legacy and
+Open XML); OpenDocument text, spreadsheets, and presentations; RTF; plain text,
+Markdown, CSV, TSV, JSON, XML, and YAML; PNG, JPEG, WebP, GIF, BMP, TIFF, and SVG;
+and ZIP, gzip, tar, and 7z archives. The gateway detects the media type from the
+file content; core owns the upload allowlist. Files are stored and downloaded
+without parsing or extracting their contents.
 Oversized uploads are rejected before writing to the artifact store.
 
 The response contains metadata, a digest, a version, and an opaque `reference`.
