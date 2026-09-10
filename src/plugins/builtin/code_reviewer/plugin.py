@@ -451,6 +451,11 @@ class CodeReviewerPlugin(BasePlugin):
                         if workspace
                         else ()
                     ),
+                    impact_scope=(
+                        Scope.from_mapping({"workspace": workspace})
+                        if workspace
+                        else None
+                    ),
                     files=changed,
                     revision=pull_request.head_sha or "",
                     base_revision=pull_request.base_sha or "",

@@ -125,7 +125,7 @@ class DefaultChangeContextResolver:
         try:
             return self._impact.resolve(
                 ChangeImpactRequest(
-                    scope=changes.scope,
+                    scope=changes.impact_scope or changes.scope,
                     changes=references[:100],
                     depth=changes.depth,
                 )
