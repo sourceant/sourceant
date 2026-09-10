@@ -144,6 +144,26 @@ class ParsedDiff:
 
         return False
 
+    def contains_suggested_lines(self, suggested_code: str) -> bool:
+        """Whether this diff already adds exactly what is being suggested.
+
+        A suggestion is a replacement, so one whose every line is already among
+        the lines the diff adds proposes the code that is there. That holds
+        whatever it claims the existing code is, which is why this asks the
+        diff rather than comparing the two halves of the suggestion against
+        each other.
+        """
+        suggested_lines = self._normalize_snippet(suggested_code)
+        if not suggested_lines:
+            return False
+        return any(
+            self._contains_lines(
+                [line.value.strip() for line in hunk if line.is_added],
+                suggested_lines,
+            )
+            for hunk in self._patched_file
+        )
+
     @staticmethod
     def _normalize_snippet(code: str) -> List[str]:
         lines = []

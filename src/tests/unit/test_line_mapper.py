@@ -288,3 +288,76 @@ class TestLineMapper:
         assert mapping["line"] == expected_line
         assert mapping["side"] == "RIGHT"
         assert "position" in mapping
+
+    def test_rejects_a_comment_that_quotes_the_added_lines_back(self):
+        """A pure addition has nothing removed, so a replacement never matches."""
+        diff = """\
+--- a/src/memory/initializer.py
++++ b/src/memory/initializer.py
+@@ -138,2 +138,3 @@
+                 repository,
+             )
++        self._indexed()
+"""
+        mapper = LineMapper(parse_diff(diff))
+        suggestion = CodeSuggestion(
+            file_name="src/memory/initializer.py",
+            start_line=141,
+            end_line=141,
+            side=Side.RIGHT,
+            comment=(
+                "The initializer now calls self._indexed() to trigger the "
+                "on_indexed callback, drafting the system after indexing."
+            ),
+            category=SuggestionCategory.REFACTOR,
+            existing_code="            )",
+            suggested_code="        self._indexed()",
+        )
+
+        assert mapper.suggestion_replays_diff(suggestion)
+
+    def test_rejects_a_restatement_even_with_no_existing_code(self):
+        diff = """\
+--- a/src/memory/initializer.py
++++ b/src/memory/initializer.py
+@@ -138,2 +138,3 @@
+                 repository,
+             )
++        self._indexed()
+"""
+        mapper = LineMapper(parse_diff(diff))
+        suggestion = CodeSuggestion(
+            file_name="src/memory/initializer.py",
+            start_line=141,
+            end_line=141,
+            side=Side.RIGHT,
+            comment="Calls the indexed hook.",
+            category=SuggestionCategory.REFACTOR,
+            existing_code="",
+            suggested_code="        self._indexed()",
+        )
+
+        assert mapper.suggestion_replays_diff(suggestion)
+
+    def test_keeps_a_suggestion_the_diff_does_not_already_add(self):
+        diff = """\
+--- a/src/memory/initializer.py
++++ b/src/memory/initializer.py
+@@ -138,2 +138,3 @@
+                 repository,
+             )
++        self._indexed()
+"""
+        mapper = LineMapper(parse_diff(diff))
+        suggestion = CodeSuggestion(
+            file_name="src/memory/initializer.py",
+            start_line=141,
+            end_line=141,
+            side=Side.RIGHT,
+            comment="Draw the system before the knowledge pass can fail.",
+            category=SuggestionCategory.BUG,
+            existing_code="        self._indexed()",
+            suggested_code="        self._indexed(force=True)",
+        )
+
+        assert not mapper.suggestion_replays_diff(suggestion)
