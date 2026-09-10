@@ -130,8 +130,18 @@ class CodeReviewOverview(BaseModel):
         description="A high-level overview of the code changes and the review.",
     )
     key_improvements: List[str] = Field(
-        ...,
-        description="A list of key improvements, which may contain references to paths.",
+        default_factory=list,
+        description=(
+            "A list of key improvements, which may contain references to "
+            "paths. Leave empty if none."
+        ),
+    )
+    regressions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "A list of regressions, which may contain references to paths. "
+            "Leave empty if none."
+        ),
     )
 
 
@@ -215,6 +225,7 @@ def summary_from(
     return CodeReviewSummary(
         overview=(written.overview if written and written.overview else counted),
         key_improvements=list(written.key_improvements) if written else [],
+        regressions=list(written.regressions) if written else [],
         minor_suggestions=minor,
         critical_issues=critical,
     )
