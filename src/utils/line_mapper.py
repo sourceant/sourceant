@@ -41,11 +41,13 @@ class LineMapper:
             normalized_file_name = normalized_file_name[2:]
 
         parsed_file = self.file_map.get(normalized_file_name)
-        if (
-            not parsed_file
-            or not suggestion.existing_code
-            or not suggestion.suggested_code
-        ):
+        if not parsed_file or not suggestion.suggested_code:
+            return False
+
+        if parsed_file.contains_suggested_lines(suggestion.suggested_code):
+            return True
+
+        if not suggestion.existing_code:
             return False
 
         return parsed_file.contains_applied_replacement(
