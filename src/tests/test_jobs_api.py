@@ -71,6 +71,19 @@ class TestReadingWork(BaseTestCase):
 
         assert listed.status_code == 400
 
+    def test_waiting_work_is_filtered_by_kind_like_the_rest(self, monkeypatch):
+        monkeypatch.setenv("JWT_SECRET", "jobs-api-secret")
+        job_store().enqueue(JobRequest(lane=BATCH, kind="test.wanted").for_(OURS))
+        job_store().enqueue(JobRequest(lane=BATCH, kind="test.other").for_(OURS))
+
+        listed = self.client.get(
+            "/api/jobs?lane=batch&waiting_only=true&kind=test.wanted",
+            headers=_as(OURS),
+        )
+
+        assert listed.status_code == 200
+        assert {job["kind"] for job in listed.json()["data"]} == {"test.wanted"}
+
 
 class TestReadingABatch(BaseTestCase):
 

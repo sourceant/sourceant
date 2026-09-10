@@ -147,13 +147,20 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         key="initialization.candidate_limit",
         label="Maximum knowledge proposals",
-        description="Maximum proposals considered during repository initialization.",
+        description=(
+            "The most proposals one reading of a repository may offer, counted "
+            "across the whole run rather than each part it is read in. A reading "
+            "normally stops earlier, when a part of the repository stops "
+            "yielding claims worth keeping; this is the backstop for one that "
+            "does not. A reading stopped by this can be continued from where it "
+            "left off."
+        ),
         type=ConfigType.INT,
-        default=20,
+        default=35,
         minimum=1,
         maximum=50,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="KnowledgeObject initialization",
+        group="Initialization",
     ),
     Setting(
         key="initialization.evidence_limit",
@@ -164,7 +171,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1,
         maximum=100,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="KnowledgeObject initialization",
+        group="Initialization",
     ),
     Setting(
         key="initialization.evidence_character_limit",
@@ -176,7 +183,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1_000,
         maximum=100_000,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="KnowledgeObject initialization",
+        group="Initialization",
     ),
     Setting(
         key="initialization.community_limit",
@@ -192,7 +199,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1,
         maximum=100,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="KnowledgeObject initialization",
+        group="Initialization",
     ),
     Setting(
         key="initialization.excluded_paths",
@@ -205,7 +212,7 @@ SETTINGS: tuple[Setting, ...] = (
         type=ConfigType.JSON,
         default=(".github", ".codebase-memory"),
         scopes=(REPOSITORY, ORGANIZATION),
-        group="KnowledgeObject initialization",
+        group="Initialization",
     ),
     Setting(
         key="initialization.investigation_limit",
@@ -216,7 +223,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=0,
         maximum=50,
         scopes=(REPOSITORY, ORGANIZATION),
-        group="KnowledgeObject initialization",
+        group="Initialization",
     ),
     # Whose model, and whose bill. Reading a repository is deterministic and
     # needs none of this; anything that proposes rather than reads does, and it

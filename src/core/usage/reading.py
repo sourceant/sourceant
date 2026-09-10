@@ -43,6 +43,12 @@ class SQLUsageReader:
             ),
         ]
 
+        # Postgres answers SUM() over a bigint with a Decimal, which the JSON
+        # encoder refuses. Every one of these is a count or a whole number of
+        # micro-units, so an int is what they were all along.
+        def whole(value):
+            return None if value is None else int(value)
+
         def grouped(connection, name=None, extra=()):
             grouping = [c.currency] + ([name] if name is not None else [])
             statement = (
@@ -56,6 +62,14 @@ class SQLUsageReader:
                 item = dict(row)
                 if name is not None:
                     item["name"] = item.pop(name.name)
+                item["cost_micro"] = whole(item["cost_micro"])
+                for field in (
+                    "calls",
+                    "input_tokens",
+                    "output_tokens",
+                    "unpriced_calls",
+                ):
+                    item[field] = whole(item[field]) or 0
                 rows.append(item)
             return rows
 

@@ -326,6 +326,25 @@ def test_suggestions_disclose_name_only_evidence():
     assert groups[0]["confidence"] == 0.2
 
 
+def test_suggestions_name_the_system_to_join_and_what_has_none():
+    """A read repository is already a system, and joining those is the point.
+
+    Handing back names alone is what made the dashboard build a second, empty
+    stand-in for a repository that already had a system with its code in it.
+    """
+    from src.core.topology.suggestions import suggest_groups
+
+    groups = suggest_groups(
+        ["acme/shop-api", "acme/shop-ui"],
+        (),
+        systems={"acme/shop-api": "system:abc"},
+    )
+    assert groups[0]["systems"] == [
+        {"repository": "acme/shop-api", "system_id": "system:abc"}
+    ]
+    assert groups[0]["without_system"] == ["acme/shop-ui"]
+
+
 def test_inference_and_suggestions_preserve_manifest_evidence(api, monkeypatch):
     from pathlib import Path
     from src.core.topology.inference import parse_manifest

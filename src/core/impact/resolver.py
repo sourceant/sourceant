@@ -36,7 +36,7 @@ class DefaultChangeImpactResolver:
                 seed_ids,
                 depth=request.depth,
                 relationship_statuses=frozenset({"approved"}),
-                minimum_confidence=request.minimum_confidence,
+                minimum_confidence=request.minimum_reach_confidence,
                 entity_limit=request.entity_limit,
                 relationship_limit=request.relationship_limit,
             )

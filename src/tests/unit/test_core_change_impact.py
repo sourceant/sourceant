@@ -196,3 +196,50 @@ def test_compatibility_query_accepts_limits_independent_of_review_defaults():
 def test_compatibility_query_requires_a_positive_limit():
     with pytest.raises(ValueError, match="limit must be positive"):
         CompatibilityCheckQuery(PRODUCT, frozenset({"provider"}), limit=0)
+
+
+def test_reaches_topology_that_was_derived_rather_than_declared():
+    """A graph read out of a repository is never certain, and must still be walked."""
+    preparer, seeds, topology, _ = build_preparer()
+    seeds.put_mapping(PRODUCT, CHANGE, ("provider",))
+    topology.put_entity(
+        PRODUCT, TopologyEntity("provider", "component", "approved", confidence=0.95)
+    )
+    topology.put_entity(
+        PRODUCT, TopologyEntity("consumer", "system", "pending", confidence=0.6)
+    )
+    topology.put_relationship(
+        PRODUCT,
+        TopologyRelationship(
+            "consumer-provider",
+            "consumer",
+            "provider",
+            "depends_on",
+            "approved",
+            confidence=0.6,
+            evidence=(PROVENANCE,),
+        ),
+    )
+
+    impact = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
+
+    assert tuple(entity.id for entity in impact.topology.entities) == (
+        "provider",
+        "consumer",
+    )
+
+
+def test_how_sure_the_graph_is_and_how_sure_a_finding_is_are_asked_separately():
+    preparer, seeds, topology, compatibility = build_preparer()
+    add_topology(seeds, topology)
+    compatibility.put_evidence(PRODUCT, evidence(id="weak", confidence=0.4))
+
+    impact = preparer.resolve(
+        ChangeImpactRequest(PRODUCT, (CHANGE,), minimum_reach_confidence=0.0)
+    )
+
+    assert tuple(entity.id for entity in impact.topology.entities) == (
+        "provider",
+        "consumer",
+    )
+    assert impact.compatibility == ()

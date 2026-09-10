@@ -100,6 +100,9 @@ class Job:
     lease_until: Optional[datetime] = None
     leased_by: Optional[str] = None
     error: str = ""
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
 
     @property
     def exhausted(self) -> bool:

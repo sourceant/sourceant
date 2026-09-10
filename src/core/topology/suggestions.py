@@ -3,7 +3,15 @@ from dataclasses import asdict
 from .inference import infer_dependencies
 
 
-def suggest_groups(repositories, manifests, graph_edges=()):
+def suggest_groups(repositories, manifests, graph_edges=(), systems=None):
+    """Which repositories belong together, and what to join them out of.
+
+    Reading a repository already derives a system for it, so a group is a group
+    of systems. `systems` maps a repository name to the system that stands for
+    it; a repository missing from it has never been read, and there is nothing
+    to join yet.
+    """
+    systems = systems or {}
     parents = {name: name for name in repositories}
 
     def root(name):
@@ -52,6 +60,12 @@ def suggest_groups(repositories, manifests, graph_edges=()):
                 "sources": sources,
                 "evidence": [asdict(item) for edge in edges for item in edge.evidence],
                 "unread_repositories": [name for name in names if name not in read],
+                "systems": [
+                    {"repository": name, "system_id": systems[name]}
+                    for name in names
+                    if name in systems
+                ],
+                "without_system": [name for name in names if name not in systems],
             }
         )
     weak = {}
@@ -79,6 +93,12 @@ def suggest_groups(repositories, manifests, graph_edges=()):
                 "sources": ["names"],
                 "evidence": [{"kind": "name", "source": name} for name in names],
                 "unread_repositories": [name for name in names if name not in read],
+                "systems": [
+                    {"repository": name, "system_id": systems[name]}
+                    for name in names
+                    if name in systems
+                ],
+                "without_system": [name for name in names if name not in systems],
             }
         )
     return sorted(output, key=lambda group: group["repositories"])

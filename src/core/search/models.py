@@ -13,8 +13,16 @@ class CodeTextQuery:
     limit: int = 8
 
     def __post_init__(self):
-        if not self.scope.get("repository") or not self.scope.get("revision"):
-            raise ValueError("Code text search requires a repository and revision")
+        # Where to look, in one of three ways. A repository at a revision is
+        # the change under review. A repository without one is a sibling the
+        # change reaches, which the caller cannot pin to a revision because it
+        # is not the one being reviewed; it is searched as it was last read. A
+        # workspace is everything an account holds.
+        if not self.scope.get("repository") and not self.scope.get("workspace"):
+            raise ValueError(
+                "Code text search needs a repository, with or without a "
+                "revision, or a workspace"
+            )
         if not 1 <= len(self.terms) <= 16 or any(
             not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9]{2,63}", term) for term in self.terms
         ):
@@ -30,6 +38,9 @@ class CodeTextMatch:
     start_line: int
     end_line: int
     text: str
+    #: Which repository it was found in. Empty where the search covered only
+    #: one, so a path on its own is enough to find the file again.
+    repository: str = ""
 
 
 @dataclass(frozen=True)

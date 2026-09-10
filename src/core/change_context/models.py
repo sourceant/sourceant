@@ -33,6 +33,10 @@ class ChangeSet:
     depth: int = 2
     limit: int = 50
     requirement_scopes: tuple[Scope, ...] = ()
+    #: Where the topology a change reaches into is filed. Wider than the
+    #: repository, because asked of the repository alone the walk cannot leave
+    #: it.
+    impact_scope: Scope | None = None
 
     def __post_init__(self) -> None:
         if not self.files:
@@ -69,6 +73,7 @@ class ChangeSet:
                 kind="file",
                 revision=self.revision,
                 path=item.path,
+                repository=str(self.scope.get("repository") or ""),
                 properties={"change": item.change},
             )
             for item in self.files

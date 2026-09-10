@@ -695,3 +695,169 @@ def test_knowledge_survives_a_change_touching_thousands_of_files(tmp_path):
     )
 
     assert [item.id for item in found] == ["d1"]
+
+
+def test_a_change_reaches_out_of_the_repository_it_is_in():
+    """Impact is asked of the system, so the walk can leave the repository."""
+    from src.core.change_context import (
+        ChangedFile,
+        ChangeSet,
+        DefaultChangeContextResolver,
+    )
+    from src.core.impact import ChangeImpact
+    from src.core.topology import TopologySubgraph
+
+    asked = []
+
+    class _Records:
+        def resolve(self, request):
+            asked.append(request)
+            return ChangeImpact(TopologySubgraph((), (), False), (), (), False)
+
+    workspace = Scope.from_mapping({"workspace": "7"})
+    DefaultChangeContextResolver(impact=_Records()).resolve(
+        ChangeSet(
+            scope=SCOPE,
+            files=(ChangedFile(path="a.py"),),
+            revision="head_sha_def",
+            impact_scope=workspace,
+        )
+    )
+
+    assert asked[0].scope == workspace
+
+
+def test_impact_falls_back_to_the_repository_when_no_system_is_named():
+    from src.core.change_context import (
+        ChangedFile,
+        ChangeSet,
+        DefaultChangeContextResolver,
+    )
+    from src.core.impact import ChangeImpact
+    from src.core.topology import TopologySubgraph
+
+    asked = []
+
+    class _Records:
+        def resolve(self, request):
+            asked.append(request)
+            return ChangeImpact(TopologySubgraph((), (), False), (), (), False)
+
+    DefaultChangeContextResolver(impact=_Records()).resolve(
+        ChangeSet(
+            scope=SCOPE, files=(ChangedFile(path="a.py"),), revision="head_sha_def"
+        )
+    )
+
+    assert asked[0].scope == SCOPE
+
+
+def test_a_review_is_told_which_other_systems_the_change_reaches():
+    """Reaching another repository is the finding, with or without a contract."""
+    from src.core.change_context import ChangeContext
+    from src.core.impact import ChangeImpact
+    from src.core.topology import TopologyEntity, TopologySubgraph
+    from src.plugins.builtin.code_reviewer.context import impact_section
+
+    reached = TopologySubgraph(
+        (
+            TopologyEntity(
+                "system:self", "system", "approved", properties={"name": "acme/api"}
+            ),
+            TopologyEntity(
+                "system:other", "system", "pending", properties={"name": "acme/web"}
+            ),
+            TopologyEntity("asset:part", "component", "approved"),
+        ),
+        (),
+        False,
+    )
+    known = ChangeContext(
+        scope=Scope.from_mapping({"repository": "acme/api"}),
+        impact=ChangeImpact(reached, (), (), False),
+    )
+
+    section = impact_section(known)
+
+    assert "acme/web" in section
+    assert "acme/api" not in section
+
+
+def test_a_change_that_reaches_nothing_adds_no_section():
+    from src.core.change_context import ChangeContext
+    from src.core.impact import ChangeImpact
+    from src.core.topology import TopologySubgraph
+    from src.plugins.builtin.code_reviewer.context import impact_section
+
+    known = ChangeContext(
+        scope=Scope.from_mapping({"repository": "acme/api"}),
+        impact=ChangeImpact(TopologySubgraph((), (), False), (), (), False),
+    )
+
+    assert impact_section(known) is None
+
+
+def test_a_changed_file_says_which_repository_it_is_in():
+    """A system holds several repositories, and two can hold the same path."""
+    from src.core.change_context import ChangedFile, ChangeSet
+
+    changes = ChangeSet(
+        scope=Scope.from_mapping({"repository": "acme/api"}),
+        files=(ChangedFile(path="src/config.py"),),
+        revision="head_sha_def",
+    )
+
+    assert changes.code_references()[0].repository == "acme/api"
+
+
+def test_the_systems_a_change_reaches_are_searched_when_this_one_cannot_be():
+    """One unreadable repository is one missing from the answer, not no answer."""
+    from src.core.change_context import ChangeContext
+    from src.core.impact import ChangeImpact
+    from src.core.change_context import ChangedFile, ChangeSet
+    from src.core.search import CodeTextMatch, CodeTextResult, CodeTextSearcher
+    from src.core.topology import TopologyEntity, TopologySubgraph
+    from src.plugins.builtin.code_reviewer.context import related_code_section
+
+    class _FailsHere:
+        def search_text(self, query):
+            if query.scope.get("revision"):
+                raise RuntimeError("no checkout")
+            return CodeTextResult(
+                (CodeTextMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
+            )
+
+    services = ServiceRegistry()
+    services.register(CodeTextSearcher, _FailsHere(), "test")
+    known = ChangeContext(
+        scope=Scope.from_mapping({"repository": "acme/api"}),
+        impact=ChangeImpact(
+            TopologySubgraph(
+                (
+                    TopologyEntity(
+                        "system:web",
+                        "system",
+                        "approved",
+                        properties={"name": "acme/web"},
+                    ),
+                ),
+                (),
+                False,
+            ),
+            (),
+            (),
+            False,
+        ),
+    )
+    changes = ChangeSet(
+        scope=Scope.from_mapping({"repository": "acme/api"}),
+        files=(ChangedFile(path="a.py"),),
+        revision="head_sha_def",
+        diff="--- a/a.py\n+++ b/a.py\n@@\n+def rebalance():\n",
+    )
+
+    section = related_code_section(changes, services, None, None, None, known)
+
+    assert "unavailable" in section
+    assert "acme/web" in section
+    assert "web/app.ts" in section

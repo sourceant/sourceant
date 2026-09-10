@@ -22,6 +22,10 @@ REVIEW = "review"
 class SkillType(str, Enum):
     GUIDANCE = "guidance"
     REVIEW_PASS = "review-pass"
+    #: One reading of a repository, over one kind of evidence, allowed to state
+    #: one shape of claim. A pass exists so what may be claimed is a property of
+    #: the pass rather than a request inside a prompt.
+    INITIALIZATION_PASS = "initialization-pass"
 
 
 class SkillScope(str, Enum):

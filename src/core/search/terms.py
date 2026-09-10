@@ -21,10 +21,37 @@ def code_words(text: str) -> tuple[str, ...]:
 
 
 def changed_code_terms(diff: str) -> tuple[str, ...]:
-    added = "\n".join(
-        line[1:]
-        for line in diff.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
+    """What to go looking for, given what the diff did.
+
+    A name the diff took away comes first. Searching only what was added
+    answers "where else is this new thing", when the question a review has to
+    answer is "who was using the old one": a renamed field is added under its
+    new name and removed under its old, and only the old name finds the callers
+    that are about to break.
+    """
+    added, removed = [], []
+    for line in diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            added.append(line[1:])
+        elif line.startswith("-") and not line.startswith("---"):
+            removed.append(line[1:])
+    put_in = Counter(code_words("\n".join(added)))
+    taken_out = Counter(code_words("\n".join(removed)))
+    counts = put_in + taken_out
+    # A word standing on both sides of the hunk in equal number is the shape
+    # the change was written in, not the change. Searching for it ranks every
+    # file that happens to be written the same way above the one that calls the
+    # thing that moved.
+    moved = {
+        term: abs(put_in[term] - taken_out[term])
+        for term in counts
+        if put_in[term] != taken_out[term]
+    }
+    gone = {term for term in taken_out if term not in put_in}
+    ordered = moved or {term: counts[term] for term in counts}
+    return tuple(
+        sorted(
+            ordered,
+            key=lambda term: (term not in gone, -ordered[term], term),
+        )[:16]
     )
-    counts = Counter(code_words(added))
-    return tuple(sorted(counts, key=lambda term: (-counts[term], term))[:16])

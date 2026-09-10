@@ -13,6 +13,10 @@ class ChangedCodeReference:
     kind: str
     revision: str
     path: str = ""
+    #: Which repository the change is in. Two repositories in one system can
+    #: hold the same path, so without this a seed written for one of them
+    #: answers a review of the other.
+    repository: str = ""
     properties: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -71,7 +75,13 @@ class ChangeImpactRequest:
     depth: int = 2
     entity_limit: int = 50
     relationship_limit: int = 100
+    #: How sure a compatibility finding must be before a review is told about
+    #: it. Certain, because a finding is an assertion that something breaks.
     minimum_confidence: float = 1.0
+    #: How sure the graph must be before the walk crosses it, which is a
+    #: different question. Topology is derived by reading a repository and is
+    #: never certain, so holding it to the same floor reaches nothing at all.
+    minimum_reach_confidence: float = 0.0
 
     def __post_init__(self) -> None:
         if not self.changes or len(self.changes) > 100:
@@ -87,6 +97,8 @@ class ChangeImpactRequest:
             raise ValueError("relationship_limit must be between 1 and 500")
         if not 0.0 <= self.minimum_confidence <= 1.0:
             raise ValueError("minimum_confidence must be between 0 and 1")
+        if not 0.0 <= self.minimum_reach_confidence <= 1.0:
+            raise ValueError("minimum_reach_confidence must be between 0 and 1")
 
 
 @dataclass(frozen=True)

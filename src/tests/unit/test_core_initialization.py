@@ -251,7 +251,7 @@ def test_candidate_policy_accepts_an_actionable_invariant():
 def test_initialization_limits_are_exposed_as_settings():
     candidate_limit = get("initialization.candidate_limit")
 
-    assert candidate_limit.default == 20
+    assert candidate_limit.default == 35
     assert candidate_limit.scopes == ("repository", "organization")
     assert get("initialization.evidence_limit").maximum == 100
     assert get("initialization.evidence_character_limit").default == 60_000

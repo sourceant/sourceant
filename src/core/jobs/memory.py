@@ -281,6 +281,28 @@ class InMemoryJobStore:
             rows.sort(key=lambda row: (-row["priority"], row["id"]))
             return [self._read(row) for row in rows[:limit]]
 
+    def recent(
+        self, lane: str = "", kinds: Sequence[str] = (), limit: int = 100
+    ) -> Sequence[Job]:
+        """The queue as an activity feed: what is waiting, going and gone."""
+        with self._lock:
+            rows = [
+                row
+                for row in self._jobs.values()
+                if (not lane or row["lane"] == lane)
+                and (not kinds or row["kind"] in kinds)
+            ]
+
+            def moved(row):
+                return (
+                    row.get("finished_at")
+                    or row.get("started_at")
+                    or row.get("created_at")
+                )
+
+            rows.sort(key=lambda row: (moved(row), row["id"]), reverse=True)
+            return [self._read(row) for row in rows[:limit]]
+
     def prune(self, keep_finished_for_days: int = 14) -> int:
         """Clear away jobs finished long enough ago to be of no interest."""
         with self._lock:
@@ -375,6 +397,9 @@ class InMemoryJobStore:
             lease_until=row["lease_until"],
             leased_by=row["leased_by"],
             error=row["error"],
+            created_at=row.get("created_at"),
+            started_at=row.get("started_at"),
+            finished_at=row.get("finished_at"),
         )
 
 

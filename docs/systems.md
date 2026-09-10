@@ -1,6 +1,8 @@
 ## Systems
 
-A repository is not a system. The thing that breaks in production is usually several repositories, a queue, and a database that nobody drew on the same page. Systems is where SourceAnt records those parts and how they depend on each other, so a change can be read against what sits downstream of it.
+A system is a boundary drawn around things that have to be understood together. The thing that breaks in production is usually several repositories, a queue, and a database that nobody drew on the same page. Systems is where SourceAnt records those parts and how they depend on each other, so a change can be read against what sits downstream of it.
+
+A repository is the smallest system. Reading one derives a system named after it, holding the parts of its code. That is what lets a review leave the repository a change is in: it follows relationships between systems, and a repository has to be one of them to be reachable. The parts a system holds that are not repositories are the things with no code to read, which is most of what an outage crosses.
 
 The graph, the endpoints, and the dependency inference below are all in the open core.
 

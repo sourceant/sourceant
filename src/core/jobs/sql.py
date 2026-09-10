@@ -651,6 +651,28 @@ class SQLJobStore:
         with self._engine.connect() as connection:
             return [_as_job(row) for row in connection.execute(query).all()]
 
+    def recent(
+        self, lane: str = "", kinds: Sequence[str] = (), limit: int = 100
+    ) -> Sequence[Job]:
+        """The queue as an activity feed: what is waiting, going and gone.
+
+        `pending` answers what a worker could take next, which is why a busy
+        instance shows nothing there. Reading what happened wants every state,
+        newest first, ordered by when the job last moved rather than by id, so
+        a retry surfaces where a reader is looking.
+        """
+        query = select(job_table)
+        if lane:
+            query = query.where(job_table.c.lane == lane)
+        if kinds:
+            query = query.where(job_table.c.kind.in_(list(kinds)))
+        moved = func.coalesce(
+            job_table.c.finished_at, job_table.c.started_at, job_table.c.created_at
+        )
+        query = query.order_by(moved.desc(), job_table.c.id.desc()).limit(limit)
+        with self._engine.connect() as connection:
+            return [_as_job(row) for row in connection.execute(query).all()]
+
     def prune(self, keep_finished_for_days: int = 14) -> int:
         """Clear away jobs finished long enough ago to be of no interest.
 
@@ -756,4 +778,7 @@ def _as_job(row) -> Job:
         lease_until=row.lease_until,
         leased_by=row.leased_by,
         error=row.error or "",
+        created_at=row.created_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
     )

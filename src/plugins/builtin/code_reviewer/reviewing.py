@@ -132,7 +132,7 @@ class CodeReviewer:
             ),
             impact=impact_section(known),
             related_code=related_code_section(
-                changes, self.services, durable_code, read_content, code_scope
+                changes, self.services, durable_code, read_content, code_scope, known
             ),
         )
 

@@ -100,6 +100,10 @@ class InferInput(BaseModel):
     # Proposals are recorded as pending by default so they can be looked at in
     # place. Asking for a preview leaves the graph untouched.
     persist: bool = True
+    # Which system this was asked for. An asset says which system it belongs to
+    # and a system does not, so a proposal between two systems has no owner to
+    # work out from its endpoints, and one nothing owns is never shown.
+    system_id: str | None = None
 
 
 class SearchInput(BaseModel):
@@ -244,7 +248,7 @@ async def infer_relationships(
             proposal,
             properties={
                 **proposal.properties,
-                "system_id": systems.get(proposal.source_id),
+                "system_id": systems.get(proposal.source_id) or payload.system_id,
                 "provenance": {
                     "evidence": [asdict(item) for item in proposal.evidence]
                 },
@@ -479,9 +483,19 @@ async def suggest(
         and edge.evidence
         and (edge.properties.get("provenance") or {}).get("read_from") == "code_index"
     )
+    # A read repository already has a system of its own, and joining those is
+    # what building a bigger one means. Without this the caller has only names,
+    # and makes a second, empty stand-in for something that already exists.
+    systems = {
+        entity.properties["name"]: entity.id
+        for entity in entities
+        if entity.kind == "system"
+        and entity.properties.get("derived")
+        and entity.properties.get("name") in names
+    }
     return success_response(
         {
-            "groups": suggest_groups(names, manifests, graph_edges),
+            "groups": suggest_groups(names, manifests, graph_edges, systems),
             "read": len(manifests),
         }
     )
