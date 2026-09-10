@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.3] - 2026-09-10
+
+### Added
+
+- Durable background jobs with retries, workspace fairness, batch progress, and
+  retention, stored in the database by default
+- Workspace model settings, provider credential checks, and model selection from
+  the provider catalogue
+- Token usage and cost reporting attributed to the workspace that pays for a call
+- Dashboard APIs for requirements, document attachments, system relationships,
+  usage, and background activity
+- Scoped skills and focused review passes
+- Keyword search for related implementations, including repositories reached
+  through system relationships when a search provider is available
+
+### Changed
+
+- Reviews use ranked, applicable knowledge and workspace requirements
+- Review overviews describe the whole pull request and distinguish improvements
+  from regressions, without requiring either list to be filled
+- Background workers load plugins before claiming work
+
+### Fixed
+
+- Suggestions that repeat changes already present in the diff are discarded;
+  separate blocks of changed lines are no longer mistaken for one replacement
+- Review summaries and verdicts reflect the findings that survive validation
+- Reviews and their previous summaries remain available across worker restarts
+- Model credentials belong to the paying workspace rather than the repository's
+  organisation
+- Usage totals serialize correctly when the database returns decimal aggregates
+- Code index scope keys fit within MySQL's index limits
+
 ## [1.0.0-beta.2] - 2026-08-30
 
 ### Added
