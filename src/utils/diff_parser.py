@@ -135,11 +135,13 @@ class ParsedDiff:
             return False
 
         for hunk in self._patched_file:
-            removed_lines = [line.value.strip() for line in hunk if line.is_removed]
-            added_lines = [line.value.strip() for line in hunk if line.is_added]
-            if self._contains_lines(
-                removed_lines, existing_lines
-            ) and self._contains_lines(added_lines, suggested_lines):
+            if any(
+                self._contains_lines(run, existing_lines)
+                for run in self._changed_runs(hunk, added=False)
+            ) and any(
+                self._contains_lines(run, suggested_lines)
+                for run in self._changed_runs(hunk, added=True)
+            ):
                 return True
 
         return False
@@ -157,12 +159,31 @@ class ParsedDiff:
         if not suggested_lines:
             return False
         return any(
-            self._contains_lines(
-                [line.value.strip() for line in hunk if line.is_added],
-                suggested_lines,
-            )
+            self._contains_lines(run, suggested_lines)
             for hunk in self._patched_file
+            for run in self._changed_runs(hunk, added=True)
         )
+
+    @classmethod
+    def _changed_runs(cls, hunk, added: bool) -> List[List[str]]:
+        """Each block of changed lines the hunk holds, kept apart.
+
+        Read as one list, two additions with an unchanged line between them are
+        adjacent, and a suggestion spanning that gap looks like code the patch
+        already applied. Normalized the same way a suggestion is, so the two
+        sides can be compared line for line.
+        """
+        runs: List[List[str]] = []
+        current: List[str] = []
+        for line in hunk:
+            if line.is_added if added else line.is_removed:
+                current.append(line.value)
+            elif current:
+                runs.append(current)
+                current = []
+        if current:
+            runs.append(current)
+        return [cls._normalize_snippet("\n".join(run)) for run in runs]
 
     @staticmethod
     def _normalize_snippet(code: str) -> List[str]:

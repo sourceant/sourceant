@@ -361,3 +361,29 @@ class TestLineMapper:
         )
 
         assert not mapper.suggestion_replays_diff(suggestion)
+
+    def test_keeps_a_suggestion_spanning_a_gap_between_two_additions(self):
+        """Separate additions are separate: a span across them is not applied."""
+        diff = """\
+--- a/app.py
++++ b/app.py
+@@ -1,3 +1,5 @@
+ first
++alpha = 1
+ middle
++beta = 2
+ last
+"""
+        mapper = LineMapper(parse_diff(diff))
+        suggestion = CodeSuggestion(
+            file_name="app.py",
+            start_line=2,
+            end_line=4,
+            side=Side.RIGHT,
+            comment="Declare these together.",
+            category=SuggestionCategory.REFACTOR,
+            existing_code="alpha = 1",
+            suggested_code="alpha = 1\nbeta = 2",
+        )
+
+        assert not mapper.suggestion_replays_diff(suggestion)
