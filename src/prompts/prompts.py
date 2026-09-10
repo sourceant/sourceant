@@ -154,11 +154,20 @@ The diff below uses a decoupled format where removed and added code are shown in
         "overview": "✨ <A high-level overview of the code changes and the review.>",
         "key_improvements": [
             "<An improvement, can reference a file path.>"
+        ],
+        "regressions": [
+            "<A regression, can reference a file path.>"
         ]
     }}
     ```
 
-    The content within the `overview` and `key_improvements` fields should be formatted using **GitHub-flavored Markdown**.
+    Leave a list empty when you judge nothing belongs in it. Naming an
+    improvement to fill the list is worse than leaving it empty. Where the
+    change makes something worse, say so plainly in `regressions`: slower,
+    harder to change, weaker in a case that used to work, or a capability that
+    is gone.
+
+    The content within these fields should be formatted using **GitHub-flavored Markdown**.
 
     The current change context below is authoritative. It contains either the full
     diff, a part of that diff, or summaries of parts of the same pull request.

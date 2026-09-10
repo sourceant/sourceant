@@ -509,6 +509,12 @@ class GitHub(ProviderAdapter):
                 parts.append(f"- {item}\n")
             parts.append("\n")
 
+        if summary.regressions:
+            parts.append("### 📉 Regressions\n")
+            for item in summary.regressions:
+                parts.append(f"- {item}\n")
+            parts.append("\n")
+
         if summary.minor_suggestions:
             parts.append("### 💡 Minor Suggestions\n")
             for item in summary.minor_suggestions:
