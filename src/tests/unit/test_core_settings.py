@@ -55,7 +55,10 @@ def reuse_days(monkeypatch):
 
 
 class TestResolution:
-    def test_a_user_value_wins_for_that_user(self, store, reuse_days):
+    def test_the_work_is_answered_for_before_the_person(self, store, reuse_days):
+        """A personal value follows a person between repositories and
+        organisations, so letting it win would mean somebody carrying their own
+        answer into work that had already chosen one."""
         from src.core.settings.resolver import resolve, set_value
 
         set_value(ORGANIZATION, "acme", "review.reuse_days", 14)
@@ -67,6 +70,27 @@ class TestResolution:
             user="42",
             repository="acme/web",
         )
+
+        assert answer.value == 2
+        assert answer.source == REPOSITORY
+
+    def test_an_organisation_is_answered_for_before_the_person(self, store, reuse_days):
+        from src.core.settings.resolver import resolve, set_value
+
+        set_value(ORGANIZATION, "acme", "review.reuse_days", 14)
+        set_value(USER, "42", "review.reuse_days", 1)
+
+        answer = resolve("review.reuse_days", user="42", repository="acme/web")
+
+        assert answer.value == 14
+        assert answer.source == ORGANIZATION
+
+    def test_the_person_answers_where_nothing_else_does(self, store, reuse_days):
+        from src.core.settings.resolver import resolve, set_value
+
+        set_value(USER, "42", "review.reuse_days", 1)
+
+        answer = resolve("review.reuse_days", user="42", repository="acme/web")
 
         assert answer.value == 1
         assert answer.source == USER

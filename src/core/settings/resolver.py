@@ -1,9 +1,13 @@
-"""Resolve a setting through user, repository, workspace, and organization scopes.
+"""Resolve a setting through repository, workspace, organization and user scopes.
 
-A user value wins when supplied. A repository otherwise inherits from the
-workspace holding it, a workspace from the organization, and an organization
-from the shipped default. The answer carries its source so a screen can show
-whether it is set here or inherited.
+A repository inherits from the workspace holding it, a workspace from the
+organization, and an organization from whatever the person set for themselves.
+A personal value is a fallback rather than an override: somebody joining a
+workspace gets what that workspace chose, and their own answer applies only
+where nothing else has one. The shipped default is below all of it.
+
+The answer carries its source so a screen can show whether it is set here or
+inherited.
 """
 
 from __future__ import annotations
@@ -69,13 +73,8 @@ def resolve(
     user: Optional[str] = None,
     workspace: Any = UNSTATED,
 ) -> Resolved:
-    """Resolve one setting, narrowest scope first."""
+    """Resolve one setting: the work's own scopes first, then the person's."""
     setting = get(key)
-
-    if user:
-        value = _stored(setting, USER, user)
-        if value is not None:
-            return Resolved(key, value, USER, user, setting)
 
     if repository:
         value = _stored(setting, REPOSITORY, repository)
@@ -97,6 +96,11 @@ def resolve(
         value = _stored(setting, ORGANIZATION, owner)
         if value is not None:
             return Resolved(key, value, ORGANIZATION, owner, setting)
+
+    if user:
+        value = _stored(setting, USER, user)
+        if value is not None:
+            return Resolved(key, value, USER, user, setting)
 
     return Resolved(key, setting.default, "default", None, setting)
 
