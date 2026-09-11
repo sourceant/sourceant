@@ -26,6 +26,7 @@ from src.core.change_context import (
 from src.core.knowledge import KnowledgeQuery
 from src.core.model import provider_for
 from src.core.review import Told, reviewer
+from src.core.review_coverage import Coverage, read_and_unread
 from src.core.scope import Scope
 from src.utils.logger import logger
 from src.core.skills import (
@@ -389,11 +390,13 @@ class WorkingTreeReviews:
                 503, "Nothing here is able to review. The code reviewer is not loaded."
             )
 
+        coverage = Coverage()
         try:
             review = judge.review(
                 replace(changes, title=changes.title or f"Work on {where['branch']}"),
                 provider=provider,
                 read_content=on_disk(root),
+                coverage=coverage,
                 told=told(
                     recorded,
                     [skill for skill in chosen if skill.kind == SkillType.GUIDANCE],
@@ -418,10 +421,13 @@ class WorkingTreeReviews:
         except Exception as error:  # noqa: BLE001 - whatever a provider raises
             raise ReviewRefused(502, str(error)) from error
 
+        answer["coverage"] = coverage.as_dict()
         if review is None:
             answer["note"] = "Nothing in this change could be read as code."
             return answer
 
+        if review.summary is not None:
+            review.summary.coverage = read_and_unread(coverage)
         answer["review"] = reviewed(review)
         remember(review, entry.scope, self.services, repository)
 

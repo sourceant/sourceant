@@ -1049,3 +1049,199 @@ class TestASkillReachesTheReviewerAsItsContents:
 
         told = model.generate_code_review.call_args.kwargs["knowledge"]
         assert "Never edit a migration somebody has already run." in told
+
+
+class TestWhetherASkillWasHonoured:
+    """A skill attached to a prompt and a skill a review took notice of look
+    identical from the outside, and only one of them is worth having."""
+
+    def reviewed(self, plugin, repository, pull_request, checking):
+        from src.core.skills import Skill, SkillLibrary, SkillVerdict
+
+        skill = Skill(
+            id="migrations",
+            name="migrations",
+            description="How migrations are written here",
+            body="Never edit a migration somebody has already run.",
+            metadata={"sourceant": {"review": True}},
+        )
+
+        class _Library:
+            def all(self, workspace, repository):
+                return (skill,)
+
+        services = ServiceRegistry()
+        services.register(SkillLibrary, _Library(), "test")
+        plugin.bind_services(services)
+
+        asked = []
+
+        class _Checker:
+            def __init__(self, ask, model):
+                pass
+
+            def check(self, skill, subject):
+                asked.append(skill.id)
+                return SkillVerdict(skill.id, passed=False, note="Never mentioned it")
+
+        with (
+            patch("src.plugins.builtin.code_reviewer.plugin.save_review_record"),
+            patch(
+                "src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha"
+            ) as sha,
+            patch("src.plugins.builtin.code_reviewer.plugin.GitHub") as github_cls,
+            patch("src.plugins.builtin.code_reviewer.plugin.provider_for") as provider,
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.LLMSkillChecker", _Checker
+            ),
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.value_of",
+                side_effect=lambda key, **_: (
+                    checking if key == "review.check_skills_were_applied" else None
+                ),
+            ),
+        ):
+            sha.return_value = None
+            github = MagicMock()
+            github_cls.return_value = github
+            github.get_diff.return_value = _DIFF
+            github.get_existing_bot_review_comments.return_value = []
+            github.get_file_content.return_value = "def load(path):\n    return 1\n"
+
+            model = MagicMock()
+            provider.return_value = model
+            model.count_tokens.return_value = 100
+            model.token_limit = 1000000
+            model.generate_summary.return_value = CodeReviewSummary(
+                overview="The full pull request overview.",
+                key_improvements=[],
+                minor_suggestions=[],
+                critical_issues=[],
+            )
+            model.generate_code_review.return_value = CodeReview(
+                verdict=Verdict.COMMENT, code_suggestions=[]
+            )
+
+            import asyncio
+
+            result = asyncio.run(
+                plugin.generate_review(
+                    repository,
+                    pull_request,
+                    repository_full_name="test_owner/test_repo",
+                    post=False,
+                )
+            )
+        return result, asked
+
+    def honoured(self, result):
+        return [
+            attempt
+            for attempt in result["coverage"]["attempts"]
+            if attempt["method"] == "honoured"
+        ]
+
+    def test_a_skill_the_review_ignored_is_recorded_as_ignored(
+        self, plugin, repository, pull_request
+    ):
+        result, asked = self.reviewed(plugin, repository, pull_request, True)
+
+        assert asked == ["migrations"]
+        assert self.honoured(result) == [
+            {
+                "question": "skills",
+                "method": "honoured",
+                "answered": False,
+                "target": "migrations",
+                "reason": "Never mentioned it",
+            }
+        ]
+
+    def test_it_is_not_asked_unless_somebody_wants_to_pay_for_it(
+        self, plugin, repository, pull_request
+    ):
+        """A model call per skill on every pull request is a real bill."""
+        result, asked = self.reviewed(plugin, repository, pull_request, False)
+
+        assert asked == []
+        assert self.honoured(result)[0]["reason"] == "not checked"
+
+    def test_a_check_that_fails_does_not_take_the_review_with_it(
+        self, plugin, repository, pull_request
+    ):
+        from src.core.skills import Skill, SkillLibrary
+
+        class _Raises:
+            def __init__(self, ask, model):
+                pass
+
+            def check(self, skill, subject):
+                raise RuntimeError("the provider timed out")
+
+        skill = Skill(
+            id="migrations",
+            name="migrations",
+            description="How migrations are written here",
+            body="Never edit a migration somebody has already run.",
+            metadata={"sourceant": {"review": True}},
+        )
+
+        class _Library:
+            def all(self, workspace, repository):
+                return (skill,)
+
+        services = ServiceRegistry()
+        services.register(SkillLibrary, _Library(), "test")
+        plugin.bind_services(services)
+
+        with (
+            patch("src.plugins.builtin.code_reviewer.plugin.save_review_record"),
+            patch(
+                "src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha"
+            ) as sha,
+            patch("src.plugins.builtin.code_reviewer.plugin.GitHub") as github_cls,
+            patch("src.plugins.builtin.code_reviewer.plugin.provider_for") as provider,
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.LLMSkillChecker", _Raises
+            ),
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.value_of",
+                side_effect=lambda key, **_: (
+                    True if key == "review.check_skills_were_applied" else None
+                ),
+            ),
+        ):
+            sha.return_value = None
+            github = MagicMock()
+            github_cls.return_value = github
+            github.get_diff.return_value = _DIFF
+            github.get_existing_bot_review_comments.return_value = []
+            github.get_file_content.return_value = "def load(path):\n    return 1\n"
+
+            model = MagicMock()
+            provider.return_value = model
+            model.count_tokens.return_value = 100
+            model.token_limit = 1000000
+            model.generate_summary.return_value = CodeReviewSummary(
+                overview="The full pull request overview.",
+                key_improvements=[],
+                minor_suggestions=[],
+                critical_issues=[],
+            )
+            model.generate_code_review.return_value = CodeReview(
+                verdict=Verdict.COMMENT, code_suggestions=[]
+            )
+
+            import asyncio
+
+            result = asyncio.run(
+                plugin.generate_review(
+                    repository,
+                    pull_request,
+                    repository_full_name="test_owner/test_repo",
+                    post=False,
+                )
+            )
+
+        assert result["status"] == "success"
+        assert "did not finish" in self.honoured(result)[0]["reason"]

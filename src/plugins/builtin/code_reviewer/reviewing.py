@@ -35,6 +35,7 @@ from src.core.review_evidence import (
 from src.core.scope import Scope
 from src.core.skills import (
     Change,
+    LLMSkillChecker,
     PhraseSkillSelector,
     Skill,
     SkillSource,
@@ -281,6 +282,8 @@ class CodeReviewer:
                 )
                 continue
             combined.extend(checked.code_suggestions or ())
+        self._check_they_were_applied(provider, changes, repository, guidance, coverage)
+
         unique, seen = [], set()
         for suggestion in combined:
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
@@ -298,6 +301,60 @@ class CodeReviewer:
             code_suggestions=unique,
             scores=answer.scores,
         )
+
+    @staticmethod
+    def _check_they_were_applied(provider, changes, repository, guidance, coverage):
+        """Ask whether the review actually judged the change against each skill.
+
+        A skill attached to a prompt and a skill a review took notice of look
+        identical from here, and only one of them is worth having. What comes
+        back is recorded and never blocks: a skill the review missed is a gap
+        in the review rather than a fault in the change.
+
+        A model call per skill on every pull request, so it waits to be asked
+        for.
+        """
+        if not guidance or not value_of(
+            "review.check_skills_were_applied", repository=repository
+        ):
+            for skill in guidance:
+                coverage.record(
+                    SKILLS,
+                    "honoured",
+                    answered=False,
+                    target=skill.id,
+                    reason="not checked",
+                )
+            return
+        subject = Change(
+            title=changes.title,
+            description=changes.description,
+            paths=changes.paths,
+            diff=changes.diff,
+        )
+        checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
+        for skill in guidance:
+            try:
+                verdict = checker.check(skill, subject)
+            except Exception as error:  # noqa: BLE001 - one check, not the review
+                logger.warning(
+                    "Could not check %s was applied: %s", skill.id, error, exc_info=True
+                )
+                coverage.record(
+                    SKILLS,
+                    "honoured",
+                    answered=False,
+                    target=skill.id,
+                    reason=f"the check did not finish: {type(error).__name__}",
+                )
+                continue
+            coverage.record(
+                SKILLS,
+                "honoured",
+                answered=verdict.passed,
+                target=skill.id,
+                reason="" if verdict.passed else (verdict.note or "not applied"),
+            )
 
     @staticmethod
     def _budget(repository: str) -> int:

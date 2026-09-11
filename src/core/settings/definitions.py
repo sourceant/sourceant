@@ -145,6 +145,23 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.check_skills_were_applied",
+        label="Check the review honoured each skill",
+        description=(
+            "After a review, ask the model once per skill whether the change "
+            "was actually judged against it, and record the answer. This is "
+            "the only thing that tells a skill that was read from one that "
+            "was merely attached. It is a model call per skill on every pull "
+            "request, so it is off until you want that trade. What it finds "
+            "is reported, never used to block: a skill the review missed is "
+            "a gap in the review, not a fault in the change."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=False,
+        group="Review",
+    ),
+    Setting(
         key="initialization.candidate_limit",
         label="Maximum knowledge proposals",
         description=(
