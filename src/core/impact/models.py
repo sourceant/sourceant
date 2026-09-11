@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from hashlib import sha256
 from typing import Any, Mapping
 
 from src.core.scope import Scope
@@ -22,6 +23,30 @@ class ChangedCodeReference:
     def __post_init__(self) -> None:
         if not self.id or not self.kind or not self.revision:
             raise ValueError("changed code identity, kind, and revision are required")
+
+    @property
+    def identity(self) -> tuple[str, str, str]:
+        """What makes two references the same change.
+
+        A path, not a commit. What a file belongs to changes when the file
+        moves, not when somebody opens a pull request, and keying on the
+        revision meant a mapping written while reading a repository could
+        never match the lookup a later review made: different commit,
+        different key, no starting point, and a review that reached nothing.
+
+        The kind is folded to lower case because the two sides spell it
+        differently: a reading says "File" and a review says "file".
+        """
+        return (
+            (self.kind or "").lower(),
+            self.repository or "",
+            self.path or self.id,
+        )
+
+    @property
+    def key(self) -> str:
+        """The identity as one short string, for a store that needs one."""
+        return sha256("\0".join(self.identity).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -82,6 +107,14 @@ class ChangeImpactRequest:
     #: different question. Topology is derived by reading a repository and is
     #: never certain, so holding it to the same floor reaches nothing at all.
     minimum_reach_confidence: float = 0.0
+    #: Which links the walk may cross. A link somebody approved is a fact and
+    #: one inference proposed is a question, but a proposed link is the
+    #: ordinary state of a system that was connected last week: every
+    #: automatically discovered link is written pending and stays pending
+    #: until a person gets to it. Crossing only approved links meant a review
+    #: of a multi-repository change reached nothing at all. Both are crossed;
+    #: what separates them is how the review is told, not whether it is told.
+    reach_statuses: frozenset[str] = frozenset({"approved", "pending"})
 
     def __post_init__(self) -> None:
         if not self.changes or len(self.changes) > 100:

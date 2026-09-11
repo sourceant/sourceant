@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from src.plugins.builtin.code_reviewer.overview import summarize_changes
 
-from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -27,6 +26,7 @@ from src.core.change_context import (
 from src.core.knowledge import KnowledgeQuery
 from src.core.model import provider_for
 from src.core.review import Told, reviewer
+from src.core.scope import Scope
 from src.utils.logger import logger
 from src.core.skills import (
     BLOCKING,
@@ -35,8 +35,7 @@ from src.core.skills import (
     PhraseSkillSelector,
     Skill,
     SkillVerdict,
-    attach,
-    references,
+    split,
 )
 
 from src.core.environment import LOCAL
@@ -49,9 +48,6 @@ MAX_KNOWLEDGE = 25
 
 # How many baseline documents are worth asking about on their own. More than a
 # couple and every review pays for the same answer twice.
-MAX_SHARED = 2
-
-HOUSE = "Applies to everything here, whatever the change is about."
 
 
 class ReviewRefused(Exception):
@@ -65,48 +61,6 @@ class ReviewRefused(Exception):
         super().__init__(detail)
         self.status = status
         self.detail = detail
-
-
-def split(chosen) -> list[Skill]:
-    """Each skill with the documents only it points at, plus shared ones alone.
-
-    A document more than one skill references is not that skill's content, so
-    attaching it to each would ask the same question repeatedly and file every
-    answer under an unrelated skill.
-    """
-    attached = {skill.id: references(skill) for skill in chosen}
-    counted = Counter(path for found in attached.values() for path in found)
-    shared = [path for path, times in counted.most_common(MAX_SHARED) if times > 1]
-
-    asking = [
-        replace(
-            skill,
-            body=attach(
-                skill.body,
-                {
-                    path: text
-                    for path, text in attached[skill.id].items()
-                    if path not in shared
-                },
-            ),
-        )
-        for skill in chosen
-    ]
-
-    for path in shared:
-        text = next(found[path] for found in attached.values() if path in found)
-        name = Path(path).name
-        asking.append(
-            Skill(
-                id=name,
-                name=name,
-                description=HOUSE,
-                body=text,
-                path=path,
-                origin="shared",
-            )
-        )
-    return asking
 
 
 def on_disk(root: Path):
@@ -324,6 +278,7 @@ class WorkingTreeReviews:
         description: str = "",
         skills: Sequence[str] = (),
         use_model: bool = True,
+        system: str = "",
     ) -> dict[str, Any]:
         """What changed, what applies to it, and what the reviewer made of it."""
         entry = self._folders().named(LOCAL, repository)
@@ -336,6 +291,9 @@ class WorkingTreeReviews:
                 against=against,
                 title=title,
                 description=description,
+                impact_scope=(
+                    Scope.from_mapping({"workspace": system}) if system else None
+                ),
             )
         except GitError as error:
             raise ReviewRefused(400, str(error)) from error

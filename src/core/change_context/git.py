@@ -269,6 +269,7 @@ def read_change(
     against: str = "",
     title: str = "",
     description: str = "",
+    impact_scope: Scope | None = None,
 ) -> ChangeSet | None:
     """This checkout's work, as the same change set a hosted review is given.
 
@@ -322,4 +323,9 @@ def read_change(
         title=title,
         description=description,
         diff=diff,
+        # A checkout knows which repository it is and nothing about which
+        # system holds it. Asked of the repository alone the walk cannot
+        # leave it, so reaching anywhere else takes a scope from whoever
+        # drew the system.
+        impact_scope=impact_scope,
     )

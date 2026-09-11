@@ -154,6 +154,14 @@ class CodeReviewSummary(CodeReviewOverview):
         ...,
         description="A list of critical issues that should be changed. Leave empty if none.",
     )
+    coverage: Optional[str] = Field(
+        None,
+        description=(
+            "Leave this empty. It is filled in afterwards with what the "
+            "review was able to read, which is not something a reading of "
+            "the diff can know."
+        ),
+    )
 
 
 class CodeReview(BaseModel):

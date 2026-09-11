@@ -6,11 +6,13 @@ from src.core.impact import (
     CompatibilityCheckQuery,
     CompatibilityCheckRepository,
     DefaultChangeImpactResolver,
+    FirstAnsweringSeedResolver,
     ImpactFinding,
     ImpactSeedRepository,
     InMemoryCompatibilityCheckReader,
     InMemoryImpactSeedResolver,
     ChangeImpactRequest,
+    TopologyPrefixSeedResolver,
 )
 from src.core.scope import Scope
 from src.core.topology import (
@@ -171,15 +173,58 @@ def test_returns_empty_when_mapped_topology_entity_does_not_exist():
     assert result.findings == ()
 
 
-def test_code_mapping_is_revision_specific():
+def test_a_mapping_answers_a_review_of_a_later_commit():
+    """The two sides never share a commit.
+
+    A mapping is written while a repository is read and asked for while a
+    pull request is reviewed, which is always a different commit. Keyed on
+    one, a review started nowhere and reached nothing.
+    """
     seeds = InMemoryImpactSeedResolver()
     seeds.put_mapping(PRODUCT, CHANGE, ("provider",))
 
-    changed_revision = ChangedCodeReference(
-        CHANGE.id, CHANGE.kind, "provider-3", CHANGE.path
+    later = ChangedCodeReference(CHANGE.id, CHANGE.kind, "provider-3", CHANGE.path)
+
+    assert seeds.resolve(PRODUCT, (later,)) == ("provider",)
+
+
+def test_a_mapping_answers_however_the_kind_is_spelled():
+    """A reading says "File" and a review says "file"."""
+    seeds = InMemoryImpactSeedResolver()
+    seeds.put_mapping(
+        PRODUCT,
+        ChangedCodeReference("api.py", "File", "provider-2", "api.py"),
+        ("provider",),
     )
 
-    assert seeds.resolve(PRODUCT, (changed_revision,)) == ()
+    asked = ChangedCodeReference("api.py", "file", "provider-9", "api.py")
+
+    assert seeds.resolve(PRODUCT, (asked,)) == ("provider",)
+
+
+def test_the_same_path_in_two_repositories_is_two_mappings():
+    """A system holds several repositories and two can hold one path.
+
+    Keyed on the path alone, reading the second replaces the first and a
+    review of that file starts from whichever was read last.
+    """
+    seeds = InMemoryImpactSeedResolver()
+    seeds.put_mapping(
+        PRODUCT,
+        ChangedCodeReference("api.py", "file", "r1", "api.py", repository="acme/one"),
+        ("one",),
+    )
+    seeds.put_mapping(
+        PRODUCT,
+        ChangedCodeReference("api.py", "file", "r1", "api.py", repository="acme/two"),
+        ("two",),
+    )
+
+    asked = ChangedCodeReference(
+        "api.py", "file", "later", "api.py", repository="acme/one"
+    )
+
+    assert seeds.resolve(PRODUCT, (asked,)) == ("one",)
 
 
 def test_rejects_impact_findings_without_traceable_evidence():
@@ -243,3 +288,139 @@ def test_how_sure_the_graph_is_and_how_sure_a_finding_is_are_asked_separately():
         "consumer",
     )
     assert impact.compatibility == ()
+
+
+class TestStartingTheWalkWithNothingRecorded:
+    """A repository connected and not yet read still has to reach its system.
+
+    Nothing in core writes a seed mapping, and nothing has read a repository
+    somebody connected this morning. Both cases used to end the same way: no
+    seed, no walk, and a review that reached nothing while the graph sat
+    there holding the answer.
+    """
+
+    def graph(self):
+        topology = InMemoryTopologyRepository()
+        topology.put_entity(
+            PRODUCT,
+            TopologyEntity(
+                "system:acme/billing",
+                "system",
+                "proposed",
+                properties={"name": "acme/billing"},
+            ),
+        )
+        topology.put_entity(
+            PRODUCT,
+            TopologyEntity(
+                "component:billing:src",
+                "component",
+                "proposed",
+                properties={"system_id": "system:acme/billing", "external_id": "src"},
+            ),
+        )
+        topology.put_entity(
+            PRODUCT,
+            TopologyEntity(
+                "component:billing:src/core",
+                "component",
+                "proposed",
+                properties={
+                    "system_id": "system:acme/billing",
+                    "external_id": "src/core",
+                },
+            ),
+        )
+        return topology
+
+    def changed(self, path):
+        return ChangedCodeReference(
+            f"file:{path}", "file", "head", path, repository="acme/billing"
+        )
+
+    def test_the_longest_folder_holding_a_file_is_where_it_starts(self):
+        seeds = TopologyPrefixSeedResolver(self.graph())
+
+        assert seeds.resolve(PRODUCT, (self.changed("src/core/jobs/sql.py"),)) == (
+            "component:billing:src/core",
+        )
+
+    def test_a_file_no_part_claims_starts_at_the_system(self):
+        """A change reaches whatever its repository reaches.
+
+        Which folder it happens to sit in decides where the walk is most
+        precise, never whether it happens at all.
+        """
+        seeds = TopologyPrefixSeedResolver(self.graph())
+
+        assert seeds.resolve(PRODUCT, (self.changed("README.md"),)) == (
+            "system:acme/billing",
+        )
+
+    def test_a_repository_the_graph_has_never_heard_of_starts_nowhere(self):
+        seeds = TopologyPrefixSeedResolver(self.graph())
+        elsewhere = ChangedCodeReference(
+            "file:a.py", "file", "head", "a.py", repository="acme/unknown"
+        )
+
+        assert seeds.resolve(PRODUCT, (elsewhere,)) == ()
+
+    def test_a_recorded_mapping_is_preferred_to_a_folder_name(self):
+        """A mapping was written by something that read the repository."""
+        recorded = InMemoryImpactSeedResolver()
+        change = self.changed("src/core/jobs/sql.py")
+        recorded.put_mapping(PRODUCT, change, ("component:billing:jobs",))
+        seeds = FirstAnsweringSeedResolver(
+            recorded, TopologyPrefixSeedResolver(self.graph())
+        )
+
+        assert seeds.resolve(PRODUCT, (change,)) == ("component:billing:jobs",)
+
+    def test_the_graph_answers_when_nothing_was_recorded(self):
+        seeds = FirstAnsweringSeedResolver(
+            InMemoryImpactSeedResolver(), TopologyPrefixSeedResolver(self.graph())
+        )
+
+        assert seeds.resolve(PRODUCT, (self.changed("src/core/jobs/sql.py"),)) == (
+            "component:billing:src/core",
+        )
+
+
+class TestCrossingALinkNobodyHasApproved:
+    """Inference writes every link it proposes as pending.
+
+    Approving one is a person's decision and usually a later one. Crossing
+    only approved links meant a system connected last week reached nothing,
+    which is every system when it is new.
+    """
+
+    def build(self, status):
+        seeds = InMemoryImpactSeedResolver()
+        topology = InMemoryTopologyRepository()
+        seeds.put_mapping(PRODUCT, CHANGE, ("provider",))
+        topology.put_entity(PRODUCT, TopologyEntity("provider", "system", "approved"))
+        topology.put_entity(PRODUCT, TopologyEntity("consumer", "system", "approved"))
+        topology.put_relationship(
+            PRODUCT,
+            TopologyRelationship(
+                "consumer-provider", "consumer", "provider", "depends_on", status
+            ),
+        )
+        return DefaultChangeImpactResolver(
+            seeds=seeds,
+            topology=topology,
+            compatibility=InMemoryCompatibilityCheckReader(),
+        )
+
+    def test_a_pending_link_is_walked(self):
+        result = self.build("pending").resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
+
+        assert {entity.id for entity in result.topology.entities} == {
+            "provider",
+            "consumer",
+        }
+
+    def test_a_rejected_link_is_not(self):
+        result = self.build("rejected").resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
+
+        assert {entity.id for entity in result.topology.entities} == {"provider"}

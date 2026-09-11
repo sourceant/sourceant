@@ -11,7 +11,7 @@ from .models import (
 
 class InMemoryImpactSeedResolver:
     def __init__(self) -> None:
-        self._mappings: dict[tuple[Scope, str, str, str], tuple[str, ...]] = {}
+        self._mappings: dict[tuple[Scope, str], tuple[str, ...]] = {}
 
     def put_mapping(
         self,
@@ -21,8 +21,7 @@ class InMemoryImpactSeedResolver:
     ) -> None:
         if not entity_ids or any(not item for item in entity_ids):
             raise ValueError("topology identities are required")
-        key = scope, change.kind, change.id, change.revision
-        self._mappings[key] = tuple(sorted(set(entity_ids)))
+        self._mappings[(scope, change.key)] = tuple(sorted(set(entity_ids)))
 
     def resolve(
         self, scope: Scope, changes: tuple[ChangedCodeReference, ...]
@@ -32,9 +31,7 @@ class InMemoryImpactSeedResolver:
                 {
                     entity_id
                     for change in changes
-                    for entity_id in self._mappings.get(
-                        (scope, change.kind, change.id, change.revision), ()
-                    )
+                    for entity_id in self._mappings.get((scope, change.key), ())
                 }
             )
         )

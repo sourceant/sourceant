@@ -17,6 +17,7 @@ from src.core.change_context import ChangeSet
 from src.core.model import provider_for
 from src.core.mcp import contribute_tools
 from src.core.review import Reviewer, WorkingTreeReviewer
+from src.core.review_coverage import Coverage, read_and_unread
 from src.plugins.builtin.code_reviewer.context import changed_files
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
 from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
@@ -438,6 +439,7 @@ class CodeReviewerPlugin(BasePlugin):
             else:
                 review_skills = skill_library.all(workspace or "", repo_full_name)
 
+            coverage = Coverage()
             final_review = CodeReviewer(services=self.services).review(
                 ChangeSet(
                     scope=Scope.from_mapping({"repository": repo_full_name}),
@@ -470,6 +472,7 @@ class CodeReviewerPlugin(BasePlugin):
                 previous_summary=previous_summary,
                 code_scope=code_scope,
                 metadata=pr_metadata,
+                coverage=coverage,
             )
             if final_review is None:
                 return {
@@ -497,6 +500,9 @@ class CodeReviewerPlugin(BasePlugin):
                 pr_metadata,
                 final_review.code_suggestions or (),
             )
+            if final_review.summary is not None:
+                final_review.summary.coverage = read_and_unread(coverage)
+            logger.info("Review coverage: %s", coverage.as_dict())
 
             # Apply review guards
             guards = [DuplicateApprovalGuard()]
@@ -550,6 +556,7 @@ class CodeReviewerPlugin(BasePlugin):
                     final_review.verdict.value if final_review.verdict else "COMMENT"
                 ),
                 "total_tokens": total_tokens,
+                "coverage": coverage.as_dict(),
             }
 
         except Exception as e:
