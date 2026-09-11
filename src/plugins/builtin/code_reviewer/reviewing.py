@@ -155,6 +155,7 @@ class CodeReviewer:
                 code_scope,
                 known,
                 coverage,
+                provider,
             ),
         )
 

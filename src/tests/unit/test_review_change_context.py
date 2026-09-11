@@ -856,8 +856,31 @@ def test_the_systems_a_change_reaches_are_searched_when_this_one_cannot_be():
         diff="--- a/a.py\n+++ b/a.py\n@@\n+def rebalance():\n",
     )
 
-    section = related_code_section(changes, services, None, None, None, known)
+    import json
 
-    assert "unavailable" in section
+    class _Asks:
+        def ask_with_tools(self, messages, tools, *, purpose="tools", require=False):
+            if getattr(self, "done", False):
+                return {"content": "", "tool_calls": []}
+            self.done = True
+            return {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "one",
+                        "name": "search_code",
+                        "arguments": json.dumps(
+                            {"repository": name, "terms": ["rebalance"]}
+                        ),
+                    }
+                    for name in ("acme/api", "acme/web")
+                ],
+            }
+
+    section = related_code_section(
+        changes, services, None, None, None, known, None, _Asks()
+    )
+
+    assert "search failed" in section
     assert "acme/web" in section
     assert "web/app.ts" in section
