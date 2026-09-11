@@ -1,12 +1,12 @@
 from .interfaces import CodeTextSearcher
 from .models import CodeTextMatch, CodeTextQuery, CodeTextResult
-from .terms import changed_code_terms, code_words
+from .terms import code_words, found_in
 
 __all__ = [
     "CodeTextSearcher",
     "CodeTextMatch",
     "CodeTextQuery",
     "CodeTextResult",
-    "changed_code_terms",
+    "found_in",
     "code_words",
 ]

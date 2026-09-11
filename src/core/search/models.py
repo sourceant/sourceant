@@ -5,6 +5,12 @@ from dataclasses import dataclass
 
 from src.core.scope import Scope
 
+#: What a term may be: anything a reader could paste into a search box. A
+#: name, a path, a snake_case identifier, a fragment of a line. Held to one
+#: line because it is handed to a search as a single pattern, and to three
+#: characters because shorter than that matches most files.
+TERM = re.compile(r"[^\x00-\x1f\x7f]{3,128}")
+
 
 @dataclass(frozen=True)
 class CodeTextQuery:
@@ -24,7 +30,7 @@ class CodeTextQuery:
                 "revision, or a workspace"
             )
         if not 1 <= len(self.terms) <= 16 or any(
-            not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9]{2,63}", term) for term in self.terms
+            not re.fullmatch(TERM, term) or term != term.strip() for term in self.terms
         ):
             raise ValueError("Supply between one and sixteen code search terms")
         if not 1 <= self.limit <= 20:

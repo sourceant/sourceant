@@ -1,36 +1,61 @@
-from src.core.search import changed_code_terms
+"""What a search may be asked for.
 
-RENAME = (
-    "--- a/api.py\n"
-    "+++ b/api.py\n"
-    "@@\n"
-    '-    priority: str = Field(default="", max_length=255)\n'
-    '+    importance: str = Field(default="", max_length=255)\n'
-)
+Terms used to be words: three or more letters and digits, nothing else. An
+endpoint, a path and a snake_case name were all unaskable, and a search that
+matched one on the line still threw the line away for not matching a word.
+"""
 
+import pytest
 
-def test_a_renamed_name_is_searched_for_under_the_name_it_lost():
-    """The callers about to break still use the old name, so it leads."""
-    terms = changed_code_terms(RENAME)
+from src.core.search import CodeTextQuery, found_in
+from src.core.scope import Scope
 
-    assert terms[0] == "priority"
-    assert "importance" in terms
+WHERE = Scope.from_mapping({"repository": "acme/api"})
 
 
-def test_a_pure_addition_still_searches_for_what_it_added():
-    diff = (
-        "--- a/api.py\n+++ b/api.py\n@@\n+def rebalance(ledger):\n+    return ledger\n"
+class TestWhatCanBeAskedFor:
+    @pytest.mark.parametrize(
+        "term",
+        [
+            "rebalance",
+            "reference_key",
+            "/api/topology/infer",
+            "ChangedCodeReference",
+            "def rebalance(",
+            "topology.infer",
+        ],
     )
+    def test_anything_a_reader_could_paste(self, term):
+        assert CodeTextQuery(WHERE, (term,)).terms == (term,)
 
-    assert "rebalance" in changed_code_terms(diff)
+    @pytest.mark.parametrize("term", ["", "ab", "a\nb", "x" * 129, " padded"])
+    def test_what_a_search_cannot_take(self, term):
+        with pytest.raises(ValueError, match="one and sixteen"):
+            CodeTextQuery(WHERE, (term,))
+
+    def test_sixteen_is_still_the_most(self):
+        with pytest.raises(ValueError, match="one and sixteen"):
+            CodeTextQuery(WHERE, tuple(f"term{index}" for index in range(17)))
 
 
-def test_the_file_headers_are_not_read_as_changed_code():
-    assert "api" not in changed_code_terms(RENAME)
+class TestWhatCountsAsFound:
+    def test_a_path_is_found_in_the_line_that_carries_it(self):
+        line = 'router.post("/api/topology/infer")'
 
+        assert found_in(line, ("/api/topology/infer",)) == ("/api/topology/infer",)
 
-def test_what_the_hunk_was_written_in_is_not_what_changed():
-    """`Field`, `default` and `max` stand unchanged on both sides of a rename."""
-    terms = changed_code_terms(RENAME)
+    def test_a_snake_case_name_is_found_whole(self):
+        assert found_in("    reference_key = hash(x)", ("reference_key",)) == (
+            "reference_key",
+        )
 
-    assert set(terms) == {"priority", "importance"}
+    def test_it_does_not_care_about_case(self):
+        assert found_in("class ChangedCodeReference:", ("changedcodereference",))
+
+    def test_a_term_the_line_does_not_carry_is_not_found(self):
+        assert found_in("def rebalance(ledger):", ("settlement",)) == ()
+
+    def test_every_term_present_counts(self):
+        line = "from src.core.impact import ChangedCodeReference"
+
+        assert len(found_in(line, ("impact", "ChangedCodeReference", "absent"))) == 2
