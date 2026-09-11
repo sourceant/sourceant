@@ -1254,3 +1254,71 @@ class TestWhetherASkillWasHonoured:
 
         assert result["status"] == "success"
         assert "did not finish" in self.honoured(result)[0]["reason"]
+
+
+class TestWhoseModelReviews:
+    """A delivery has no acting user, so the user its settings resolve from has
+    to be carried from the gateway or the user scope is skipped."""
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_a_model_is_asked_for_on_behalf_of_the_owner(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save_record,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        import asyncio
+
+        mock_get_sha.return_value = None
+        mock_llm.return_value = None
+
+        asyncio.run(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="acme/web",
+                post=False,
+                workspace="2",
+                user="42",
+            )
+        )
+
+        assert mock_llm.call_args.kwargs["user"] == "42"
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_no_owner_asks_for_no_one(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save_record,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        import asyncio
+
+        mock_get_sha.return_value = None
+        mock_llm.return_value = None
+
+        asyncio.run(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="acme/web",
+                post=False,
+                workspace="2",
+            )
+        )
+
+        assert mock_llm.call_args.kwargs["user"] is None

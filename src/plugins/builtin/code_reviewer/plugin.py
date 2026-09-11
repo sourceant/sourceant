@@ -247,6 +247,9 @@ class CodeReviewerPlugin(BasePlugin):
                 pr_metadata=pr_metadata,
                 event_type=event_type,
                 repository_full_name=repository_context.get("full_name"),
+                # A delivery has no acting user, so the owner is the user its
+                # settings resolve from.
+                user=payload.get("sourceant_owner_id"),
             )
 
             # Broadcast review completion event
@@ -324,6 +327,7 @@ class CodeReviewerPlugin(BasePlugin):
         repository_full_name: Optional[str] = None,
         post: bool = True,
         workspace: str | None = None,
+        user: str | None = None,
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -390,7 +394,9 @@ class CodeReviewerPlugin(BasePlugin):
             from src.core.workspace import workspace_holding
 
             workspace = workspace or workspace_holding(repo_full_name)
-            llm_instance = provider_for(repository=repo_full_name, workspace=workspace)
+            llm_instance = provider_for(
+                repository=repo_full_name, workspace=workspace, user=user
+            )
             if llm_instance is None:
                 return {
                     "status": "error",
