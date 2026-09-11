@@ -1,12 +1,12 @@
-from .interfaces import CodeTextSearcher
-from .models import CodeTextMatch, CodeTextQuery, CodeTextResult
+from .interfaces import Searcher
+from .models import SearchMatch, SearchQuery, SearchResult
 from .terms import code_words, found_in
 
 __all__ = [
-    "CodeTextSearcher",
-    "CodeTextMatch",
-    "CodeTextQuery",
-    "CodeTextResult",
+    "Searcher",
+    "SearchMatch",
+    "SearchQuery",
+    "SearchResult",
     "found_in",
     "code_words",
 ]

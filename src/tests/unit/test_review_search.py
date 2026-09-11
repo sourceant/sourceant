@@ -11,7 +11,7 @@ import pytest
 
 from src.core.review_search import MAX_SEARCHES, WhatToLookFor
 from src.core.scope import Scope
-from src.core.search import CodeTextMatch, CodeTextResult
+from src.core.search import SearchMatch, SearchResult
 
 
 def scope_for(repository):
@@ -21,11 +21,11 @@ def scope_for(repository):
 class Found:
     def __init__(self, result=None):
         self.asked = []
-        self._result = result or CodeTextResult(
-            (CodeTextMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
+        self._result = result or SearchResult(
+            (SearchMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
         )
 
-    def search_text(self, query):
+    def search(self, query):
         self.asked.append((str(query.scope.get("repository")), query.terms))
         return self._result
 

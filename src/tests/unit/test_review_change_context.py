@@ -815,20 +815,20 @@ def test_the_systems_a_change_reaches_are_searched_when_this_one_cannot_be():
     from src.core.change_context import ChangeContext
     from src.core.impact import ChangeImpact
     from src.core.change_context import ChangedFile, ChangeSet
-    from src.core.search import CodeTextMatch, CodeTextResult, CodeTextSearcher
+    from src.core.search import SearchMatch, SearchResult, Searcher
     from src.core.topology import TopologyEntity, TopologySubgraph
     from src.plugins.builtin.code_reviewer.context import related_code_section
 
     class _FailsHere:
-        def search_text(self, query):
+        def search(self, query):
             if query.scope.get("revision"):
                 raise RuntimeError("no checkout")
-            return CodeTextResult(
-                (CodeTextMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
+            return SearchResult(
+                (SearchMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
             )
 
     services = ServiceRegistry()
-    services.register(CodeTextSearcher, _FailsHere(), "test")
+    services.register(Searcher, _FailsHere(), "test")
     known = ChangeContext(
         scope=Scope.from_mapping({"repository": "acme/api"}),
         impact=ChangeImpact(

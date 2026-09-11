@@ -21,7 +21,7 @@ from src.core.review_coverage import (
     SIBLING_SOURCE,
 )
 from src.core.review_search import WhatToLookFor, searchable_repositories
-from src.core.search import CodeTextSearcher
+from src.core.search import Searcher
 
 from src.core.change_context import (
     ChangeContextResolver,
@@ -458,7 +458,7 @@ def related_code_section(
     here = str(changes.scope.get("repository") or "")
     reached = reached_elsewhere(known)
     try:
-        searcher = services.resolve(CodeTextSearcher)
+        searcher = services.resolve(Searcher)
     except LookupError:
         # A review told nothing was found reads that as nothing being
         # there, and nothing was looked for.

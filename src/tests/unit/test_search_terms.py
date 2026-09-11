@@ -7,7 +7,7 @@ matched one on the line still threw the line away for not matching a word.
 
 import pytest
 
-from src.core.search import CodeTextQuery, found_in
+from src.core.search import SearchQuery, found_in
 from src.core.scope import Scope
 
 WHERE = Scope.from_mapping({"repository": "acme/api"})
@@ -26,16 +26,16 @@ class TestWhatCanBeAskedFor:
         ],
     )
     def test_anything_a_reader_could_paste(self, term):
-        assert CodeTextQuery(WHERE, (term,)).terms == (term,)
+        assert SearchQuery(WHERE, (term,)).terms == (term,)
 
     @pytest.mark.parametrize("term", ["", "ab", "a\nb", "x" * 129, " padded"])
     def test_what_a_search_cannot_take(self, term):
         with pytest.raises(ValueError, match="one and sixteen"):
-            CodeTextQuery(WHERE, (term,))
+            SearchQuery(WHERE, (term,))
 
     def test_sixteen_is_still_the_most(self):
         with pytest.raises(ValueError, match="one and sixteen"):
-            CodeTextQuery(WHERE, tuple(f"term{index}" for index in range(17)))
+            SearchQuery(WHERE, tuple(f"term{index}" for index in range(17)))
 
 
 class TestWhatCountsAsFound:

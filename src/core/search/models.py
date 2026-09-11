@@ -13,7 +13,7 @@ TERM = re.compile(r"[^\x00-\x1f\x7f]{3,128}")
 
 
 @dataclass(frozen=True)
-class CodeTextQuery:
+class SearchQuery:
     scope: Scope
     terms: tuple[str, ...]
     limit: int = 8
@@ -38,7 +38,7 @@ class CodeTextQuery:
 
 
 @dataclass(frozen=True)
-class CodeTextMatch:
+class SearchMatch:
     path: str
     revision: str
     start_line: int
@@ -50,7 +50,7 @@ class CodeTextMatch:
 
 
 @dataclass(frozen=True)
-class CodeTextResult:
-    matches: tuple[CodeTextMatch, ...] = ()
+class SearchResult:
+    matches: tuple[SearchMatch, ...] = ()
     truncated: bool = False
     unavailable: str | None = None

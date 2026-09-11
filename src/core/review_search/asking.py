@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 
-from src.core.search import CodeTextQuery
+from src.core.search import SearchQuery
 from src.utils.logger import logger
 
 from .models import Asked, MAX_ROUNDS, MAX_SEARCHES
@@ -167,11 +167,11 @@ class WhatToLookFor:
         if spent >= MAX_SEARCHES:
             return Asked(repository, terms, unavailable="no searches left")
         try:
-            query = CodeTextQuery(self._scope_for(repository), terms[:16])
+            query = SearchQuery(self._scope_for(repository), terms[:16])
         except ValueError as error:
             return Asked(repository, terms, unavailable=str(error))
         try:
-            result = self._searcher.search_text(query)
+            result = self._searcher.search(query)
         except Exception as error:  # noqa: BLE001 - one search, not the review
             logger.warning("Searching %s failed: %s", repository, error)
             return Asked(repository, terms, unavailable=f"search failed: {error}")

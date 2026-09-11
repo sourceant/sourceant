@@ -18,7 +18,7 @@ from src.core.review_coverage import (
     read_and_unread,
 )
 from src.core.scope import Scope
-from src.core.search import CodeTextMatch, CodeTextResult, CodeTextSearcher
+from src.core.search import SearchMatch, SearchResult, Searcher
 from src.core.services import ServiceRegistry
 from src.core.topology import TopologyEntity, TopologySubgraph
 from src.plugins.builtin.code_reviewer.context import related_code_section
@@ -158,19 +158,15 @@ class TestOneUnreadableRepositoryCostsThatRepository:
 
     def test_the_others_still_answer_and_the_missing_one_is_recorded(self):
         class _OneIsUnread:
-            def search_text(self, query):
+            def search(self, query):
                 if query.scope.get("repository") == "acme/billing":
-                    return CodeTextResult(unavailable="Not read yet, so not searched")
-                return CodeTextResult(
-                    (
-                        CodeTextMatch(
-                            "web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"
-                        ),
-                    )
+                    return SearchResult(unavailable="Not read yet, so not searched")
+                return SearchResult(
+                    (SearchMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
                 )
 
         services = ServiceRegistry()
-        services.register(CodeTextSearcher, _OneIsUnread(), "test")
+        services.register(Searcher, _OneIsUnread(), "test")
         coverage = Coverage()
 
         section = related_code_section(
@@ -203,11 +199,11 @@ class TestOneUnreadableRepositoryCostsThatRepository:
 
     def test_a_repository_that_cannot_be_searched_does_not_end_the_review(self):
         class _Refuses:
-            def search_text(self, query):
+            def search(self, query):
                 raise RuntimeError("no checkout")
 
         services = ServiceRegistry()
-        services.register(CodeTextSearcher, _Refuses(), "test")
+        services.register(Searcher, _Refuses(), "test")
         coverage = Coverage()
 
         section = related_code_section(
@@ -257,11 +253,11 @@ class TestASystemWithNoCodeIsNotAGap:
 
     def test_it_is_not_listed_as_unread(self):
         class _Searcher:
-            def search_text(self, query):
-                return CodeTextResult()
+            def search(self, query):
+                return SearchResult()
 
         services = ServiceRegistry()
-        services.register(CodeTextSearcher, _Searcher(), "test")
+        services.register(Searcher, _Searcher(), "test")
         coverage = Coverage()
         model = Asks("acme/api")
 
