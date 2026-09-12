@@ -22,7 +22,7 @@ from .sql import (
 )
 from .resolver import DefaultChangeImpactResolver
 from .seeding import (
-    FirstAnsweringSeedResolver,
+    FallbackSeedResolver,
     TopologyPrefixSeedResolver,
 )
 
@@ -36,7 +36,7 @@ __all__ = [
     "CompatibilityCheckReader",
     "CompatibilityCheckWriter",
     "DefaultChangeImpactResolver",
-    "FirstAnsweringSeedResolver",
+    "FallbackSeedResolver",
     "ImpactFinding",
     "ImpactCodeMappingWriter",
     "ImpactSeedRepository",

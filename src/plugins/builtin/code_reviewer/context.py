@@ -330,7 +330,7 @@ def core_impact_preparer(services: ServiceRegistry):
     from src.config.db import get_engine
     from src.core.impact import (
         DefaultChangeImpactResolver,
-        FirstAnsweringSeedResolver,
+        FallbackSeedResolver,
         SQLCompatibilityCheckRepository,
         SQLImpactSeedRepository,
         TopologyPrefixSeedResolver,
@@ -352,7 +352,7 @@ def core_impact_preparer(services: ServiceRegistry):
             # plugin that does, the graph's own shape is the only answer
             # there is. It is also the only answer for a repository that was
             # connected and not yet read.
-            seeds=FirstAnsweringSeedResolver(
+            seeds=FallbackSeedResolver(
                 SQLImpactSeedRepository(engine),
                 TopologyPrefixSeedResolver(topology),
             ),

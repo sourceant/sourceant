@@ -6,7 +6,7 @@ from src.core.impact import (
     CompatibilityCheckQuery,
     CompatibilityCheckRepository,
     DefaultChangeImpactResolver,
-    FirstAnsweringSeedResolver,
+    FallbackSeedResolver,
     ImpactFinding,
     ImpactSeedRepository,
     InMemoryCompatibilityCheckReader,
@@ -370,14 +370,12 @@ class TestStartingTheWalkWithNothingRecorded:
         recorded = InMemoryImpactSeedResolver()
         change = self.changed("src/core/jobs/sql.py")
         recorded.put_mapping(PRODUCT, change, ("component:billing:jobs",))
-        seeds = FirstAnsweringSeedResolver(
-            recorded, TopologyPrefixSeedResolver(self.graph())
-        )
+        seeds = FallbackSeedResolver(recorded, TopologyPrefixSeedResolver(self.graph()))
 
         assert seeds.resolve(PRODUCT, (change,)) == ("component:billing:jobs",)
 
     def test_the_graph_answers_when_nothing_was_recorded(self):
-        seeds = FirstAnsweringSeedResolver(
+        seeds = FallbackSeedResolver(
             InMemoryImpactSeedResolver(), TopologyPrefixSeedResolver(self.graph())
         )
 

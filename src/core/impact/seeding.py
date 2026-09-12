@@ -90,8 +90,8 @@ class TopologyPrefixSeedResolver:
         return tuple(sorted(parts, key=lambda pair: len(pair[0]), reverse=True))
 
 
-class FirstAnsweringSeedResolver:
-    """Stored mappings, and where there are none, the graph's own answer.
+class FallbackSeedResolver:
+    """Where a walk starts: the stored mapping, or the graph's own shape.
 
     Asked in that order because a mapping was written by something that read
     the repository and knows more than a folder name does.
