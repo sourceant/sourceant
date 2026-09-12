@@ -1155,6 +1155,7 @@ class TestWhetherASkillWasHonoured:
                 "answered": False,
                 "target": "migrations",
                 "reason": "Never mentioned it",
+                "looked_for": [],
                 "found": [],
             }
         ]

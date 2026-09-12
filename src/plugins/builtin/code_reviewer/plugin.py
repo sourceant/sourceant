@@ -524,6 +524,14 @@ class CodeReviewerPlugin(BasePlugin):
                     coverage, final_review.code_suggestions or ()
                 )
                 final_review.summary.coverage = read_and_unread(coverage)
+            for attempt in coverage.attempts:
+                if attempt.looked_for:
+                    logger.info(
+                        "Searched %s for %s: %s",
+                        attempt.target,
+                        ", ".join(attempt.looked_for),
+                        ", ".join(attempt.found) or "nothing",
+                    )
             logger.info("Review coverage: %s", coverage.as_dict())
 
             # Apply review guards

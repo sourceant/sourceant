@@ -48,6 +48,10 @@ class Attempt:
     target: str = ""
     #: Why nothing came back, in the words of whatever refused.
     reason: str = ""
+    #: What was looked for. A search that found nothing and a search nobody
+    #: ran are the same empty answer without this, and the words are what
+    #: decides which it was.
+    looked_for: tuple[str, ...] = ()
     #: What the search matched, where it matched anything. A search that
     #: answered and found nothing is not the same as one that found code,
     #: and only the second gives a review something to say.
@@ -75,9 +79,10 @@ class Coverage:
         target: str = "",
         reason: str = "",
         found: tuple[str, ...] = (),
+        looked_for: tuple[str, ...] = (),
     ) -> None:
         self._attempts.append(
-            Attempt(question, method, answered, target, reason, found)
+            Attempt(question, method, answered, target, reason, looked_for, found)
         )
 
     def reaches(self, repositories: tuple[str, ...]) -> None:
@@ -174,6 +179,7 @@ class Coverage:
                     "answered": attempt.answered,
                     "target": attempt.target,
                     "reason": attempt.reason,
+                    "looked_for": list(attempt.looked_for),
                     "found": list(attempt.found),
                 }
                 for attempt in self._attempts

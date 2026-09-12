@@ -548,6 +548,9 @@ def related_code_section(
                         else (looking.refused or "the review did not ask about it")
                     ),
                 ),
+                looked_for=tuple(
+                    dict.fromkeys(term for item in answers for term in item.terms)
+                ),
                 found=tuple(
                     dict.fromkeys(
                         match["path"] for item in answers for match in item.matches
