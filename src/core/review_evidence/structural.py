@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+
 import logging
 import re
 from collections.abc import Callable
@@ -120,19 +122,6 @@ class StructuralReviewEvidenceValidator:
 # defining.
 _PYTHON_ASSIGNED = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]+)?=", re.M)
 
-#: Every name the file binds and the line it binds it on, whatever the scope:
-#: an assignment, a loop target, a parameter, a name given to a result. Not
-#: facts, because bound somewhere is not the same as in scope here. Kept so a
-#: claim carrying a line can be answered.
-_PYTHON_BOUND = re.compile(
-    r"^[^\S\n]*(?:for\s+|with\s+[^\n]*?\s+as\s+|except\s+[^\n]*?\s+as\s+)?"
-    r"([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]+)?=",
-    re.M,
-)
-_PYTHON_DEFINITION = re.compile(
-    r"^[^\S\n]*(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)", re.M | re.S
-)
-_PARAMETER_NAME = re.compile(r"(?:^|,)\s*\*{0,2}([A-Za-z_][A-Za-z0-9_]*)")
 _JS_ASSIGNED = re.compile(
     r"^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)", re.M
 )
@@ -144,27 +133,40 @@ def _bound_names(language: str, content: str) -> dict[str, int]:
     A review is shown a hunk and says a name is undefined, when it was bound
     forty lines above what it was shown. Answering that needs the line the
     claim is about and the line the name arrived on, and nothing else.
+
+    Parsed rather than matched. A loop target, a context manager, a caught
+    exception and a parameter each bind a name and none of them is an
+    assignment, and a pattern written to catch them caught the type inside an
+    annotation instead.
     """
     if language != "python":
         return {}
     found: dict[str, int] = {}
 
     def seen(name: str, at: int) -> None:
-        # The earliest line, not the first one found. A parameter is scanned
-        # after the assignments and binds the name before any of them, and
-        # keeping whichever arrived first made a name look bound later than
-        # it is.
-        if name in ("self", "cls"):
-            return
-        found[name] = min(at, found.get(name, at))
+        # The earliest line it arrives on. A parameter binds a name for the
+        # whole body, and an assignment further down is not where it began.
+        if name and name not in ("self", "cls"):
+            found[name] = min(at, found.get(name, at))
 
-    for match in _PYTHON_BOUND.finditer(content):
-        seen(match.group(1), content.count("\n", 0, match.start()) + 1)
-    for match in _PYTHON_DEFINITION.finditer(content):
-        line = content.count("\n", 0, match.start()) + 1
-        seen(match.group(1), line)
-        for name in _PARAMETER_NAME.findall(match.group(2)):
-            seen(name, line)
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError, RecursionError):
+        # Half written, or not the language it claimed to be. Nothing bound
+        # rather than something wrong.
+        return {}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            seen(node.id, node.lineno)
+        elif isinstance(node, ast.arg):
+            seen(node.arg, node.lineno)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            seen(node.name, node.lineno)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            seen(node.name, node.lineno)
+        elif isinstance(node, ast.alias):
+            seen((node.asname or node.name).split(".")[0], getattr(node, "lineno", 1))
     return found
 
 

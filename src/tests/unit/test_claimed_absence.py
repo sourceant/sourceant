@@ -219,3 +219,54 @@ class TestBoundAboveTheLineItIsClaimedMissingOn:
         assert not validator.validate(
             list(claimed_absent("`scratch` is not defined.")), self.evidence()
         ).contradicted
+
+
+class TestEveryWayPythonBindsAName:
+    """A loop target, a context manager, a caught exception and a parameter
+    each bind a name, and none of them is an assignment. Matched rather than
+    parsed, all four were missed and the type inside an annotation was read
+    as a name the file binds."""
+
+    def bound(self, source):
+        from src.core.review_evidence import CachedChangedFileEvidenceReader
+
+        return (
+            CachedChangedFileEvidenceReader(lambda path: source).read("a.py").bindings
+        )
+
+    def test_a_loop_target(self):
+        assert "item" in self.bound("for item in items:\n    pass\n")
+
+    def test_a_context_manager(self):
+        assert "handle" in self.bound("with open('f') as handle:\n    pass\n")
+
+    def test_a_caught_exception(self):
+        assert "problem" in self.bound(
+            "try:\n    pass\nexcept ValueError as problem:\n    pass\n"
+        )
+
+    def test_a_parameter_with_a_call_as_its_default(self):
+        assert "limit" in self.bound("def run(limit=max(1, 2)):\n    return limit\n")
+
+    def test_an_imported_name(self):
+        assert "sleep" in self.bound("from time import sleep\n")
+
+    def test_a_renamed_import(self):
+        bound = self.bound("import numpy as np\n")
+
+        assert "np" in bound
+        assert "numpy" not in bound
+
+    def test_a_type_inside_an_annotation_is_not_bound_here(self):
+        """`str` is used in the annotation, not bound by it. Counted as bound,
+        a true finding about it would be thrown away."""
+        bound = self.bound("def typed(a: Union[int, str]):\n    return a\n")
+
+        assert "a" in bound
+        assert "str" not in bound
+
+    def test_a_walrus_binds_too(self):
+        assert "found" in self.bound("if (found := lookup()):\n    pass\n")
+
+    def test_a_file_that_does_not_parse_binds_nothing(self):
+        assert self.bound("def broken(:\n") == {}
