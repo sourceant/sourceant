@@ -154,6 +154,13 @@ class CodeReviewSummary(CodeReviewOverview):
         ...,
         description="A list of critical issues that should be changed. Leave empty if none.",
     )
+    systems: Optional[str] = Field(
+        None,
+        description=(
+            "Leave this empty. It is filled in afterwards with what was found "
+            "in the systems this change reaches."
+        ),
+    )
     coverage: Optional[str] = Field(
         None,
         description=(

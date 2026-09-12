@@ -31,6 +31,7 @@ from src.core.review_evidence import (
     FallbackChangedFileEvidenceReader,
     IndexedChangedFileEvidenceReader,
     StructuralReviewEvidenceValidator,
+    claimed_absent,
 )
 from src.core.scope import Scope
 from src.core.skills import (
@@ -155,6 +156,7 @@ class CodeReviewer:
                 code_scope,
                 known,
                 coverage,
+                provider,
             ),
         )
 
@@ -600,9 +602,14 @@ class CodeReviewer:
                 suggestion.side = Side(mapping["side"])
                 if "start_line" in mapping:
                     suggestion.start_line = mapping["start_line"]
+                # What it declared, and what it asserted in words without
+                # declaring. A review sure enough to report a missing name in
+                # prose is the one that does not state the claim, and that is
+                # the claim worth checking.
                 decision = validator.validate(
-                    suggestion.claims,
+                    list(suggestion.claims) + list(claimed_absent(suggestion.comment)),
                     evidence.read(suggestion.file_name) if evidence else None,
+                    at=suggestion.start_line,
                 )
                 if decision.contradicted:
                     if evidence_rejections is not None:

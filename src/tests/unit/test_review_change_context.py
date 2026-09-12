@@ -815,20 +815,20 @@ def test_the_systems_a_change_reaches_are_searched_when_this_one_cannot_be():
     from src.core.change_context import ChangeContext
     from src.core.impact import ChangeImpact
     from src.core.change_context import ChangedFile, ChangeSet
-    from src.core.search import CodeTextMatch, CodeTextResult, CodeTextSearcher
+    from src.core.search import SearchMatch, SearchResult, Searcher
     from src.core.topology import TopologyEntity, TopologySubgraph
     from src.plugins.builtin.code_reviewer.context import related_code_section
 
     class _FailsHere:
-        def search_text(self, query):
+        def search(self, query):
             if query.scope.get("revision"):
                 raise RuntimeError("no checkout")
-            return CodeTextResult(
-                (CodeTextMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
+            return SearchResult(
+                (SearchMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
             )
 
     services = ServiceRegistry()
-    services.register(CodeTextSearcher, _FailsHere(), "test")
+    services.register(Searcher, _FailsHere(), "test")
     known = ChangeContext(
         scope=Scope.from_mapping({"repository": "acme/api"}),
         impact=ChangeImpact(
@@ -856,8 +856,31 @@ def test_the_systems_a_change_reaches_are_searched_when_this_one_cannot_be():
         diff="--- a/a.py\n+++ b/a.py\n@@\n+def rebalance():\n",
     )
 
-    section = related_code_section(changes, services, None, None, None, known)
+    import json
 
-    assert "unavailable" in section
+    class _Asks:
+        def ask_with_tools(self, messages, tools, *, purpose="tools", require=False):
+            if getattr(self, "done", False):
+                return {"content": "", "tool_calls": []}
+            self.done = True
+            return {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "one",
+                        "name": "search_code",
+                        "arguments": json.dumps(
+                            {"repository": name, "terms": ["rebalance"]}
+                        ),
+                    }
+                    for name in ("acme/api", "acme/web")
+                ],
+            }
+
+    section = related_code_section(
+        changes, services, None, None, None, known, None, _Asks()
+    )
+
+    assert "search failed" in section
     assert "acme/web" in section
     assert "web/app.ts" in section

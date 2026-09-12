@@ -4,6 +4,8 @@ A review that could not reach a repository and one that reached it and found
 nothing say the same thing to a reader: nothing. These hold the difference.
 """
 
+import json
+
 from src.core.change_context import ChangeContext, ChangedFile, ChangeSet
 from src.core.impact import ChangeImpact
 from src.core.review_coverage import (
@@ -16,7 +18,7 @@ from src.core.review_coverage import (
     read_and_unread,
 )
 from src.core.scope import Scope
-from src.core.search import CodeTextMatch, CodeTextResult, CodeTextSearcher
+from src.core.search import SearchMatch, SearchResult, Searcher
 from src.core.services import ServiceRegistry
 from src.core.topology import TopologyEntity, TopologySubgraph
 from src.plugins.builtin.code_reviewer.context import related_code_section
@@ -46,6 +48,32 @@ def reaching(*repositories):
             False,
         ),
     )
+
+
+class Asks:
+    """A model that asks to search each repository once, then stops."""
+
+    def __init__(self, *repositories, terms=("rebalance",)):
+        self.repositories = list(repositories)
+        self.terms = terms
+        self.asked = []
+
+    def ask_with_tools(self, messages, tools, *, purpose="tools", require=False):
+        if not self.repositories:
+            return {"content": "", "tool_calls": []}
+        calls = [
+            {
+                "id": f"call-{index}",
+                "name": "search_code",
+                "arguments": json.dumps(
+                    {"repository": name, "terms": list(self.terms)}
+                ),
+            }
+            for index, name in enumerate(self.repositories)
+        ]
+        self.asked.extend(self.repositories)
+        self.repositories = []
+        return {"content": "", "tool_calls": calls}
 
 
 def changes():
@@ -130,19 +158,15 @@ class TestOneUnreadableRepositoryCostsThatRepository:
 
     def test_the_others_still_answer_and_the_missing_one_is_recorded(self):
         class _OneIsUnread:
-            def search_text(self, query):
+            def search(self, query):
                 if query.scope.get("repository") == "acme/billing":
-                    return CodeTextResult(unavailable="Not read yet, so not searched")
-                return CodeTextResult(
-                    (
-                        CodeTextMatch(
-                            "web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"
-                        ),
-                    )
+                    return SearchResult(unavailable="Not read yet, so not searched")
+                return SearchResult(
+                    (SearchMatch("web/app.ts", "r2", 1, 2, "rebalance()", "acme/web"),)
                 )
 
         services = ServiceRegistry()
-        services.register(CodeTextSearcher, _OneIsUnread(), "test")
+        services.register(Searcher, _OneIsUnread(), "test")
         coverage = Coverage()
 
         section = related_code_section(
@@ -153,6 +177,7 @@ class TestOneUnreadableRepositoryCostsThatRepository:
             None,
             reaching("acme/web", "acme/billing"),
             coverage,
+            Asks("acme/web", "acme/billing"),
         )
 
         assert "web/app.ts" in section
@@ -174,18 +199,25 @@ class TestOneUnreadableRepositoryCostsThatRepository:
 
     def test_a_repository_that_cannot_be_searched_does_not_end_the_review(self):
         class _Refuses:
-            def search_text(self, query):
+            def search(self, query):
                 raise RuntimeError("no checkout")
 
         services = ServiceRegistry()
-        services.register(CodeTextSearcher, _Refuses(), "test")
+        services.register(Searcher, _Refuses(), "test")
         coverage = Coverage()
 
         section = related_code_section(
-            changes(), services, None, None, None, reaching("acme/web"), coverage
+            changes(),
+            services,
+            None,
+            None,
+            None,
+            reaching("acme/web"),
+            coverage,
+            Asks("acme/web"),
         )
 
-        assert "unavailable" in section
+        assert "search failed" in section
         assert not coverage.answered(SIBLING_SOURCE, "acme/web")
         assert not coverage.answered(NEIGHBOURING_CODE)
 
@@ -220,22 +252,27 @@ class TestASystemWithNoCodeIsNotAGap:
         )
 
     def test_it_is_not_listed_as_unread(self):
-        asked = []
-
         class _Searcher:
-            def search_text(self, query):
-                asked.append(str(query.scope.get("repository") or ""))
-                return CodeTextResult()
+            def search(self, query):
+                return SearchResult()
 
         services = ServiceRegistry()
-        services.register(CodeTextSearcher, _Searcher(), "test")
+        services.register(Searcher, _Searcher(), "test")
         coverage = Coverage()
+        model = Asks("acme/api")
 
         related_code_section(
-            changes(), services, None, None, None, self.drawn_by_hand(), coverage
+            changes(),
+            services,
+            None,
+            None,
+            None,
+            self.drawn_by_hand(),
+            coverage,
+            model,
         )
 
-        assert "Acme stack" not in asked
+        assert "Acme stack" not in model.asked
         assert coverage.unread == ()
         assert not coverage.answered(SIBLING_SOURCE, "Acme stack")
 

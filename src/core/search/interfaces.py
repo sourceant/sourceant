@@ -1,8 +1,8 @@
 from typing import Protocol, runtime_checkable
 
-from .models import CodeTextQuery, CodeTextResult
+from .models import SearchQuery, SearchResult
 
 
 @runtime_checkable
-class CodeTextSearcher(Protocol):
-    def search_text(self, query: CodeTextQuery) -> CodeTextResult: ...
+class Searcher(Protocol):
+    def search(self, query: SearchQuery) -> SearchResult: ...

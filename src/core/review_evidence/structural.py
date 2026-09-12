@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+
 import logging
 import re
 from collections.abc import Callable
@@ -77,6 +79,7 @@ class CachedChangedFileEvidenceReader:
             language=language,
             facts=frozenset(facts),
             supported_predicates=frozenset(supported_predicates),
+            bindings=_bound_names(language, content),
         )
 
 
@@ -85,17 +88,31 @@ class StructuralReviewEvidenceValidator:
         self,
         claims: list[ReviewClaim],
         evidence: FileEvidence | None,
+        at: int | None = None,
     ) -> EvidenceDecision:
+        """Whether the file contradicts any of these claims.
+
+        `at` is the line the claims are about. Given one, a name the file
+        binds before that line contradicts a claim that it is missing, which
+        is the shape of the mistake a review makes when it is shown part of a
+        file and takes what it cannot see for what is not there.
+        """
         if evidence is None or not claims:
             return EvidenceDecision(False)
         for claim in claims:
-            if claim.predicate not in evidence.supported_predicates:
+            if claim.expected:
                 continue
-            actual = StructuralFact(claim.subject, claim.predicate) in evidence.facts
-            if actual and not claim.expected:
+            if claim.predicate in evidence.supported_predicates:
+                if StructuralFact(claim.subject, claim.predicate) in evidence.facts:
+                    return EvidenceDecision(
+                        True,
+                        "post-change structure contradicts a factual claim",
+                    )
+            bound = evidence.bindings.get(claim.subject)
+            if at is not None and bound is not None and bound <= at:
                 return EvidenceDecision(
                     True,
-                    "post-change structure contradicts a factual claim",
+                    f"{claim.subject} is bound at line {bound}, above this",
                 )
         return EvidenceDecision(False)
 
@@ -104,9 +121,60 @@ class StructuralReviewEvidenceValidator:
 # only, so without this a module-level constant is a name no file admits to
 # defining.
 _PYTHON_ASSIGNED = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]+)?=", re.M)
+
 _JS_ASSIGNED = re.compile(
     r"^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)", re.M
 )
+
+
+def _bound_names(language: str, content: str) -> dict[str, int]:
+    """Where each name the file binds is first bound.
+
+    A review is shown a hunk and says a name is undefined, when it was bound
+    forty lines above what it was shown. Answering that needs the line the
+    claim is about and the line the name arrived on, and nothing else.
+
+    Parsed rather than matched. A loop target, a context manager, a caught
+    exception and a parameter each bind a name and none of them is an
+    assignment, and a pattern written to catch them caught the type inside an
+    annotation instead.
+    """
+    if language != "python":
+        return {}
+    found: dict[str, int] = {}
+
+    def seen(name: str, at: int) -> None:
+        # The earliest line it arrives on. A parameter binds a name for the
+        # whole body, and an assignment further down is not where it began.
+        if name and name not in ("self", "cls"):
+            found[name] = min(at, found.get(name, at))
+
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError, RecursionError):
+        # Half written, or not the language it claimed to be. Nothing bound
+        # rather than something wrong.
+        return {}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            seen(node.id, node.lineno)
+        elif isinstance(node, ast.arg):
+            seen(node.arg, node.lineno)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            seen(node.name, node.lineno)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            seen(node.name, node.lineno)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            # Asked of the statement rather than the name under it. An alias
+            # carries no line of its own on every version this runs on.
+            for alias in node.names:
+                seen((alias.asname or alias.name).split(".")[0], node.lineno)
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+            # A pattern captures a name without assigning it:
+            # `case [first, *rest]` binds both.
+            seen(node.name, node.lineno)
+    return found
 
 
 def _assigned_names(language: str, content: str) -> set[str]:

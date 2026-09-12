@@ -253,6 +253,43 @@ class LiteLLMProvider(LLMInterface):
         )
         return summary_from(suggestions, written)
 
+    def ask_with_tools(
+        self,
+        messages: list,
+        tools: list,
+        *,
+        purpose: str = "tools",
+        require: bool = False,
+    ) -> dict:
+        """One round of a conversation the model can answer with a request.
+
+        Returns what it said and what it asked for. The loop belongs to the
+        caller, which is the only part that knows when it has enough.
+
+        A provider that cannot take tools raises, and the caller reads that
+        as this model being unable to ask rather than as a failed review.
+        """
+        response = litellm.completion(
+            **self._credentials(),
+            model=self.model,
+            messages=messages,
+            tools=tools,
+            tool_choice="required" if require else "auto",
+        )
+        self._spent(response, purpose)
+        answered = response.choices[0].message
+        return {
+            "content": answered.content or "",
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "name": call.function.name,
+                    "arguments": call.function.arguments,
+                }
+                for call in (answered.tool_calls or ())
+            ],
+        }
+
     def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         try:
             response = litellm.completion(

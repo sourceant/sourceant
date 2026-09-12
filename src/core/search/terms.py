@@ -20,38 +20,13 @@ def code_words(text: str) -> tuple[str, ...]:
     )
 
 
-def changed_code_terms(diff: str) -> tuple[str, ...]:
-    """What to go looking for, given what the diff did.
+def found_in(line: str, terms) -> tuple[str, ...]:
+    """Which of these terms the line carries.
 
-    A name the diff took away comes first. Searching only what was added
-    answers "where else is this new thing", when the question a review has to
-    answer is "who was using the old one": a renamed field is added under its
-    new name and removed under its old, and only the old name finds the callers
-    that are about to break.
+    As text and case-insensitively, not as words. A term can be a path, a
+    snake_case name or a fragment of a line, and a rule that matched only
+    whole words found none of them in the very line a search had just
+    matched them on.
     """
-    added, removed = [], []
-    for line in diff.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
-            added.append(line[1:])
-        elif line.startswith("-") and not line.startswith("---"):
-            removed.append(line[1:])
-    put_in = Counter(code_words("\n".join(added)))
-    taken_out = Counter(code_words("\n".join(removed)))
-    counts = put_in + taken_out
-    # A word standing on both sides of the hunk in equal number is the shape
-    # the change was written in, not the change. Searching for it ranks every
-    # file that happens to be written the same way above the one that calls the
-    # thing that moved.
-    moved = {
-        term: abs(put_in[term] - taken_out[term])
-        for term in counts
-        if put_in[term] != taken_out[term]
-    }
-    gone = {term for term in taken_out if term not in put_in}
-    ordered = moved or {term: counts[term] for term in counts}
-    return tuple(
-        sorted(
-            ordered,
-            key=lambda term: (term not in gone, -ordered[term], term),
-        )[:16]
-    )
+    lowered = line.lower()
+    return tuple(term for term in terms if term.lower() in lowered)

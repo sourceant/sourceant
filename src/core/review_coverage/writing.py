@@ -51,3 +51,37 @@ def read_and_unread(coverage: Coverage) -> str:
         )
         lines.append(f"Nothing outside this repository was read: {why}.")
     return "\n".join(lines)
+
+
+def systems_read(coverage, suggestions=()) -> str:
+    """What this change does to the systems around it, where it does anything.
+
+    Reaching a system is not news, and neither is a list of files that happen
+    to carry a word the search asked for. A finding about a system earns a
+    line here and the code it was found in goes under it as evidence. Nothing
+    to say about anywhere means no section at all.
+    """
+    lines = []
+    for name in coverage.reached_with_code:
+        about = [
+            one
+            for one in suggestions
+            if one and one.comment and name.lower() in one.comment.lower()
+        ]
+        if not about:
+            continue
+        lines.append(f"**{name}**")
+        for one in about:
+            lines.append(
+                f"  - {one.comment.strip().splitlines()[0]} (`{one.file_name}`)"
+            )
+        found = coverage.found_in(name)
+        if found:
+            lines.append(
+                "  - Found in: "
+                + ", ".join(f"`{path}`" for path in found[:3])
+                + (f" and {len(found) - 3} more" if len(found) > 3 else "")
+            )
+    if not lines:
+        return ""
+    return "### 🛰️ Systems\n" + "\n".join(lines) + "\n"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Mapping
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +32,11 @@ class FileEvidence:
     supported_predicates: frozenset[StructuralPredicate] = field(
         default_factory=frozenset
     )
+    #: Every name the file binds anywhere, and the first line it binds it on.
+    #: Bound somewhere is not the same as in scope here, which is why these
+    #: are not facts: they answer a claim that carries a line, and only for a
+    #: line after the binding.
+    bindings: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

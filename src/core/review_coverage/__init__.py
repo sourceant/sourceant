@@ -13,7 +13,7 @@ from .models import (
     SKILLS,
     SNAPSHOT,
 )
-from .writing import read_and_unread
+from .writing import read_and_unread, systems_read
 
 __all__ = [
     "Attempt",
@@ -30,4 +30,5 @@ __all__ = [
     "SKILLS",
     "SNAPSHOT",
     "read_and_unread",
+    "systems_read",
 ]
