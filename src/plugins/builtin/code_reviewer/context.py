@@ -499,7 +499,8 @@ def related_code_section(
         # request pins its own repository and nothing else.
         return Scope.from_mapping({"repository": repository})
 
-    asked = WhatToLookFor(searcher, scope_for).gather(
+    looking = WhatToLookFor(searcher, scope_for)
+    asked = looking.gather(
         provider, change=_describe(changes), repositories=repositories
     )
     if coverage is not None:
@@ -516,7 +517,11 @@ def related_code_section(
                 target=one,
                 reason=next(
                     (item.unavailable for item in answers if item.unavailable),
-                    "" if answers else "the review did not ask about it",
+                    (
+                        ""
+                        if answers
+                        else (looking.refused or "the review did not ask about it")
+                    ),
                 ),
                 found=tuple(
                     dict.fromkeys(

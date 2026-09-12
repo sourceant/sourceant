@@ -138,6 +138,36 @@ class TestItCannotWidenWhatItWasGiven:
         assert asked[0].unavailable
 
 
+class TestBeingUnableToAskIsNotADecision:
+    """A review that chose not to search and one that was never able to say
+    look identical in what comes back, and only the first is a judgement."""
+
+    def test_a_provider_that_fails_says_so(self):
+        class _Fails:
+            def ask_with_tools(self, *args, **kwargs):
+                raise RuntimeError("credits are depleted")
+
+        looking = WhatToLookFor(Found(), scope_for)
+        looking.gather(_Fails(), change="{}", repositories=("acme/web",))
+
+        assert "could not be asked" in looking.refused
+
+    def test_a_provider_that_takes_no_tools_says_so(self):
+        class _Plain:
+            pass
+
+        looking = WhatToLookFor(Found(), scope_for)
+        looking.gather(_Plain(), change="{}", repositories=("acme/web",))
+
+        assert "cannot be asked" in looking.refused
+
+    def test_a_review_that_simply_stopped_says_nothing(self):
+        looking = WhatToLookFor(Found(), scope_for)
+        looking.gather(answering([]), change="{}", repositories=("acme/web",))
+
+        assert looking.refused == ""
+
+
 class TestWhenItCannotBeAsked:
     def test_a_provider_that_takes_no_tools_asks_nothing(self):
         """Older providers answer a prompt and nothing else."""

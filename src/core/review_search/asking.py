@@ -99,9 +99,18 @@ class WhatToLookFor:
         self._scope_for = scope_for
         self._rounds = rounds
 
+    #: Set when the model could not be asked at all. A review that chose not
+    #: to search and one that was never able to say look identical in what
+    #: comes back, and only the first is a judgement.
+    refused: str = ""
+
     def gather(self, provider, *, change, repositories) -> tuple[Asked, ...]:
         """Every search the review asked for, with what each one found."""
-        if not repositories or not hasattr(provider, "ask_with_tools"):
+        self.refused = ""
+        if not repositories:
+            return ()
+        if not hasattr(provider, "ask_with_tools"):
+            self.refused = "this model cannot be asked what to look for"
             return ()
         tools = tools_for(repositories)
         messages = [
@@ -121,6 +130,7 @@ class WhatToLookFor:
                 logger.warning(
                     "The review could not be asked what to search for: %s", error
                 )
+                self.refused = f"the model could not be asked: {type(error).__name__}"
                 return tuple(done)
             calls = answer.get("tool_calls") or ()
             if not calls:
