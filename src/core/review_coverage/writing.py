@@ -54,35 +54,34 @@ def read_and_unread(coverage: Coverage) -> str:
 
 
 def systems_read(coverage, suggestions=()) -> str:
-    """The systems this change reaches, and what was found in each.
+    """What this change does to the systems around it, where it does anything.
 
-    Only what a reader can act on: a system the search turned up code in, or
-    one a finding names. A system reached, searched and quiet says nothing
-    worth a line, and a section that lists everything is read as a list of
-    nothing.
+    Reaching a system is not news, and neither is a list of files that happen
+    to carry a word the search asked for. A finding about a system earns a
+    line here and the code it was found in goes under it as evidence. Nothing
+    to say about anywhere means no section at all.
     """
     lines = []
     for name in coverage.reached_with_code:
-        found = coverage.found_in(name)
-        mentioned = [
+        about = [
             one
             for one in suggestions
             if one and one.comment and name.lower() in one.comment.lower()
         ]
-        if not found and not mentioned:
+        if not about:
             continue
-        said = [f"**{name}**"]
-        if found:
-            said.append(
-                "  - "
-                + ("Related code: " if len(found) > 1 else "Related code: ")
-                + ", ".join(f"`{path}`" for path in found[:5])
-                + (f" and {len(found) - 5} more" if len(found) > 5 else "")
+        lines.append(f"**{name}**")
+        for one in about:
+            lines.append(
+                f"  - {one.comment.strip().splitlines()[0]} (`{one.file_name}`)"
             )
-        for one in mentioned:
-            where = f"`{one.file_name}`"
-            said.append(f"  - {one.comment.strip().splitlines()[0]} ({where})")
-        lines.extend(said)
+        found = coverage.found_in(name)
+        if found:
+            lines.append(
+                "  - Found in: "
+                + ", ".join(f"`{path}`" for path in found[:3])
+                + (f" and {len(found) - 3} more" if len(found) > 3 else "")
+            )
     if not lines:
         return ""
-    return "### 🛰️ Systems This Change Reaches\n" + "\n".join(lines) + "\n"
+    return "### 🛰️ Systems\n" + "\n".join(lines) + "\n"

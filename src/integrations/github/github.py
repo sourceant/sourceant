@@ -531,13 +531,9 @@ class GitHub(ProviderAdapter):
             parts.append(summary.systems)
             parts.append("\n")
 
-        # A reader who sees nothing raised needs to know whether that means
-        # the change is sound or that most of the system was out of reach.
-        if summary.coverage:
-            parts.append("---\n")
-            for line in summary.coverage.splitlines():
-                parts.append(f"<sub>{line}</sub>\n")
-
+        # What a review was able to read is kept with the review and not
+        # printed. It says how the reading went rather than anything about
+        # the change, and a reader opening a pull request wants the second.
         return "".join(parts)
 
     def _post_review_as_fallback_comment(

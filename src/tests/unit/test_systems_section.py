@@ -45,7 +45,8 @@ class TestWhenItAppears:
     def test_a_change_reaching_nothing_writes_no_section(self):
         assert systems_read(reaching()) == ""
 
-    def test_code_found_in_a_system_puts_it_in(self):
+    def test_code_found_with_nothing_said_about_it_writes_no_section(self):
+        """Files carrying a word the search asked for are not a finding."""
         coverage = reaching("acme/web")
         coverage.record(
             SIBLING_SOURCE,
@@ -55,11 +56,24 @@ class TestWhenItAppears:
             found=("web/checkout.ts", "web/order.ts"),
         )
 
-        said = systems_read(coverage)
+        assert systems_read(coverage) == ""
 
-        assert "acme/web" in said
+    def test_a_finding_brings_the_code_it_was_found_in_with_it(self):
+        coverage = reaching("acme/web")
+        coverage.record(
+            SIBLING_SOURCE,
+            KEYWORD,
+            answered=True,
+            target="acme/web",
+            found=("web/checkout.ts", "web/order.ts"),
+        )
+
+        said = systems_read(
+            coverage, [suggestion("This removes a field acme/web still reads.")]
+        )
+
+        assert "still reads" in said
         assert "`web/checkout.ts`" in said
-        assert "`web/order.ts`" in said
 
     def test_a_finding_naming_a_system_puts_it_in(self):
         coverage = reaching("acme/web")
@@ -89,18 +103,18 @@ class TestWhichSystemsItNames:
 
         assert systems_read(coverage, [suggestion("Acme stack is affected.")]) == ""
 
-    def test_only_the_systems_with_something_to_show(self):
+    def test_only_the_systems_a_finding_names(self):
         coverage = reaching("acme/web", "acme/billing")
-        coverage.record(
-            SIBLING_SOURCE,
-            KEYWORD,
-            answered=True,
-            target="acme/web",
-            found=("web/checkout.ts",),
-        )
-        coverage.record(SIBLING_SOURCE, KEYWORD, answered=True, target="acme/billing")
+        for name in ("acme/web", "acme/billing"):
+            coverage.record(
+                SIBLING_SOURCE,
+                KEYWORD,
+                answered=True,
+                target=name,
+                found=(f"{name.split('/')[1]}/app.ts",),
+            )
 
-        said = systems_read(coverage)
+        said = systems_read(coverage, [suggestion("acme/web breaks on this.")])
 
         assert "acme/web" in said
         assert "acme/billing" not in said
@@ -115,6 +129,31 @@ class TestWhichSystemsItNames:
             found=tuple(f"web/file{index}.ts" for index in range(8)),
         )
 
-        said = systems_read(coverage)
+        said = systems_read(coverage, [suggestion("acme/web breaks on this.")])
 
-        assert "and 3 more" in said
+        assert "and 5 more" in said
+
+
+class TestTheReadingIsNotPrinted:
+    """What a review managed to read says how the reading went, not anything
+    about the change. It is kept, and a reader is not shown it."""
+
+    def test_the_comment_carries_no_coverage_line(self):
+        from src.integrations.github.github import GitHub
+        from src.models.code_review import CodeReviewSummary
+
+        body = GitHub._format_summary(
+            None,
+            CodeReviewSummary(
+                overview="What the change does.",
+                key_improvements=[],
+                minor_suggestions=[],
+                critical_issues=[],
+                coverage="Read: the diff, 1 of 4 systems this change reaches.",
+                systems="### 🛰️ Systems\n**acme/web**\n  - It breaks (`a.py`)\n",
+            ),
+        )
+
+        assert "Read: the diff" not in body
+        assert "Systems" in body
+        assert "acme/web" in body
