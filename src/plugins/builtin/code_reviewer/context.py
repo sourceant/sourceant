@@ -20,7 +20,11 @@ from src.core.review_coverage import (
     REACH,
     SIBLING_SOURCE,
 )
-from src.core.review_search import WhatToLookFor, searchable_repositories
+from src.core.review_search import (
+    WhatToLookFor,
+    how_it_is_joined,
+    searchable_repositories,
+)
 from src.core.search import Searcher
 
 from src.core.change_context import (
@@ -217,6 +221,11 @@ class Reached:
     #: drew to group repositories is a name and a set of edges, and reading
     #: it is not something that failed.
     has_code: bool = True
+    #: How this system is joined to the one being changed, in the words the
+    #: graph uses. What breaks in a repository that imports this code is not
+    #: what breaks in one that calls it over HTTP, and the search worth
+    #: running is different for each.
+    joined_by: tuple[str, ...] = ()
 
 
 def reached_elsewhere(known) -> tuple[Reached, ...]:
@@ -240,6 +249,19 @@ def reached_elsewhere(known) -> tuple[Reached, ...]:
         if edge.status != "approved"
         for end in (edge.source_id, edge.target_id)
     }
+    systems = [
+        entity for entity in known.impact.topology.entities if entity.kind == "system"
+    ]
+    mine = next(
+        (entity.id for entity in systems if entity.properties.get("name") == here),
+        "",
+    )
+    joining: dict[str, set[str]] = {}
+    for edge in known.impact.topology.relationships:
+        ends = (edge.source_id, edge.target_id)
+        if mine in ends:
+            other = ends[0] if ends[1] == mine else ends[1]
+            joining.setdefault(other, set()).add(edge.type)
     found = {
         str(entity.properties.get("name") or entity.id): Reached(
             str(entity.properties.get("name") or entity.id),
@@ -248,9 +270,9 @@ def reached_elsewhere(known) -> tuple[Reached, ...]:
             # was drawn from and in the flag the reading sets.
             has_code=bool(entity.properties.get("derived"))
             or any(item.kind == "code_index" for item in entity.evidence),
+            joined_by=tuple(sorted(joining.get(entity.id, ()))),
         )
-        for entity in known.impact.topology.entities
-        if entity.kind == "system"
+        for entity in systems
     }
     found.pop(here, None)
     return tuple(found[name] for name in sorted(found))
@@ -501,7 +523,10 @@ def related_code_section(
 
     looking = WhatToLookFor(searcher, scope_for)
     asked = looking.gather(
-        provider, change=_describe(changes), repositories=repositories
+        provider,
+        change=_describe(changes),
+        repositories=repositories,
+        joined=how_it_is_joined([one for one in reached if one.has_code]),
     )
     if coverage is not None:
         # The repository under review is not one of the boundaries this

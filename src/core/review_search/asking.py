@@ -31,6 +31,11 @@ INSTRUCTIONS = (
     "the consumers of a response field or an endpoint that changed; whoever "
     "implements an interface this change alters. Search under the OLD name, "
     "because the code about to break still uses it.\n\n"
+    "Search each repository for what would break in THAT repository. They are "
+    "joined to this one in different ways, and the same words will not do for "
+    "all of them: a repository that imports this code breaks on a renamed "
+    "symbol, one that calls it over an interface breaks on a route or a field "
+    "name and contains no symbol from here at all.\n\n"
     "Every repository listed is worth one search unless you can say why it is "
     "not. A repository you do not search is reported as unread, so silence "
     "there is not neutral.\n\n"
@@ -76,6 +81,42 @@ def tools_for(repositories: tuple[str, ...]) -> list:
     ]
 
 
+#: What each kind of joint means for what would break across it. A repository
+#: that imports this code breaks on a renamed symbol; one that calls it over
+#: HTTP breaks on a route or a response field and shares no symbol at all.
+#: Searching both for the same names finds the first and misses the second.
+BREAKS_ON = {
+    "depends_on": "it imports this code, so a renamed or removed name breaks it",
+    "extends": "it builds on this code, so a changed name or signature breaks it",
+    "consumes": "it consumes what this provides, so a changed contract breaks it",
+    "exposes": (
+        "it calls this over an interface, so a changed route, parameter or "
+        "response field breaks it, and it shares no symbol names with this code"
+    ),
+    "provides": (
+        "this calls it over an interface, so what changed here has to match "
+        "the route, parameter or field names over there"
+    ),
+    "tests": (
+        "it asserts on this behaviour, so changed output, wording or a renamed "
+        "setting breaks it"
+    ),
+    "contains": "it holds this among its parts",
+}
+
+
+def how_it_is_joined(reached) -> str:
+    """Each repository with what would break in it, for the model to aim at."""
+    lines = []
+    for one in reached:
+        meanings = [BREAKS_ON[kind] for kind in one.joined_by if kind in BREAKS_ON]
+        joined = ", ".join(one.joined_by) or "reached"
+        lines.append(
+            f"- {one.name} ({joined})" + (f": {meanings[0]}" if meanings else "")
+        )
+    return "\n".join(lines)
+
+
 def searchable_repositories(reached, here: str) -> tuple[str, ...]:
     """The repositories the model may ask about, fixed before it is asked.
 
@@ -104,7 +145,9 @@ class WhatToLookFor:
     #: comes back, and only the first is a judgement.
     refused: str = ""
 
-    def gather(self, provider, *, change, repositories) -> tuple[Asked, ...]:
+    def gather(
+        self, provider, *, change, repositories, joined: str = ""
+    ) -> tuple[Asked, ...]:
         """Every search the review asked for, with what each one found."""
         self.refused = ""
         if not repositories:
@@ -113,8 +156,13 @@ class WhatToLookFor:
             self.refused = "this model cannot be asked what to look for"
             return ()
         tools = tools_for(repositories)
+        about = (
+            f"\n\nWhat joins each of them to this repository:\n{joined}"
+            if joined
+            else ""
+        )
         messages = [
-            {"role": "user", "content": f"{INSTRUCTIONS}\n\n{change}"},
+            {"role": "user", "content": f"{INSTRUCTIONS}{about}\n\n{change}"},
         ]
         done: list[Asked] = []
         asked_already = False

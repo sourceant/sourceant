@@ -268,3 +268,51 @@ class TestARepositoryPassedOverIsNamed:
             for one in model.seen
             if one.get("role") == "user" and "have not searched" in one["content"]
         ]
+
+
+class TestWhatWouldBreakOverEachJoint:
+    """One term set for every repository finds the one that shares symbols
+    and misses the one that shares only a route."""
+
+    def joined(self, *pairs):
+        from src.core.review_search import how_it_is_joined
+        from src.plugins.builtin.code_reviewer.context import Reached
+
+        return how_it_is_joined(
+            [Reached(name, True, True, kinds) for name, kinds in pairs]
+        )
+
+    def test_importing_this_code_breaks_on_a_renamed_name(self):
+        said = self.joined(("acme/web", ("depends_on",)))
+
+        assert "acme/web (depends_on)" in said
+        assert "renamed or removed name" in said
+
+    def test_calling_over_an_interface_shares_no_symbols(self):
+        said = self.joined(("acme/gateway", ("exposes",)))
+
+        assert "route, parameter or response field" in said
+        assert "shares no symbol names" in said
+
+    def test_a_joint_with_no_meaning_still_names_the_repository(self):
+        said = self.joined(("acme/odd", ("sideways",)))
+
+        assert "acme/odd (sideways)" in said
+
+    def test_reaching_with_no_joint_at_all_says_reached(self):
+        said = self.joined(("acme/far", ()))
+
+        assert "acme/far (reached)" in said
+
+    def test_it_reaches_the_model_with_the_change(self):
+        searcher = Found()
+        model = answering([{"repository": "acme/web", "terms": ["rebalance"]}])
+
+        WhatToLookFor(searcher, scope_for).gather(
+            model,
+            change="{}",
+            repositories=("acme/web",),
+            joined=self.joined(("acme/web", ("exposes",))),
+        )
+
+        assert "shares no symbol names" in model.seen[0]["content"]
