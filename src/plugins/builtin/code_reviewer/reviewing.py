@@ -609,6 +609,7 @@ class CodeReviewer:
                 decision = validator.validate(
                     list(suggestion.claims) + list(claimed_absent(suggestion.comment)),
                     evidence.read(suggestion.file_name) if evidence else None,
+                    at=suggestion.start_line,
                 )
                 if decision.contradicted:
                     if evidence_rejections is not None:

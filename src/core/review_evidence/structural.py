@@ -77,6 +77,7 @@ class CachedChangedFileEvidenceReader:
             language=language,
             facts=frozenset(facts),
             supported_predicates=frozenset(supported_predicates),
+            bindings=_bound_names(language, content),
         )
 
 
@@ -85,17 +86,31 @@ class StructuralReviewEvidenceValidator:
         self,
         claims: list[ReviewClaim],
         evidence: FileEvidence | None,
+        at: int | None = None,
     ) -> EvidenceDecision:
+        """Whether the file contradicts any of these claims.
+
+        `at` is the line the claims are about. Given one, a name the file
+        binds before that line contradicts a claim that it is missing, which
+        is the shape of the mistake a review makes when it is shown part of a
+        file and takes what it cannot see for what is not there.
+        """
         if evidence is None or not claims:
             return EvidenceDecision(False)
         for claim in claims:
-            if claim.predicate not in evidence.supported_predicates:
+            if claim.expected:
                 continue
-            actual = StructuralFact(claim.subject, claim.predicate) in evidence.facts
-            if actual and not claim.expected:
+            if claim.predicate in evidence.supported_predicates:
+                if StructuralFact(claim.subject, claim.predicate) in evidence.facts:
+                    return EvidenceDecision(
+                        True,
+                        "post-change structure contradicts a factual claim",
+                    )
+            bound = evidence.bindings.get(claim.subject)
+            if at is not None and bound is not None and bound <= at:
                 return EvidenceDecision(
                     True,
-                    "post-change structure contradicts a factual claim",
+                    f"{claim.subject} is bound at line {bound}, above this",
                 )
         return EvidenceDecision(False)
 
@@ -104,9 +119,53 @@ class StructuralReviewEvidenceValidator:
 # only, so without this a module-level constant is a name no file admits to
 # defining.
 _PYTHON_ASSIGNED = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]+)?=", re.M)
+
+#: Every name the file binds and the line it binds it on, whatever the scope:
+#: an assignment, a loop target, a parameter, a name given to a result. Not
+#: facts, because bound somewhere is not the same as in scope here. Kept so a
+#: claim carrying a line can be answered.
+_PYTHON_BOUND = re.compile(
+    r"^[^\S\n]*(?:for\s+|with\s+[^\n]*?\s+as\s+|except\s+[^\n]*?\s+as\s+)?"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]+)?=",
+    re.M,
+)
+_PYTHON_DEFINITION = re.compile(
+    r"^[^\S\n]*(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)", re.M | re.S
+)
+_PARAMETER_NAME = re.compile(r"(?:^|,)\s*\*{0,2}([A-Za-z_][A-Za-z0-9_]*)")
 _JS_ASSIGNED = re.compile(
     r"^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)", re.M
 )
+
+
+def _bound_names(language: str, content: str) -> dict[str, int]:
+    """Where each name the file binds is first bound.
+
+    A review is shown a hunk and says a name is undefined, when it was bound
+    forty lines above what it was shown. Answering that needs the line the
+    claim is about and the line the name arrived on, and nothing else.
+    """
+    if language != "python":
+        return {}
+    found: dict[str, int] = {}
+
+    def seen(name: str, at: int) -> None:
+        # The earliest line, not the first one found. A parameter is scanned
+        # after the assignments and binds the name before any of them, and
+        # keeping whichever arrived first made a name look bound later than
+        # it is.
+        if name in ("self", "cls"):
+            return
+        found[name] = min(at, found.get(name, at))
+
+    for match in _PYTHON_BOUND.finditer(content):
+        seen(match.group(1), content.count("\n", 0, match.start()) + 1)
+    for match in _PYTHON_DEFINITION.finditer(content):
+        line = content.count("\n", 0, match.start()) + 1
+        seen(match.group(1), line)
+        for name in _PARAMETER_NAME.findall(match.group(2)):
+            seen(name, line)
+    return found
 
 
 def _assigned_names(language: str, content: str) -> set[str]:

@@ -143,3 +143,79 @@ class TestAReviewThatSaysItThroughTheReviewer:
         )
 
         assert kept == []
+
+
+class TestBoundAboveTheLineItIsClaimedMissingOn:
+    """Bound somewhere is not in scope here, so the line decides.
+
+    A name bound above the hunk is one the review could not see. A name bound
+    only inside an unrelated function, below or elsewhere, is genuinely absent
+    where the review is looking, and saying so is right.
+    """
+
+    SOURCE = (
+        "import os\n"
+        "\n"
+        "LIMIT = 6\n"
+        "\n"
+        "\n"
+        "def run(work):\n"
+        "    size = LIMIT\n"
+        "    return work[:size]\n"
+        "\n"
+        "\n"
+        "def other():\n"
+        "    scratch = 1\n"
+        "    return scratch\n"
+    )
+
+    def evidence(self):
+        from src.core.review_evidence import CachedChangedFileEvidenceReader
+
+        return CachedChangedFileEvidenceReader(lambda path: self.SOURCE).read("a.py")
+
+    def decided(self, comment, at):
+        return StructuralReviewEvidenceValidator().validate(
+            list(claimed_absent(comment)), self.evidence(), at=at
+        )
+
+    def test_a_local_bound_above_contradicts_the_claim(self):
+        assert self.decided("`size` is not defined here.", at=8).contradicted
+
+    def test_the_same_name_claimed_above_its_binding_does_not(self):
+        assert not self.decided("`size` is not defined here.", at=3).contradicted
+
+    def test_a_parameter_counts_as_bound(self):
+        assert self.decided("`work` is not defined.", at=8).contradicted
+
+    def test_a_parameter_beats_a_later_assignment_of_the_same_name(self):
+        """The line that matters is where the name arrives, not where it is
+        next written to."""
+        source = (
+            "def outer(target):\n"
+            "    return target\n"
+            "\n"
+            "\n"
+            "def inner():\n"
+            "    target = 1\n"
+            "    return target\n"
+        )
+        from src.core.review_evidence import CachedChangedFileEvidenceReader
+
+        evidence = CachedChangedFileEvidenceReader(lambda path: source).read("a.py")
+
+        assert evidence.bindings["target"] == 1
+
+    def test_a_name_the_file_never_binds_stands(self):
+        assert not self.decided("`missing` is not defined.", at=8).contradicted
+
+    def test_without_a_line_only_the_file_wide_facts_answer(self):
+        """An older caller passes no line, and module scope still decides."""
+        validator = StructuralReviewEvidenceValidator()
+
+        assert validator.validate(
+            list(claimed_absent("`LIMIT` is not defined.")), self.evidence()
+        ).contradicted
+        assert not validator.validate(
+            list(claimed_absent("`scratch` is not defined.")), self.evidence()
+        ).contradicted
