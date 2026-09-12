@@ -1,3 +1,4 @@
+from .asserting import claimed_absent
 from .interfaces import ChangedFileEvidenceReader, ReviewEvidenceValidator
 from .indexed import FallbackChangedFileEvidenceReader, IndexedChangedFileEvidenceReader
 from .models import (
@@ -14,6 +15,7 @@ from .structural import (
 
 __all__ = [
     "CachedChangedFileEvidenceReader",
+    "claimed_absent",
     "ChangedFileEvidenceReader",
     "EvidenceDecision",
     "FallbackChangedFileEvidenceReader",

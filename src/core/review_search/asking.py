@@ -23,18 +23,21 @@ from .models import Asked, MAX_ROUNDS, MAX_SEARCHES
 SEARCH_CODE = "search_code"
 
 INSTRUCTIONS = (
-    "You are about to review the change below. Before you do, decide what is "
-    "worth looking for in the repositories it reaches, and search for it.\n\n"
-    "Search for the names a reader would have to find to know whether this "
-    "change breaks something: the thing being renamed or removed under its "
-    "old name, the endpoint under the name a client would call it by, the "
-    "symbol whose signature moved. A name that appears nowhere in the diff is "
-    "often the one worth searching for.\n\n"
-    "Search terms are words. A term must be three or more letters and digits "
-    "with no punctuation, so split an endpoint or a snake_case name into its "
-    "parts. Ask for what you need and stop; you may search up to "
-    f"{MAX_SEARCHES} times in total. Answer with no tool call when you have "
-    "enough, or immediately if nothing here reaches other code."
+    "You are about to review the change below. First find out who else this "
+    "change affects, by searching the repositories it reaches.\n\n"
+    "One question decides what to search for: which code outside this "
+    "repository would stop working if this change shipped? Look for the "
+    "callers of anything renamed, removed, or given a different signature; "
+    "the consumers of a response field or an endpoint that changed; whoever "
+    "implements an interface this change alters. Search under the OLD name, "
+    "because the code about to break still uses it.\n\n"
+    "Every repository listed is worth one search unless you can say why it is "
+    "not. A repository you do not search is reported as unread, so silence "
+    "there is not neutral.\n\n"
+    "A term is any text a search can match: a name, a path, a snake_case "
+    "identifier, an endpoint, a fragment of a line. Ask for what you need and "
+    f"stop; you may search up to {MAX_SEARCHES} times in total. Answer with "
+    "no tool call once you have enough."
 )
 
 
@@ -45,8 +48,9 @@ def tools_for(repositories: tuple[str, ...]) -> list:
             "function": {
                 "name": SEARCH_CODE,
                 "description": (
-                    "Find where a name is defined, called or used in one of "
-                    "the repositories this change reaches."
+                    "Find who uses a name in one of the repositories this "
+                    "change reaches: its callers, its consumers, whatever "
+                    "would break if it changed."
                 ),
                 "parameters": {
                     "type": "object",
@@ -59,7 +63,10 @@ def tools_for(repositories: tuple[str, ...]) -> list:
                         "terms": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Between one and sixteen words.",
+                            "description": (
+                                "Between one and sixteen things to look for. "
+                                "A name, a path, an endpoint, any text."
+                            ),
                         },
                     },
                     "required": ["repository", "terms"],
