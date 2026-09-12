@@ -48,6 +48,10 @@ class Attempt:
     target: str = ""
     #: Why nothing came back, in the words of whatever refused.
     reason: str = ""
+    #: What the search matched, where it matched anything. A search that
+    #: answered and found nothing is not the same as one that found code,
+    #: and only the second gives a review something to say.
+    found: tuple[str, ...] = ()
 
 
 class Coverage:
@@ -70,8 +74,11 @@ class Coverage:
         answered: bool,
         target: str = "",
         reason: str = "",
+        found: tuple[str, ...] = (),
     ) -> None:
-        self._attempts.append(Attempt(question, method, answered, target, reason))
+        self._attempts.append(
+            Attempt(question, method, answered, target, reason, found)
+        )
 
     def reaches(self, repositories: tuple[str, ...]) -> None:
         """The repositories the walk said this change reaches."""
@@ -92,6 +99,27 @@ class Coverage:
             and (not target or attempt.target == target)
             for attempt in self._attempts
         )
+
+    def found_in(self, target: str) -> tuple[str, ...]:
+        """The files a search turned up in one repository."""
+        seen: list[str] = []
+        for attempt in self._attempts:
+            if attempt.target != target:
+                continue
+            for path in attempt.found:
+                if path not in seen:
+                    seen.append(path)
+        return tuple(seen)
+
+    @property
+    def reached_with_code(self) -> tuple[str, ...]:
+        """Repositories the change reaches that hold code of their own."""
+        nothing = {
+            attempt.target
+            for attempt in self._attempts
+            if attempt.method == NOTHING and attempt.target
+        }
+        return tuple(name for name in self._reached if name not in nothing)
 
     @property
     def unread(self) -> tuple[tuple[str, str], ...]:
@@ -146,6 +174,7 @@ class Coverage:
                     "answered": attempt.answered,
                     "target": attempt.target,
                     "reason": attempt.reason,
+                    "found": list(attempt.found),
                 }
                 for attempt in self._attempts
             ],

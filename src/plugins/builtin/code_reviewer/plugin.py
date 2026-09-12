@@ -17,7 +17,13 @@ from src.core.change_context import ChangeSet
 from src.core.model import provider_for
 from src.core.mcp import contribute_tools
 from src.core.review import Reviewer, WorkingTreeReviewer
-from src.core.review_coverage import Coverage, GRAPH, REACH, read_and_unread
+from src.core.review_coverage import (
+    Coverage,
+    GRAPH,
+    REACH,
+    read_and_unread,
+    systems_read,
+)
 from src.plugins.builtin.code_reviewer.context import changed_files
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
 from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
@@ -514,6 +520,9 @@ class CodeReviewerPlugin(BasePlugin):
                 final_review.code_suggestions or (),
             )
             if final_review.summary is not None:
+                final_review.summary.systems = systems_read(
+                    coverage, final_review.code_suggestions or ()
+                )
                 final_review.summary.coverage = read_and_unread(coverage)
             logger.info("Review coverage: %s", coverage.as_dict())
 

@@ -518,6 +518,11 @@ def related_code_section(
                     (item.unavailable for item in answers if item.unavailable),
                     "" if answers else "the review did not ask about it",
                 ),
+                found=tuple(
+                    dict.fromkeys(
+                        match["path"] for item in answers for match in item.matches
+                    )
+                ),
             )
     if not asked:
         return None

@@ -527,6 +527,10 @@ class GitHub(ProviderAdapter):
                 parts.append(f"- {item}\n")
             parts.append("\n")
 
+        if summary.systems:
+            parts.append(summary.systems)
+            parts.append("\n")
+
         # A reader who sees nothing raised needs to know whether that means
         # the change is sound or that most of the system was out of reach.
         if summary.coverage:

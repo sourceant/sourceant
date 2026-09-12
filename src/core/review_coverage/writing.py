@@ -51,3 +51,38 @@ def read_and_unread(coverage: Coverage) -> str:
         )
         lines.append(f"Nothing outside this repository was read: {why}.")
     return "\n".join(lines)
+
+
+def systems_read(coverage, suggestions=()) -> str:
+    """The systems this change reaches, and what was found in each.
+
+    Only what a reader can act on: a system the search turned up code in, or
+    one a finding names. A system reached, searched and quiet says nothing
+    worth a line, and a section that lists everything is read as a list of
+    nothing.
+    """
+    lines = []
+    for name in coverage.reached_with_code:
+        found = coverage.found_in(name)
+        mentioned = [
+            one
+            for one in suggestions
+            if one and one.comment and name.lower() in one.comment.lower()
+        ]
+        if not found and not mentioned:
+            continue
+        said = [f"**{name}**"]
+        if found:
+            said.append(
+                "  - "
+                + ("Related code: " if len(found) > 1 else "Related code: ")
+                + ", ".join(f"`{path}`" for path in found[:5])
+                + (f" and {len(found) - 5} more" if len(found) > 5 else "")
+            )
+        for one in mentioned:
+            where = f"`{one.file_name}`"
+            said.append(f"  - {one.comment.strip().splitlines()[0]} ({where})")
+        lines.extend(said)
+    if not lines:
+        return ""
+    return "### 🛰️ Systems This Change Reaches\n" + "\n".join(lines) + "\n"
