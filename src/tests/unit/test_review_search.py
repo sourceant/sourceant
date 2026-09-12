@@ -173,3 +173,68 @@ class TestWhenItCannotBeAsked:
             )
             == ()
         )
+
+
+class TestARepositoryPassedOverIsNamed:
+    """Asked once, a review searches where it looked first and stops.
+
+    The rest are reported unread, so anything broken in them goes unmentioned.
+    Naming them makes the omission a decision.
+    """
+
+    def test_it_is_asked_again_about_what_it_skipped(self):
+        searcher = Found()
+        model = answering([{"repository": "acme/web", "terms": ["rebalance"]}])
+
+        asked = WhatToLookFor(searcher, scope_for).gather(
+            model, change="{}", repositories=("acme/web", "acme/billing")
+        )
+
+        nudged = [one for one in model.seen if one.get("role") == "user"]
+        assert any("acme/billing" in one["content"] for one in nudged[1:])
+        assert len(asked) == 1
+
+    def test_it_may_still_answer_with_nothing(self):
+        """A repository nothing in the change can reach is rightly skipped."""
+        searcher = Found()
+        model = answering([{"repository": "acme/web", "terms": ["rebalance"]}])
+
+        asked = WhatToLookFor(searcher, scope_for).gather(
+            model, change="{}", repositories=("acme/web", "acme/billing")
+        )
+
+        assert [one.repository for one in asked] == ["acme/web"]
+
+    def test_it_is_not_asked_twice_about_the_same_gap(self):
+        searcher = Found()
+        model = answering([])
+
+        WhatToLookFor(searcher, scope_for, rounds=3).gather(
+            model, change="{}", repositories=("acme/web",)
+        )
+
+        nudges = [
+            one
+            for one in model.seen
+            if one.get("role") == "user" and "have not searched" in one["content"]
+        ]
+        assert len(nudges) == 1
+
+    def test_searching_everything_asks_nothing_further(self):
+        searcher = Found()
+        model = answering(
+            [
+                {"repository": "acme/web", "terms": ["rebalance"]},
+                {"repository": "acme/billing", "terms": ["rebalance"]},
+            ]
+        )
+
+        WhatToLookFor(searcher, scope_for).gather(
+            model, change="{}", repositories=("acme/web", "acme/billing")
+        )
+
+        assert not [
+            one
+            for one in model.seen
+            if one.get("role") == "user" and "have not searched" in one["content"]
+        ]

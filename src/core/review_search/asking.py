@@ -108,6 +108,7 @@ class WhatToLookFor:
             {"role": "user", "content": f"{INSTRUCTIONS}\n\n{change}"},
         ]
         done: list[Asked] = []
+        asked_already = False
         for round_number in range(self._rounds):
             try:
                 answer = provider.ask_with_tools(
@@ -123,7 +124,32 @@ class WhatToLookFor:
                 return tuple(done)
             calls = answer.get("tool_calls") or ()
             if not calls:
-                return tuple(done)
+                left = [
+                    name
+                    for name in repositories
+                    if not any(item.repository == name for item in done)
+                ]
+                # Asked once and told to stop, a review searches wherever it
+                # looked first and leaves the rest reported as unread. Being
+                # named is what makes the omission a decision rather than an
+                # oversight; it may still answer with nothing.
+                if not left or asked_already:
+                    return tuple(done)
+                asked_already = True
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "You have not searched "
+                            + ", ".join(left)
+                            + ". Each is reported as unread, so anything "
+                            "broken there goes unmentioned. Search the ones "
+                            "this change could affect. Answer with no tool "
+                            "call if none of them can be."
+                        ),
+                    }
+                )
+                continue
             messages.append(
                 {
                     "role": "assistant",
