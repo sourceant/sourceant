@@ -13,6 +13,7 @@ from src.core.topology.inference import infer_dependencies
 from src.core.topology.manifests import read_manifests
 from src.utils.logger import logger
 from src.core.topology import (
+    contents,
     InMemoryTopologyRepository,
     SQLTopologyRepository,
     TopologyEntity,
@@ -367,6 +368,28 @@ async def traverse(
         logger.exception("Topology store unreachable during traversal")
         raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
     return success_response(asdict(result))
+
+
+@router.get("/systems/{system_id}/contents")
+async def system_contents(
+    system_id: str,
+    scope: Scope = Depends(get_scope),
+    repository: TopologyRepository = Depends(get_topology_repository),
+):
+    """Everything one system holds, however deep it is nested.
+
+    Asked here rather than worked out by the caller, which otherwise reads the
+    whole graph to answer a question about two identities and decides
+    membership from data instead of from the thing that owns it.
+    """
+    try:
+        held = contents(repository, scope, system_id)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    except Exception:
+        logger.exception("Topology store unreachable while reading a system")
+        raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
+    return success_response(asdict(held))
 
 
 class BatchInput(BaseModel):
