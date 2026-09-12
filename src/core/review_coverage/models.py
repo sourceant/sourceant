@@ -32,6 +32,9 @@ SNAPSHOT = "kept source"
 INDEX = "index"
 #: The change itself, which is always there.
 DIFF = "diff"
+#: There was nothing to read. A system somebody drew to group repositories
+#: holds no code of its own, so nothing is missing when nothing is read.
+NOTHING = "nothing to read"
 
 
 @dataclass(frozen=True)
@@ -107,8 +110,16 @@ class Coverage:
             for attempt in self._attempts
             if attempt.question == SIBLING_SOURCE and attempt.target
         }
+        # A system with no code of its own is not a gap. Reported as one, it
+        # sits in the warning permanently, and a warning that is always on is
+        # read as noise.
+        nothing = {
+            attempt.target
+            for attempt in self._attempts
+            if attempt.method == NOTHING and attempt.target
+        }
         missing = []
-        for repository in sorted(set(self._reached) | asked):
+        for repository in sorted((set(self._reached) | asked) - nothing):
             if self.answered(SIBLING_SOURCE, repository):
                 continue
             reason = next(

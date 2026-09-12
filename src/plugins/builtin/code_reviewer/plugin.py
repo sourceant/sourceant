@@ -17,7 +17,7 @@ from src.core.change_context import ChangeSet
 from src.core.model import provider_for
 from src.core.mcp import contribute_tools
 from src.core.review import Reviewer, WorkingTreeReviewer
-from src.core.review_coverage import Coverage, read_and_unread
+from src.core.review_coverage import Coverage, GRAPH, REACH, read_and_unread
 from src.plugins.builtin.code_reviewer.context import changed_files
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer, verdict_from
 from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
@@ -440,6 +440,19 @@ class CodeReviewerPlugin(BasePlugin):
                 review_skills = skill_library.all(workspace or "", repo_full_name)
 
             coverage = Coverage()
+            if not workspace:
+                # A repository two workspaces both connected has no one graph
+                # to read, so the walk is pointed at the repository alone and
+                # arrives nowhere. Said, because an empty answer from a walk
+                # that had nowhere to go reads exactly like a change that
+                # reaches nothing.
+                coverage.record(
+                    REACH,
+                    GRAPH,
+                    answered=False,
+                    target=repo_full_name,
+                    reason=("nothing said which graph to read for this repository"),
+                )
             final_review = CodeReviewer(services=self.services).review(
                 ChangeSet(
                     scope=Scope.from_mapping({"repository": repo_full_name}),

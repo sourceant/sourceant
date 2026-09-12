@@ -10,6 +10,7 @@ from src.core.review_coverage import (
     Coverage,
     KEYWORD,
     NEIGHBOURING_CODE,
+    NOTHING,
     REACH,
     SIBLING_SOURCE,
     read_and_unread,
@@ -33,7 +34,7 @@ def reaching(*repositories):
                         f"system:{name}",
                         "system",
                         "approved",
-                        properties={"name": name},
+                        properties={"name": name, "derived": True},
                     )
                     for name in repositories
                 ),
@@ -100,18 +101,20 @@ class TestWhatTheReaderIsTold:
         assert "1 of 2 systems this change reaches" in said
         assert "acme/billing (never indexed)" in said
 
-    def test_a_review_that_could_not_walk_the_graph_says_so(self):
+    def test_a_review_that_could_not_walk_the_graph_says_why(self):
+        """An empty walk and a walk that never started are not one answer."""
         coverage = Coverage()
         coverage.record(
             REACH,
             "graph",
             answered=False,
-            reason="the system graph could not be walked",
+            reason="nothing said which graph to read for this repository",
         )
 
         said = read_and_unread(coverage)
 
-        assert "could not say what this change reaches" in said
+        assert "Nothing outside this repository was read" in said
+        assert "nothing said which graph to read" in said
 
     def test_a_review_that_reached_nothing_is_not_confused_with_one_that_could_not_look(
         self,
@@ -185,3 +188,67 @@ class TestOneUnreadableRepositoryCostsThatRepository:
         assert "unavailable" in section
         assert not coverage.answered(SIBLING_SOURCE, "acme/web")
         assert not coverage.answered(NEIGHBOURING_CODE)
+
+
+class TestASystemWithNoCodeIsNotAGap:
+    """A system somebody drew to group repositories holds no code of its own.
+
+    Reported as unread it sits in the warning permanently, and a warning that
+    is always on is read as noise.
+    """
+
+    def drawn_by_hand(self):
+        return ChangeContext(
+            scope=HERE,
+            impact=ChangeImpact(
+                TopologySubgraph(
+                    (
+                        TopologyEntity(
+                            "system:stack",
+                            "system",
+                            "approved",
+                            properties={"name": "Acme stack"},
+                        ),
+                    ),
+                    (),
+                    False,
+                ),
+                (),
+                (),
+                False,
+            ),
+        )
+
+    def test_it_is_not_listed_as_unread(self):
+        asked = []
+
+        class _Searcher:
+            def search_text(self, query):
+                asked.append(str(query.scope.get("repository") or ""))
+                return CodeTextResult()
+
+        services = ServiceRegistry()
+        services.register(CodeTextSearcher, _Searcher(), "test")
+        coverage = Coverage()
+
+        related_code_section(
+            changes(), services, None, None, None, self.drawn_by_hand(), coverage
+        )
+
+        assert "Acme stack" not in asked
+        assert coverage.unread == ()
+        assert not coverage.answered(SIBLING_SOURCE, "Acme stack")
+
+    def test_the_reader_is_not_warned_about_it(self):
+        coverage = Coverage()
+        coverage.record(REACH, "graph", answered=True)
+        coverage.reaches(("Acme stack",))
+        coverage.record(
+            SIBLING_SOURCE,
+            NOTHING,
+            answered=False,
+            target="Acme stack",
+            reason="holds no code of its own",
+        )
+
+        assert "Not read" not in read_and_unread(coverage)

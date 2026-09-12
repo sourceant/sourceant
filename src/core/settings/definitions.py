@@ -151,14 +151,16 @@ SETTINGS: tuple[Setting, ...] = (
             "After a review, ask the model once per skill whether the change "
             "was actually judged against it, and record the answer. This is "
             "the only thing that tells a skill that was read from one that "
-            "was merely attached. It is a model call per skill on every pull "
-            "request, so it is off until you want that trade. What it finds "
-            "is reported, never used to block: a skill the review missed is "
-            "a gap in the review, not a fault in the change."
+            "was merely attached, which is the whole reason for writing one. "
+            "It costs a model call per skill, on a review that has already "
+            "paid for several. What it finds is reported, never used to "
+            "block: a skill the review missed is a gap in the review, not a "
+            "fault in the change. Turn it off on a repository where the bill "
+            "matters more than knowing."
         ),
         type=ConfigType.BOOL,
         scopes=(USER, REPOSITORY, ORGANIZATION),
-        default=False,
+        default=True,
         group="Review",
     ),
     Setting(

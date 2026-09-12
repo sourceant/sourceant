@@ -838,7 +838,7 @@ def test_the_systems_a_change_reaches_are_searched_when_this_one_cannot_be():
                         "system:web",
                         "system",
                         "approved",
-                        properties={"name": "acme/web"},
+                        properties={"name": "acme/web", "derived": True},
                     ),
                 ),
                 (),

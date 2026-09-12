@@ -28,10 +28,11 @@ def read_and_unread(coverage: Coverage) -> str:
             + ("systems" if len(reached) != 1 else "system")
             + " this change reaches"
         )
-    elif coverage.answered(REACH):
-        read.append("the system graph, which says this change reaches nothing else")
-
     lines = [f"Read: {', '.join(read)}."]
+    if not reached and coverage.answered(REACH):
+        # Its own sentence. As the last item of a list it needs a clause of
+        # its own, and the comma that takes reads as another item.
+        lines.append("The system graph says this change reaches nothing else.")
     unread = coverage.unread
     if unread:
         lines.append(
@@ -40,8 +41,13 @@ def read_and_unread(coverage: Coverage) -> str:
             + ". Findings about those boundaries may be missing."
         )
     if not coverage.answered(REACH):
-        lines.append(
-            "The system graph could not say what this change reaches, so "
-            "nothing outside this repository was read."
+        why = next(
+            (
+                attempt.reason
+                for attempt in coverage.attempts
+                if attempt.question == REACH and attempt.reason
+            ),
+            "the system graph could not be read",
         )
+        lines.append(f"Nothing outside this repository was read: {why}.")
     return "\n".join(lines)

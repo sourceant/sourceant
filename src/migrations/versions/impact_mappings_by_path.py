@@ -10,11 +10,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # A mapping written while reading a repository could never match the
-    # lookup a later review made, because both carried the commit they were
-    # taken at and those are never the same commit. Re-keyed on what a change
-    # actually is: a kind, a repository and a path. The three hashed into one
-    # column, because together they exceed what MySQL allows in a key.
+    # Keyed on what a change is rather than on the commit it was seen at: a
+    # kind, a repository and a path, hashed into one column because together
+    # they exceed what MySQL allows in a key.
     #
     # Nothing is carried over. Every existing row is keyed on a revision no
     # review will ever ask for again, so there is nothing in them to keep.

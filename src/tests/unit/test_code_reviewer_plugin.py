@@ -962,8 +962,9 @@ class TestAReviewSaysWhatItWasAbleToRead:
             if attempt["question"] == "reach"
         ]
 
-        assert len(asked) == 1
-        assert asked[0]["target"] == "test_owner/test_repo"
+        assert asked
+        assert {attempt["target"] for attempt in asked} == {"test_owner/test_repo"}
+        assert not any(attempt["answered"] for attempt in asked)
 
 
 class TestASkillReachesTheReviewerAsItsContents:
@@ -1157,14 +1158,20 @@ class TestWhetherASkillWasHonoured:
             }
         ]
 
-    def test_it_is_not_asked_unless_somebody_wants_to_pay_for_it(
+    def test_turning_it_off_says_so_rather_than_saying_nothing(
         self, plugin, repository, pull_request
     ):
-        """A model call per skill on every pull request is a real bill."""
+        """Not checked and checked-and-fine have to stay distinguishable."""
         result, asked = self.reviewed(plugin, repository, pull_request, False)
 
         assert asked == []
         assert self.honoured(result)[0]["reason"] == "not checked"
+
+    def test_it_is_asked_unless_somebody_turns_it_off(self):
+        """The point of writing a skill is that a review is held to it."""
+        from src.core.settings.definitions import get
+
+        assert get("review.check_skills_were_applied").default is True
 
     def test_a_check_that_fails_does_not_take_the_review_with_it(
         self, plugin, repository, pull_request

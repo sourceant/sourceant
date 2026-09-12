@@ -16,6 +16,7 @@ from src.core.review_coverage import (
     INDEX,
     KEYWORD,
     NEIGHBOURING_CODE,
+    NOTHING,
     REACH,
     SIBLING_SOURCE,
 )
@@ -211,6 +212,10 @@ class Reached:
 
     name: str
     confirmed: bool
+    #: Whether the system holds code anybody could read. A system somebody
+    #: drew to group repositories is a name and a set of edges, and reading
+    #: it is not something that failed.
+    has_code: bool = True
 
 
 def reached_elsewhere(known) -> tuple[Reached, ...]:
@@ -235,14 +240,19 @@ def reached_elsewhere(known) -> tuple[Reached, ...]:
         for end in (edge.source_id, edge.target_id)
     }
     found = {
-        str(entity.properties.get("name") or entity.id): (
-            entity.status == "approved" and entity.id not in unapproved
+        str(entity.properties.get("name") or entity.id): Reached(
+            str(entity.properties.get("name") or entity.id),
+            entity.status == "approved" and entity.id not in unapproved,
+            # A system read from a repository says so, in the evidence it
+            # was drawn from and in the flag the reading sets.
+            has_code=bool(entity.properties.get("derived"))
+            or any(item.kind == "code_index" for item in entity.evidence),
         )
         for entity in known.impact.topology.entities
         if entity.kind == "system"
     }
     found.pop(here, None)
-    return tuple(Reached(name, found[name]) for name in sorted(found))
+    return tuple(found[name] for name in sorted(found))
 
 
 def impact_section(known) -> Optional[str]:
@@ -294,13 +304,23 @@ def known_for(
         return None
     known = change_context_resolver(services, durable_code).resolve(changes)
     if coverage is not None:
-        walked = known is not None and known.impact is not None
+        impact = known.impact if known is not None else None
+        walked = impact is not None and impact.seeded
+        if impact is None:
+            reason = "the system graph could not be read"
+        elif not impact.seeded:
+            reason = (
+                "nothing records where these files sit in the graph, so the "
+                "walk had no starting point"
+            )
+        else:
+            reason = ""
         coverage.record(
             REACH,
             GRAPH,
             answered=walked,
             target=str(changes.scope.get("repository") or ""),
-            reason="" if walked else "the system graph could not be walked",
+            reason=reason,
         )
         coverage.reaches(tuple(one.name for one in reached_elsewhere(known)))
     return known
@@ -430,15 +450,14 @@ def elsewhere_section(terms, searcher, known, coverage=None) -> Optional[str]:
     found = []
     for reached in reached_elsewhere(known):
         repository = reached.name
-        if "/" not in repository:
-            # A system somebody drew and named, holding no code of its own.
+        if not reached.has_code:
             if coverage is not None:
                 coverage.record(
                     SIBLING_SOURCE,
-                    KEYWORD,
+                    NOTHING,
                     answered=False,
                     target=repository,
-                    reason="drawn by hand, holding no code",
+                    reason="holds no code of its own",
                 )
             continue
         try:
@@ -495,8 +514,8 @@ def related_code_section(
     try:
         searcher = services.resolve(CodeTextSearcher)
     except LookupError:
-        # Said out loud rather than left out. A review told nothing was found
-        # reads that as nothing being there, and nothing was looked for.
+        # A review told nothing was found reads that as nothing being
+        # there, and nothing was looked for.
         if coverage is not None:
             for reached in reached_elsewhere(known):
                 coverage.record(

@@ -527,9 +527,8 @@ class GitHub(ProviderAdapter):
                 parts.append(f"- {item}\n")
             parts.append("\n")
 
-        # Last, and in small print, because it is not a finding. A reader who
-        # sees nothing raised still needs to know whether that means the
-        # change is sound or that most of the system was out of reach.
+        # A reader who sees nothing raised needs to know whether that means
+        # the change is sound or that most of the system was out of reach.
         if summary.coverage:
             parts.append("---\n")
             for line in summary.coverage.splitlines():

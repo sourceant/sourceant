@@ -107,13 +107,10 @@ class ChangeImpactRequest:
     #: different question. Topology is derived by reading a repository and is
     #: never certain, so holding it to the same floor reaches nothing at all.
     minimum_reach_confidence: float = 0.0
-    #: Which links the walk may cross. A link somebody approved is a fact and
-    #: one inference proposed is a question, but a proposed link is the
-    #: ordinary state of a system that was connected last week: every
-    #: automatically discovered link is written pending and stays pending
-    #: until a person gets to it. Crossing only approved links meant a review
-    #: of a multi-repository change reached nothing at all. Both are crossed;
-    #: what separates them is how the review is told, not whether it is told.
+    #: Which links the walk may cross. Every automatically discovered link
+    #: is written pending and stays pending until a person approves it, so a
+    #: system connected last week has no approved links at all. Both are
+    #: crossed; what separates them is how the review is told.
     reach_statuses: frozenset[str] = frozenset({"approved", "pending"})
 
     def __post_init__(self) -> None:
@@ -164,3 +161,9 @@ class ChangeImpact:
     compatibility: tuple[CompatibilityCheck, ...]
     findings: tuple[ImpactFinding, ...]
     truncated: bool
+    #: Whether the walk had anywhere to start. Nothing recorded where the
+    #: changed files sit, and a walk that never started reaches nothing, which
+    #: is the same empty answer a walk that crossed the whole graph and found
+    #: nothing gives. Reported apart, because only one of them is a fact about
+    #: the change.
+    seeded: bool = True

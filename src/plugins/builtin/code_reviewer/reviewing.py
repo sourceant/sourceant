@@ -173,15 +173,13 @@ class CodeReviewer:
             tuple(available.values()),
             Change(changes.title, changes.description, changes.paths, changes.diff),
         )
-        # Most skills are a pointer at the page that holds the rule. Judged
-        # against the pointer, a change is judged against nothing, and the
-        # model says so, which reads as the change being at fault.
+        # Most skills are a pointer at the page that holds the rule, and a
+        # change judged against a pointer is judged against nothing.
         selected = split(chosen)
         applied = {skill.id for skill in chosen}
         for skill in selected:
             coverage.record(SKILLS, skill.kind.value, answered=True, target=skill.id)
-        # A skill that matched and did not fit is the one a reader wonders
-        # about later, and it leaves no trace anywhere else.
+        # A skill that matched and did not fit leaves no trace anywhere else.
         for skill in available.values():
             if skill.id not in applied:
                 coverage.record(
@@ -267,9 +265,8 @@ class CodeReviewer:
                     )
                 )
             except Exception as error:  # noqa: BLE001 - one pass, not the review
-                # A pass is an extra reading of the same change. Losing one
-                # costs what it would have said; losing the review costs
-                # everything the other passes already found.
+                # One pass is one extra reading. Losing it costs what it
+                # would have said; losing the review costs every other pass.
                 logger.warning(
                     "The %s pass did not finish: %s", skill.id, error, exc_info=True
                 )
@@ -333,10 +330,26 @@ class CodeReviewer:
             diff=changes.diff,
         )
         checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
-        for skill in guidance:
+
+        def asked(skill):
+            """One skill's answer, or why there is none.
+
+            A check that fails takes itself down. The review it is asking
+            about is already written, and losing that to a provider timing
+            out would trade the whole reading for one question about it.
+            """
             try:
-                verdict = checker.check(skill, subject)
+                return skill, checker.check(skill, subject), None
             except Exception as error:  # noqa: BLE001 - one check, not the review
+                return skill, None, error
+
+        # Asked in turn, five skills is a minute, which is long enough for
+        # something in between to time out.
+        with ThreadPoolExecutor(max_workers=min(len(guidance), MAX_AT_ONCE)) as pool:
+            answers = list(pool.map(asked, guidance))
+
+        for skill, verdict, error in answers:
+            if error is not None:
                 logger.warning(
                     "Could not check %s was applied: %s", skill.id, error, exc_info=True
                 )

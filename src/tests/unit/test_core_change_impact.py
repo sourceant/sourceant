@@ -424,3 +424,28 @@ class TestCrossingALinkNobodyHasApproved:
         result = self.build("rejected").resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
 
         assert {entity.id for entity in result.topology.entities} == {"provider"}
+
+
+class TestAWalkThatNeverStarted:
+    """Nothing recorded where the changed files sit, so there was nowhere to
+    begin. That reaches nothing, and so does a walk across the whole graph
+    that finds nothing, and only one of them says anything about the change."""
+
+    def test_it_is_not_reported_as_reaching_nothing(self):
+        preparer, _, topology, _ = build_preparer()
+        topology.put_entity(PRODUCT, TopologyEntity("provider", "system", "approved"))
+
+        result = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
+
+        assert not result.seeded
+        assert result.topology.entities == ()
+
+    def test_a_walk_that_started_and_found_nothing_is(self):
+        preparer, seeds, topology, _ = build_preparer()
+        seeds.put_mapping(PRODUCT, CHANGE, ("provider",))
+        topology.put_entity(PRODUCT, TopologyEntity("provider", "system", "approved"))
+
+        result = preparer.resolve(ChangeImpactRequest(PRODUCT, (CHANGE,)))
+
+        assert result.seeded
+        assert {entity.id for entity in result.topology.entities} == {"provider"}

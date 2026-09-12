@@ -27,7 +27,9 @@ class DefaultChangeImpactResolver:
     def resolve(self, request: ChangeImpactRequest) -> ChangeImpact:
         seed_ids = self._seeds.resolve(request.scope, request.changes)
         if not seed_ids:
-            return ChangeImpact(TopologySubgraph((), (), False), (), (), False)
+            return ChangeImpact(
+                TopologySubgraph((), (), False), (), (), False, seeded=False
+            )
         seed_truncated = len(seed_ids) > request.entity_limit
         seed_ids = seed_ids[: request.entity_limit]
         topology = self._topology.traverse(
