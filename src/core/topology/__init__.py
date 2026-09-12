@@ -1,3 +1,4 @@
+from .containment import CONTAINS, SYSTEM, SystemContents, contents
 from .interfaces import (
     TopologyReader,
     TopologyRepository,
@@ -18,6 +19,10 @@ from .snapshots import JSONTopologySnapshotCodec, TopologySnapshot
 from .sql import SQLTopologyRepository
 
 __all__ = [
+    "CONTAINS",
+    "SYSTEM",
+    "SystemContents",
+    "contents",
     "InMemoryTopologyRepository",
     "JSONTopologySnapshotCodec",
     "SQLTopologyRepository",

@@ -299,6 +299,63 @@ class TestTopologyApi(BaseTestCase):
 
         assert response.status_code in (401, 422)
 
+    def hold(self, parent, child):
+        return self.client.put(
+            "/api/topology/relationships",
+            json={
+                "id": f"{parent}->{child}",
+                "source_id": parent,
+                "target_id": child,
+                "type": "contains",
+                "status": "approved",
+            },
+            headers=self.headers,
+        )
+
+    def test_a_system_says_what_it_holds_so_the_caller_need_not_walk_it(self):
+        for identifier in ("stack", "billing"):
+            self.put_entity(identifier, kind="system")
+        for identifier in ("api", "ledger"):
+            self.put_entity(identifier)
+        self.hold("stack", "api")
+        self.hold("stack", "billing")
+        self.hold("billing", "ledger")
+
+        answer = self.client.get(
+            "/api/topology/systems/stack/contents", headers=self.headers
+        )
+
+        assert answer.status_code == 200
+        held = answer.json()["data"]
+        assert held["systems"] == ["billing"]
+        assert held["assets"] == ["api", "ledger"]
+        assert held["truncated"] is False
+
+    def test_what_another_workspace_holds_is_not_answered(self):
+        self.put_entity("stack", kind="system")
+        self.put_entity("api")
+        self.hold("stack", "api")
+
+        answer = self.client.get(
+            "/api/topology/systems/stack/contents",
+            headers={"Authorization": f"Bearer {_token(uuid.uuid4().hex)}"},
+        )
+
+        assert answer.status_code == 200
+        assert answer.json()["data"]["assets"] == []
+
+    def test_a_system_nobody_recorded_holds_nothing(self):
+        answer = self.client.get(
+            "/api/topology/systems/absent/contents", headers=self.headers
+        )
+
+        assert answer.status_code == 200
+        assert answer.json()["data"] == {
+            "systems": [],
+            "assets": [],
+            "truncated": False,
+        }
+
     def test_removing_an_entity_takes_its_relationships_with_it(self):
         for identifier in ("checkout", "ledger", "search"):
             self.put_entity(identifier)
