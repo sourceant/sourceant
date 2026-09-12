@@ -270,3 +270,54 @@ class TestEveryWayPythonBindsAName:
 
     def test_a_file_that_does_not_parse_binds_nothing(self):
         assert self.bound("def broken(:\n") == {}
+
+
+class TestAPatternCapturesAName:
+    """`case [first, *rest]` binds both without assigning either."""
+
+    def bound(self, source):
+        from src.core.review_evidence import CachedChangedFileEvidenceReader
+
+        return (
+            CachedChangedFileEvidenceReader(lambda path: source).read("a.py").bindings
+        )
+
+    SOURCE = (
+        "def handle(event):\n"
+        "    match event:\n"
+        "        case {'kind': kind} as whole:\n"
+        "            return kind, whole\n"
+        "        case [first, *rest]:\n"
+        "            return first, rest\n"
+    )
+
+    def test_a_capture_inside_a_pattern(self):
+        assert "kind" in self.bound(self.SOURCE)
+
+    def test_a_pattern_named_as_a_whole(self):
+        assert "whole" in self.bound(self.SOURCE)
+
+    def test_a_sequence_and_its_rest(self):
+        bound = self.bound(self.SOURCE)
+
+        assert "first" in bound
+        assert "rest" in bound
+
+    def test_it_is_bound_on_the_line_the_pattern_is_on(self):
+        assert self.bound(self.SOURCE)["first"] == 5
+
+
+class TestAnImportIsBoundWhereItIsWritten:
+    def bound(self, source):
+        from src.core.review_evidence import CachedChangedFileEvidenceReader
+
+        return (
+            CachedChangedFileEvidenceReader(lambda path: source).read("a.py").bindings
+        )
+
+    def test_not_at_the_top_of_the_file(self):
+        """Asked of the name alone, every import answered line one."""
+        bound = self.bound("import os\n\nfrom time import sleep as nap\n")
+
+        assert bound["os"] == 1
+        assert bound["nap"] == 3

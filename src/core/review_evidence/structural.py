@@ -127,6 +127,16 @@ _JS_ASSIGNED = re.compile(
 )
 
 
+#: A pattern captures a name without assigning it: `case [first, *rest]` binds
+#: both. Looked up rather than named, because a runtime older than the syntax
+#: has neither node.
+_CAPTURES = tuple(
+    node
+    for node in (getattr(ast, name, None) for name in ("MatchAs", "MatchStar"))
+    if node is not None
+)
+
+
 def _bound_names(language: str, content: str) -> dict[str, int]:
     """Where each name the file binds is first bound.
 
@@ -165,8 +175,13 @@ def _bound_names(language: str, content: str) -> dict[str, int]:
             seen(node.name, node.lineno)
         elif isinstance(node, ast.ExceptHandler) and node.name:
             seen(node.name, node.lineno)
-        elif isinstance(node, ast.alias):
-            seen((node.asname or node.name).split(".")[0], getattr(node, "lineno", 1))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            # Asked of the statement rather than the name under it. An alias
+            # carries no line of its own on every version this runs on.
+            for alias in node.names:
+                seen((alias.asname or alias.name).split(".")[0], node.lineno)
+        elif _CAPTURES and isinstance(node, _CAPTURES) and node.name:
+            seen(node.name, node.lineno)
     return found
 
 
