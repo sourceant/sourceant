@@ -11,6 +11,11 @@ from src.core.impact import ChangeImpactResolver, ChangeImpactRequest
 
 from .models import ChangeContext, ChangeSet
 
+#: A store that cannot answer leaves a review reading less, never failing.
+#: Not every store here is a database: one is a graph over Bolt and one
+#: shells out to an indexer, and what those raise is not a database error.
+UNAVAILABLE = (OSError, RuntimeError, ValueError, SQLAlchemyError)
+
 
 @runtime_checkable
 class ChangeContextResolver(Protocol):
@@ -78,7 +83,7 @@ class DefaultChangeContextResolver:
                 ),
                 truncated,
             )
-        except SQLAlchemyError:
+        except UNAVAILABLE:
             return None, truncated
 
     def _knowledge_for(self, changes: ChangeSet):
@@ -94,7 +99,7 @@ class DefaultChangeContextResolver:
                     diff=changes.diff,
                 )
             )
-        except SQLAlchemyError:
+        except UNAVAILABLE:
             return ()
 
     def _requirements_for(self, changes: ChangeSet):
@@ -115,7 +120,7 @@ class DefaultChangeContextResolver:
                     )
                 )
             return tuple(found[:20])
-        except SQLAlchemyError:
+        except UNAVAILABLE:
             return ()
 
     def _impact_for(self, changes: ChangeSet):
@@ -130,5 +135,5 @@ class DefaultChangeContextResolver:
                     depth=changes.depth,
                 )
             )
-        except (SQLAlchemyError, ValueError):
+        except UNAVAILABLE:
             return None

@@ -7,9 +7,19 @@ Assembled the same way whatever the change came from.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import Any, Callable, List, Optional
 
+from src.core.review_coverage import (
+    Coverage,
+    GRAPH,
+    INDEX,
+    KEYWORD,
+    NEIGHBOURING_CODE,
+    NOTHING,
+    REACH,
+    SIBLING_SOURCE,
+)
 from src.core.search import CodeTextQuery, CodeTextSearcher, changed_code_terms
 
 from src.core.change_context import (
@@ -108,9 +118,23 @@ def prepare_code_context(
     scope: Scope | None = None,
     read_content: Callable[[str], str | None] | None = None,
     file_limit: int = 20,
+    coverage: Coverage | None = None,
 ) -> str | None:
-    """The bounded graph around what changed, from every index on hand."""
+    """The bounded graph around what changed, from every index on hand.
+
+    Every index, not the first one that answers: one is built from the diff
+    and one was built by reading the repository, and they know different
+    things about the same files.
+    """
     if readers is None:
+        if coverage is not None:
+            coverage.record(
+                NEIGHBOURING_CODE,
+                INDEX,
+                answered=False,
+                target=repository,
+                reason="no index is configured",
+            )
         return None
     contexts = []
     for reader in readers:
@@ -127,11 +151,29 @@ def prepare_code_context(
                 paths=paths,
                 scope=scope,
             )
-        except (OSError, RuntimeError, ValueError, SQLAlchemyError):
+        except (OSError, RuntimeError, ValueError, SQLAlchemyError) as error:
+            if coverage is not None:
+                coverage.record(
+                    NEIGHBOURING_CODE,
+                    INDEX,
+                    answered=False,
+                    target=repository,
+                    reason=f"{type(error).__name__}: {error}",
+                )
             continue
         if context:
             contexts.append(context)
     merged = merge_review_code_contexts(contexts)
+    if coverage is not None and contexts:
+        coverage.record(NEIGHBOURING_CODE, INDEX, answered=True, target=repository)
+    elif coverage is not None:
+        coverage.record(
+            NEIGHBOURING_CODE,
+            INDEX,
+            answered=False,
+            target=repository,
+            reason="nothing indexed at this revision",
+        )
     return merged.content if merged else None
 
 
@@ -164,23 +206,53 @@ def knowledge_section(known) -> Optional[str]:
     return "\n".join(lines)
 
 
-def reached_elsewhere(known) -> tuple[str, ...]:
+@dataclass(frozen=True)
+class Reached:
+    """One system the change reaches, and how sure the graph is that it does."""
+
+    name: str
+    confirmed: bool
+    #: Whether the system holds code anybody could read. A system somebody
+    #: drew to group repositories is a name and a set of edges, and reading
+    #: it is not something that failed.
+    has_code: bool = True
+
+
+def reached_elsewhere(known) -> tuple[Reached, ...]:
     """Systems the walk arrived at, other than the one being changed.
 
     A repository read into the graph becomes a system named after itself, so
     the one under review is recognised by its name rather than by an identity
     scheme this does not own.
+
+    A system arrived at over a link nobody has approved is still arrived at,
+    and is reported as a question rather than as a fact. Most links are that:
+    inference writes them pending and a repository read for the first time is
+    proposed until somebody says otherwise.
     """
     if known is None or known.impact is None:
         return ()
     here = known.scope.get("repository")
+    unapproved = {
+        end
+        for edge in known.impact.topology.relationships
+        if edge.status != "approved"
+        for end in (edge.source_id, edge.target_id)
+    }
     found = {
-        str(entity.properties.get("name") or entity.id)
+        str(entity.properties.get("name") or entity.id): Reached(
+            str(entity.properties.get("name") or entity.id),
+            entity.status == "approved" and entity.id not in unapproved,
+            # A system read from a repository says so, in the evidence it
+            # was drawn from and in the flag the reading sets.
+            has_code=bool(entity.properties.get("derived"))
+            or any(item.kind == "code_index" for item in entity.evidence),
+        )
         for entity in known.impact.topology.entities
         if entity.kind == "system"
     }
-    found.discard(here)
-    return tuple(sorted(found))
+    found.pop(here, None)
+    return tuple(found[name] for name in sorted(found))
 
 
 def impact_section(known) -> Optional[str]:
@@ -195,11 +267,22 @@ def impact_section(known) -> Optional[str]:
         "finding marked uncertain is a question to raise, not a fact to assert.",
         "",
     ]
-    if elsewhere:
+    confirmed = [one.name for one in elsewhere if one.confirmed]
+    proposed = [one.name for one in elsewhere if not one.confirmed]
+    if confirmed:
         lines.append(
             "This change reaches beyond the repository it is in, into: "
-            + ", ".join(elsewhere)
+            + ", ".join(confirmed)
             + ". Say so where the change could break them."
+        )
+        lines.append("")
+    if proposed:
+        lines.append(
+            "It may also reach "
+            + ", ".join(proposed)
+            + ", over a link nobody has confirmed yet. Raise what that link "
+            "would mean as a question. Do not assert it, and do not attach a "
+            "suggestion to it."
         )
         lines.append("")
     for finding in known.impact.findings:
@@ -211,20 +294,46 @@ def impact_section(known) -> Optional[str]:
 
 
 def known_for(
-    changes: ChangeSet, services: ServiceRegistry, durable_code
+    changes: ChangeSet,
+    services: ServiceRegistry,
+    durable_code,
+    coverage: Coverage | None = None,
 ) -> Any | None:
     """What is recorded about the files this change touches."""
     if not changes.files:
         return None
-    return change_context_resolver(services, durable_code).resolve(changes)
+    known = change_context_resolver(services, durable_code).resolve(changes)
+    if coverage is not None:
+        impact = known.impact if known is not None else None
+        walked = impact is not None and impact.seeded
+        if impact is None:
+            reason = "the system graph could not be read"
+        elif not impact.seeded:
+            reason = (
+                "nothing records where these files sit in the graph, so the "
+                "walk had no starting point"
+            )
+        else:
+            reason = ""
+        coverage.record(
+            REACH,
+            GRAPH,
+            answered=walked,
+            target=str(changes.scope.get("repository") or ""),
+            reason=reason,
+        )
+        coverage.reaches(tuple(one.name for one in reached_elsewhere(known)))
+    return known
 
 
 def core_impact_preparer(services: ServiceRegistry):
     from src.config.db import get_engine
     from src.core.impact import (
         DefaultChangeImpactResolver,
+        FallbackSeedResolver,
         SQLCompatibilityCheckRepository,
         SQLImpactSeedRepository,
+        TopologyPrefixSeedResolver,
     )
     from src.core.topology import SQLTopologyRepository, TopologyReader
 
@@ -239,7 +348,14 @@ def core_impact_preparer(services: ServiceRegistry):
         except LookupError:
             topology = SQLTopologyRepository(engine)
         return DefaultChangeImpactResolver(
-            seeds=SQLImpactSeedRepository(engine),
+            # Nothing in core writes a mapping, so on a deployment without a
+            # plugin that does, the graph's own shape is the only answer
+            # there is. It is also the only answer for a repository that was
+            # connected and not yet read.
+            seeds=FallbackSeedResolver(
+                SQLImpactSeedRepository(engine),
+                TopologyPrefixSeedResolver(topology),
+            ),
             topology=topology,
             compatibility=SQLCompatibilityCheckRepository(engine),
         )
@@ -319,26 +435,57 @@ def _change_of(parsed_file) -> str:
     return "modified"
 
 
-def elsewhere_section(terms, searcher, known) -> Optional[str]:
+def elsewhere_section(terms, searcher, known, coverage=None) -> Optional[str]:
     """The same terms, asked of the other repositories the change reaches.
 
     Asked of one repository, the answer is about a tenth of the estate: the
     caller that breaks is in a sibling, and searching only here reports its
     absence. The systems the walk arrived at are the ones worth asking, which
     is what makes this a search of a system rather than of everything.
+
+    Each repository is asked on its own, so one that cannot be read costs that
+    one and not the rest. Which one that was is recorded, because a sibling
+    nobody could read and a sibling with nothing in it look identical here.
     """
     found = []
-    for repository in reached_elsewhere(known):
-        if "/" not in repository:
-            # A system somebody drew and named, holding no code of its own.
+    for reached in reached_elsewhere(known):
+        repository = reached.name
+        if not reached.has_code:
+            if coverage is not None:
+                coverage.record(
+                    SIBLING_SOURCE,
+                    NOTHING,
+                    answered=False,
+                    target=repository,
+                    reason="holds no code of its own",
+                )
             continue
         try:
             result = searcher.search_text(
                 CodeTextQuery(Scope.from_mapping({"repository": repository}), terms)
             )
-        except (OSError, RuntimeError, ValueError, SQLAlchemyError):
+        except (OSError, RuntimeError, ValueError, SQLAlchemyError) as error:
             logger.warning("Keyword search of %s failed", repository, exc_info=True)
+            if coverage is not None:
+                coverage.record(
+                    SIBLING_SOURCE,
+                    KEYWORD,
+                    answered=False,
+                    target=repository,
+                    reason=f"{type(error).__name__}: {error}",
+                )
             continue
+        if coverage is not None:
+            # The searcher says why it could not answer. Read, because a
+            # repository nobody has indexed and one with no match both come
+            # back with no matches.
+            coverage.record(
+                SIBLING_SOURCE,
+                KEYWORD,
+                answered=result.unavailable is None,
+                target=repository,
+                reason=result.unavailable or "",
+            )
         for match in result.matches:
             found.append({**asdict(match), "repository": repository})
     if not found:
@@ -353,7 +500,13 @@ def elsewhere_section(terms, searcher, known) -> Optional[str]:
 
 
 def related_code_section(
-    changes, services, durable_code=None, read_content=None, code_scope=None, known=None
+    changes,
+    services,
+    durable_code=None,
+    read_content=None,
+    code_scope=None,
+    known=None,
+    coverage=None,
 ):
     terms = changed_code_terms(changes.diff)
     if not terms or not changes.revision:
@@ -361,7 +514,22 @@ def related_code_section(
     try:
         searcher = services.resolve(CodeTextSearcher)
     except LookupError:
-        return None
+        # A review told nothing was found reads that as nothing being
+        # there, and nothing was looked for.
+        if coverage is not None:
+            for reached in reached_elsewhere(known):
+                coverage.record(
+                    SIBLING_SOURCE,
+                    KEYWORD,
+                    answered=False,
+                    target=reached.name,
+                    reason="nothing here can search code",
+                )
+        return (
+            "Code search is not available in this deployment, so neither this "
+            "repository nor the ones this change reaches were searched for "
+            "existing implementations."
+        )
     try:
         search_scope = changes.code_scope.extend(
             {"revision": changes.base_revision or changes.revision}
@@ -371,7 +539,15 @@ def related_code_section(
         logger.warning("Repository keyword search failed", exc_info=True)
         # The systems this change reaches are searched independently, so one
         # unreadable repository is one repository missing from the answer.
-        elsewhere = elsewhere_section(terms, searcher, known)
+        if coverage is not None:
+            coverage.record(
+                SIBLING_SOURCE,
+                KEYWORD,
+                answered=False,
+                target=str(changes.scope.get("repository") or ""),
+                reason="keyword search of this repository failed",
+            )
+        elsewhere = elsewhere_section(terms, searcher, known, coverage)
         return (
             "Repository keyword search was unavailable; existing "
             "implementations remain unexamined."
@@ -394,7 +570,7 @@ def related_code_section(
         if matched_paths and durable_code is not None
         else None
     )
-    elsewhere = elsewhere_section(terms, searcher, known)
+    elsewhere = elsewhere_section(terms, searcher, known, coverage)
     return (
         "## Existing Code Found By Keyword Search\n"
         "These candidates come from the base revision when available. Compare "

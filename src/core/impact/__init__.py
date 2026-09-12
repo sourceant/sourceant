@@ -21,6 +21,10 @@ from .sql import (
     SQLImpactSeedRepository,
 )
 from .resolver import DefaultChangeImpactResolver
+from .seeding import (
+    FallbackSeedResolver,
+    TopologyPrefixSeedResolver,
+)
 
 __all__ = [
     "SQLCompatibilityCheckRepository",
@@ -32,6 +36,7 @@ __all__ = [
     "CompatibilityCheckReader",
     "CompatibilityCheckWriter",
     "DefaultChangeImpactResolver",
+    "FallbackSeedResolver",
     "ImpactFinding",
     "ImpactCodeMappingWriter",
     "ImpactSeedRepository",
@@ -41,4 +46,5 @@ __all__ = [
     "ChangeImpact",
     "ChangeImpactResolver",
     "ChangeImpactRequest",
+    "TopologyPrefixSeedResolver",
 ]

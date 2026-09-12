@@ -24,6 +24,7 @@ from src.plugins.builtin.code_reviewer.context import (
     requirements_section,
 )
 from src.core.review_context import LazyChangedFileCodeIndex
+from src.core.review_coverage import Coverage, SKILLS
 from src.core.review_evidence import (
     CachedChangedFileEvidenceReader,
     ChangedFileEvidenceReader,
@@ -32,7 +33,15 @@ from src.core.review_evidence import (
     StructuralReviewEvidenceValidator,
 )
 from src.core.scope import Scope
-from src.core.skills import Change, PhraseSkillSelector, Skill, SkillSource, SkillType
+from src.core.skills import (
+    Change,
+    LLMSkillChecker,
+    PhraseSkillSelector,
+    Skill,
+    SkillSource,
+    SkillType,
+    split,
+)
 from src.core.review.fingerprint import of_code, of_words
 from src.core.review.models import Sections, Told
 from src.core.services import ServiceRegistry, service_registry
@@ -101,11 +110,18 @@ class CodeReviewer:
         skills: Sequence[Skill] = (),
         code_scope: Scope | None = None,
         metadata: dict | None = None,
+        coverage: Coverage | None = None,
     ) -> CodeReview | None:
-        """The review, or None where there was nothing to read."""
+        """The review, or None where there was nothing to read.
+
+        A caller that passes a coverage record gets back what this was able
+        to read written into it, which is the only way to tell a review that
+        found nothing from one that could not look.
+        """
         parsed_files = parse_diff(changes.diff)
         if not parsed_files:
             return None
+        coverage = coverage if coverage is not None else Coverage()
 
         line_mapper = LineMapper(parsed_files)
         readable = [
@@ -123,7 +139,7 @@ class CodeReviewer:
         durable_code, local_code = self._indexes(
             changes, readable, read_content, file_limit, code_scope
         )
-        known = known_for(changes, self.services, durable_code)
+        known = known_for(changes, self.services, durable_code, coverage)
 
         sections = Sections(
             requirements=requirements_section(known),
@@ -132,7 +148,13 @@ class CodeReviewer:
             ),
             impact=impact_section(known),
             related_code=related_code_section(
-                changes, self.services, durable_code, read_content, code_scope, known
+                changes,
+                self.services,
+                durable_code,
+                read_content,
+                code_scope,
+                known,
+                coverage,
             ),
         )
 
@@ -147,10 +169,26 @@ class CodeReviewer:
         for source in self.services.contributions(SkillSource):
             for skill in source.read():
                 available[skill.id] = skill
-        selected = PhraseSkillSelector().select(
+        chosen = PhraseSkillSelector().select(
             tuple(available.values()),
             Change(changes.title, changes.description, changes.paths, changes.diff),
         )
+        # Most skills are a pointer at the page that holds the rule, and a
+        # change judged against a pointer is judged against nothing.
+        selected = split(chosen)
+        applied = {skill.id for skill in chosen}
+        for skill in selected:
+            coverage.record(SKILLS, skill.kind.value, answered=True, target=skill.id)
+        # A skill that matched and did not fit leaves no trace anywhere else.
+        for skill in available.values():
+            if skill.id not in applied:
+                coverage.record(
+                    SKILLS,
+                    skill.kind.value,
+                    answered=False,
+                    target=skill.id,
+                    reason="did not apply to this change",
+                )
         guidance = [skill for skill in selected if skill.kind == SkillType.GUIDANCE]
         if guidance:
             sections = replace(
@@ -214,18 +252,35 @@ class CodeReviewer:
                 "supplied source and diff, including whether an apparent conflict "
                 "has already been removed.\n\n" + skill.body
             )
-            checked = read(
-                replace(
-                    sections,
-                    knowledge=self._joined(
-                        [
-                            sections.knowledge,
-                            Told(skill.name, instructions).rendered(),
-                        ]
-                    ),
+            try:
+                checked = read(
+                    replace(
+                        sections,
+                        knowledge=self._joined(
+                            [
+                                sections.knowledge,
+                                Told(skill.name, instructions).rendered(),
+                            ]
+                        ),
+                    )
                 )
-            )
+            except Exception as error:  # noqa: BLE001 - one pass, not the review
+                # One pass is one extra reading. Losing it costs what it
+                # would have said; losing the review costs every other pass.
+                logger.warning(
+                    "The %s pass did not finish: %s", skill.id, error, exc_info=True
+                )
+                coverage.record(
+                    SKILLS,
+                    skill.kind.value,
+                    answered=False,
+                    target=skill.id,
+                    reason=f"the pass did not finish: {type(error).__name__}",
+                )
+                continue
             combined.extend(checked.code_suggestions or ())
+        self._check_they_were_applied(provider, changes, repository, guidance, coverage)
+
         unique, seen = [], set()
         for suggestion in combined:
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
@@ -243,6 +298,76 @@ class CodeReviewer:
             code_suggestions=unique,
             scores=answer.scores,
         )
+
+    @staticmethod
+    def _check_they_were_applied(provider, changes, repository, guidance, coverage):
+        """Ask whether the review actually judged the change against each skill.
+
+        A skill attached to a prompt and a skill a review took notice of look
+        identical from here, and only one of them is worth having. What comes
+        back is recorded and never blocks: a skill the review missed is a gap
+        in the review rather than a fault in the change.
+
+        A model call per skill on every pull request, so it waits to be asked
+        for.
+        """
+        if not guidance or not value_of(
+            "review.check_skills_were_applied", repository=repository
+        ):
+            for skill in guidance:
+                coverage.record(
+                    SKILLS,
+                    "honoured",
+                    answered=False,
+                    target=skill.id,
+                    reason="not checked",
+                )
+            return
+        subject = Change(
+            title=changes.title,
+            description=changes.description,
+            paths=changes.paths,
+            diff=changes.diff,
+        )
+        checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
+
+        def asked(skill):
+            """One skill's answer, or why there is none.
+
+            A check that fails takes itself down. The review it is asking
+            about is already written, and losing that to a provider timing
+            out would trade the whole reading for one question about it.
+            """
+            try:
+                return skill, checker.check(skill, subject), None
+            except Exception as error:  # noqa: BLE001 - one check, not the review
+                return skill, None, error
+
+        # Asked in turn, five skills is a minute, which is long enough for
+        # something in between to time out.
+        with ThreadPoolExecutor(max_workers=min(len(guidance), MAX_AT_ONCE)) as pool:
+            answers = list(pool.map(asked, guidance))
+
+        for skill, verdict, error in answers:
+            if error is not None:
+                logger.warning(
+                    "Could not check %s was applied: %s", skill.id, error, exc_info=True
+                )
+                coverage.record(
+                    SKILLS,
+                    "honoured",
+                    answered=False,
+                    target=skill.id,
+                    reason=f"the check did not finish: {type(error).__name__}",
+                )
+                continue
+            coverage.record(
+                SKILLS,
+                "honoured",
+                answered=verdict.passed,
+                target=skill.id,
+                reason="" if verdict.passed else (verdict.note or "not applied"),
+            )
 
     @staticmethod
     def _budget(repository: str) -> int:

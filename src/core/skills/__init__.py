@@ -38,6 +38,7 @@ from .models import (
     SkillVerdict,
 )
 from .selection import PhraseSkillSelector
+from .sharing import HOUSE, MAX_SHARED, split
 from .writing import SkillWriteError, remove_skill, write_skill
 from .writing import _rendered as render_skill
 
@@ -52,6 +53,8 @@ __all__ = [
     "ELSEWHERE",
     "ROLES",
     "LLMSkillChecker",
+    "HOUSE",
+    "MAX_SHARED",
     "PhraseSkillSelector",
     "Skill",
     "SkillScope",
@@ -83,5 +86,6 @@ __all__ = [
     "repository_skills",
     "remove_skill",
     "sources_for",
+    "split",
     "write_skill",
 ]

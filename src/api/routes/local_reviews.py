@@ -70,6 +70,9 @@ class ReviewInput(BaseModel):
     # Empty lets the change decide which skills apply.
     skills: list[str] = Field(default_factory=list)
     use_model: bool = Field(default=True)
+    # The graph this checkout belongs to, where one has been drawn. A review
+    # given none reads the repository it is in and cannot leave it.
+    system: str = Field(default="")
 
 
 # Longer than any review takes. Past this, the process reading it is gone.
@@ -116,6 +119,7 @@ def run(identifier: str, body: ReviewInput, judge: Any, reviews: Any) -> None:
             description=body.description,
             skills=body.skills,
             use_model=body.use_model,
+            system=body.system,
         )
     except Exception as error:  # noqa: BLE001 - what went wrong is the answer
         reviews.put(

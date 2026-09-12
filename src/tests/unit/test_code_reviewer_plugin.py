@@ -744,8 +744,12 @@ class TestPreviewResponseIsSerializable:
         )
 
         assert result["status"] == "success"
+        # The graph, then whatever else was found or could not be. Only the
+        # first of those is JSON.
         context = json.loads(
-            mock_llm_instance.generate_code_review.call_args.kwargs["code_context"]
+            mock_llm_instance.generate_code_review.call_args.kwargs[
+                "code_context"
+            ].split("\n", 1)[0]
         )
         assert {node["id"] for node in context["nodes"]} >= {
             "file:test.py",
@@ -873,3 +877,378 @@ def test_a_review_records_what_it_spent_against_the_repository(
     assert (kept[0].input_tokens, kept[0].output_tokens) == (900, 120)
     assert kept[0].cost_micro == 1_200
     assert kept[0].provider == "gemini"
+
+
+class TestAReviewSaysWhatItWasAbleToRead:
+    """A quiet review and a blind one look identical without this.
+
+    The canned "no suggestions for improvement" summary is produced when a
+    review found nothing, whether it read the whole system or none of it.
+    """
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def _reviewed(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save_record,
+        plugin=None,
+        repository=None,
+        pull_request=None,
+    ):
+        mock_get_sha.return_value = None
+        mock_github = MagicMock()
+        mock_github_cls.return_value = mock_github
+        mock_github.get_diff.return_value = _DIFF
+        mock_github.get_existing_bot_review_comments.return_value = []
+        mock_github.get_file_content.return_value = "def load(path):\n    return 1\n"
+
+        model = MagicMock()
+        mock_llm.return_value = model
+        model.count_tokens.return_value = 100
+        model.token_limit = 1000000
+        model.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
+        model.generate_code_review.return_value = CodeReview(
+            verdict=Verdict.COMMENT, code_suggestions=[]
+        )
+
+        import asyncio
+
+        return asyncio.run(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="test_owner/test_repo",
+                post=False,
+            )
+        )
+
+    def test_the_result_carries_what_was_read(self, plugin, repository, pull_request):
+        result = self._reviewed(
+            plugin=plugin, repository=repository, pull_request=pull_request
+        )
+
+        assert result["status"] == "success"
+        assert "coverage" in result
+        assert "attempts" in result["coverage"]
+
+    def test_the_summary_says_it_in_words(self, plugin, repository, pull_request):
+        result = self._reviewed(
+            plugin=plugin, repository=repository, pull_request=pull_request
+        )
+
+        assert result["review"]["summary"]["coverage"].startswith("Read: the diff")
+
+    def test_the_graph_walk_is_recorded_whether_or_not_it_answered(
+        self, plugin, repository, pull_request
+    ):
+        """Asked and unanswered has to be distinguishable from never asked."""
+        result = self._reviewed(
+            plugin=plugin, repository=repository, pull_request=pull_request
+        )
+
+        asked = [
+            attempt
+            for attempt in result["coverage"]["attempts"]
+            if attempt["question"] == "reach"
+        ]
+
+        assert asked
+        assert {attempt["target"] for attempt in asked} == {"test_owner/test_repo"}
+        assert not any(attempt["answered"] for attempt in asked)
+
+
+class TestASkillReachesTheReviewerAsItsContents:
+    """Most skills are a pointer at the page that holds the rule.
+
+    Judged against the pointer, a change is judged against nothing, and the
+    model says so, which reads as the change being at fault. The checkout
+    path followed those pointers; the pull request path did not.
+    """
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_the_document_a_skill_points_at_is_written_out_under_it(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save_record,
+        plugin,
+        repository,
+        pull_request,
+        tmp_path,
+    ):
+        from src.core.skills import Skill, SkillLibrary
+
+        folder = tmp_path / "skills" / "migrations"
+        folder.mkdir(parents=True)
+        (folder / "rules.md").write_text(
+            "Never edit a migration somebody has already run."
+        )
+        skill = Skill(
+            id="migrations",
+            name="migrations",
+            description="How migrations are written here",
+            body="The rules are in rules.md and they are not negotiable.",
+            path=str(folder / "SKILL.md"),
+            # Stated in by its author, so this holds the inlining to account
+            # rather than the wording match that chooses a skill.
+            metadata={"sourceant": {"review": True}},
+        )
+
+        class _Library:
+            def all(self, workspace, repository):
+                return (skill,)
+
+        services = ServiceRegistry()
+        services.register(SkillLibrary, _Library(), "test")
+        plugin.bind_services(services)
+
+        mock_get_sha.return_value = None
+        mock_github = MagicMock()
+        mock_github_cls.return_value = mock_github
+        mock_github.get_diff.return_value = _DIFF
+        mock_github.get_existing_bot_review_comments.return_value = []
+        mock_github.get_file_content.return_value = "def load(path):\n    return 1\n"
+
+        model = MagicMock()
+        mock_llm.return_value = model
+        model.count_tokens.return_value = 100
+        model.token_limit = 1000000
+        model.generate_summary.return_value = CodeReviewSummary(
+            overview="The full pull request overview.",
+            key_improvements=[],
+            minor_suggestions=[],
+            critical_issues=[],
+        )
+        model.generate_code_review.return_value = CodeReview(
+            verdict=Verdict.COMMENT, code_suggestions=[]
+        )
+
+        import asyncio
+
+        asyncio.run(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="test_owner/test_repo",
+                post=False,
+            )
+        )
+
+        told = model.generate_code_review.call_args.kwargs["knowledge"]
+        assert "Never edit a migration somebody has already run." in told
+
+
+class TestWhetherASkillWasHonoured:
+    """A skill attached to a prompt and a skill a review took notice of look
+    identical from the outside, and only one of them is worth having."""
+
+    def reviewed(self, plugin, repository, pull_request, checking):
+        from src.core.skills import Skill, SkillLibrary, SkillVerdict
+
+        skill = Skill(
+            id="migrations",
+            name="migrations",
+            description="How migrations are written here",
+            body="Never edit a migration somebody has already run.",
+            metadata={"sourceant": {"review": True}},
+        )
+
+        class _Library:
+            def all(self, workspace, repository):
+                return (skill,)
+
+        services = ServiceRegistry()
+        services.register(SkillLibrary, _Library(), "test")
+        plugin.bind_services(services)
+
+        asked = []
+
+        class _Checker:
+            def __init__(self, ask, model):
+                pass
+
+            def check(self, skill, subject):
+                asked.append(skill.id)
+                return SkillVerdict(skill.id, passed=False, note="Never mentioned it")
+
+        with (
+            patch("src.plugins.builtin.code_reviewer.plugin.save_review_record"),
+            patch(
+                "src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha"
+            ) as sha,
+            patch("src.plugins.builtin.code_reviewer.plugin.GitHub") as github_cls,
+            patch("src.plugins.builtin.code_reviewer.plugin.provider_for") as provider,
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.LLMSkillChecker", _Checker
+            ),
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.value_of",
+                side_effect=lambda key, **_: (
+                    checking if key == "review.check_skills_were_applied" else None
+                ),
+            ),
+        ):
+            sha.return_value = None
+            github = MagicMock()
+            github_cls.return_value = github
+            github.get_diff.return_value = _DIFF
+            github.get_existing_bot_review_comments.return_value = []
+            github.get_file_content.return_value = "def load(path):\n    return 1\n"
+
+            model = MagicMock()
+            provider.return_value = model
+            model.count_tokens.return_value = 100
+            model.token_limit = 1000000
+            model.generate_summary.return_value = CodeReviewSummary(
+                overview="The full pull request overview.",
+                key_improvements=[],
+                minor_suggestions=[],
+                critical_issues=[],
+            )
+            model.generate_code_review.return_value = CodeReview(
+                verdict=Verdict.COMMENT, code_suggestions=[]
+            )
+
+            import asyncio
+
+            result = asyncio.run(
+                plugin.generate_review(
+                    repository,
+                    pull_request,
+                    repository_full_name="test_owner/test_repo",
+                    post=False,
+                )
+            )
+        return result, asked
+
+    def honoured(self, result):
+        return [
+            attempt
+            for attempt in result["coverage"]["attempts"]
+            if attempt["method"] == "honoured"
+        ]
+
+    def test_a_skill_the_review_ignored_is_recorded_as_ignored(
+        self, plugin, repository, pull_request
+    ):
+        result, asked = self.reviewed(plugin, repository, pull_request, True)
+
+        assert asked == ["migrations"]
+        assert self.honoured(result) == [
+            {
+                "question": "skills",
+                "method": "honoured",
+                "answered": False,
+                "target": "migrations",
+                "reason": "Never mentioned it",
+            }
+        ]
+
+    def test_turning_it_off_says_so_rather_than_saying_nothing(
+        self, plugin, repository, pull_request
+    ):
+        """Not checked and checked-and-fine have to stay distinguishable."""
+        result, asked = self.reviewed(plugin, repository, pull_request, False)
+
+        assert asked == []
+        assert self.honoured(result)[0]["reason"] == "not checked"
+
+    def test_it_is_asked_unless_somebody_turns_it_off(self):
+        """The point of writing a skill is that a review is held to it."""
+        from src.core.settings.definitions import get
+
+        assert get("review.check_skills_were_applied").default is True
+
+    def test_a_check_that_fails_does_not_take_the_review_with_it(
+        self, plugin, repository, pull_request
+    ):
+        from src.core.skills import Skill, SkillLibrary
+
+        class _Raises:
+            def __init__(self, ask, model):
+                pass
+
+            def check(self, skill, subject):
+                raise RuntimeError("the provider timed out")
+
+        skill = Skill(
+            id="migrations",
+            name="migrations",
+            description="How migrations are written here",
+            body="Never edit a migration somebody has already run.",
+            metadata={"sourceant": {"review": True}},
+        )
+
+        class _Library:
+            def all(self, workspace, repository):
+                return (skill,)
+
+        services = ServiceRegistry()
+        services.register(SkillLibrary, _Library(), "test")
+        plugin.bind_services(services)
+
+        with (
+            patch("src.plugins.builtin.code_reviewer.plugin.save_review_record"),
+            patch(
+                "src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha"
+            ) as sha,
+            patch("src.plugins.builtin.code_reviewer.plugin.GitHub") as github_cls,
+            patch("src.plugins.builtin.code_reviewer.plugin.provider_for") as provider,
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.LLMSkillChecker", _Raises
+            ),
+            patch(
+                "src.plugins.builtin.code_reviewer.reviewing.value_of",
+                side_effect=lambda key, **_: (
+                    True if key == "review.check_skills_were_applied" else None
+                ),
+            ),
+        ):
+            sha.return_value = None
+            github = MagicMock()
+            github_cls.return_value = github
+            github.get_diff.return_value = _DIFF
+            github.get_existing_bot_review_comments.return_value = []
+            github.get_file_content.return_value = "def load(path):\n    return 1\n"
+
+            model = MagicMock()
+            provider.return_value = model
+            model.count_tokens.return_value = 100
+            model.token_limit = 1000000
+            model.generate_summary.return_value = CodeReviewSummary(
+                overview="The full pull request overview.",
+                key_improvements=[],
+                minor_suggestions=[],
+                critical_issues=[],
+            )
+            model.generate_code_review.return_value = CodeReview(
+                verdict=Verdict.COMMENT, code_suggestions=[]
+            )
+
+            import asyncio
+
+            result = asyncio.run(
+                plugin.generate_review(
+                    repository,
+                    pull_request,
+                    repository_full_name="test_owner/test_repo",
+                    post=False,
+                )
+            )
+
+        assert result["status"] == "success"
+        assert "did not finish" in self.honoured(result)[0]["reason"]

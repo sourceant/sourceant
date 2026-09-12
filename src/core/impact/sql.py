@@ -32,19 +32,21 @@ from .models import (
 
 metadata = MetaData()
 
-# Five columns in one key, so these are narrower than elsewhere. MySQL allows
-# 3072 bytes and reserves four per character; a kind is a word, a revision a hash.
+# The identity hashed rather than spelled out, because a kind, a repository
+# and a path together exceed the 3072 bytes MySQL allows in a key. The parts
+# are kept beside it so a row still says what it is about.
 mapping_table = Table(
     "impact_code_mappings",
     metadata,
     Column("scope_id", BigInteger, primary_key=True),
-    Column("change_kind", String(64), primary_key=True),
-    Column("change_id", String(383), primary_key=True),
-    Column("revision", String(64), primary_key=True),
+    Column("reference_key", String(64), primary_key=True),
     Column("entity_id", String(255), primary_key=True),
-    Index(
-        "ix_impact_code_mappings_scope_change", "scope_id", "change_kind", "change_id"
-    ),
+    Column("change_kind", String(64), nullable=False),
+    Column("repository", String(255), nullable=False),
+    Column("change_path", String(383), nullable=False),
+    # Kept as provenance, never as identity: it says when the mapping was
+    # written, not which reviews it answers.
+    Column("revision", String(64), nullable=False),
 )
 
 check_table = Table(
@@ -84,15 +86,14 @@ class SQLImpactSeedRepository:
     ) -> None:
         if not entity_ids or any(not item for item in entity_ids):
             raise ValueError("topology identities are required")
+        kind, repository, path = change.identity
         with self._lock:
             with self._engine.begin() as connection:
                 key = scopes.remembered(connection, scope)
                 connection.execute(
                     delete(mapping_table).where(
                         mapping_table.c.scope_id == key,
-                        mapping_table.c.change_kind == change.kind,
-                        mapping_table.c.change_id == change.id,
-                        mapping_table.c.revision == change.revision,
+                        mapping_table.c.reference_key == change.key,
                     )
                 )
                 connection.execute(
@@ -100,10 +101,12 @@ class SQLImpactSeedRepository:
                     [
                         {
                             "scope_id": key,
-                            "change_kind": change.kind,
-                            "change_id": change.id,
-                            "revision": change.revision,
+                            "reference_key": change.key,
                             "entity_id": entity_id,
+                            "change_kind": kind,
+                            "repository": repository,
+                            "change_path": path,
+                            "revision": change.revision,
                         }
                         for entity_id in sorted(set(entity_ids))
                     ],
@@ -115,27 +118,22 @@ class SQLImpactSeedRepository:
         if not changes:
             return ()
         key = scopes.known_id(self._engine, scope)
-        # Grouped by kind and revision, which a single change set almost always
-        # shares, so this asks once rather than once per changed file.
-        grouped: dict[tuple[str, str], set[str]] = {}
-        for change in changes:
-            grouped.setdefault((change.kind, change.revision), set()).add(change.id)
+        # One question for the whole change set. The identity carries the kind
+        # and the repository already, so nothing has to be grouped by them.
+        wanted = {change.key for change in changes}
 
         found: set[str] = set()
         with self._engine.connect() as connection:
-            for (kind, revision), identities in grouped.items():
-                for row in rows_for(
-                    identities,
-                    lambda chunk, kind=kind, revision=revision: connection.execute(
-                        select(mapping_table.c.entity_id).where(
-                            mapping_table.c.scope_id == key,
-                            mapping_table.c.change_kind == kind,
-                            mapping_table.c.revision == revision,
-                            mapping_table.c.change_id.in_(chunk),
-                        )
-                    ),
-                ):
-                    found.add(row[0])
+            for row in rows_for(
+                wanted,
+                lambda chunk: connection.execute(
+                    select(mapping_table.c.entity_id).where(
+                        mapping_table.c.scope_id == key,
+                        mapping_table.c.reference_key.in_(chunk),
+                    )
+                ),
+            ):
+                found.add(row[0])
         return tuple(sorted(found))
 
 
