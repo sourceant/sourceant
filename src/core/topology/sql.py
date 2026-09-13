@@ -281,6 +281,13 @@ class SQLTopologyRepository:
             self._refresh()
             return self._memory.get_relationships(scope, entity_ids, statuses)
 
+    def get_relationship(
+        self, scope: Scope, relationship_id: str
+    ) -> TopologyRelationship | None:
+        with self._lock:
+            self._refresh()
+            return self._memory.get_relationship(scope, relationship_id)
+
     def traverse(self, traversal: TopologyTraversal) -> TopologySubgraph:
         with self._lock:
             self._refresh()

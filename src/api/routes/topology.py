@@ -370,6 +370,28 @@ async def traverse(
     return success_response(asdict(result))
 
 
+@router.get("/relationships/{relationship_id:path}")
+async def read_relationship(
+    relationship_id: str,
+    scope: Scope = Depends(get_scope),
+    repository: TopologyRepository = Depends(get_topology_repository),
+):
+    """One relationship by id, so a caller holding only an id need not walk.
+
+    Without this a caller that knows an edge but not its endpoints has to read
+    the graph around it and look, which costs the whole neighbourhood to answer
+    a question about one identity.
+    """
+    try:
+        relationship = repository.get_relationship(scope, relationship_id)
+    except Exception:
+        logger.exception("Topology store unreachable while reading a relationship")
+        raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
+    if relationship is None:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    return success_response(asdict(relationship))
+
+
 @router.get("/systems/{system_id}/contents")
 async def system_contents(
     system_id: str,

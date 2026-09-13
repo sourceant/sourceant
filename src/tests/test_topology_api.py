@@ -392,6 +392,51 @@ class TestTopologyApi(BaseTestCase):
         assert [entity["id"] for entity in body["entities"]] == ["ledger", "search"]
         assert [edge["id"] for edge in body["relationships"]] == ["c"]
 
+    def draw(self, identifier, source, target, status="pending"):
+        self.put_entity(source)
+        self.put_entity(target)
+        return self.client.put(
+            "/api/topology/relationships",
+            json={
+                "id": identifier,
+                "source_id": source,
+                "target_id": target,
+                "type": "depends_on",
+                "status": status,
+            },
+            headers=self.headers,
+        )
+
+    def test_a_relationship_is_read_by_its_id_alone(self):
+        self.draw("edge", "checkout", "ledger")
+
+        answer = self.client.get(
+            "/api/topology/relationships/edge", headers=self.headers
+        )
+
+        assert answer.status_code == 200
+        edge = answer.json()["data"]
+        assert edge["source_id"] == "checkout"
+        assert edge["target_id"] == "ledger"
+        assert edge["status"] == "pending"
+
+    def test_a_relationship_nobody_recorded_is_not_found(self):
+        answer = self.client.get(
+            "/api/topology/relationships/absent", headers=self.headers
+        )
+
+        assert answer.status_code == 404
+
+    def test_another_workspace_cannot_read_a_relationship(self):
+        self.draw("edge", "checkout", "ledger")
+
+        answer = self.client.get(
+            "/api/topology/relationships/edge",
+            headers={"Authorization": f"Bearer {_token(uuid.uuid4().hex)}"},
+        )
+
+        assert answer.status_code == 404
+
     def test_removing_a_relationship_keeps_both_endpoints(self):
         self.put_entity("checkout")
         self.put_entity("ledger")
