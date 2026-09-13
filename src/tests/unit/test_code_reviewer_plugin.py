@@ -1290,7 +1290,7 @@ class TestWhoseModelReviews:
             )
         )
 
-        assert mock_llm.call_args.kwargs["user"] == "42"
+        assert mock_llm.call_args.args[0].user == "42"
 
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
@@ -1321,4 +1321,4 @@ class TestWhoseModelReviews:
             )
         )
 
-        assert mock_llm.call_args.kwargs["user"] is None
+        assert mock_llm.call_args.args[0].user is None

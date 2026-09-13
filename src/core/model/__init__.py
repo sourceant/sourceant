@@ -1,9 +1,7 @@
-"""Which model gets asked. Answered from settings unless a plugin registers its own."""
-
-from typing import Optional
+"""Which model is used. Answered from settings unless a plugin registers its own."""
 
 from src.core.services import ServiceRegistry, service_registry
-from src.core.workspace import workspace_holding
+from src.core.settings.configuration import Configuration
 from src.llms.llm_interface import LLMInterface
 
 from .interfaces import LLMSource
@@ -21,39 +19,20 @@ def llm_source(services: ServiceRegistry = service_registry) -> LLMSource:
 
 
 def config_for(
-    *,
-    repository: Optional[str] = None,
-    organization: Optional[str] = None,
-    user: Optional[str] = None,
-    workspace: Optional[str] = None,
+    configuration: Configuration,
     services: ServiceRegistry = service_registry,
 ) -> LLMConfig | None:
     """What to call and on whose account, for callers that do the call
     themselves. The provider is synchronous; an async caller needs the parts."""
-    holder = workspace or (workspace_holding(repository) if repository else None)
-    return llm_source(services).config_for(
-        repository=repository,
-        organization=organization,
-        user=user,
-        workspace=holder,
-    )
+    return llm_source(services).config_for(configuration)
 
 
 def provider_for(
-    *,
-    repository: Optional[str] = None,
-    organization: Optional[str] = None,
-    user: Optional[str] = None,
-    workspace: Optional[str] = None,
+    configuration: Configuration,
     services: ServiceRegistry = service_registry,
 ) -> LLMInterface | None:
-    """The model to ask for this repository, workspace, organisation or user."""
-    return llm_source(services).provider_for(
-        repository=repository,
-        organization=organization,
-        user=user,
-        workspace=workspace,
-    )
+    """The model for this configuration, or None where no scope in it names one."""
+    return llm_source(services).provider_for(configuration)
 
 
 __all__ = [

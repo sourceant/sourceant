@@ -25,6 +25,7 @@ from src.core.change_context import (
 )
 from src.core.knowledge import KnowledgeQuery
 from src.core.model import provider_for
+from src.core.settings.configuration import Configuration
 from src.core.review import Told, reviewer
 from src.core.review_coverage import Coverage, read_and_unread
 from src.core.scope import Scope
@@ -115,16 +116,15 @@ def told(recorded, skills) -> tuple[Told, ...]:
     return tuple(sections)
 
 
-def remember(review, scope, services, repository: str = "") -> None:
+def remember(review, scope, services, configuration: Configuration) -> None:
     """Keep what a review said, so the next one knows it has said it before.
 
     Off unless asked for: a reviewer that rewords itself raises the odd
     duplicate under any fingerprint. Nothing here fails a review.
     """
     from src.core.review import OPEN, ReviewFinding, finding_store, prints_for
-    from src.core.settings.resolver import value_of
 
-    if not value_of("review.remember_findings", repository=repository):
+    if not configuration.value("review.remember_findings"):
         return
 
     kept = finding_store(services)
@@ -284,6 +284,7 @@ class WorkingTreeReviews:
         """What changed, what applies to it, and what the reviewer made of it."""
         entry = self._folders().named(LOCAL, repository)
         root = Path(entry.path)
+        configuration = Configuration(repository=repository, user=LOCAL)
 
         try:
             changes = read_change(
@@ -372,7 +373,7 @@ class WorkingTreeReviews:
             )
             return answer
 
-        provider = provider_for(user=LOCAL)
+        provider = provider_for(configuration)
         if provider is None:
             raise ReviewRefused(
                 400,
@@ -393,7 +394,11 @@ class WorkingTreeReviews:
         coverage = Coverage()
         try:
             review = judge.review(
-                replace(changes, title=changes.title or f"Work on {where['branch']}"),
+                replace(
+                    changes,
+                    title=changes.title or f"Work on {where['branch']}",
+                    configuration=configuration,
+                ),
                 provider=provider,
                 read_content=on_disk(root),
                 coverage=coverage,
@@ -412,7 +417,7 @@ class WorkingTreeReviews:
                 review.summary = summarize_changes(
                     changes.diff,
                     provider,
-                    repository,
+                    configuration,
                     {"title": changes.title, "description": changes.description},
                     review.code_suggestions or (),
                 )
@@ -429,7 +434,7 @@ class WorkingTreeReviews:
         if review.summary is not None:
             review.summary.coverage = read_and_unread(coverage)
         answer["review"] = reviewed(review)
-        remember(review, entry.scope, self.services, repository)
+        remember(review, entry.scope, self.services, configuration)
 
         subject = Change(
             title=changes.title,

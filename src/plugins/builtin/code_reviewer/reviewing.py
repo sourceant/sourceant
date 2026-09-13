@@ -46,7 +46,7 @@ from src.core.skills import (
 from src.core.review.fingerprint import of_code, of_words
 from src.core.review.models import Sections, Told
 from src.core.services import ServiceRegistry, service_registry
-from src.core.settings.resolver import value_of
+from src.core.settings.configuration import Configuration
 from src.models.code_review import (
     CodeReview,
     summary_from,
@@ -131,9 +131,9 @@ class CodeReviewer:
             if not parsed_file.is_binary_file and parsed_file.file_path
         ]
 
-        repository = str(changes.scope.get("repository") or "")
+        configuration = changes.configuration
         file_limit = (
-            value_of("review.structural_context_file_limit", repository=repository)
+            configuration.value("review.structural_context_file_limit")
             or DEFAULT_FILE_LIMIT
         )
 
@@ -164,7 +164,7 @@ class CodeReviewer:
         metadata = metadata or self._metadata(changes)
 
         readers = (durable_code, local_code)
-        budget = self._budget(repository)
+        budget = self._budget(configuration)
         total = sum(provider.count_tokens(one.diff_text) for one in parsed_files)
 
         available = {skill.id: skill for skill in skills}
@@ -281,7 +281,9 @@ class CodeReviewer:
                 )
                 continue
             combined.extend(checked.code_suggestions or ())
-        self._check_they_were_applied(provider, changes, repository, guidance, coverage)
+        self._check_they_were_applied(
+            provider, changes, configuration, guidance, coverage
+        )
 
         unique, seen = [], set()
         for suggestion in combined:
@@ -302,7 +304,7 @@ class CodeReviewer:
         )
 
     @staticmethod
-    def _check_they_were_applied(provider, changes, repository, guidance, coverage):
+    def _check_they_were_applied(provider, changes, configuration, guidance, coverage):
         """Ask whether the review actually judged the change against each skill.
 
         A skill attached to a prompt and a skill a review took notice of look
@@ -313,9 +315,7 @@ class CodeReviewer:
         A model call per skill on every pull request, so it waits to be asked
         for.
         """
-        if not guidance or not value_of(
-            "review.check_skills_were_applied", repository=repository
-        ):
+        if not guidance or not configuration.value("review.check_skills_were_applied"):
             for skill in guidance:
                 coverage.record(
                     SKILLS,
@@ -372,9 +372,9 @@ class CodeReviewer:
             )
 
     @staticmethod
-    def _budget(repository: str) -> int:
+    def _budget(configuration: Configuration) -> int:
         """Where a review stops finding things, which is far below the window."""
-        stated = value_of("review.reading_budget", repository=repository)
+        stated = configuration.value("review.reading_budget")
         try:
             return int(stated) if stated else DEFAULT_READING_BUDGET
         except (TypeError, ValueError):

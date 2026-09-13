@@ -1,5 +1,7 @@
 """What a model call consumed is recorded against whoever it was made for."""
 
+from src.core.settings.configuration import Configuration
+
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -81,8 +83,12 @@ def test_two_repositories_are_not_billed_to_one(tmp_path):
     ):
         with patch("src.core.usage.sql.get_engine", return_value=engine):
             with patch("litellm.completion", return_value=answered):
-                source.provider_for(repository="one/a").generate_text("x")
-                source.provider_for(repository="two/b").generate_text("x")
+                source.provider_for(Configuration(repository="one/a")).generate_text(
+                    "x"
+                )
+                source.provider_for(Configuration(repository="two/b")).generate_text(
+                    "x"
+                )
 
     with Session(engine) as session:
         kept = session.exec(select(TokenUsageRecord)).all()

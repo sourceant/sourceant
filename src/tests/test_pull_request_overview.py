@@ -8,6 +8,7 @@ import pytest
 
 from src.api.routes import reviews
 from src.core.plugins.plugin_registry import plugin_registry
+from src.core.settings.configuration import Configuration
 from src.models.code_review import (
     CodeReview,
     CodeReviewSummary,
@@ -100,10 +101,12 @@ def test_http_preview_overview_reads_all_pr_changes(
         minor_suggestions=[],
         critical_issues=[],
     )
-    monkeypatch.setattr(reviewer_plugin, "provider_for", lambda **kwargs: provider)
+    monkeypatch.setattr(
+        reviewer_plugin, "provider_for", lambda *args, **kwargs: provider
+    )
     monkeypatch.setattr(
         "src.plugins.builtin.code_reviewer.reviewing.CodeReviewer._budget",
-        staticmethod(lambda repository: budget),
+        staticmethod(lambda configuration: budget),
     )
     credentials = headers()
     claims = jwt.decode(
@@ -170,5 +173,7 @@ def test_empty_overview_cannot_replace_the_standing_overview():
     )
     with pytest.raises(ValueError, match="did not produce"):
         summarize_changes(
-            (FIXTURES / "full.diff").read_text(), provider, "sourceant/sourceant"
+            (FIXTURES / "full.diff").read_text(),
+            provider,
+            Configuration(repository="sourceant/sourceant"),
         )

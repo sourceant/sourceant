@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
 
 from src.config.settings import DEFAULT_TOKEN_LIMIT, LLM_MODEL, LLM_TOKEN_LIMIT
-from src.core.settings.resolver import UNSTATED, value_of
+from src.core.settings.configuration import Configuration
 from src.core.workspace import workspace_holding
 from src.llms.litellm_provider import LiteLLMProvider
 from src.llms.llm_interface import LLMInterface
@@ -46,60 +45,31 @@ class SettingsLLMSource:
     fallback_model: str = LLM_MODEL
     fallback_token_limit: int = LLM_TOKEN_LIMIT
 
-    def provider_for(
-        self,
-        *,
-        repository: Optional[str] = None,
-        organization: Optional[str] = None,
-        user: Optional[str] = None,
-        workspace: Optional[str] = None,
-    ) -> LLMInterface | None:
+    def provider_for(self, configuration: Configuration) -> LLMInterface | None:
         # Worked out once here rather than left to each setting: the lookup goes
         # to the database, and a config is four settings deep.
-        holder = workspace or (workspace_holding(repository) if repository else None)
-        config = self.config_for(
-            repository=repository,
-            organization=organization,
-            user=user,
-            workspace=holder,
+        configuration = configuration.with_workspace_holding(
+            workspace_holding(configuration.repository)
+            if configuration.repository
+            else None
         )
+        config = self.config_for(configuration)
         if config is None:
             return None
-        logger.info(f"Asking {config.name}")
+        logger.info(f"Reading with {config.name}")
         return LiteLLMProvider(
             model=config.name,
             token_limit=config.token_limit,
             api_key=config.api_key,
             api_base=config.base_url,
-            attribution={
-                "repository": repository,
-                "organization": organization,
-                "user": user,
-                "workspace": holder,
-            },
+            attribution=configuration.attribution(),
         )
 
-    def config_for(
-        self,
-        *,
-        repository: Optional[str] = None,
-        organization: Optional[str] = None,
-        user: Optional[str] = None,
-        workspace: Any = UNSTATED,
-    ) -> LLMConfig | None:
+    def config_for(self, configuration: Configuration) -> LLMConfig | None:
         """What was chosen, before a provider is built from it."""
 
         def named(key: str) -> str:
-            return str(
-                value_of(
-                    key,
-                    repository=repository,
-                    organization=organization,
-                    user=user,
-                    workspace=workspace,
-                )
-                or ""
-            )
+            return str(configuration.value(key) or "")
 
         name = named("model.name")
         if name:
@@ -107,7 +77,7 @@ class SettingsLLMSource:
                 name=name,
                 api_key=named("model.api_key"),
                 base_url=named("model.base_url"),
-                token_limit=self._limit(repository, organization, user, workspace),
+                token_limit=self._limit(configuration),
             )
         if self.fallback_model:
             return LLMConfig(
@@ -115,14 +85,8 @@ class SettingsLLMSource:
             )
         return None
 
-    def _limit(self, repository, organization, user, workspace) -> int:
-        stated = value_of(
-            "model.token_limit",
-            repository=repository,
-            organization=organization,
-            user=user,
-            workspace=workspace,
-        )
+    def _limit(self, configuration: Configuration) -> int:
+        stated = configuration.value("model.token_limit")
         try:
             return int(stated) if stated else DEFAULT_TOKEN_LIMIT
         except (TypeError, ValueError):

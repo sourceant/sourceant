@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from src.core.environment import LOCAL
+from src.core.settings.configuration import Configuration
 from src.llms.llm_interface import LLMInterface
 
 from .llm import ChosenLLM
@@ -29,4 +30,4 @@ class LocalEnvironment:
         return LOCAL
 
     def provider_for(self, workspace: str) -> Optional[LLMInterface]:
-        return self._model.provider_for(user=workspace or LOCAL)
+        return self._model.provider_for(Configuration(user=workspace or LOCAL))
