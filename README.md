@@ -9,7 +9,7 @@
 
 AI is writing code faster than you and your team can understand it. SourceAnt helps you stay ahead. It shows you what is being built, checks changes against your decisions and requirements, and keeps your system architecture visible as the code moves.
 
-You can let agents move quickly without giving up control of where your software is going.
+Let agents move fast without losing control of where the software goes.
 
 **[Run it](#run-it-locally)** on your computer now. No account required.
 
@@ -22,13 +22,12 @@ You can let agents move quickly without giving up control of where your software
 Out of the box, on your own machine:
 
 - **Code graph.** Every repository you add, parsed into files, symbols and the relationships between them.
-- **Local code review.** Read a checkout before anybody else sees it, through the same reviewer a pull request goes through.
+- **Local code review.** Read a checkout through the same reviewer a pull request goes through.
 - **Review on pull requests.** The same reviewer on the forge, commenting where the line is.
 - **Knowledge and requirements.** What you decided and what the software must do, kept between sessions and linked to the code that carries it.
 - **Skills over MCP.** SourceAnt discovers the skills you already have and serves them back to your coding tools.
-- **One place for every index.** All your repositories in a single local store, each under its own scope, with nothing left in the folders themselves.
-
-Catch context-blind changes early. Keep the useful knowledge they uncover. Stay in control of what ships.
+- **One place for every index.** All your repositories in a single local store, each under its own scope, and nothing written into your folders.
+- **Review across repositories.** A change in one repository read against the others it reaches.
 
 ## Run it locally
 
@@ -57,9 +56,9 @@ Docs: [sourceant.ai/docs](https://sourceant.ai/docs).
 ## How it works
 
 SourceAnt parses your repositories into one graph and serves it over MCP, so
-your coding tools read the same thing its reviews read. Knowledge you record
-about the code sits in that graph beside the code it governs, which is what
-lets a review of one file find the decision that constrains it.
+your coding tools read what its reviews read. Knowledge you record sits in
+that graph beside the code it governs, so a review of one file finds the
+decision that constrains it.
 
 | | |
 |---|---|
@@ -76,6 +75,14 @@ You ask for it in plain language:
 > Connect the signed webhook decision to the rule that rejects unsigned requests.
 
 > Get the approved knowledge related to the signed webhook decision before changing its handler.
+
+## Reviews across repositories
+
+A change can break a repository it never mentions. Rename a route, and the client that calls it breaks under the old name. That name is nowhere in the diff.
+
+SourceAnt records how your repositories are joined, and reviews across that join. A review searches each repository the change reaches for what would break there. A repository it could not read is named rather than skipped.
+
+The joins come from two places. A manifest declares a dependency. A URL one service calls is declared nowhere, so a model reads the code for those and proposes them, quoting the lines. You approve a proposal before it counts.
 
 ## SourceAnt Cloud
 
