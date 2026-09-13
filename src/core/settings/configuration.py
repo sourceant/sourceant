@@ -21,6 +21,8 @@ class Configuration:
     repository: Optional[str] = None
     organization: Optional[str] = None
     user: Optional[str] = None
+    #: Left unnamed, the workspace holding the repository is looked up on every
+    #: read. `with_workspace` settles it once for a caller doing several.
     workspace: Optional[str] = None
 
     @classmethod
@@ -35,12 +37,14 @@ class Configuration:
             workspace=scope.get("workspace"),
         )
 
-    def with_workspace_holding(self, holder: Optional[str]) -> "Configuration":
-        """The workspace a repository belongs to, worked out once by the caller
-        rather than per setting, because that lookup goes to the database."""
-        if self.workspace:
+    def with_workspace(self) -> "Configuration":
+        """The workspace holding the repository, settled here rather than on
+        every read, because that lookup goes to the database."""
+        if self.workspace or not self.repository:
             return self
-        return replace(self, workspace=holder)
+        from src.core.workspace import workspace_holding
+
+        return replace(self, workspace=workspace_holding(self.repository))
 
     def with_user(self, user: str) -> "Configuration":
         return self if self.user else replace(self, user=user)
@@ -51,7 +55,7 @@ class Configuration:
             repository=self.repository,
             organization=self.organization,
             user=self.user,
-            workspace=UNSTATED if self.workspace is None else self.workspace,
+            workspace=self.workspace if self.workspace else UNSTATED,
         )
 
     def value(self, key: str) -> Any:

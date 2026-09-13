@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from src.config.settings import DEFAULT_TOKEN_LIMIT, LLM_MODEL, LLM_TOKEN_LIMIT
 from src.core.settings.configuration import Configuration
-from src.core.workspace import workspace_holding
 from src.llms.litellm_provider import LiteLLMProvider
 from src.llms.llm_interface import LLMInterface
 from src.utils.logger import logger
@@ -46,13 +45,7 @@ class SettingsLLMSource:
     fallback_token_limit: int = LLM_TOKEN_LIMIT
 
     def provider_for(self, configuration: Configuration) -> LLMInterface | None:
-        # Worked out once here rather than left to each setting: the lookup goes
-        # to the database, and a config is four settings deep.
-        configuration = configuration.with_workspace_holding(
-            workspace_holding(configuration.repository)
-            if configuration.repository
-            else None
-        )
+        configuration = configuration.with_workspace()
         config = self.config_for(configuration)
         if config is None:
             return None
