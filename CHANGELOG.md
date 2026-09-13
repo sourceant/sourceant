@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.4] - 2026-09-13
+
+### Added
+
+- Reviews reach the repositories a change affects and report what would break
+  in each, naming any repository they could not read
+- Connections between repositories proposed from what their code does, each
+  quoting the lines it was read from and checked against the file before it is
+  recorded
+- One relationship read by its id, and what a system holds answered directly
+
+### Changed
+
+- Every setting a review reads resolves from one value carrying the repository,
+  workspace, organisation and person, so a value set on a workspace or a person
+  reaches the review
+- A personal setting is read last rather than first, so a workspace's choice
+  holds for the people who join it
+- A review's model resolves as the workspace that owns the repository
+
+### Fixed
+
+- A missing name is checked against the file before it is reported
+- An unreachable topology store is answered as an outage, and nothing else is
+
 ## [1.0.0-beta.3] - 2026-09-10
 
 ### Added
