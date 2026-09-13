@@ -249,6 +249,9 @@ class TestTopologyApi(BaseTestCase):
             def traverse(self, traversal):
                 raise ValueError("Cannot resolve address memgraph:7687")
 
+            def get_relationship(self, scope, relationship_id):
+                raise ValueError("Cannot resolve address memgraph:7687")
+
         app.dependency_overrides[get_topology_repository] = UnreachableStore
 
         with caplog.at_level(logging.ERROR):
@@ -260,9 +263,14 @@ class TestTopologyApi(BaseTestCase):
                 json={"entity_ids": ["checkout"]},
                 headers=self.headers,
             )
+            edge = self.client.get(
+                "/api/topology/relationships/edge", headers=self.headers
+            )
 
         assert listing.status_code == 503
         assert traversal.status_code == 503
+        assert edge.status_code == 503
+        assert edge.json()["detail"] == "The topology store is unavailable"
         assert "memgraph" not in listing.json()["detail"]
         assert "memgraph" not in traversal.json()["detail"]
         assert listing.json()["detail"] == "The topology store is unavailable"
@@ -270,6 +278,7 @@ class TestTopologyApi(BaseTestCase):
         assert "memgraph:7687" in caplog.text
         assert "during search" in caplog.text
         assert "during traversal" in caplog.text
+        assert "while reading a relationship" in caplog.text
 
     def test_a_query_the_caller_can_correct_is_still_rejected_as_invalid(self):
         response = self.client.post(
@@ -391,6 +400,51 @@ class TestTopologyApi(BaseTestCase):
         body = listing.json()["data"]
         assert [entity["id"] for entity in body["entities"]] == ["ledger", "search"]
         assert [edge["id"] for edge in body["relationships"]] == ["c"]
+
+    def draw(self, identifier, source, target, status="pending"):
+        self.put_entity(source)
+        self.put_entity(target)
+        return self.client.put(
+            "/api/topology/relationships",
+            json={
+                "id": identifier,
+                "source_id": source,
+                "target_id": target,
+                "type": "depends_on",
+                "status": status,
+            },
+            headers=self.headers,
+        )
+
+    def test_a_relationship_is_read_by_its_id_alone(self):
+        self.draw("edge", "checkout", "ledger")
+
+        answer = self.client.get(
+            "/api/topology/relationships/edge", headers=self.headers
+        )
+
+        assert answer.status_code == 200
+        edge = answer.json()["data"]
+        assert edge["source_id"] == "checkout"
+        assert edge["target_id"] == "ledger"
+        assert edge["status"] == "pending"
+
+    def test_a_relationship_nobody_recorded_is_not_found(self):
+        answer = self.client.get(
+            "/api/topology/relationships/absent", headers=self.headers
+        )
+
+        assert answer.status_code == 404
+
+    def test_another_workspace_cannot_read_a_relationship(self):
+        self.draw("edge", "checkout", "ledger")
+
+        answer = self.client.get(
+            "/api/topology/relationships/edge",
+            headers={"Authorization": f"Bearer {_token(uuid.uuid4().hex)}"},
+        )
+
+        assert answer.status_code == 404
 
     def test_removing_a_relationship_keeps_both_endpoints(self):
         self.put_entity("checkout")

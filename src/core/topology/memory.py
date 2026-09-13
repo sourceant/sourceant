@@ -164,6 +164,12 @@ class InMemoryTopologyRepository:
         )
 
     @_locked
+    def get_relationship(
+        self, scope: Scope, relationship_id: str
+    ) -> TopologyRelationship | None:
+        return self._relationships.get((scope, relationship_id))
+
+    @_locked
     def traverse(self, traversal: TopologyTraversal) -> TopologySubgraph:
         scope = traversal.scope
         queue = deque(

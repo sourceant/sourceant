@@ -26,6 +26,10 @@ class TopologyReader(Protocol):
         statuses: frozenset[str] = frozenset(),
     ) -> tuple[TopologyRelationship, ...]: ...
 
+    def get_relationship(
+        self, scope: Scope, relationship_id: str
+    ) -> TopologyRelationship | None: ...
+
     def traverse(self, traversal: TopologyTraversal) -> TopologySubgraph: ...
 
 
