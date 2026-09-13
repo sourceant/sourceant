@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import asdict
 from typing import Any, Literal
 
@@ -6,11 +7,16 @@ from pydantic import BaseModel, Field
 
 from src.auth import get_current_user
 from src.config.db import get_engine
+from src.core.model import provider_for
 from src.core.responses import success_response
+from src.core.search import SearchQuery, Searcher
+from src.core.settings.configuration import Configuration
 from src.core.scope import Scope
 from src.core.services import service_registry
 from src.core.topology.inference import infer_dependencies
 from src.core.topology.manifests import read_manifests
+from src.core.topology.proposing import WhatItReads
+from src.core.topology.reading import contents_reader
 from src.utils.logger import logger
 from src.core.topology import (
     contents,
@@ -207,6 +213,7 @@ async def infer_relationships(
     github_token = user.get("github_token")
     if not github_token:
         raise HTTPException(status_code=400, detail="No GitHub token available")
+
     from src.api.routes.requirements import connected_names
 
     allowed = set(connected_names(user))
@@ -482,10 +489,11 @@ async def suggest(
     repository=Depends(get_topology_repository),
 ):
     from dataclasses import replace
-    from src.api.routes.requirements import connected_names
     from src.core.topology.suggestions import suggest_groups
 
     names = sorted(set(payload.repositories))
+    from src.api.routes.requirements import connected_names
+
     if not set(names).issubset(connected_names(user)):
         raise HTTPException(403, "Repository is outside this workspace")
     token = user.get("github_token")
@@ -544,5 +552,128 @@ async def suggest(
         {
             "groups": suggest_groups(names, manifests, graph_edges, systems),
             "read": len(manifests),
+        }
+    )
+
+
+class ReadInput(BaseModel):
+    entity_id: str
+    repository: str
+    # Which systems the reading may name. Fixed before the model is asked, so a
+    # reading cannot widen what it is allowed to join this repository to.
+    targets: list[str] = Field(default_factory=list, max_length=50)
+    revision: str = ""
+    persist: bool = True
+
+
+@router.post("/read")
+async def read_connections(
+    payload: ReadInput,
+    user: dict = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
+    repository: TopologyRepository = Depends(get_topology_repository),
+):
+    """Propose connections a manifest cannot declare, by reading the code.
+
+    Every proposal is pending and quotes the lines it was read from, and a
+    quote those lines do not carry is dropped before anything is recorded.
+    """
+    token = user.get("github_token")
+    if not token:
+        raise HTTPException(400, "No GitHub token available")
+    # requirements imports get_scope from this module, so binding this one
+    # name at the top closes the cycle.
+    from src.api.routes.requirements import connected_names
+
+    if payload.repository not in set(connected_names(user)):
+        raise HTTPException(403, "Repository is outside this workspace")
+
+    targets = tuple(sorted({one for one in payload.targets if one}))
+    known = (
+        repository.search(
+            TopologyQuery(
+                scope=scope,
+                ids=frozenset((payload.entity_id, *targets)),
+                limit=100,
+            )
+        ).entities
+        if targets
+        else ()
+    )
+    named = {entity.id for entity in known}
+    if payload.entity_id not in named:
+        raise HTTPException(422, "That entity is not in this workspace")
+    # A reading may only join what the graph already holds. A proposal naming
+    # something nobody recorded has nothing to be checked against.
+    targets = tuple(one for one in targets if one in named)
+    if not targets:
+        return success_response({"proposed": [], "read": payload.repository})
+
+    provider = provider_for(Configuration(repository=payload.repository))
+    if provider is None:
+        raise HTTPException(400, "No model is configured to read with")
+
+    def search(terms):
+        try:
+            searcher = service_registry.resolve(Searcher)
+        except LookupError:
+            return ()
+        query = SearchQuery(
+            Scope.from_mapping({"repository": payload.repository}), tuple(terms)
+        )
+        result = searcher.search(query)
+        return [
+            {
+                "path": match.path,
+                "start_line": match.start_line,
+                "end_line": match.end_line,
+                "text": match.text,
+            }
+            for match in result.matches
+        ]
+
+    def corroborates(source_id: str, target_id: str) -> bool:
+        edges = repository.get_relationships(scope, frozenset({source_id, target_id}))
+        return any(
+            {edge.source_id, edge.target_id} == {source_id, target_id}
+            and not edge.stale
+            and (edge.properties.get("provenance") or {}).get("read_from")
+            == "code_index"
+            for edge in edges
+        )
+
+    about = "\n".join(
+        f"- {entity.id}: {entity.properties.get('name') or entity.kind}"
+        for entity in known
+        if entity.id in targets
+    )
+    reads = WhatItReads(
+        contents_reader(payload.repository, token, payload.revision),
+        search,
+        corroborates,
+    )
+    proposals = await asyncio.to_thread(
+        reads.propose,
+        provider,
+        entity_id=payload.entity_id,
+        repository=payload.repository,
+        targets=targets,
+        about=about,
+        revision=payload.revision,
+    )
+
+    if payload.persist:
+        for proposal in proposals:
+            try:
+                repository.put_relationship(scope, proposal)
+            except ValueError as error:
+                logger.warning(f"Could not record a read connection: {error}")
+
+    return success_response(
+        {
+            "proposed": [asdict(one) for one in proposals],
+            "read": payload.repository,
+            "unavailable": reads.refused,
+            "persisted": payload.persist,
         }
     )
