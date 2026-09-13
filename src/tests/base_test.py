@@ -12,7 +12,6 @@ class BaseTestCase:
         """Setup environment variables and start the test server."""
         try:
             os.environ["APP_ENV"] = "test"
-            os.environ["DATABASE_URL"] = "sqlite:///./sourceant.db"
 
             self.client = TestClient(app)
             self.run_migrations()
