@@ -8,6 +8,7 @@ from src.core.knowledge import KnowledgeObject
 from src.core.requirements import Requirement
 from src.core.impact import ChangedCodeReference, ChangeImpact
 from src.core.scope import Scope
+from src.core.settings.configuration import Configuration
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,10 @@ class ChangeSet:
     #: repository, because asked of the repository alone the walk cannot leave
     #: it.
     impact_scope: Scope | None = None
+    #: Where every setting this review reads is resolved from. Separate from
+    #: `scope`, which also files code in the index and so carries nothing
+    #: wider than the repository.
+    configuration: Configuration = field(default_factory=Configuration)
 
     def __post_init__(self) -> None:
         if not self.files:
@@ -48,6 +53,10 @@ class ChangeSet:
             raise ValueError("depth must be between 1 and 3")
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100")
+        if self.configuration == Configuration():
+            object.__setattr__(
+                self, "configuration", Configuration.from_scope(self.scope)
+            )
 
     @property
     def paths(self) -> tuple[str, ...]:

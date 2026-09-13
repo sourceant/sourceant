@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
-
 from src.core.model import SettingsLLMSource
-from src.core.settings.resolver import UNSTATED
+from src.core.settings.configuration import Configuration
 from src.llms.llm_interface import LLMInterface
 
 from src.core.environment import LOCAL
@@ -21,32 +19,13 @@ class ChosenLLM(SettingsLLMSource):
     def __init__(self) -> None:
         super().__init__(fallback_model="")
 
-    def provider_for(
-        self,
-        *,
-        repository: Optional[str] = None,
-        organization: Optional[str] = None,
-        user: Optional[str] = None,
-        workspace: Optional[str] = None,
-    ) -> LLMInterface | None:
-        return super().provider_for(
-            repository=repository,
-            organization=organization,
-            user=user or LOCAL,
-            workspace=workspace,
-        )
+    def provider_for(self, configuration: Configuration) -> LLMInterface | None:
+        return super().provider_for(self._local(configuration))
 
-    def config_for(
-        self,
-        *,
-        repository: Optional[str] = None,
-        organization: Optional[str] = None,
-        user: Optional[str] = None,
-        workspace: Any = UNSTATED,
-    ):
-        return super().config_for(
-            repository=repository,
-            organization=organization,
-            user=user or LOCAL,
-            workspace=workspace,
-        )
+    def config_for(self, configuration: Configuration):
+        return super().config_for(self._local(configuration))
+
+    @staticmethod
+    def _local(configuration: Configuration) -> Configuration:
+        """One machine, one person, so an unnamed user is this one."""
+        return configuration.with_user(LOCAL)

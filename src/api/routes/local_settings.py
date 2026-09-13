@@ -20,6 +20,7 @@ from src.api.routes.code import require_local
 from src.api.routes.settings import _described
 from src.core.environment import LOCAL, environment
 from src.core.model import SettingsLLMSource
+from src.core.settings.configuration import Configuration
 from src.core.responses import success_response
 from src.core.settings.definitions import USER
 from src.core.settings.resolver import clear_value, resolve_all, set_value
@@ -36,7 +37,7 @@ def local_provider():
     deployment = environment()
     if deployment is not None:
         return deployment.provider_for(deployment.workspace_for())
-    return SettingsLLMSource(fallback_model="").provider_for(user=LOCAL)
+    return SettingsLLMSource(fallback_model="").provider_for(Configuration(user=LOCAL))
 
 
 @router.get("", dependencies=[Depends(require_local)])

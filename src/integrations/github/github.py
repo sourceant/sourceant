@@ -342,8 +342,9 @@ class GitHub(ProviderAdapter):
         review, or an instance answers to two providers at once.
         """
         from src.core.model import provider_for
+        from src.core.settings.configuration import Configuration
 
-        return provider_for(repository=repository) or llm()
+        return provider_for(Configuration(repository=repository)) or llm()
 
     def post_notice(self, owner: str, repo: str, pr_number: int, message: str) -> bool:
         """Say something once on a pull request, whatever else happens on it.

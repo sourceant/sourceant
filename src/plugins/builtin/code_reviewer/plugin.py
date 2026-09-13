@@ -15,6 +15,7 @@ from src.core.plugins import event_hooks
 
 from src.core.change_context import ChangeSet
 from src.core.model import provider_for
+from src.core.settings.configuration import Configuration
 from src.core.mcp import contribute_tools
 from src.core.review import Reviewer, WorkingTreeReviewer
 from src.core.review_coverage import (
@@ -394,9 +395,10 @@ class CodeReviewerPlugin(BasePlugin):
             from src.core.workspace import workspace_holding
 
             workspace = workspace or workspace_holding(repo_full_name)
-            llm_instance = provider_for(
+            configuration = Configuration(
                 repository=repo_full_name, workspace=workspace, user=user
             )
+            llm_instance = provider_for(configuration)
             if llm_instance is None:
                 return {
                     "status": "error",
@@ -468,6 +470,7 @@ class CodeReviewerPlugin(BasePlugin):
             final_review = CodeReviewer(services=self.services).review(
                 ChangeSet(
                     scope=Scope.from_mapping({"repository": repo_full_name}),
+                    configuration=configuration,
                     requirement_scopes=(
                         (
                             Scope.from_mapping(
@@ -521,7 +524,7 @@ class CodeReviewerPlugin(BasePlugin):
             final_review.summary = summarize_changes(
                 full_diff,
                 llm_instance,
-                repo_full_name,
+                configuration,
                 pr_metadata,
                 final_review.code_suggestions or (),
             )

@@ -1,6 +1,7 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 
+from src.core.settings.configuration import Configuration
 from src.plugins.builtin.code_reviewer.reviewing import (
     CodeReviewer,
     MAX_AT_ONCE,
@@ -10,9 +11,11 @@ from src.utils.diff_parser import parse_diff
 from src.models.code_review import CodeReviewSummary, summary_from
 
 
-def summarize_changes(diff, provider, repository, metadata=None, suggestions=()):
+def summarize_changes(
+    diff, provider, configuration: Configuration, metadata=None, suggestions=()
+):
     batches = _batched(
-        parse_diff(diff), CodeReviewer._budget(repository), provider.count_tokens
+        parse_diff(diff), CodeReviewer._budget(configuration), provider.count_tokens
     )
     if not batches:
         raise ValueError("The full pull request diff is unavailable")
