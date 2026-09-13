@@ -249,6 +249,9 @@ class TestTopologyApi(BaseTestCase):
             def traverse(self, traversal):
                 raise ValueError("Cannot resolve address memgraph:7687")
 
+            def get_relationship(self, scope, relationship_id):
+                raise ValueError("Cannot resolve address memgraph:7687")
+
         app.dependency_overrides[get_topology_repository] = UnreachableStore
 
         with caplog.at_level(logging.ERROR):
@@ -260,9 +263,14 @@ class TestTopologyApi(BaseTestCase):
                 json={"entity_ids": ["checkout"]},
                 headers=self.headers,
             )
+            edge = self.client.get(
+                "/api/topology/relationships/edge", headers=self.headers
+            )
 
         assert listing.status_code == 503
         assert traversal.status_code == 503
+        assert edge.status_code == 503
+        assert edge.json()["detail"] == "The topology store is unavailable"
         assert "memgraph" not in listing.json()["detail"]
         assert "memgraph" not in traversal.json()["detail"]
         assert listing.json()["detail"] == "The topology store is unavailable"
@@ -270,6 +278,7 @@ class TestTopologyApi(BaseTestCase):
         assert "memgraph:7687" in caplog.text
         assert "during search" in caplog.text
         assert "during traversal" in caplog.text
+        assert "while reading a relationship" in caplog.text
 
     def test_a_query_the_caller_can_correct_is_still_rejected_as_invalid(self):
         response = self.client.post(

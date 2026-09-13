@@ -382,9 +382,11 @@ async def read_relationship(
     the graph around it and look, which costs the whole neighbourhood to answer
     a question about one identity.
     """
+    # The graph driver reports an unreachable store as a bare ValueError, which
+    # is why this reads as a validation error and is answered as an outage.
     try:
         relationship = repository.get_relationship(scope, relationship_id)
-    except Exception:
+    except ValueError:
         logger.exception("Topology store unreachable while reading a relationship")
         raise HTTPException(status_code=503, detail=STORE_UNAVAILABLE)
     if relationship is None:
