@@ -558,9 +558,7 @@ class TestPreviewResponseIsSerializable:
 
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-    @patch(
-        "src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_one_file
-    )
+    @patch("src.core.settings.configuration.Configuration.value", side_effect=_one_file)
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
     @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_preview_drops_a_missing_import_claim_disproved_by_post_change_file(
@@ -646,17 +644,14 @@ class TestPreviewResponseIsSerializable:
         assert '"name":"load"' in code_context
         # That this setting is read, not that it is the only one: a review also
         # asks how much it is worth reading at once.
-        mock_value_of.assert_any_call(
-            "review.structural_context_file_limit",
-            repository="test_owner/test_repo",
-        )
+        mock_value_of.assert_any_call("review.structural_context_file_limit")
         mock_github.get_file_content.assert_called_once_with(
             "test_owner", "test_repo", "test.py", "head_sha_def"
         )
 
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-    @patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+    @patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
     @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
     def test_review_receives_referenced_definition_source_from_durable_graph(
@@ -1096,7 +1091,7 @@ class TestWhetherASkillWasHonoured:
                 "src.plugins.builtin.code_reviewer.reviewing.LLMSkillChecker", _Checker
             ),
             patch(
-                "src.plugins.builtin.code_reviewer.reviewing.value_of",
+                "src.core.settings.configuration.Configuration.value",
                 side_effect=lambda key, **_: (
                     checking if key == "review.check_skills_were_applied" else None
                 ),
@@ -1214,7 +1209,7 @@ class TestWhetherASkillWasHonoured:
                 "src.plugins.builtin.code_reviewer.reviewing.LLMSkillChecker", _Raises
             ),
             patch(
-                "src.plugins.builtin.code_reviewer.reviewing.value_of",
+                "src.core.settings.configuration.Configuration.value",
                 side_effect=lambda key, **_: (
                     True if key == "review.check_skills_were_applied" else None
                 ),

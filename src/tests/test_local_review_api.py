@@ -264,7 +264,7 @@ class TestLocalReview(BaseTestCase):
         )
         monkeypatch.setattr(
             "src.plugins.builtin.code_reviewer.working_tree.provider_for",
-            lambda **_: model,
+            lambda *_, **__: model,
         )
         self.register()
         self.edit_the_migration()
@@ -287,7 +287,7 @@ class TestLocalReview(BaseTestCase):
         )
         monkeypatch.setattr(
             "src.plugins.builtin.code_reviewer.working_tree.provider_for",
-            lambda **_: model,
+            lambda *_, **__: model,
         )
         self.register()
         self.edit_the_migration()
@@ -302,7 +302,7 @@ class TestLocalReview(BaseTestCase):
     def test_judging_without_a_model_is_refused_rather_than_guessed(self, monkeypatch):
         monkeypatch.setattr(
             "src.plugins.builtin.code_reviewer.working_tree.provider_for",
-            lambda **_: None,
+            lambda *_, **__: None,
         )
         self.register()
         self.edit_the_migration()
@@ -335,7 +335,7 @@ class TestLocalReview(BaseTestCase):
         )
         monkeypatch.setattr(
             "src.plugins.builtin.code_reviewer.working_tree.provider_for",
-            lambda **_: model,
+            lambda *_, **__: model,
         )
         self.register()
         self.edit_the_migration()
@@ -354,7 +354,7 @@ class TestLocalReview(BaseTestCase):
         model = FakeModel({"passed": True})
         monkeypatch.setattr(
             "src.plugins.builtin.code_reviewer.working_tree.provider_for",
-            lambda **_: model,
+            lambda *_, **__: model,
         )
         self.register()
         self.edit_the_migration()

@@ -138,7 +138,7 @@ def _run(plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_s
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_requirement_on_a_changed_file_reaches_the_review(
@@ -168,7 +168,7 @@ def test_a_requirement_on_a_changed_file_reaches_the_review(
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_requirement_on_an_untouched_file_stays_out_of_the_review(
@@ -198,7 +198,7 @@ def test_a_requirement_on_an_untouched_file_stays_out_of_the_review(
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_review_still_runs_when_the_requirement_tables_are_missing(
@@ -245,7 +245,7 @@ class _IntentSelector:
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_registered_selector_decides_instead_of_the_links(
@@ -277,7 +277,7 @@ def test_a_registered_selector_decides_instead_of_the_links(
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_selector_is_told_what_the_change_is(
@@ -326,7 +326,7 @@ def _knowledge(tmp_path, *, linked_path="test.py"):
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_decision_governing_a_changed_file_reaches_the_review(
@@ -356,7 +356,7 @@ def test_a_decision_governing_a_changed_file_reaches_the_review(
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_decision_on_an_untouched_file_stays_out_of_the_review(
@@ -386,7 +386,7 @@ def test_a_decision_on_an_untouched_file_stays_out_of_the_review(
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_store_that_holds_no_links_reviews_without_knowledge(
@@ -416,7 +416,7 @@ def test_a_store_that_holds_no_links_reviews_without_knowledge(
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_registered_knowledge_selector_decides_instead_of_the_links(
@@ -464,7 +464,7 @@ Binary files a/logo.png and b/logo.png differ
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_a_change_with_nothing_readable_still_reviews(
@@ -518,7 +518,7 @@ def test_a_change_with_nothing_readable_still_reviews(
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
 @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
-@patch("src.plugins.builtin.code_reviewer.reviewing.value_of", side_effect=_setting)
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
 @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
 @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
 def test_what_a_change_reaches_is_carried_into_the_review(
