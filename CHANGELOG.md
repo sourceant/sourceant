@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The gateway can ask which workspaces have connected a repository, so a
   delivery can be routed by the repository it names. It asks with a token
   minted for that question alone, which a person's token can never be
+- The connected repositories can be asked about one repository by name, so a
+  caller checking whether a workspace holds it reads one row instead of the
+  whole list a page at a time
 
 ## [1.0.0-beta.4] - 2026-09-13
 
