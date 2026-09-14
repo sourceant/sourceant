@@ -19,6 +19,9 @@ SIBLING_SOURCE = "sibling source"
 NEIGHBOURING_CODE = "neighbouring code"
 #: What the team wrote down about work here.
 SKILLS = "skills"
+#: What a deterministic tool could say about the change without being asked to
+#: interpret it. A language no tool covers is a gap, not a clean change.
+ANALYSIS = "static analysis"
 
 #: A walk of the system graph from where the changed files sit.
 GRAPH = "graph"

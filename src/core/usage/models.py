@@ -20,6 +20,10 @@ class TokenUsage:
     model: str
     input_tokens: int
     output_tokens: int
+    #: Input tokens the provider served from its cache rather than reading again.
+    cached_input_tokens: int = 0
+    #: Input tokens the provider wrote into its cache for a later call to read.
+    cache_write_tokens: int = 0
     reported_total: int = 0
     cost_micro: Optional[int] = None
     currency: str = "USD"
@@ -33,6 +37,19 @@ class TokenUsage:
     @property
     def total_tokens(self) -> int:
         return self.reported_total or (self.input_tokens + self.output_tokens)
+
+    @property
+    def uncached_input_tokens(self) -> int:
+        """Input the provider had to read in full.
+
+        Every provider litellm routes to counts cached reads and cache writes
+        inside its prompt total, so what a cache saved is the difference rather
+        than a separate number. Anthropic reports the two halves apart and
+        litellm adds them back in before anything here sees them.
+        """
+        return max(
+            0, self.input_tokens - self.cached_input_tokens - self.cache_write_tokens
+        )
 
     @staticmethod
     def micro(cost: Optional[float]) -> Optional[int]:

@@ -116,10 +116,20 @@ Return findings only. Leave summary null; the complete change is summarized afte
 {_FINAL_NOTES}
 """
 
-    REVIEW_PROMPT = """## Pull Request Metadata
+    # The review prompt is kept in two halves. Everything identical across the
+    # passes of one review is in the first, everything that differs between
+    # them is in the second, and the two are joined in that order.
+    #
+    # Every provider that caches a prompt caches a matching prefix, so a block
+    # that changes between passes costs the cache for everything after it. The
+    # existing comments and the per-batch graph used to sit ahead of four
+    # blocks that never change, which left almost nothing shared to cache.
+    REVIEW_SETTLED = """## Pull Request Metadata
 {pr_metadata}
 
-{existing_comments}{previous_summary}{requirements}{knowledge}{impact}## Bounded Structural Context
+{previous_summary}{requirements}{knowledge}{impact}{analysis}{related_code}"""
+
+    REVIEW_CHANGING = """{existing_comments}## Bounded Structural Context
 This deterministic graph contains relevant post-change files, symbols, direct relationships, and bounded source excerpts from referenced definitions. Use source excerpts to verify behavioral assumptions about referenced code before reporting an issue. An omitted node or excerpt is not proof that code or behavior does not exist.
 
 {code_context}

@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from src.llms.errors import LLMError
@@ -346,3 +347,186 @@ def test_summary_with_full_change_context_uses_the_existing_format(
     assert "**JSON format**" in prompt
     assert "**GitHub-flavored Markdown**" in prompt
     assert '"key_improvements"' in prompt
+
+
+class TestWhatAModelNeedsToAuthenticateWith:
+    """Which variable holds a key is a fact about the provider, so litellm
+    answers it rather than a table kept here."""
+
+    def test_a_model_with_nothing_to_authenticate_with_says_what_is_missing(
+        self, monkeypatch
+    ):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        model = LiteLLMProvider(model="anthropic/claude-opus-5", token_limit=1000)
+
+        assert model.missing_credentials() == ["ANTHROPIC_API_KEY"]
+
+    def test_a_key_given_for_the_call_is_enough(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        model = LiteLLMProvider(
+            model="anthropic/claude-opus-5", token_limit=1000, api_key="whatever"
+        )
+
+        assert model.missing_credentials() == []
+
+    def test_a_key_in_the_environment_is_enough(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "whatever")
+        model = LiteLLMProvider(model="anthropic/claude-opus-5", token_limit=1000)
+
+        assert model.missing_credentials() == []
+
+    def test_a_model_litellm_does_not_know_is_not_reported_as_missing_one(self):
+        """An unfamiliar name must not stop a deployment running its own model."""
+        model = LiteLLMProvider(
+            model="something-nobody-here-has-heard-of", token_limit=1
+        )
+
+        assert model.missing_credentials() == []
+
+    def test_a_check_that_fails_does_not_stop_the_review(self):
+        model = LiteLLMProvider(model="anthropic/claude-opus-5", token_limit=1000)
+
+        with patch(
+            "src.llms.litellm_provider.litellm.validate_environment",
+            side_effect=RuntimeError("no"),
+        ):
+            assert model.missing_credentials() == []
+
+
+class TestWhatThePassesOfOneReviewShare:
+    """Providers cache a matching prefix, so what does not change goes first."""
+
+    @staticmethod
+    def _sent(mock_litellm):
+        """What reached the model, whether or not the halves were marked."""
+        content = mock_litellm.completion.call_args.kwargs["messages"][1]["content"]
+        if isinstance(content, str):
+            return content
+        return "".join(block["text"] for block in content)
+
+    def _read_a_batch(self, provider, diff, comments, structure):
+        return provider.generate_code_review(
+            diff=diff,
+            pr_metadata={"title": "Group repositories", "number": 7},
+            existing_comments=comments,
+            previous_summary="What this review already said.",
+            code_context=structure,
+            requirements="## Requirements\n\nOne requirement.\n",
+            knowledge="## Knowledge\n\nOne thing worth knowing.\n",
+            impact="## Impact\n\nOne thing this reaches.\n",
+            related_code="## What This Review Went Looking For\n\nOne search.",
+        )
+
+    def test_two_batches_share_a_prefix_holding_all_the_shared_context(
+        self, provider, mock_completion
+    ):
+        self._read_a_batch(
+            provider, "diff of the first batch", [{"path": "a.py", "body": "x"}], "A"
+        )
+        first = self._sent(mock_completion)
+
+        self._read_a_batch(
+            provider, "diff of the second batch", [{"path": "b.py", "body": "y"}], "B"
+        )
+        second = self._sent(mock_completion)
+
+        shared = first[: len(os.path.commonprefix([first, second]))]
+        assert "Group repositories" in shared
+        assert "What this review already said." in shared
+        assert "One requirement." in shared
+        assert "One thing worth knowing." in shared
+        assert "One thing this reaches." in shared
+        assert "One search." in shared
+
+    def test_what_differs_between_batches_is_all_after_the_shared_part(
+        self, provider, mock_completion
+    ):
+        self._read_a_batch(
+            provider, "diff of the first batch", [{"path": "a.py", "body": "x"}], "A"
+        )
+        first = self._sent(mock_completion)
+
+        self._read_a_batch(
+            provider, "diff of the second batch", [{"path": "b.py", "body": "y"}], "B"
+        )
+        second = self._sent(mock_completion)
+
+        shared = os.path.commonprefix([first, second])
+        assert "diff of the first batch" not in shared
+        assert "a.py" not in shared
+
+
+class TestMarkingWhereTheSettledHalfEnds:
+    """Marked by default, and turned off where the provider's store costs
+    more than the reading it saves."""
+
+    @staticmethod
+    def _settled():
+        return "settled " * 8000
+
+    def test_a_deployment_that_wants_none_of_it_gets_none_of_it(self):
+        model = LiteLLMProvider(
+            model="anthropic/claude-opus-5", token_limit=100000, cache_prompts=False
+        )
+
+        assert isinstance(model._layered(self._settled(), "changing"), str)
+
+    def test_the_boundary_is_marked_and_nothing_after_it_is(self):
+        model = LiteLLMProvider(model="anthropic/claude-opus-5", token_limit=100000)
+
+        blocks = model._layered(self._settled(), "changing")
+
+        assert [one["cache_control"] for one in blocks if "cache_control" in one] == [
+            {"type": "ephemeral"}
+        ]
+        assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+        assert blocks[1]["text"] == "changing"
+
+    def test_a_prompt_under_every_providers_floor_is_not_marked(self):
+        model = LiteLLMProvider(model="anthropic/claude-opus-5", token_limit=100000)
+
+        assert isinstance(model._layered("too short to be worth it", "changing"), str)
+
+    def test_a_model_that_cannot_be_told_is_not_told(self):
+        model = LiteLLMProvider(
+            model="something-nobody-here-has-heard-of", token_limit=100000
+        )
+
+        assert isinstance(model._layered(self._settled(), "changing"), str)
+
+
+class TestAProviderRefusingToKeepAPrompt:
+    """A cache the provider will not build must not cost the review."""
+
+    @staticmethod
+    def _marked(provider):
+        return [
+            {"type": "text", "text": "settled", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": "changing"},
+        ]
+
+    def test_a_refused_cache_is_asked_again_without_the_mark(
+        self, provider, mock_completion
+    ):
+        review = CodeReview(verdict=Verdict.COMMENT, code_suggestions=[])
+        mock_completion.completion.side_effect = [
+            Exception("cached content is too small"),
+            _make_completion_response(review.model_dump_json()),
+        ]
+
+        with patch.object(provider, "_layered", return_value=self._marked(provider)):
+            answered = provider.generate_code_review("+ changed")
+
+        assert answered is not None
+        assert mock_completion.completion.call_count == 2
+        second = mock_completion.completion.call_args.kwargs["messages"][1]["content"]
+        assert isinstance(second, str)
+        assert "+ changed" in second
+
+    def test_an_unmarked_prompt_that_fails_is_not_asked_twice(
+        self, provider, mock_completion
+    ):
+        mock_completion.completion.side_effect = Exception("the provider is down")
+
+        assert provider.generate_code_review("+ changed") is None
+        assert mock_completion.completion.call_count == 1

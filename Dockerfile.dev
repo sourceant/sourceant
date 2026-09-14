@@ -6,6 +6,13 @@ RUN apt-get update && apt-get install -y \
     libpq-dev gcc python3-dev sqlite3 git curl && \
     rm -rf /var/lib/apt/lists/*
 
+# Semgrep is shelled out to, never imported, so it is kept in an environment of
+# its own. Its own pins on click and mcp disagree with this application's, and
+# resolving both against one another has no answer.
+RUN python -m venv /opt/semgrep \
+    && /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.177.0 \
+    && ln -s /opt/semgrep/bin/semgrep /usr/local/bin/semgrep
+
 COPY . /app/
 RUN python -m pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt

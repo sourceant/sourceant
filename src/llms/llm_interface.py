@@ -25,6 +25,8 @@ class LLMInterface(ABC):
         requirements: Optional[str] = None,
         knowledge: Optional[str] = None,
         impact: Optional[str] = None,
+        related_code: Optional[str] = None,
+        analysis: Optional[str] = None,
     ) -> Optional[CodeReview]:
         pass
 
@@ -45,3 +47,12 @@ class LLMInterface(ABC):
     @abstractmethod
     def is_summary_different(self, summary_a: str, summary_b: str) -> bool:
         pass
+
+    def missing_credentials(self) -> List[str]:
+        """What this model needs to authenticate with and cannot find.
+
+        Concrete rather than abstract, and empty by default, so an
+        implementation that has no way to tell says nothing instead of
+        blocking work it would have done.
+        """
+        return []

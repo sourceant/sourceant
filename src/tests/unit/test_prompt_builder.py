@@ -29,13 +29,29 @@ class TestReviewSystemPrompt:
 
 class TestReviewUserPrompts:
     def test_review_prompt_has_placeholders(self):
-        assert "{diff}" in Prompts.REVIEW_PROMPT
-        assert "{pr_metadata}" in Prompts.REVIEW_PROMPT
-        assert "{existing_comments}" in Prompts.REVIEW_PROMPT
+        assert "{pr_metadata}" in Prompts.REVIEW_SETTLED
+        assert "{diff}" in Prompts.REVIEW_CHANGING
+        assert "{existing_comments}" in Prompts.REVIEW_CHANGING
 
     def test_review_prompt_mentions_decoupled_format(self):
-        assert "__old hunk__" in Prompts.REVIEW_PROMPT
-        assert "__new hunk__" in Prompts.REVIEW_PROMPT
+        assert "__old hunk__" in Prompts.REVIEW_CHANGING
+        assert "__new hunk__" in Prompts.REVIEW_CHANGING
+
+    def test_nothing_that_changes_between_passes_is_in_the_settled_half(self):
+        """A varying block early in a prompt costs the cache for all of it."""
+        for changes_per_pass in ("{existing_comments}", "{code_context}", "{diff}"):
+            assert changes_per_pass not in Prompts.REVIEW_SETTLED
+
+    def test_everything_the_passes_share_is_in_the_settled_half(self):
+        for same_every_pass in (
+            "{pr_metadata}",
+            "{previous_summary}",
+            "{requirements}",
+            "{knowledge}",
+            "{impact}",
+            "{related_code}",
+        ):
+            assert same_every_pass in Prompts.REVIEW_SETTLED
 
 
 class TestFormatPrMetadata:

@@ -50,6 +50,8 @@ class SQLUsageRecorder:
                         purpose=usage.purpose,
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens,
+                        cached_input_tokens=usage.cached_input_tokens,
+                        cache_write_tokens=usage.cache_write_tokens,
                         reported_total=usage.reported_total,
                         cost_micro=usage.cost_micro,
                         currency=usage.currency,

@@ -53,6 +53,7 @@ def test_http_preview_overview_reads_all_pr_changes(
     monkeypatch.setattr(reviewer_plugin, "GitHub", lambda: github)
     provider = MagicMock()
     provider.count_tokens.side_effect = len
+    provider.missing_credentials.return_value = []
     findings = (
         [
             CodeSuggestion(

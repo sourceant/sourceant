@@ -15,6 +15,8 @@ class TokenUsageRecord(BaseModel, table=True):
     purpose: str = Field(default="", index=True)
     input_tokens: int = Field(default=0)
     output_tokens: int = Field(default=0)
+    cached_input_tokens: int = Field(default=0)
+    cache_write_tokens: int = Field(default=0)
     reported_total: int = Field(default=0)
     cost_micro: Optional[int] = Field(default=None, sa_type=BigInteger)
     currency: str = Field(default="USD")

@@ -37,6 +37,8 @@ class SQLUsageReader:
             func.count().label("calls"),
             func.sum(c.input_tokens).label("input_tokens"),
             func.sum(c.output_tokens).label("output_tokens"),
+            func.sum(c.cached_input_tokens).label("cached_input_tokens"),
+            func.sum(c.cache_write_tokens).label("cache_write_tokens"),
             func.sum(c.cost_micro).label("cost_micro"),
             func.sum(case((c.cost_micro.is_(None), 1), else_=0)).label(
                 "unpriced_calls"
@@ -67,6 +69,8 @@ class SQLUsageReader:
                     "calls",
                     "input_tokens",
                     "output_tokens",
+                    "cached_input_tokens",
+                    "cache_write_tokens",
                     "unpriced_calls",
                 ):
                     item[field] = whole(item[field]) or 0
@@ -93,11 +97,20 @@ class SQLUsageReader:
                     "calls": 0,
                     "input_tokens": 0,
                     "output_tokens": 0,
+                    "cached_input_tokens": 0,
+                    "cache_write_tokens": 0,
                     "cost_micro": None,
                     "unpriced_calls": 0,
                 },
             )
-            for field in ("calls", "input_tokens", "output_tokens", "unpriced_calls"):
+            for field in (
+                "calls",
+                "input_tokens",
+                "output_tokens",
+                "cached_input_tokens",
+                "cache_write_tokens",
+                "unpriced_calls",
+            ):
                 target[field] += row[field]
             if row["cost_micro"] is not None:
                 target["cost_micro"] = (target["cost_micro"] or 0) + row["cost_micro"]
@@ -108,6 +121,8 @@ class SQLUsageReader:
                 "calls": sum(x["calls"] for x in totals),
                 "input_tokens": sum(x["input_tokens"] for x in totals),
                 "output_tokens": sum(x["output_tokens"] for x in totals),
+                "cached_input_tokens": sum(x["cached_input_tokens"] for x in totals),
+                "cache_write_tokens": sum(x["cache_write_tokens"] for x in totals),
                 "cost_micro": None if totals else 0,
                 "currency": None if totals else "USD",
                 "unpriced_calls": sum(x["unpriced_calls"] for x in totals),

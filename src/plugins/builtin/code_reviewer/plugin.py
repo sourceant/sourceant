@@ -18,7 +18,18 @@ from src.core.model import provider_for
 from src.core.settings.configuration import Configuration
 from src.core.mcp import contribute_tools
 from src.core.review import Reviewer, WorkingTreeReviewer
+from src.core.analysis import (
+    ERROR,
+    NOTE,
+    WARNING,
+    about_the_change,
+    also_reported,
+    examine,
+    touched_lines,
+)
+from src.core.analysis.checkout import written_out
 from src.core.review_coverage import (
+    ANALYSIS,
     Coverage,
     GRAPH,
     REACH,
@@ -34,6 +45,7 @@ from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.core.scope import Scope
 from src.integrations.github.github import GitHub
 from src.llms.llm_factory import llm
+from src.models.code_review import Verdict
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.utils.diff_parser import parse_diff
@@ -406,6 +418,19 @@ class CodeReviewerPlugin(BasePlugin):
                     "error_type": "no_model",
                 }
 
+            # Before the reading, not at the first call: the passes in between
+            # are the expensive part and they are paid for either way.
+            missing = llm_instance.missing_credentials()
+            if missing:
+                return {
+                    "status": "error",
+                    "message": (
+                        "No credentials are configured for the review model: "
+                        + ", ".join(missing)
+                    ),
+                    "error_type": "no_credentials",
+                }
+
             total_tokens = sum(
                 llm_instance.count_tokens(pf.diff_text) for pf in parsed_files
             )
@@ -454,6 +479,35 @@ class CodeReviewerPlugin(BasePlugin):
                 review_skills = skill_library.all(workspace or "", repo_full_name)
 
             coverage = Coverage()
+
+            # A tool needs files on a disk and this path never clones one, so
+            # the changed files are written out as they stand after the change.
+            with written_out([one.path for one in changed], read_changed_file) as (
+                analysis_root,
+                analysis_paths,
+            ):
+                analysis = examine(analysis_root, analysis_paths, self.services)
+            # Before the gate, so a repository with history is not stopped for
+            # what was already in it.
+            analysis = about_the_change(analysis, touched_lines(parsed_files))
+            for name in analysis.ran:
+                coverage.record(ANALYSIS, name, answered=True, target=repo_full_name)
+            for name in analysis.unavailable:
+                coverage.record(
+                    ANALYSIS,
+                    name,
+                    answered=False,
+                    target=repo_full_name,
+                    reason="could not run over this change",
+                )
+
+            gate = int(configuration.value("review.analysis_gate_errors") or 0)
+            errors = analysis.counted(ERROR)
+            if gate and errors >= gate:
+                return self._too_broken_to_read(
+                    github, repository, pull_request, analysis, gate, post
+                )
+
             if not workspace:
                 # A repository two workspaces both connected has no one graph
                 # to read, so the walk is pointed at the repository alone and
@@ -501,6 +555,7 @@ class CodeReviewerPlugin(BasePlugin):
                 code_scope=code_scope,
                 metadata=pr_metadata,
                 coverage=coverage,
+                analysis=analysis,
             )
             if final_review is None:
                 return {
@@ -528,6 +583,7 @@ class CodeReviewerPlugin(BasePlugin):
                 pr_metadata,
                 final_review.code_suggestions or (),
             )
+            also_reported(final_review, analysis)
             if final_review.summary is not None:
                 final_review.summary.systems = systems_read(
                     coverage, final_review.code_suggestions or ()
@@ -606,6 +662,50 @@ class CodeReviewerPlugin(BasePlugin):
                 "message": str(e),
                 "error_type": "review_generation_failed",
             }
+
+    @staticmethod
+    def _too_broken_to_read(github, repository, pull_request, analysis, gate, post):
+        """Say what is wrong and stop, rather than paying to read past it.
+
+        Nothing about this is an approval and it must never read as one: the
+        findings go out in full, the verdict asks for changes, and the notice
+        says which threshold stopped the reading and what it counted.
+        """
+        counted = ", ".join(
+            f"{analysis.counted(severity)} {severity}"
+            for severity in (ERROR, WARNING, NOTE)
+            if analysis.counted(severity)
+        )
+        told = analysis.rendered() or ""
+        message = (
+            f"Static analysis reported {analysis.counted(ERROR)} errors on this "
+            f"change, at or above the {gate} this repository stops at, so it "
+            "has not been read further. Nothing here is an approval: what "
+            f"follows is what the tools found ({counted}), not a review.\n\n"
+            f"{told}"
+        )
+        logger.info(
+            f"Not reading {repository.full_name}#{pull_request.number}: "
+            f"{analysis.counted(ERROR)} errors at a threshold of {gate}"
+        )
+        if post:
+            github.post_notice(
+                repository.owner, repository.name, pull_request.number, message
+            )
+        return {
+            "status": "success",
+            "gated": True,
+            "verdict": Verdict.REQUEST_CHANGES.value,
+            "message": message,
+            "analysis": {
+                "errors": analysis.counted(ERROR),
+                "warnings": analysis.counted(WARNING),
+                "notes": analysis.counted(NOTE),
+                "threshold": gate,
+                "ran": list(analysis.ran),
+                "unavailable": list(analysis.unavailable),
+            },
+        }
 
     @staticmethod
     def _filter_duplicate_suggestions(
