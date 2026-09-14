@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A moment the API reports says it is in UTC, where before it carried no
   timezone at all and a reader an hour off UTC saw everything an hour ago
+- A review's summary is compared with the model that wrote the review. It was
+  resolved from the repository alone, so a review answered for a person fell
+  back to the deployment's model and failed for want of a key
 
 ### Added
 

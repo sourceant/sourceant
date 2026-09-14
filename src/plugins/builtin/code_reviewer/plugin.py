@@ -566,6 +566,7 @@ class CodeReviewerPlugin(BasePlugin):
                     pull_request=pull_request,
                     code_review=final_review,
                     line_mapper=line_mapper,
+                    configuration=configuration,
                 )
                 if pull_request.head_sha and pull_request.base_sha:
                     save_review_record(

@@ -335,16 +335,17 @@ class GitHub(ProviderAdapter):
         return (found.get("body") or "").replace(COMMENT_MARKER, "").strip() or None
 
     @staticmethod
-    def _llm_for(repository: str):
-        """The model this repository is configured to use.
+    def _llm_for(configuration):
+        """The model a review resolved to.
 
         Whatever reads a comment here has to be the same model that wrote the
-        review, or an instance answers to two providers at once.
+        review, or an instance answers to two providers at once. The whole
+        configuration is carried rather than the repository alone: a key set by
+        the person a review is answered for is not reachable from the repository.
         """
         from src.core.model import provider_for
-        from src.core.settings.configuration import Configuration
 
-        return provider_for(Configuration(repository=repository)) or llm()
+        return provider_for(configuration) or llm()
 
     def post_notice(self, owner: str, repo: str, pr_number: int, message: str) -> bool:
         """Say something once on a pull request, whatever else happens on it.
@@ -714,8 +715,13 @@ class GitHub(ProviderAdapter):
         pull_request: PullRequest,
         code_review: CodeReview,
         line_mapper: LineMapper,
+        configuration: Optional["Configuration"] = None,
     ) -> Dict[str, Any]:
         """Orchestrates posting a complete code review to a GitHub pull request."""
+        from src.core.settings.configuration import Configuration
+
+        if configuration is None:
+            configuration = Configuration(repository=repository.full_name)
         if pull_request.number is None:
             error_msg = "Cannot post review without a valid pull request number."
             logger.error(error_msg)
@@ -742,7 +748,7 @@ class GitHub(ProviderAdapter):
                     repository.owner, repository.name, pull_request.number, headers
                 )
                 if existing_comment and not self._llm_for(
-                    repository.full_name
+                    configuration
                 ).is_summary_different(
                     summary_a=existing_comment["body"],
                     summary_b=formatted_summary,
@@ -843,7 +849,7 @@ class GitHub(ProviderAdapter):
                     repository.owner, repository.name, pull_request.number, headers
                 )
                 if not existing_comment or self._llm_for(
-                    repository.full_name
+                    configuration
                 ).is_summary_different(
                     summary_a=existing_comment["body"],
                     summary_b=formatted_summary,
