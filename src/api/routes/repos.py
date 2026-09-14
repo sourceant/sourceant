@@ -20,6 +20,7 @@ from src.core.workspace import (
 from src.models.repository import Repository
 from src.models.connected_repository import ConnectedRepository
 from src.utils.pagination import Params, as_data, page_of, page_of_query
+from src.utils.moments import utc
 
 router = APIRouter()
 
@@ -146,7 +147,7 @@ async def list_connected_repos(
                     "owner": repo.owner,
                     "url": repo.url,
                     "contexts": 0,
-                    "connected_at": connected_at_map[repo.id].isoformat(),
+                    "connected_at": utc(connected_at_map[repo.id]),
                     "status": "active",
                 }
                 for repo in page.items
