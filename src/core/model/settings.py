@@ -19,6 +19,7 @@ class LLMConfig:
     api_key: str = ""
     base_url: str = ""
     token_limit: int = DEFAULT_TOKEN_LIMIT
+    cache_prompts: bool = True
 
     def credentials(self) -> dict:
         """What litellm needs beyond the name, left out when nothing is set.
@@ -56,6 +57,7 @@ class SettingsLLMSource:
             api_key=config.api_key,
             api_base=config.base_url,
             attribution=configuration.attribution(),
+            cache_prompts=config.cache_prompts,
         )
 
     def config_for(self, configuration: Configuration) -> LLMConfig | None:
@@ -71,10 +73,13 @@ class SettingsLLMSource:
                 api_key=named("model.api_key"),
                 base_url=named("model.base_url"),
                 token_limit=self._limit(configuration),
+                cache_prompts=bool(configuration.value("model.cache_prompts")),
             )
         if self.fallback_model:
             return LLMConfig(
-                name=self.fallback_model, token_limit=self.fallback_token_limit
+                name=self.fallback_model,
+                token_limit=self.fallback_token_limit,
+                cache_prompts=bool(configuration.value("model.cache_prompts")),
             )
         return None
 

@@ -11,7 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, List, Sequence
 
+from rapidfuzz import fuzz
+
 from src.config.settings import APP_ENV
+from src.core.analysis import Analysis, also_reported
 from src.core.change_context import ChangeSet
 from src.core.code_index import CodeIndexReader
 from src.plugins.builtin.code_reviewer.context import (
@@ -58,6 +61,25 @@ from src.utils.diff_parser import ParsedDiff, parse_diff
 from src.utils.line_mapper import LineMapper
 from src.utils.logger import logger
 from src.utils.suggestion_filter import SuggestionFilter
+
+# How alike two statements of a problem have to be before they are one
+# problem. Set where a reworded version of the same complaint matches and a
+# different complaint about the same line does not.
+SAME_ISSUE = 70
+
+
+def _says_the_same(said: str, reported: str) -> bool:
+    """Whether a review is making the point a tool already made."""
+    if not said or not reported:
+        return False
+    return (
+        max(
+            fuzz.token_set_ratio(said, reported),
+            fuzz.partial_ratio(said, reported),
+        )
+        >= SAME_ISSUE
+    )
+
 
 DEFAULT_FILE_LIMIT = 20
 
@@ -112,6 +134,7 @@ class CodeReviewer:
         code_scope: Scope | None = None,
         metadata: dict | None = None,
         coverage: Coverage | None = None,
+        analysis: Analysis | None = None,
     ) -> CodeReview | None:
         """The review, or None where there was nothing to read.
 
@@ -158,6 +181,7 @@ class CodeReviewer:
                 coverage,
                 provider,
             ),
+            analysis=analysis.rendered() if analysis else None,
         )
 
         evidence = self._evidence(changes, durable_code, read_content, code_scope)
@@ -286,7 +310,7 @@ class CodeReviewer:
         )
 
         unique, seen = [], set()
-        for suggestion in combined:
+        for suggestion in self._beyond(analysis, combined):
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
             keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
             if suggestion.suggested_code:
@@ -296,12 +320,39 @@ class CodeReviewer:
             if not seen.intersection(keys):
                 unique.append(suggestion)
                 seen.update(keys)
-        return CodeReview(
+        # What the tools found goes out with the review. Findings are dropped
+        # for repeating a tool, so the tool has to be the thing that said it.
+        review = CodeReview(
             summary=summary_from(unique, answer.summary),
             verdict=verdict_from(unique),
             code_suggestions=unique,
             scores=answer.scores,
         )
+        return also_reported(review, analysis)
+
+    @staticmethod
+    def _beyond(analysis, suggestions):
+        """Whatever the review said that a tool had not already said.
+
+        Sameness is judged on what was said, not on where it was said. Two
+        problems live on one line often enough that dropping a finding for
+        sharing a line with a linter hit would lose real ones, and a lost
+        finding is worse than a repeated one.
+        """
+        if not analysis or not analysis.findings:
+            return suggestions
+        kept, covered = [], 0
+        for suggestion in suggestions:
+            here = analysis.covering(
+                suggestion.file_name, suggestion.start_line, suggestion.end_line
+            )
+            if any(_says_the_same(suggestion.comment, one.message) for one in here):
+                covered += 1
+                continue
+            kept.append(suggestion)
+        if covered:
+            logger.info(f"Dropped {covered} findings a tool had already reported")
+        return kept
 
     @staticmethod
     def _check_they_were_applied(provider, changes, configuration, guidance, coverage):
@@ -459,10 +510,12 @@ class CodeReviewer:
             pr_metadata=metadata,
             existing_comments=list(existing_comments or []) or None,
             previous_summary=previous_summary,
-            code_context=self._joined([code_context, sections.related_code]),
+            code_context=code_context,
             requirements=sections.requirements,
             knowledge=sections.knowledge,
             impact=sections.impact,
+            related_code=sections.related_code,
+            analysis=sections.analysis,
         )
 
         suggestions: List = []
@@ -527,22 +580,19 @@ class CodeReviewer:
                 pr_metadata=metadata,
                 existing_comments=about_these or None,
                 previous_summary=previous_summary,
-                code_context=self._joined(
-                    [
-                        self._context(
-                            changes,
-                            readers,
-                            paths,
-                            read_content,
-                            file_limit,
-                            code_scope,
-                        ),
-                        sections.related_code,
-                    ]
+                code_context=self._context(
+                    changes,
+                    readers,
+                    paths,
+                    read_content,
+                    file_limit,
+                    code_scope,
                 ),
                 requirements=sections.requirements,
                 knowledge=sections.knowledge,
                 impact=sections.impact,
+                related_code=sections.related_code,
+                analysis=sections.analysis,
             )
 
         with ThreadPoolExecutor(max_workers=min(len(batches), MAX_AT_ONCE)) as pool:

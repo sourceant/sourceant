@@ -91,6 +91,7 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.missing_credentials.return_value = []
         mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -165,6 +166,7 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.missing_credentials.return_value = []
         mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -217,6 +219,7 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.missing_credentials.return_value = []
         mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -270,6 +273,7 @@ class TestIncrementalReview:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.missing_credentials.return_value = []
         mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -514,6 +518,7 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.missing_credentials.return_value = []
         mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -586,6 +591,7 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.missing_credentials.return_value = []
         mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -716,6 +722,7 @@ class TestPreviewResponseIsSerializable:
         mock_llm.return_value = mock_llm_instance
         mock_llm_instance.count_tokens.return_value = 100
         mock_llm_instance.token_limit = 1000000
+        mock_llm_instance.missing_credentials.return_value = []
         mock_llm_instance.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -819,7 +826,9 @@ def test_a_review_records_what_it_spent_against_the_repository(
             SettingsLLMSource,
             "config_for",
             return_value=LLMConfig(
-                name="gemini/gemini-2.5-flash", token_limit=1_000_000
+                name="gemini/gemini-2.5-flash",
+                api_key="a-key-for-the-test",
+                token_limit=1_000_000,
             ),
         ),
         patch(
@@ -906,6 +915,7 @@ class TestAReviewSaysWhatItWasAbleToRead:
         mock_llm.return_value = model
         model.count_tokens.return_value = 100
         model.token_limit = 1000000
+        model.missing_credentials.return_value = []
         model.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -1022,6 +1032,7 @@ class TestASkillReachesTheReviewerAsItsContents:
         mock_llm.return_value = model
         model.count_tokens.return_value = 100
         model.token_limit = 1000000
+        model.missing_credentials.return_value = []
         model.generate_summary.return_value = CodeReviewSummary(
             overview="The full pull request overview.",
             key_improvements=[],
@@ -1108,6 +1119,7 @@ class TestWhetherASkillWasHonoured:
             provider.return_value = model
             model.count_tokens.return_value = 100
             model.token_limit = 1000000
+            model.missing_credentials.return_value = []
             model.generate_summary.return_value = CodeReviewSummary(
                 overview="The full pull request overview.",
                 key_improvements=[],
@@ -1226,6 +1238,7 @@ class TestWhetherASkillWasHonoured:
             provider.return_value = model
             model.count_tokens.return_value = 100
             model.token_limit = 1000000
+            model.missing_credentials.return_value = []
             model.generate_summary.return_value = CodeReviewSummary(
                 overview="The full pull request overview.",
                 key_improvements=[],
@@ -1317,3 +1330,260 @@ class TestWhoseModelReviews:
         )
 
         assert mock_llm.call_args.args[0].user is None
+
+
+class TestAReviewStopsBeforeItSpends:
+    """A missing key has to be found before the reading, not during it."""
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_a_model_with_no_credentials_costs_nothing(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save_record,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        import asyncio
+
+        mock_get_sha.return_value = None
+        mock_github = MagicMock()
+        mock_github_cls.return_value = mock_github
+        fixtures = Path(__file__).parents[1] / "fixtures/review-overview"
+        mock_github.get_diff.return_value = (fixtures / "full.diff").read_text()
+
+        model = MagicMock()
+        mock_llm.return_value = model
+        model.token_limit = 1000000
+        model.count_tokens.return_value = 100
+        model.missing_credentials.return_value = ["GEMINI_API_KEY"]
+
+        result = asyncio.run(
+            plugin.generate_review(
+                repository,
+                pull_request,
+                repository_full_name="test_owner/test_repo",
+            )
+        )
+
+        assert result["error_type"] == "no_credentials"
+        assert "GEMINI_API_KEY" in result["message"]
+        model.generate_code_review.assert_not_called()
+        model.generate_summary.assert_not_called()
+        mock_github.post_review.assert_not_called()
+
+
+class TestAChangeTooBrokenToRead:
+    """The gate reports what it found and never reads as an approval."""
+
+    def _gated(
+        self,
+        plugin,
+        repository,
+        pull_request,
+        mock_github_cls,
+        mock_llm,
+        mock_get_sha,
+        errors,
+        threshold,
+    ):
+        import asyncio
+        from src.core.analysis import ERROR, Analysis
+        from src.core.analysis.models import AnalyzerFinding
+
+        mock_get_sha.return_value = None
+        mock_github = MagicMock()
+        mock_github_cls.return_value = mock_github
+        fixtures = Path(__file__).parents[1] / "fixtures/review-overview"
+        mock_github.get_diff.return_value = (fixtures / "full.diff").read_text()
+
+        model = MagicMock()
+        mock_llm.return_value = model
+        model.token_limit = 1000000
+        model.count_tokens.return_value = 100
+        model.missing_credentials.return_value = []
+
+        found = Analysis(
+            findings=tuple(
+                AnalyzerFinding(
+                    path="src/core/topology/suggestions.py",
+                    start_line=n + 1,
+                    end_line=n + 1,
+                    rule="eval-is-dangerous",
+                    message="eval runs whatever it is given.",
+                    severity=ERROR,
+                    tool="semgrep",
+                )
+                for n in range(errors)
+            ),
+            ran=("semgrep",),
+        )
+        with patch(
+            "src.plugins.builtin.code_reviewer.plugin.examine", return_value=found
+        ):
+            with patch(
+                "src.core.settings.configuration.Configuration.value",
+                lambda self, key: (
+                    threshold if key == "review.analysis_gate_errors" else None
+                ),
+            ):
+                result = asyncio.run(
+                    plugin.generate_review(
+                        repository,
+                        pull_request,
+                        repository_full_name="test_owner/test_repo",
+                        post=True,
+                    )
+                )
+        return result, model, mock_github
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_a_change_past_the_threshold_is_not_read(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        result, model, github = self._gated(
+            plugin,
+            repository,
+            pull_request,
+            mock_github_cls,
+            mock_llm,
+            mock_get_sha,
+            errors=5,
+            threshold=3,
+        )
+
+        assert result["gated"] is True
+        model.generate_code_review.assert_not_called()
+        github.post_review.assert_not_called()
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_what_stopped_it_is_said_out_loud(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        """A silent run must never be mistaken for a clean one."""
+        result, _, github = self._gated(
+            plugin,
+            repository,
+            pull_request,
+            mock_github_cls,
+            mock_llm,
+            mock_get_sha,
+            errors=5,
+            threshold=3,
+        )
+
+        github.post_notice.assert_called_once()
+        said = github.post_notice.call_args.args[3]
+        assert "5 errors" in said
+        assert "eval-is-dangerous" in said
+        assert "Nothing here is an approval" in said
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_a_gated_run_asks_for_changes_rather_than_approving(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        result, _, _ = self._gated(
+            plugin,
+            repository,
+            pull_request,
+            mock_github_cls,
+            mock_llm,
+            mock_get_sha,
+            errors=5,
+            threshold=3,
+        )
+
+        assert result["verdict"] == "REQUEST_CHANGES"
+        assert result["analysis"]["errors"] == 5
+        assert result["analysis"]["threshold"] == 3
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_the_gate_off_reads_a_change_however_much_is_wrong(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        result, model, _ = self._gated(
+            plugin,
+            repository,
+            pull_request,
+            mock_github_cls,
+            mock_llm,
+            mock_get_sha,
+            errors=50,
+            threshold=0,
+        )
+
+        assert result.get("gated") is not True
+        model.generate_code_review.assert_called()
+
+    @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+    @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+    @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+    @patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+    def test_under_the_threshold_is_read_as_usual(
+        self,
+        mock_llm,
+        mock_github_cls,
+        mock_get_sha,
+        mock_save,
+        plugin,
+        repository,
+        pull_request,
+    ):
+        result, model, _ = self._gated(
+            plugin,
+            repository,
+            pull_request,
+            mock_github_cls,
+            mock_llm,
+            mock_get_sha,
+            errors=2,
+            threshold=3,
+        )
+
+        assert result.get("gated") is not True
+        model.generate_code_review.assert_called()

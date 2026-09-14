@@ -11,6 +11,7 @@ class Sections:
     knowledge: str | None = None
     impact: str | None = None
     related_code: str | None = None
+    analysis: str | None = None
 
 
 @dataclass(frozen=True)

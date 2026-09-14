@@ -63,6 +63,20 @@ def record_completion(
         answered = number("completion_tokens", "output_tokens")
         total = number("total_tokens")
 
+        # Every provider spells caching differently and litellm settles the
+        # argument here: Anthropic's cache_read_input_tokens, DeepSeek's
+        # prompt_cache_hit_tokens and OpenAI's and Gemini's own count all arrive
+        # as prompt_tokens_details.cached_tokens. A provider that reported
+        # nothing leaves the attribute off the object rather than at zero.
+        broken_down = getattr(counted, "prompt_tokens_details", None)
+
+        def detail(name: str) -> int:
+            value = getattr(broken_down, name, None)
+            return int(value) if isinstance(value, (int, float)) else 0
+
+        cached = detail("cached_tokens")
+        written = detail("cache_creation_tokens")
+
         hidden = getattr(response, "_hidden_params", None)
         cost = hidden.get("response_cost") if isinstance(hidden, dict) else None
 
@@ -78,6 +92,8 @@ def record_completion(
             model=model,
             input_tokens=given,
             output_tokens=answered,
+            cached_input_tokens=cached,
+            cache_write_tokens=written,
             reported_total=total,
             cost_micro=TokenUsage.micro(cost),
             purpose=purpose,

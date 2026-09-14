@@ -345,7 +345,17 @@ class GitHub(ProviderAdapter):
         """
         from src.core.model import provider_for
 
-        return provider_for(configuration) or llm()
+        chosen = provider_for(configuration)
+        if chosen is not None:
+            return chosen
+        # The deployment's own model, on the deployment's own account. A run
+        # that substituted it silently is indistinguishable afterwards from
+        # one that did not.
+        logger.warning(
+            "Nothing named a model for %s, falling back to the deployment's",
+            configuration,
+        )
+        return llm()
 
     def post_notice(self, owner: str, repo: str, pr_number: int, message: str) -> bool:
         """Say something once on a pull request, whatever else happens on it.

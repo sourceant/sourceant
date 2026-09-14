@@ -11,6 +11,13 @@ FROM python:3.10-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl git && \
     rm -rf /var/lib/apt/lists/*
 
+# Semgrep is shelled out to, never imported, so it is kept in an environment of
+# its own. Its own pins on click and mcp disagree with this application's, and
+# resolving both against one another has no answer.
+RUN python -m venv /opt/semgrep \
+    && /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.177.0 \
+    && ln -s /opt/semgrep/bin/semgrep /usr/local/bin/semgrep
+
 WORKDIR /app
 
 RUN useradd --create-home appuser

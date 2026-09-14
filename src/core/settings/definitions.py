@@ -98,6 +98,44 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.reuse_responses_days",
+        label="Reuse what a model already answered for",
+        description=(
+            "A review asks a model several times, and the expensive part is "
+            "over long before the last of them. Keeping each answer means a "
+            "run that fails near the end, or is asked for again, pays only for "
+            "what is genuinely missing. An answer is matched on exactly what "
+            "was sent, so anything that changed the question is asked afresh. "
+            "Set to zero to ask every time."
+        ),
+        type=ConfigType.INT,
+        scopes=(REPOSITORY, ORGANIZATION),
+        default=1,
+        unit="days",
+        minimum=0,
+        maximum=30,
+        group="Review",
+    ),
+    Setting(
+        key="review.analysis_gate_errors",
+        label="Stop reading a change with this many errors",
+        description=(
+            "Where deterministic tools report this many errors or more, say so "
+            "and stop, rather than paying a model to read a branch that is "
+            "already known to be broken. What was found is reported in full "
+            "and the change is marked as needing work, so a run that stops "
+            "here is never mistaken for one that approved. Set to zero to read "
+            "every change however much is wrong with it."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        default=0,
+        unit="errors",
+        minimum=0,
+        maximum=1000,
+        group="Review",
+    ),
+    Setting(
         key="review.reading_budget",
         label="Read at once",
         description=(
@@ -283,6 +321,24 @@ SETTINGS: tuple[Setting, ...] = (
         type=ConfigType.STRING,
         scopes=(USER, REPOSITORY, WORKSPACE),
         default="",
+        group="Model",
+    ),
+    Setting(
+        key="model.cache_prompts",
+        label="Ask the provider to keep the shared part of a prompt",
+        description=(
+            "A review asks the same model several times and most of what it "
+            "sends is the same every time. That part is always put first, "
+            "which is enough for a provider that caches on its own. This also "
+            "marks where it ends, which is what a provider needs when it will "
+            "not work that out for itself. Where the provider keeps a marked "
+            "prompt in a store of its own rather than matching it for free, "
+            "that store is billed for as long as it lives; turn this off on a "
+            "repository where that costs more than the reading it saves."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE),
+        default=True,
         group="Model",
     ),
     Setting(

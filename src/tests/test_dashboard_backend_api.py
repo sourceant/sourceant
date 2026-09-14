@@ -418,3 +418,36 @@ def test_inference_and_suggestions_preserve_manifest_evidence(api, monkeypatch):
     assert len(suggested) == 1
     assert suggested[0]["sources"] == ["manifest"]
     assert suggested[0]["evidence"]
+
+
+def test_usage_reports_what_a_provider_cache_served(api):
+    """A cache that is working has to be visible, or it cannot be tuned."""
+    client, headers, _, engine = api
+    from src.core.usage import TokenUsage
+    from src.core.usage.sql import SQLUsageRecorder
+    from unittest.mock import patch
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        recorder = SQLUsageRecorder()
+        recorder.record(
+            TokenUsage(
+                "anthropic",
+                "claude-opus-5",
+                1200,
+                30,
+                cached_input_tokens=900,
+                cache_write_tokens=100,
+                purpose="review",
+                owner_type="workspace",
+                owner_id="one",
+                subject_type="repository",
+                subject_id="acme/app",
+            )
+        )
+
+    report = client.get("/api/usage", headers=headers()).json()["data"]
+    assert report["total"]["input_tokens"] == 1200
+    assert report["total"]["cached_input_tokens"] == 900
+    assert report["total"]["cache_write_tokens"] == 100
+    assert report["by_purpose"][0]["cached_input_tokens"] == 900
+    assert report["by_organization"][0]["cached_input_tokens"] == 900

@@ -27,8 +27,15 @@ from src.core.knowledge import KnowledgeQuery
 from src.core.model import provider_for
 from src.core.settings.configuration import Configuration
 from src.core.review import Told, reviewer
-from src.core.review_coverage import Coverage, read_and_unread
+from src.core.analysis import (
+    about_the_change,
+    also_reported,
+    examine,
+    touched_lines,
+)
+from src.core.review_coverage import ANALYSIS, Coverage, read_and_unread
 from src.core.scope import Scope
+from src.utils.diff_parser import parse_diff
 from src.utils.logger import logger
 from src.core.skills import (
     BLOCKING,
@@ -392,6 +399,21 @@ class WorkingTreeReviews:
             )
 
         coverage = Coverage()
+
+        # This path has a real checkout, so the tools read it where it sits.
+        analysis = examine(root, list(changes.paths), self.services)
+        analysis = about_the_change(analysis, touched_lines(parse_diff(changes.diff)))
+        for name in analysis.ran:
+            coverage.record(ANALYSIS, name, answered=True, target=repository)
+        for name in analysis.unavailable:
+            coverage.record(
+                ANALYSIS,
+                name,
+                answered=False,
+                target=repository,
+                reason="could not run over this change",
+            )
+
         try:
             review = judge.review(
                 replace(
@@ -412,6 +434,7 @@ class WorkingTreeReviews:
                 # A checkout is indexed as it is, not as a commit, so the
                 # graph is filed under the repository alone.
                 code_scope=entry.scope,
+                analysis=analysis,
             )
             if review is not None:
                 review.summary = summarize_changes(
@@ -421,6 +444,7 @@ class WorkingTreeReviews:
                     {"title": changes.title, "description": changes.description},
                     review.code_suggestions or (),
                 )
+                also_reported(review, analysis)
         except ReviewRefused:
             raise
         except Exception as error:  # noqa: BLE001 - whatever a provider raises

@@ -115,6 +115,7 @@ def _run(plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_s
     mock_llm.return_value = instance
     instance.count_tokens.return_value = 100
     instance.token_limit = 1000000
+    instance.missing_credentials.return_value = []
     instance.generate_summary.return_value = CodeReviewSummary(
         overview="Adds bounded retries.",
         key_improvements=[],
@@ -493,6 +494,7 @@ def test_a_change_with_nothing_readable_still_reviews(
     mock_llm.return_value = instance
     instance.count_tokens.return_value = 10
     instance.token_limit = 1000000
+    instance.missing_credentials.return_value = []
     instance.generate_summary.return_value = CodeReviewSummary(
         overview="Adds bounded retries.",
         key_improvements=[],

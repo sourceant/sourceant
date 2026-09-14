@@ -248,3 +248,119 @@ def test_a_workspace_owes_for_it_and_the_repository_is_what_it_was_about():
         "a/b",
     )
     assert TokenUsage.owed_by() == (None, None, None, None)
+
+
+def test_what_a_provider_served_from_its_cache_is_kept_apart(tmp_path):
+    """Anthropic names the two halves; litellm settles them into one place.
+
+    The prompt total is built the way litellm's own Anthropic transform builds
+    it, with the cached read and the cache write already added in, because a
+    total that excluded them would make a cache look like a cost increase.
+    """
+    from litellm.types.utils import ModelResponse, Usage
+
+    engine = _kept(tmp_path)
+    answered = ModelResponse(
+        usage=Usage(
+            prompt_tokens=1200,
+            completion_tokens=30,
+            cache_read_input_tokens=900,
+            cache_creation_input_tokens=100,
+        )
+    )
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(answered, model="anthropic/claude-opus-5", purpose="review")
+
+    with Session(engine) as session:
+        kept = session.exec(select(TokenUsageRecord)).all()
+
+    assert kept[0].input_tokens == 1200
+    assert kept[0].cached_input_tokens == 900
+    assert kept[0].cache_write_tokens == 100
+
+
+def test_a_provider_that_reports_its_cache_openai_style_is_read_the_same_way(tmp_path):
+    """Gemini and OpenAI report only a cached count, nested in the prompt split."""
+    from litellm.types.utils import ModelResponse, Usage
+
+    engine = _kept(tmp_path)
+    answered = ModelResponse(
+        usage=Usage(
+            prompt_tokens=2048,
+            completion_tokens=12,
+            prompt_tokens_details={"cached_tokens": 1024},
+        )
+    )
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(answered, model="gemini/gemini-2.5-flash", purpose="review")
+
+    with Session(engine) as session:
+        kept = session.exec(select(TokenUsageRecord)).all()
+
+    assert (kept[0].cached_input_tokens, kept[0].cache_write_tokens) == (1024, 0)
+
+
+def test_deepseek_naming_its_cache_differently_is_still_read(tmp_path):
+    from litellm.types.utils import ModelResponse, Usage
+
+    engine = _kept(tmp_path)
+    answered = ModelResponse(
+        usage=Usage(prompt_tokens=800, completion_tokens=5, prompt_cache_hit_tokens=640)
+    )
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(answered, model="deepseek/deepseek-chat", purpose="review")
+
+    with Session(engine) as session:
+        kept = session.exec(select(TokenUsageRecord)).all()
+
+    assert kept[0].cached_input_tokens == 640
+
+
+def test_a_provider_that_reports_no_cache_at_all_records_nothing_for_one(tmp_path):
+    """litellm leaves the field off the object rather than at zero."""
+    from litellm.types.utils import ModelResponse, Usage
+
+    engine = _kept(tmp_path)
+    answered = ModelResponse(usage=Usage(prompt_tokens=120, completion_tokens=30))
+
+    with patch("src.core.usage.sql.get_engine", return_value=engine):
+        record_completion(answered, model="m", purpose="review")
+
+    with Session(engine) as session:
+        kept = session.exec(select(TokenUsageRecord)).all()
+
+    assert (kept[0].cached_input_tokens, kept[0].cache_write_tokens) == (0, 0)
+
+
+def test_what_a_cache_saved_is_the_part_of_the_prompt_left_over():
+    """A prompt total counts the cache, so the saving is the difference."""
+    from src.core.usage.models import TokenUsage
+
+    usage = TokenUsage(
+        provider="anthropic",
+        model="claude-opus-5",
+        input_tokens=1200,
+        output_tokens=30,
+        cached_input_tokens=900,
+        cache_write_tokens=100,
+    )
+
+    assert usage.uncached_input_tokens == 200
+
+
+def test_a_cache_larger_than_the_prompt_is_not_read_as_negative():
+    """A provider that reports the two inconsistently must not go below nothing."""
+    from src.core.usage.models import TokenUsage
+
+    usage = TokenUsage(
+        provider="p",
+        model="m",
+        input_tokens=100,
+        output_tokens=1,
+        cached_input_tokens=400,
+    )
+
+    assert usage.uncached_input_tokens == 0
