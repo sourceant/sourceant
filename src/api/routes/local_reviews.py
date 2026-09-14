@@ -27,6 +27,7 @@ from src.core.review import (
     working_tree_reviewer,
 )
 from src.core.responses import success_response
+from src.utils.moments import utc
 
 router = APIRouter()
 
@@ -98,8 +99,8 @@ def kept(review: ReviewRecord) -> dict[str, Any]:
         "status": status,
         "title": review.title,
         "error": error,
-        "started": review.started.isoformat() if review.started else None,
-        "finished": review.finished.isoformat() if review.finished else None,
+        "started": utc(review.started),
+        "finished": utc(review.finished),
         "review": dict(review.answer),
         "path": f"/reviews/{review.id}",
     }

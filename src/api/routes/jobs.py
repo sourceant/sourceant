@@ -18,12 +18,13 @@ from src.core.responses import success_response
 from src.core.workspace import workspace_of
 from src.models.repository import Repository
 from src.models.repository_event import RepositoryEvent
+from src.utils.moments import utc
 
 router = APIRouter()
 
 
 def _moment(value) -> Optional[str]:
-    return value.isoformat() if value else None
+    return utc(value)
 
 
 def _as_dict(job: Job) -> dict:

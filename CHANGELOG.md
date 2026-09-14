@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A moment the API reports says it is in UTC, where before it carried no
+  timezone at all and a reader an hour off UTC saw everything an hour ago
+
 ### Added
 
 - The gateway can ask which workspaces have connected a repository, so a
