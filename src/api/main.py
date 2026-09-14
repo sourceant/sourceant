@@ -74,6 +74,7 @@ from src.api.routes import knowledge as knowledge_endpoints
 from src.api.routes import local_reviews as local_review_endpoints
 from src.api.routes import local_settings as local_settings_endpoints
 from src.api.routes import repos as repo_endpoints
+from src.api.routes import routing as routing_endpoints
 from src.api.routes import reviews as review_endpoints
 from src.api.routes import settings as settings_endpoints
 from src.api.routes import skills as skill_endpoints
@@ -84,6 +85,7 @@ app.include_router(health_endpoints.router, tags=["health"])
 app.include_router(app_endpoints.router, tags=["general"])
 app.include_router(pr_endpoints.router, prefix="/api/prs", tags=["pull_requests"])
 app.include_router(repo_endpoints.router, prefix="/api/repos", tags=["repositories"])
+app.include_router(routing_endpoints.router, prefix="/api/routing", tags=["routing"])
 app.include_router(review_endpoints.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(triage_endpoints.router, prefix="/api/triage", tags=["triage"])
 app.include_router(settings_endpoints.router, prefix="/api/settings", tags=["settings"])

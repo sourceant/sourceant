@@ -10,6 +10,9 @@ from src.config.settings import REQUIRE_GATEWAY
 
 JWT_ALGORITHM = "HS256"
 
+#: What the gateway puts in a token it mints for itself rather than for a person.
+ROUTING_AUDIENCE = "sourceant:routing"
+
 
 def _get_jwt_secret() -> str:
     secret = os.environ.get("JWT_SECRET")
@@ -49,6 +52,22 @@ def read_gateway_scope(authorization: str | None) -> dict | None:
 
     scope = payload.get("scope")
     return scope if isinstance(scope, dict) else {}
+
+
+async def gateway_routing(authorization: str = Header(...)) -> None:
+    """Admit the gateway asking where a delivery belongs, and nobody else.
+
+    The audience is a required claim here, so a token minted for a person, which
+    carries none, is refused before anything is read. Only the gateway holds the
+    secret that could mint one.
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+    try:
+        decode_access_token(authorization[7:], audience=ROUTING_AUDIENCE)
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 async def get_current_user(authorization: str = Header(...)) -> dict:
