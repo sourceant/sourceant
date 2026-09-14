@@ -100,11 +100,19 @@ def _matches(repo: dict, needle: str) -> bool:
 
 @router.get("/connected")
 async def list_connected_repos(
+    full_name: Optional[str] = Query(
+        None, description="Answer for this repository alone"
+    ),
     params: Params = Depends(),
     session: Session = Depends(get_session),
     user: dict = Depends(get_current_user),
 ):
-    """One page of the user's connected repositories, from the DB cache."""
+    """One page of the user's connected repositories, from the DB cache.
+
+    Naming one repository answers about that one, so a caller asking whether a
+    workspace holds it reads a single row rather than the whole list a page at
+    a time.
+    """
     workspace = workspace_of(user)
     connected_rows = connections_of(session, workspace)
 
@@ -114,13 +122,12 @@ async def list_connected_repos(
     repo_ids = [row.repository_id for row in connected_rows]
     connected_at_map = {row.repository_id: row.connected_at for row in connected_rows}
 
-    page = page_of_query(
-        session,
-        select(Repository)
-        .where(Repository.id.in_(repo_ids))
-        .order_by(Repository.full_name),
-        params,
-    )
+    query = select(Repository).where(Repository.id.in_(repo_ids))
+
+    if full_name:
+        query = query.where(Repository.full_name == full_name)
+
+    page = page_of_query(session, query.order_by(Repository.full_name), params)
 
     return success_response(
         as_data(
