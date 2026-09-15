@@ -65,8 +65,10 @@ class TestAskingForADiscovery(BaseTestCase):
         )
         # Nothing here reaches a forge. Where each repository stands is what a
         # discovery asks for before it queues anything.
+        monkeypatch.setattr("src.core.topology.discovery._forge", lambda: object())
         monkeypatch.setattr(
-            "src.core.topology.discovery._token", lambda repository: "an-app-token"
+            "src.core.topology.discovery._token",
+            lambda repository, forge=None: "an-app-token",
         )
         monkeypatch.setattr(
             "src.core.topology.discovery.head_revision",

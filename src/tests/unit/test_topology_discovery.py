@@ -38,7 +38,8 @@ def queue():
 @pytest.fixture(autouse=True)
 def _no_forge(monkeypatch):
     """Nothing in a unit test reaches GitHub."""
-    monkeypatch.setattr(discovery, "_token", lambda repository: "a-token")
+    monkeypatch.setattr(discovery, "_forge", lambda: object())
+    monkeypatch.setattr(discovery, "_token", lambda repository, forge=None: "a-token")
     monkeypatch.setattr(discovery, "head_revision", lambda repository, token: "abc123")
     monkeypatch.setattr(discovery, "already_read", lambda *args: False)
     monkeypatch.setattr(discovery, "remember_read", lambda *args: None)
@@ -166,7 +167,7 @@ def test_a_reading_the_model_refused_is_a_failure_not_an_empty_answer(monkeypatc
         def propose(self, *args, **kwargs):
             return ()
 
-    monkeypatch.setattr(discovery, "_token", lambda repository: "a-token")
+    monkeypatch.setattr(discovery, "_token", lambda repository, forge=None: "a-token")
     monkeypatch.setattr("src.core.topology.proposing.WhatItReads", Refused)
     monkeypatch.setattr(
         "src.core.model.provider_for", lambda configuration, **kwargs: object()
@@ -211,3 +212,55 @@ def test_a_manifest_pass_carries_every_asset_it_was_given():
 
 def test_most_read_is_a_ceiling_on_what_one_asking_spends():
     assert MOST_READ >= 1
+
+
+def test_where_every_repository_stands_is_asked_at_once(queue, monkeypatch):
+    """Serially, this is what the discovery was queued to avoid.
+
+    Queueing asks a forge about every repository before it answers, so a
+    caller waits for all of it however little each one costs.
+    """
+    import threading
+
+    running = []
+    highest = []
+
+    def _slow(repository, token):
+        running.append(repository)
+        highest.append(len(running))
+        # Long enough that a serial run could not overlap two of them.
+        threading.Event().wait(0.05)
+        running.pop()
+        return "abc123"
+
+    store, services = queue
+    monkeypatch.setattr(discovery, "head_revision", _slow)
+    many = [{"entity_id": f"asset:{n}", "repository": f"acme/{n}"} for n in range(6)]
+
+    discover(
+        many,
+        workspace="workspace-1",
+        system_id="system:commerce",
+        targets=[one["entity_id"] for one in many],
+        about={},
+        services=services,
+    )
+
+    assert max(highest) > 1
+
+
+def test_one_forge_answers_for_every_repository_in_a_discovery(queue, monkeypatch):
+    """A client per repository pays the two requests that mint a token again."""
+    built = []
+
+    def _counted():
+        built.append(1)
+        return object()
+
+    store, services = queue
+    monkeypatch.setattr(discovery, "_forge", _counted)
+    monkeypatch.setattr(discovery, "_token", lambda repository, forge=None: "a-token")
+
+    _asked(services)
+
+    assert len(built) == 1

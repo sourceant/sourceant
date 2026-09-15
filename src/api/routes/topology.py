@@ -724,7 +724,10 @@ async def discover_connections(
             400, f"The model configured here has no {', '.join(missing)} to use"
         )
 
-    asked = discover(
+    # Off the event loop: queueing a discovery asks a forge where each
+    # repository stands, and blocking here would stop every other request.
+    asked = await asyncio.to_thread(
+        discover,
         [
             {"entity_id": one.entity_id, "repository": one.repository}
             for one in payload.assets

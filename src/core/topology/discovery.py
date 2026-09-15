@@ -22,6 +22,7 @@ one repository its job names.
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import Any, Mapping, Optional, Sequence
 
@@ -51,6 +52,11 @@ MOST_READ = whole_number("TOPOLOGY_DISCOVERY_READS", 25)
 
 #: How many entities a single reading may be offered to join to.
 MOST_TARGETS = 50
+
+#: How many repositories are asked about at once when a discovery is
+#: queued. The same bound the manifest reading uses, for the same reason:
+#: more than this trips a forge's own limits.
+AT_ONCE = 8
 
 
 def _request(
@@ -188,7 +194,22 @@ def _scope(job: Job) -> Optional[Scope]:
     return Scope.from_mapping({"workspace": workspace}) if workspace else None
 
 
-def _token(repository: str) -> Optional[str]:
+def _forge():
+    """One client for every repository asked about, or None where unconfigured.
+
+    Shared because it caches an installation token per repository, and a client
+    built per call pays the two requests that mint one every time.
+    """
+    try:
+        from src.integrations.github.github import GitHub
+
+        return GitHub()
+    except Exception as error:  # noqa: BLE001 - reported per repository below
+        logger.warning("No forge to read with: %s", error)
+        return None
+
+
+def _token(repository: str, forge=None) -> Optional[str]:
     """A token for the one repository this job names.
 
     Minted here rather than carried. A user token in a job payload is a
@@ -199,10 +220,11 @@ def _token(repository: str) -> Optional[str]:
     owner, _, name = repository.partition("/")
     if not owner or not name:
         return None
+    client = forge if forge is not None else _forge()
+    if client is None:
+        return None
     try:
-        from src.integrations.github.github import GitHub
-
-        return GitHub().get_installation_access_token(owner, name)
+        return client.get_installation_access_token(owner, name)
     except Exception as error:  # noqa: BLE001 - one repository, not the discovery
         logger.warning("No token to read %s with: %s", repository, error)
         return None
@@ -241,8 +263,9 @@ class Manifests:
         if scope is None:
             return JobOutcome.failed("this job names no workspace to write into")
 
+        forge = _forge()
         tokens = {
-            asset["repository"]: _token(asset["repository"])
+            asset["repository"]: _token(asset["repository"], forge)
             for asset in assets
             if asset.get("repository")
         }
@@ -413,17 +436,24 @@ def discover(
     readable = [one for one in assets if one.get("entity_id") and one.get("repository")]
 
     # Where each repository stands, so a reading already done at that state
-    # is not paid for again. One cheap call each, against several model calls.
-    revisions: dict[str, str] = {}
+    # is not paid for again. Asked in parallel: this runs before anything is
+    # queued, so the caller waits for all of it.
+    forge = _forge()
+
+    def _where(asset: Mapping[str, str]) -> tuple[str, str]:
+        name = asset["repository"]
+        token = _token(name, forge)
+        return name, (head_revision(name, token) if token else "")
+
+    with ThreadPoolExecutor(max_workers=AT_ONCE) as pool:
+        revisions: dict[str, str] = dict(pool.map(_where, readable))
+
     outstanding: list[Mapping[str, str]] = []
     reused: list[str] = []
     for asset in readable:
         name = asset["repository"]
-        token = _token(name)
-        revision = head_revision(name, token) if token else ""
-        revisions[name] = revision
         joins = [one for one in targets if one != asset["entity_id"]]
-        if not refresh and already_read(name, revision, joins):
+        if not refresh and already_read(name, revisions.get(name, ""), joins):
             reused.append(name)
             continue
         outstanding.append(asset)
