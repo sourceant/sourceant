@@ -440,13 +440,21 @@ def discover(
     # queued, so the caller waits for all of it.
     forge = _forge()
 
-    def _where(asset: Mapping[str, str]) -> tuple[str, str]:
-        name = asset["repository"]
-        token = _token(name, forge)
-        return name, (head_revision(name, token) if token else "")
+    def _where(name: str) -> tuple[str, str]:
+        try:
+            token = _token(name, forge)
+            return name, (head_revision(name, token) if token else "")
+        except Exception as error:  # noqa: BLE001 - one repository, not the batch
+            # Unknown reads as "not read before", so the cost of being wrong
+            # here is reading a repository again rather than losing a discovery.
+            logger.warning("Could not read where %s is: %s", name, error)
+            return name, ""
 
+    # Once per repository rather than once per asset: a system holding several
+    # parts of one repository asks about it once.
+    asked_about = dict.fromkeys(asset["repository"] for asset in readable)
     with ThreadPoolExecutor(max_workers=AT_ONCE) as pool:
-        revisions: dict[str, str] = dict(pool.map(_where, readable))
+        revisions: dict[str, str] = dict(pool.map(_where, asked_about))
 
     outstanding: list[Mapping[str, str]] = []
     reused: list[str] = []

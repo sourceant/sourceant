@@ -249,6 +249,50 @@ def test_where_every_repository_stands_is_asked_at_once(queue, monkeypatch):
     assert max(highest) > 1
 
 
+def test_a_repository_held_twice_is_asked_about_once(queue, monkeypatch):
+    """A monorepo is several parts of one system and one repository."""
+    asked = []
+    store, services = queue
+    monkeypatch.setattr(
+        discovery,
+        "head_revision",
+        lambda repository, token: asked.append(repository) or "abc123",
+    )
+    monorepo = [
+        {"entity_id": "asset:api", "repository": "acme/platform"},
+        {"entity_id": "asset:web", "repository": "acme/platform"},
+        {"entity_id": "asset:jobs", "repository": "acme/platform"},
+    ]
+
+    discover(
+        monorepo,
+        workspace="workspace-1",
+        system_id="system:commerce",
+        targets=[one["entity_id"] for one in monorepo],
+        about={},
+        services=services,
+    )
+
+    assert asked == ["acme/platform"]
+
+
+def test_a_repository_nobody_can_place_does_not_sink_the_discovery(queue, monkeypatch):
+    """Whatever went wrong with one, the rest are still worth queueing."""
+    store, services = queue
+
+    def _breaks(repository, token):
+        if repository == "acme/billing":
+            raise RuntimeError("the forge said something unexpected")
+        return "abc123"
+
+    monkeypatch.setattr(discovery, "head_revision", _breaks)
+
+    asked = _asked(services)
+
+    assert asked["reading"] == ["acme/checkout", "acme/billing"]
+    assert len(store.in_batch(asked["batch_id"])) == 3
+
+
 def test_one_forge_answers_for_every_repository_in_a_discovery(queue, monkeypatch):
     """A client per repository pays the two requests that mint a token again."""
     built = []
