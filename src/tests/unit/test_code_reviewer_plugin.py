@@ -1652,3 +1652,42 @@ class TestWhetherToReviewAtAll:
         )
 
         assert reason == "Reviews are turned off here"
+
+
+class TestSayingWhichModelCouldNotBeReached:
+    """A list of variables alone sends the reader to the wrong place."""
+
+    MISSING = ("GOOGLE_API_KEY", "GEMINI_API_KEY")
+
+    def test_the_model_that_could_not_be_reached_is_named(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("gemini/chosen", self.MISSING, "gemini/chosen")
+
+        assert "gemini/chosen" in said["message"]
+        assert "GOOGLE_API_KEY" in said["message"]
+        assert said["error_type"] == "no_credentials"
+
+    def test_a_deployment_default_says_nothing_here_names_a_model(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("gemini/deployment-default", self.MISSING, "")
+
+        assert "gemini/deployment-default" in said["message"]
+        assert "Nothing here names a model" in said["message"]
+
+    def test_a_chosen_model_is_not_blamed_on_the_deployment(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("gemini/chosen", self.MISSING, "gemini/chosen")
+
+        assert "Nothing here names a model" not in said["message"]
+
+    def test_a_model_nobody_could_name_still_reads_as_a_sentence(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("", self.MISSING, "")
+
+        assert said["message"].startswith(
+            "No credentials are configured for the review model:"
+        )
