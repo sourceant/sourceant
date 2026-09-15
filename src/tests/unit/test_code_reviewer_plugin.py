@@ -1587,3 +1587,68 @@ class TestAChangeTooBrokenToRead:
 
         assert result.get("gated") is not True
         model.generate_code_review.assert_called()
+
+
+class TestWhetherToReviewAtAll:
+    """Both switches are read before anything is fetched."""
+
+    @staticmethod
+    def _settings(values):
+        """A configuration answering from `values`, else the declared default."""
+        from src.core.settings.definitions import SETTINGS
+
+        declared = {setting.key: setting.default for setting in SETTINGS}
+
+        class Answers:
+            def value(self, key):
+                return values.get(key, declared.get(key))
+
+        return Answers()
+
+    def test_a_repository_with_reviews_turned_off_is_not_reviewed(
+        self, plugin, pull_request
+    ):
+        reason = plugin._should_skip_review(
+            pull_request, self._settings({"review.enabled": False})
+        )
+
+        assert reason == "Reviews are turned off here"
+
+    def test_reviews_are_on_unless_somebody_turns_them_off(self, plugin, pull_request):
+        assert plugin._should_skip_review(pull_request, self._settings({})) is None
+
+    def test_a_draft_is_left_alone_where_drafts_are_not_reviewed(
+        self, plugin, pull_request
+    ):
+        pull_request.draft = True
+
+        reason = plugin._should_skip_review(
+            pull_request, self._settings({"review.draft_pull_requests": False})
+        )
+
+        assert reason == "Pull request #1 is a draft"
+
+    def test_a_draft_is_reviewed_where_drafts_are_reviewed(self, plugin, pull_request):
+        pull_request.draft = True
+
+        reason = plugin._should_skip_review(
+            pull_request, self._settings({"review.draft_pull_requests": True})
+        )
+
+        assert reason is None
+
+    def test_turning_reviews_off_beats_every_other_reason_to_proceed(
+        self, plugin, pull_request
+    ):
+        """Asked first, so a repository nobody wants reviewed costs a settings
+        read rather than a diff and a review."""
+        pull_request.draft = True
+
+        reason = plugin._should_skip_review(
+            pull_request,
+            self._settings(
+                {"review.enabled": False, "review.draft_pull_requests": True}
+            ),
+        )
+
+        assert reason == "Reviews are turned off here"
