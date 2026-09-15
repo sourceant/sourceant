@@ -76,8 +76,13 @@ class SettingsLLMSource:
                 cache_prompts=bool(configuration.value("model.cache_prompts")),
             )
         if self.fallback_model:
+            # An account can hold a key without naming a model, so it is read
+            # here too. Left unset it stays empty and litellm reads the
+            # environment, which is what a deployment paying its own way wants.
             return LLMConfig(
                 name=self.fallback_model,
+                api_key=named("model.api_key"),
+                base_url=named("model.base_url"),
                 token_limit=self.fallback_token_limit,
                 cache_prompts=bool(configuration.value("model.cache_prompts")),
             )

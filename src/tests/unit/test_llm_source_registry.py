@@ -25,3 +25,56 @@ def test_without_one_the_deployment_answers(monkeypatch):
 
     assert named is not None
     assert named.name
+
+
+class _Chose:
+    """Settings answering from what a scope was given, and nothing else."""
+
+    def __init__(self, **values):
+        self.values = values
+
+    def value(self, key):
+        return self.values.get(key)
+
+    def with_workspace(self):
+        return self
+
+
+def test_a_key_given_without_a_model_still_reaches_the_provider():
+    """Dropped, the reading fails for want of a credential that was set.
+
+    A deployment naming a model it has no environment key for is the ordinary
+    case for an install whose customers bring their own.
+    """
+    from src.core.model import SettingsLLMSource
+
+    source = SettingsLLMSource(fallback_model="gemini/gemini-2.0-flash")
+
+    chosen = source.config_for(_Chose(**{"model.api_key": "a-key"}))
+
+    assert chosen.name == "gemini/gemini-2.0-flash"
+    assert chosen.api_key == "a-key"
+
+
+def test_an_endpoint_given_without_a_model_still_reaches_the_provider():
+    from src.core.model import SettingsLLMSource
+
+    source = SettingsLLMSource(fallback_model="gemini/gemini-2.0-flash")
+
+    chosen = source.config_for(_Chose(**{"model.base_url": "https://proxy"}))
+
+    assert chosen.base_url == "https://proxy"
+
+
+def test_nothing_chosen_leaves_the_credentials_to_the_environment():
+    """A deployment paying for its own calls sets neither, and litellm reads
+    what it was started with."""
+    from src.core.model import SettingsLLMSource
+
+    source = SettingsLLMSource(fallback_model="gemini/gemini-2.0-flash")
+
+    chosen = source.config_for(_Chose())
+
+    assert chosen.api_key == ""
+    assert chosen.base_url == ""
+    assert chosen.credentials() == {}
