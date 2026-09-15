@@ -409,6 +409,13 @@ class Readings:
             # A reading that never ran and one that found nothing look the same
             # in what was written down, and only the second is an answer.
             return JobOutcome.failed(reads.refused)
+        if reads.unfinished:
+            # What it proposed is kept. Remembering it as read is what must not
+            # happen: asking again would skip a repository nobody finished.
+            logger.info("Ran out of rounds reading %s", name)
+            return JobOutcome.failed(
+                f"{name} was still being read when its rounds ran out"
+            )
         remember_read(name, revision, targets)
         logger.info("Read %s and proposed %d connections", name, len(proposals))
         return JobOutcome.ok()

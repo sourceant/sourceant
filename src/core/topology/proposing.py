@@ -24,14 +24,17 @@ READ_FILE = "read_file"
 SEARCH_CODE = "search_code"
 PROPOSE = "propose_connection"
 
-#: How many times the model may come back for more.
-MAX_ROUNDS = 4
-
 #: How much reading it may do across all rounds.
 MAX_READS = 12
 
 #: How many connections one reading may propose.
 MAX_PROPOSALS = 10
+
+#: How many times the model may come back for more. Enough to spend the
+#: budgets above and still say what it found: fewer ends the conversation
+#: while it is still working, and it is told it may read MAX_READS times, so
+#: a smaller number here makes that a promise the loop does not keep.
+MAX_ROUNDS = MAX_READS + MAX_PROPOSALS + 1
 
 #: What a reading may say, limited to the joints a manifest cannot see. A
 #: dependency is declared, so it is the manifest reading's to propose; a call
@@ -273,6 +276,11 @@ class WhatItReads:
     #: only the first is an answer.
     refused: str = ""
 
+    #: Set when the rounds ran out while the model was still asking for tools.
+    #: What it had proposed by then is kept, but the repository was not read to
+    #: the end and must not be recorded as though it had been.
+    unfinished: bool = False
+
     def propose(
         self,
         provider,
@@ -285,6 +293,7 @@ class WhatItReads:
     ) -> tuple[TopologyRelationship, ...]:
         """Every connection the reading proposed whose citation reads back."""
         self.refused = ""
+        self.unfinished = False
         if not targets or not entity_id:
             return ()
         if not hasattr(provider, "ask_with_tools"):
@@ -303,6 +312,7 @@ class WhatItReads:
         ]
         readings: list[Reading] = []
         reads = 0
+        done = False
         for round_number in range(self._rounds):
             try:
                 answer = provider.ask_with_tools(
@@ -317,6 +327,7 @@ class WhatItReads:
                 break
             calls = answer.get("tool_calls") or ()
             if not calls:
+                done = True
                 break
             messages.append(_said(answer, calls))
             for call in calls:
@@ -333,8 +344,10 @@ class WhatItReads:
                     }
                 )
             if reads >= MAX_READS or len(readings) >= MAX_PROPOSALS:
+                done = True
                 break
 
+        self.unfinished = not done and not self.refused
         return self._kept(readings, entity_id, repository, revision)
 
     def _kept(
