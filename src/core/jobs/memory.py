@@ -266,6 +266,15 @@ class InMemoryJobStore:
         with self._lock:
             return self._batches.get(batch_id)
 
+    def in_batch(self, batch_id: int) -> Sequence[Job]:
+        """Every job asked for as part of one batch, in the order asked."""
+        with self._lock:
+            rows = [
+                row for row in self._jobs.values() if row.get("batch_id") == batch_id
+            ]
+            rows.sort(key=lambda row: row["id"])
+            return [self._read(row) for row in rows]
+
     def read(self, job_id: int) -> Optional[Job]:
         with self._lock:
             row = self._jobs.get(job_id)

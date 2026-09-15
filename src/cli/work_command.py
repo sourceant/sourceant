@@ -12,6 +12,7 @@ from src.core.jobs import LANES, BACKGROUND, INTERACTIVE, JobHandler, job_store
 from src.core.jobs.sweep import Sweeper
 from src.core.jobs.worker import Worker
 from src.core.services import service_registry
+from src.core.topology.discovery import Manifests, Readings
 from src.events.delivery import Deliveries
 from src.utils.logger import logger
 
@@ -74,6 +75,8 @@ def work_command(lane, name, poll, max_jobs, max_time):
     sweeper = Sweeper(store)
     service_registry.contribute(JobHandler, sweeper, "sourceant_core")
     service_registry.contribute(JobHandler, Deliveries(), "sourceant_core")
+    service_registry.contribute(JobHandler, Manifests(), "sourceant_core")
+    service_registry.contribute(JobHandler, Readings(), "sourceant_core")
     if lane == BACKGROUND:
         sweeper.arrange(store)
 
