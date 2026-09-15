@@ -79,6 +79,8 @@ class JobBatches(Protocol):
 
     def read_batch(self, batch_id: int) -> Optional[Batch]: ...
 
+    def in_batch(self, batch_id: int) -> Sequence[Job]: ...
+
 
 @runtime_checkable
 class JobWakeup(Protocol):

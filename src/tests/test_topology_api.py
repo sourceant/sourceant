@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy import create_engine
 
 from src.api.main import app
-from src.api.routes import topology as topology_routes
 from src.api.routes.topology import get_topology_repository
 from src.core.services import service_registry
 from src.core.topology import (
@@ -57,8 +56,10 @@ def test_topology_repository_prefers_a_registered_provider(empty_registry):
 def test_topology_repository_falls_back_when_no_plugin_provides_one(
     empty_registry, monkeypatch
 ):
-    monkeypatch.setattr(topology_routes, "_fallback", None)
-    monkeypatch.setattr(topology_routes, "get_engine", lambda: None)
+    from src.core.topology import store
+
+    monkeypatch.setattr(store, "_fallback", None)
+    monkeypatch.setattr(store, "get_engine", lambda: None)
 
     resolved = get_topology_repository()
 

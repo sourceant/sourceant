@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.auth import get_current_user
-from src.config.db import get_engine
 from src.core.model import provider_for
 from src.core.responses import success_response
 from src.core.search import SearchQuery, Searcher
@@ -17,11 +16,10 @@ from src.core.topology.inference import infer_dependencies
 from src.core.topology.manifests import read_manifests
 from src.core.topology.proposing import WhatItReads
 from src.core.topology.reading import contents_reader
+from src.core.topology.store import topology_repository
 from src.utils.logger import logger
 from src.core.topology import (
     contents,
-    InMemoryTopologyRepository,
-    SQLTopologyRepository,
     TopologyEntity,
     TopologyEvidence,
     TopologyQuery,
@@ -34,28 +32,10 @@ router = APIRouter()
 
 STORE_UNAVAILABLE = "The topology store is unavailable"
 
-_fallback: TopologyRepository | None = None
-
 
 def get_topology_repository() -> TopologyRepository:
-    """The plugin-provided repository when one is registered, else core's own store.
-
-    ``ServiceRegistry.register`` allows a single provider per interface, so core
-    cannot pre-register alongside a plugin. Resolution has to happen per request.
-    """
-    global _fallback
-    try:
-        return service_registry.resolve(TopologyRepository)
-    except LookupError:
-        pass
-    if _fallback is None:
-        engine = get_engine()
-        _fallback = (
-            SQLTopologyRepository(engine)
-            if engine is not None
-            else InMemoryTopologyRepository()
-        )
-    return _fallback
+    """The plugin-provided repository when one is registered, else core's own store."""
+    return topology_repository()
 
 
 def get_scope(user: dict = Depends(get_current_user)) -> Scope:
@@ -609,7 +589,11 @@ async def read_connections(
     if not targets:
         return success_response({"proposed": [], "read": payload.repository})
 
-    provider = provider_for(Configuration(repository=payload.repository))
+    # Named with the workspace as well as the repository, so what a reading
+    # costs is answerable to whoever asked for it.
+    provider = provider_for(
+        Configuration(repository=payload.repository, workspace=scope.get("workspace"))
+    )
     if provider is None:
         raise HTTPException(400, "No model is configured to read with")
 
@@ -677,3 +661,134 @@ async def read_connections(
             "persisted": payload.persist,
         }
     )
+
+
+class DiscoverInput(BaseModel):
+    """A whole system's worth of reading, asked for at once."""
+
+    assets: list[InferAssetInput] = Field(default_factory=list, max_length=100)
+    system_id: str = ""
+    persist: bool = True
+    #: Read again even where the repository has not moved since the last one.
+    refresh: bool = False
+
+
+@router.post("/discover", status_code=202)
+async def discover_connections(
+    payload: DiscoverInput,
+    user: dict = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
+    repository: TopologyRepository = Depends(get_topology_repository),
+):
+    """Ask for a system's connections, and answer before any of it is done.
+
+    Reading a system of any size outlasts a request, so this queues the work
+    and answers with the batch to watch. Everything a worker is not allowed to
+    decide is decided here: whether these repositories are this user's to read,
+    whether there is a model to read them with, and which of them have not
+    changed since they were last read.
+    """
+    from src.api.routes.requirements import connected_names
+    from src.core.topology.discovery import discover
+
+    if not payload.assets:
+        raise HTTPException(422, "Nothing was given to read")
+
+    allowed = set(connected_names(user))
+    if any(asset.repository not in allowed for asset in payload.assets):
+        raise HTTPException(403, "Repository is outside this workspace")
+
+    ids = frozenset(asset.entity_id for asset in payload.assets)
+    known = repository.search(TopologyQuery(scope=scope, ids=ids, limit=100)).entities
+    named = {entity.id: entity for entity in known}
+    if any(asset.entity_id not in named for asset in payload.assets):
+        raise HTTPException(422, "Assets must name repositories in this workspace")
+    if any(
+        named[asset.entity_id].properties.get("name") != asset.repository
+        for asset in payload.assets
+    ):
+        raise HTTPException(422, "Assets must name repositories in this workspace")
+
+    # Asked before anything is queued rather than found by each job in turn,
+    # so a deployment with no usable model says so once.
+    provider = provider_for(
+        Configuration(
+            repository=payload.assets[0].repository, workspace=scope.get("workspace")
+        )
+    )
+    if provider is None:
+        raise HTTPException(400, "No model is configured to read with")
+    missing = getattr(provider, "missing_credentials", lambda: [])()
+    if missing:
+        raise HTTPException(
+            400, f"The model configured here has no {', '.join(missing)} to use"
+        )
+
+    # Off the event loop: queueing a discovery asks a forge where each
+    # repository stands, and blocking here would stop every other request.
+    asked = await asyncio.to_thread(
+        discover,
+        [
+            {"entity_id": one.entity_id, "repository": one.repository}
+            for one in payload.assets
+        ],
+        workspace=str(scope.get("workspace") or ""),
+        system_id=payload.system_id,
+        targets=[one.entity_id for one in payload.assets],
+        about={
+            entity.id: str(entity.properties.get("name") or entity.kind)
+            for entity in known
+        },
+        persist=payload.persist,
+        refresh=payload.refresh,
+    )
+    # The response builds its own, so the route's declared status is not what
+    # a caller sees unless it is said here too.
+    return success_response(asked, status_code=202)
+
+
+@router.get("/discoveries/{batch_id}")
+async def read_discovery(
+    batch_id: int,
+    user: dict = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
+):
+    """How far a discovery has got, what it found, and what it could not read.
+
+    Answered as the jobs stand rather than as a single done-or-not, because
+    partial is the ordinary state of this and a reader watching it wants the
+    repository still going named.
+    """
+    from src.core.jobs import job_store
+    from src.core.topology.discovery import MANIFESTS, READING
+
+    workspace = str(scope.get("workspace") or "")
+    store = job_store()
+    batch = store.read_batch(batch_id)
+    # Batches are numbered across every customer of an instance, so an id alone
+    # must not be enough to read one.
+    if batch is None or batch.tenant != workspace:
+        raise HTTPException(404, "No such discovery")
+
+    jobs = store.in_batch(batch_id)
+    return success_response(
+        {
+            "batch_id": batch.id,
+            "total": batch.total,
+            "done": batch.done,
+            "pending": batch.pending,
+            "failed": batch.failed,
+            "finished": batch.finished,
+            "manifests": [_discovered(job) for job in jobs if job.kind == MANIFESTS],
+            "readings": [_discovered(job) for job in jobs if job.kind == READING],
+        }
+    )
+
+
+def _discovered(job) -> dict:
+    return {
+        "job_id": job.id,
+        "repository": job.payload.get("repository") or "",
+        "state": job.state,
+        "error": job.error or "",
+    }

@@ -636,6 +636,16 @@ class SQLJobStore:
             finished_at=row.finished_at,
         )
 
+    def in_batch(self, batch_id: int) -> Sequence[Job]:
+        """Every job asked for as part of one batch, in the order asked."""
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                select(job_table)
+                .where(job_table.c.batch_id == batch_id)
+                .order_by(job_table.c.id)
+            ).all()
+        return [_as_job(row) for row in rows]
+
     def read(self, job_id: int) -> Optional[Job]:
         with self._engine.connect() as connection:
             row = connection.execute(

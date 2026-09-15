@@ -66,3 +66,31 @@ def _fetch(
         return base64.b64decode(payload["content"]).decode("utf-8")
     except (ValueError, UnicodeDecodeError):
         return None
+
+
+def head_revision(repository: str, token: str) -> str:
+    """The commit a repository's default branch is on, or "" where unknown.
+
+    Unknown is not an error. It means a reading of this repository cannot be
+    reused, which is the same position as never having done one.
+    """
+    try:
+        response = httpx.get(
+            f"{_GITHUB_API}/repos/{repository}/commits",
+            params={"per_page": 1},
+            timeout=15,
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+    except httpx.HTTPError as error:
+        logger.warning(f"Could not read where {repository} is: {error}")
+        return ""
+    if response.status_code != 200:
+        return ""
+    try:
+        commits = response.json()
+        return str(commits[0]["sha"]) if commits else ""
+    except (ValueError, KeyError, IndexError, TypeError):
+        return ""

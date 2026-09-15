@@ -201,6 +201,21 @@ def test_a_batch_counts_down_as_its_jobs_finish(store):
     assert done.finished_at is not None
 
 
+def test_a_batch_names_the_jobs_in_it_and_not_only_how_many(store):
+    """Counts say two of seven are done and not which two, so a reader watching
+    a batch has nothing to name what is still going."""
+    batch = store.open("connection discovery", total=2, tenant="acme")
+    first = store.enqueue(_asked(batch_id=batch.id))
+    second = store.enqueue(_asked(batch_id=batch.id))
+    store.enqueue(_asked())
+
+    assert [job.id for job in store.in_batch(batch.id)] == [first, second]
+
+
+def test_a_batch_nobody_opened_holds_nothing(store):
+    assert list(store.in_batch(999)) == []
+
+
 def test_a_delayed_job_is_not_offered_before_it_is_due(store, clock):
     store.enqueue(_asked(delay_seconds=30))
 
