@@ -52,7 +52,6 @@ from src.utils.diff_parser import parse_diff
 from src.utils.line_mapper import LineMapper
 from src.guards.base import GuardAction
 from src.guards.duplicate_approval import DuplicateApprovalGuard
-from src.config.settings import REVIEW_DRAFT_PRS
 from src.utils.logger import logger
 from src.utils.review_record_service import get_last_reviewed_sha, save_review_record
 
@@ -88,11 +87,6 @@ class CodeReviewerPlugin(BasePlugin):
                         "type": "boolean",
                         "description": "Enable/disable code reviews",
                         "default": True,
-                    },
-                    "review_draft_prs": {
-                        "type": "boolean",
-                        "description": "Review draft pull requests",
-                        "default": False,
                     },
                 },
             },
@@ -240,7 +234,13 @@ class CodeReviewerPlugin(BasePlugin):
             )
 
             # Check if we should skip this PR
-            skip_reason = self._should_skip_review(pull_request)
+            skip_reason = self._should_skip_review(
+                pull_request,
+                Configuration(
+                    repository=repository_context.get("full_name"),
+                    user=payload.get("sourceant_owner_id"),
+                ).with_workspace(),
+            )
             if skip_reason:
                 logger.info(f"Skipping review: {skip_reason}")
                 return {"processed": False, "reason": skip_reason}
@@ -308,22 +308,26 @@ class CodeReviewerPlugin(BasePlugin):
 
             return {"processed": False, "error": str(e)}
 
-    def _should_skip_review(self, pull_request: PullRequest) -> Optional[str]:
+    def _should_skip_review(
+        self, pull_request: PullRequest, configuration: Configuration
+    ) -> Optional[str]:
         """
         Check if we should skip reviewing this pull request.
 
         Args:
             pull_request: PullRequest instance
+            configuration: the scopes this delivery's settings resolve from
 
         Returns:
             Reason to skip or None if should proceed
         """
+        if not configuration.value("review.enabled"):
+            return "Reviews are turned off here"
+
         if pull_request.merged:
             return f"Pull request #{pull_request.number} is already merged"
 
-        if pull_request.draft and not self.get_config(
-            "review_draft_prs", REVIEW_DRAFT_PRS
-        ):
+        if pull_request.draft and not configuration.value("review.draft_pull_requests"):
             return f"Pull request #{pull_request.number} is a draft"
 
         if not pull_request.number:

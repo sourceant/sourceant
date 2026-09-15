@@ -109,3 +109,45 @@ def test_user_cannot_access_another_users_setting(settings_client, method):
     response = getattr(settings_client, method)(path, **arguments)
 
     assert response.status_code == 403
+
+
+def test_turning_reviews_off_is_offered_where_it_can_be_set(settings_client):
+    """A switch nobody can reach from the screen is not a switch."""
+    for scope in ("repository", "workspace"):
+        offered = settings_client.get(
+            f"/api/settings/catalogue?scope={scope}", headers=_headers()
+        )
+
+        assert offered.status_code == 200
+        keys = {item["key"] for item in offered.json()["data"]}
+        assert {"review.enabled", "review.draft_pull_requests"} <= keys
+
+
+def test_reviews_are_on_until_a_repository_says_otherwise(settings_client):
+    read = settings_client.get(
+        "/api/settings/repository/acme%2Fweb", headers=_headers()
+    )
+
+    standing = next(
+        item for item in read.json()["data"] if item["key"] == "review.enabled"
+    )
+    assert standing["value"] is True
+    assert standing["source"] == "default"
+
+
+def test_one_repository_turns_reviews_off_without_touching_the_rest(settings_client):
+    written = settings_client.put(
+        "/api/settings/repository/acme%2Fweb/review.enabled",
+        headers=_headers(),
+        json={"value": False},
+    )
+    read = settings_client.get(
+        "/api/settings/repository/acme%2Fweb", headers=_headers()
+    )
+
+    assert written.status_code == 200
+    standing = next(
+        item for item in read.json()["data"] if item["key"] == "review.enabled"
+    )
+    assert standing["value"] is False
+    assert standing["source"] == "repository"

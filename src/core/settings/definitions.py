@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from src.config.settings import DEFAULT_TOKEN_LIMIT
+from src.config.settings import DEFAULT_TOKEN_LIMIT, REVIEW_DRAFT_PRS
 from src.models.config import ConfigType
 
 # Where a setting can be given a value. Order matters: the narrowest scope that
@@ -81,6 +81,35 @@ def _coerce(value: Any, type_: str) -> Any:
 
 
 SETTINGS: tuple[Setting, ...] = (
+    Setting(
+        key="review.enabled",
+        label="Review pull requests",
+        description=(
+            "Whether anything is reviewed here at all. Off, a delivery is "
+            "still received and recorded, and nothing is posted on the pull "
+            "request. Turn it off on a repository whose changes are not worth "
+            "a review, or on the whole account while you are not paying for "
+            "one."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=True,
+        group="Review",
+    ),
+    Setting(
+        key="review.draft_pull_requests",
+        label="Review draft pull requests",
+        description=(
+            "Whether a pull request still marked draft is reviewed. A draft is "
+            "usually still being written, so reviewing every push to one "
+            "spends a review on a change its author has not finished making. "
+            "Left off, the review arrives when the draft is marked ready."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=REVIEW_DRAFT_PRS,
+        group="Review",
+    ),
     Setting(
         key="review.reuse_days",
         label="Reuse a review for",
