@@ -265,9 +265,10 @@ class Manifests:
 
         forge = _forge()
         tokens = {
-            asset["repository"]: _token(asset["repository"], forge)
-            for asset in assets
-            if asset.get("repository")
+            name: _token(name, forge)
+            for name in dict.fromkeys(
+                asset["repository"] for asset in assets if asset.get("repository")
+            )
         }
         readable = [one for one in assets if tokens.get(one.get("repository"))]
         if not readable:
