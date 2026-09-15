@@ -262,6 +262,7 @@ class CodeReviewerPlugin(BasePlugin):
                 pull_request,
                 Configuration(
                     repository=repository_context.get("full_name"),
+                    workspace=payload.get("sourceant_workspace_id"),
                     user=payload.get("sourceant_owner_id"),
                 ).with_workspace(),
             )
@@ -284,8 +285,10 @@ class CodeReviewerPlugin(BasePlugin):
                 pr_metadata=pr_metadata,
                 event_type=event_type,
                 repository_full_name=repository_context.get("full_name"),
-                # A delivery has no acting user, so the owner is the user its
-                # settings resolve from.
+                # Both settled by whoever sent the delivery. A repository two
+                # workspaces have connected names none on its own, and working
+                # it out again here would throw away the answer.
+                workspace=payload.get("sourceant_workspace_id"),
                 user=payload.get("sourceant_owner_id"),
             )
 
