@@ -308,3 +308,54 @@ def test_one_forge_answers_for_every_repository_in_a_discovery(queue, monkeypatc
     _asked(services)
 
     assert len(built) == 1
+
+
+def test_a_reading_that_ran_out_of_rounds_is_not_remembered_as_read(monkeypatch):
+    """The whole point: asking again must still read what nobody finished."""
+    remembered = []
+
+    class RanOut:
+        refused = ""
+        unfinished = True
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def propose(self, *args, **kwargs):
+            return ()
+
+    monkeypatch.setattr(discovery, "_token", lambda repository, forge=None: "a-token")
+    monkeypatch.setattr(
+        discovery, "remember_read", lambda *args: remembered.append(args)
+    )
+    monkeypatch.setattr("src.core.topology.proposing.WhatItReads", RanOut)
+    monkeypatch.setattr(
+        "src.core.model.provider_for", lambda configuration, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        "src.core.topology.store.topology_repository", lambda *a, **k: object()
+    )
+    monkeypatch.setattr(
+        "src.core.topology.reading.contents_reader",
+        lambda *a, **k: (lambda path: None),
+    )
+
+    outcome = Readings().run(
+        Job(
+            id=1,
+            lane=BACKGROUND,
+            kind=READING,
+            payload={
+                "entity_id": "asset:checkout",
+                "repository": "acme/checkout",
+                "targets": ["asset:billing"],
+                "workspace": "workspace-1",
+                "persist": False,
+            },
+            state="running",
+        )
+    )
+
+    assert not outcome.succeeded
+    assert "rounds ran out" in outcome.error
+    assert remembered == []
