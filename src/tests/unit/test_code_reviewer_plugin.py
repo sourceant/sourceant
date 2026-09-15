@@ -1652,3 +1652,101 @@ class TestWhetherToReviewAtAll:
         )
 
         assert reason == "Reviews are turned off here"
+
+
+class TestSayingWhichModelCouldNotBeReached:
+    """A list of variables alone sends the reader to the wrong place."""
+
+    MISSING = ("GOOGLE_API_KEY", "GEMINI_API_KEY")
+
+    def test_the_model_that_could_not_be_reached_is_named(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("gemini/chosen", self.MISSING, "gemini/chosen")
+
+        assert "gemini/chosen" in said["message"]
+        assert "GOOGLE_API_KEY" in said["message"]
+        assert said["error_type"] == "no_credentials"
+
+    def test_a_deployment_default_says_nothing_here_names_a_model(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("gemini/deployment-default", self.MISSING, "")
+
+        assert "gemini/deployment-default" in said["message"]
+        assert "Nothing here names a model" in said["message"]
+
+    def test_a_chosen_model_is_not_blamed_on_the_deployment(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("gemini/chosen", self.MISSING, "gemini/chosen")
+
+        assert "Nothing here names a model" not in said["message"]
+
+    def test_a_model_nobody_could_name_still_reads_as_a_sentence(self):
+        from src.plugins.builtin.code_reviewer.plugin import unreachable_model
+
+        said = unreachable_model("", self.MISSING, "")
+
+        assert said["message"].startswith(
+            "No credentials are configured for the review model:"
+        )
+
+
+class TestTheWorkspaceADeliveryNames:
+    """A repository two workspaces connected names none on its own, so the
+    delivery has to carry the one that was settled for it."""
+
+    @staticmethod
+    async def _reviewed(plugin, monkeypatch, payload) -> dict:
+        """What _handle_event asked generate_review for."""
+        asked = {}
+
+        async def _record(*args, **kwargs):
+            asked.update(kwargs)
+            return {"status": "success"}
+
+        monkeypatch.setattr(plugin, "generate_review", _record)
+        monkeypatch.setattr(plugin, "_should_skip_review", lambda *a, **k: None)
+        await plugin._handle_event(
+            "pull_request.opened",
+            {
+                "auth_type": "github_app",
+                "repository_event": {"number": 1, "title": "A change"},
+                "repository_context": {
+                    "name": "lens",
+                    "owner": "sourceant",
+                    "full_name": "sourceant/lens",
+                },
+                "payload": payload,
+            },
+        )
+        return asked
+
+    @pytest.mark.asyncio
+    async def test_the_settled_workspace_reaches_the_review(self, plugin, monkeypatch):
+        asked = await self._reviewed(
+            plugin,
+            monkeypatch,
+            {
+                "sourceant_workspace_id": "2",
+                "sourceant_owner_id": "7",
+                "pull_request": {"draft": False, "merged": False},
+            },
+        )
+
+        assert asked["workspace"] == "2"
+        assert asked["user"] == "7"
+
+    @pytest.mark.asyncio
+    async def test_a_delivery_naming_no_workspace_still_reviews(
+        self, plugin, monkeypatch
+    ):
+        """Nothing here invents one: generate_review works it out as before."""
+        asked = await self._reviewed(
+            plugin,
+            monkeypatch,
+            {"pull_request": {"draft": False, "merged": False}},
+        )
+
+        assert asked["workspace"] is None

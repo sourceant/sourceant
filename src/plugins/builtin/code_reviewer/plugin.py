@@ -56,6 +56,30 @@ from src.utils.logger import logger
 from src.utils.review_record_service import get_last_reviewed_sha, save_review_record
 
 
+def unreachable_model(model: str, missing, chosen: str) -> dict:
+    """Why a review stopped before reading, in terms that name the model.
+
+    The model that cannot be reached is often not the one somebody set: a
+    model named at a scope the delivery does not resolve leaves the one the
+    deployment was started with, and a list of variables alone sends the
+    reader looking at a key that was never the problem.
+    """
+    return {
+        "status": "error",
+        "message": (
+            f"No credentials are configured for {model or 'the review model'}: "
+            + ", ".join(missing)
+            + (
+                ""
+                if chosen
+                else ". Nothing here names a model, so the one this deployment "
+                "was started with was used."
+            )
+        ),
+        "error_type": "no_credentials",
+    }
+
+
 class CodeReviewerPlugin(BasePlugin):
     """
     Code Reviewer Plugin that subscribes to pull request events.
@@ -238,6 +262,7 @@ class CodeReviewerPlugin(BasePlugin):
                 pull_request,
                 Configuration(
                     repository=repository_context.get("full_name"),
+                    workspace=payload.get("sourceant_workspace_id"),
                     user=payload.get("sourceant_owner_id"),
                 ).with_workspace(),
             )
@@ -260,8 +285,10 @@ class CodeReviewerPlugin(BasePlugin):
                 pr_metadata=pr_metadata,
                 event_type=event_type,
                 repository_full_name=repository_context.get("full_name"),
-                # A delivery has no acting user, so the owner is the user its
-                # settings resolve from.
+                # Both settled by whoever sent the delivery. A repository two
+                # workspaces have connected names none on its own, and working
+                # it out again here would throw away the answer.
+                workspace=payload.get("sourceant_workspace_id"),
                 user=payload.get("sourceant_owner_id"),
             )
 
@@ -426,14 +453,11 @@ class CodeReviewerPlugin(BasePlugin):
             # are the expensive part and they are paid for either way.
             missing = llm_instance.missing_credentials()
             if missing:
-                return {
-                    "status": "error",
-                    "message": (
-                        "No credentials are configured for the review model: "
-                        + ", ".join(missing)
-                    ),
-                    "error_type": "no_credentials",
-                }
+                return unreachable_model(
+                    getattr(llm_instance, "model", ""),
+                    missing,
+                    str(configuration.value("model.name") or ""),
+                )
 
             total_tokens = sum(
                 llm_instance.count_tokens(pf.diff_text) for pf in parsed_files
