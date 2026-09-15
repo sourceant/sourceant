@@ -6,6 +6,7 @@ import json
 
 from src.core.topology.proposing import (
     CITED,
+    MAX_ROUNDS,
     CORROBORATED,
     MAX_READS,
     PROPOSE,
@@ -382,3 +383,53 @@ class TestCheckOnItsOwn:
         reading = Reading("billing", "consumes", "src/billing.py", 1, 1, "")
 
         assert check(reading, CLIENT).kept is False
+
+
+class _Endless:
+    """A model that keeps asking, the way one mid-search does."""
+
+    def __init__(self):
+        self.asked = 0
+
+    def ask_with_tools(self, messages, tools, *, purpose="", require=False):
+        self.asked += 1
+        return {
+            "content": "",
+            "tool_calls": [
+                _call(str(self.asked), SEARCH_CODE, terms=["billing"]),
+            ],
+        }
+
+
+def test_a_reading_cut_off_mid_search_says_it_did_not_finish():
+    """Recorded as read, a repository nobody finished is never read again."""
+    reads = WhatItReads(_read, _nothing, rounds=3)
+
+    reads.propose(
+        _Endless(),
+        entity_id="checkout",
+        repository="acme/checkout",
+        targets=("billing",),
+    )
+
+    assert reads.unfinished
+    assert not reads.refused
+
+
+def test_a_model_that_stops_on_its_own_has_finished():
+    class Stops:
+        def ask_with_tools(self, messages, tools, *, purpose="", require=False):
+            return {"content": "done", "tool_calls": []}
+
+    reads = WhatItReads(_read, _nothing)
+
+    reads.propose(
+        Stops(), entity_id="checkout", repository="acme/checkout", targets=("billing",)
+    )
+
+    assert not reads.unfinished
+
+
+def test_the_rounds_allow_the_reading_the_model_is_promised():
+    """The prompt offers MAX_READS reads, so the loop has to permit them."""
+    assert MAX_ROUNDS > MAX_READS
