@@ -18,6 +18,7 @@ from src.core.workspace import (
     workspace_of,
 )
 from src.models.repository import Repository
+from src.utils.logger import logger
 from src.models.connected_repository import ConnectedRepository
 from src.utils.pagination import Params, as_data, page_of, page_of_query
 from src.utils.moments import utc
@@ -206,9 +207,46 @@ async def connect_repo(
 
     _sync_repository(session, repo, data)
 
+    await connected(repo, workspace, user)
+
     return success_response(
         data={"id": repo.id}, message="Repository connected", status_code=201
     )
+
+
+#: Said when a workspace connects a repository, so that whatever wants to read
+#: it can start without being asked. Core queues nothing itself: what reading
+#: means belongs to whatever does the reading.
+CONNECTED = "sourceant.repository_connected"
+
+
+async def connected(repo: Repository, workspace: str, user: dict) -> None:
+    """Say that a repository was connected, and let it fail quietly.
+
+    A subscriber that cannot be told is not a reason to refuse the connection:
+    the repository is connected either way, and reading it can be asked for
+    again by hand.
+    """
+    from src.core.plugins import event_hooks
+
+    try:
+        await event_hooks.broadcast_event(
+            event_type=CONNECTED,
+            event_data={
+                "repository_id": repo.id,
+                "repository": repo.full_name,
+                "workspace": workspace,
+                "owner_id": user.get("user_id"),
+                # Carried because reading a private repository needs one, and
+                # the person who granted it is here and nowhere later.
+                "github_token": user.get("github_token"),
+            },
+        )
+    except Exception:
+        logger.warning(
+            f"Nothing could be told that {repo.full_name} was connected",
+            exc_info=True,
+        )
 
 
 @router.delete("/{repo_id}/disconnect")
