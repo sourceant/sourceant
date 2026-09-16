@@ -461,12 +461,18 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
         )
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
-            base_url="http://localhost:8000",
+            base_url="https://sourceant.example.com",
             headers={"Authorization": f"Bearer {token}"},
             follow_redirects=True,
         ) as client:
+            refused = await client.post("https://untrusted.example.com/mcp/", json={})
+            assert refused.status_code == 421
+            refused = await client.post(
+                "/mcp/", json={}, headers={"Origin": "https://untrusted.example.com"}
+            )
+            assert refused.status_code == 403
             async with streamable_http_client(
-                "http://localhost:8000/mcp/", http_client=client
+                "https://sourceant.example.com/mcp/", http_client=client
             ) as streams:
                 async with ClientSession(streams[0], streams[1]) as session:
                     await session.initialize()
