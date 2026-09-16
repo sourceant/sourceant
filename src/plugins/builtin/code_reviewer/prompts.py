@@ -33,6 +33,8 @@ class ReviewPrompts:
 
     @staticmethod
     def _checkout_prompts(server) -> None:
+        """Reads a working tree, so only a surface that reaches one gets these."""
+
         @server.prompt(
             name="review",
             title="Review my working tree",
@@ -56,6 +58,8 @@ class ReviewPrompts:
 
     @staticmethod
     def _workspace_prompts(server) -> None:
+        """Needs only the workspace the token names, so every surface gets these."""
+
         @server.prompt(
             name="context",
             title="What SourceAnt knows about this code",
