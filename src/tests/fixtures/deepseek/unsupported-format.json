@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "This response_format type is unavailable now",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "invalid_request_error"
+  }
+}

@@ -2,6 +2,8 @@ import json
 from typing import Optional, List, Union
 
 import litellm
+from litellm.exceptions import BadRequestError
+from pydantic import ValidationError
 
 from src.llms.errors import LLMError
 from src.llms.llm_interface import LLMInterface
@@ -75,6 +77,7 @@ class LiteLLMProvider(LLMInterface):
         # Who the call is on behalf of. Known where the model was chosen and
         # nowhere after it, so it is carried rather than looked up again.
         self._attribution = attribution or {}
+        self._schema_refused = False
 
     def _spent(self, response, purpose: str) -> None:
         """Keep what the provider says the call consumed.
@@ -292,15 +295,81 @@ class LiteLLMProvider(LLMInterface):
             cache().set(RESPONSES, key, answered, ttl=ttl)
         return answered
 
-    def _asked(self, content: Union[str, List[dict]]):
+    def _validated_response(self, ask, schema, purpose: str) -> str:
+        failure: ValidationError | None = None
+        for attempt in range(2):
+            response = ask()
+            self._spent(response, purpose)
+            written = response.choices[0].message.content
+            try:
+                schema.model_validate_json(written)
+            except ValidationError as invalid:
+                failure = invalid
+                if not attempt:
+                    logger.warning(
+                        "Invalid structured %s output from %s; retrying once",
+                        purpose,
+                        self.model,
+                    )
+            else:
+                return written
+        raise LLMError.wrapping(
+            f"Invalid {purpose} output after one retry", failure
+        ) from failure
+
+    def _structured(self, messages: list, schema):
+        native = (
+            not self.model.startswith("deepseek/")
+            and not self._schema_refused
+            and litellm.supports_response_schema(model=self.model)
+        )
+        if native:
+            try:
+                return litellm.completion(
+                    **self._credentials(),
+                    model=self.model,
+                    messages=messages,
+                    response_format=schema,
+                )
+            except BadRequestError as error:
+                message = str(error).lower()
+                if error.status_code != 400 or not (
+                    any(name in message for name in ("response_format", "json_schema"))
+                    and any(
+                        word in message
+                        for word in (
+                            "unavailable",
+                            "not supported",
+                            "unsupported",
+                        )
+                    )
+                ):
+                    raise
+                self._schema_refused = True
+
+        params = litellm.get_supported_openai_params(model=self.model) or []
+        response_format = (
+            {"response_format": {"type": "json_object"}}
+            if "response_format" in params or self.model.startswith("deepseek/")
+            else {}
+        )
+        instructions = "Return only a JSON object matching this schema:\n" + json.dumps(
+            schema.model_json_schema()
+        )
         return litellm.completion(
             **self._credentials(),
             model=self.model,
-            messages=[
+            messages=[*messages, {"role": "user", "content": instructions}],
+            **response_format,
+        )
+
+    def _asked(self, content: Union[str, List[dict]]):
+        return self._structured(
+            [
                 {"role": "system", "content": Prompts.REVIEW_SYSTEM_PROMPT},
                 {"role": "user", "content": content},
             ],
-            response_format=CodeReviewFindings,
+            CodeReviewFindings,
         )
 
     def _read(self, settled: str, changing: str):
@@ -364,9 +433,9 @@ class LiteLLMProvider(LLMInterface):
         )
 
         def read() -> str:
-            response = self._read(settled, changing)
-            self._spent(response, "review")
-            return response.choices[0].message.content
+            return self._validated_response(
+                lambda: self._read(settled, changing), CodeReview, "review"
+            )
 
         def readable(written: str) -> bool:
             try:
@@ -381,7 +450,7 @@ class LiteLLMProvider(LLMInterface):
                 "review", settled + changing, read, usable=readable
             )
             if written is None:
-                return None
+                raise ValueError("The model returned no review")
             logger.info("Code review generated successfully.")
 
             return CodeReview.model_validate_json(written)
@@ -389,7 +458,7 @@ class LiteLLMProvider(LLMInterface):
             logger.error(
                 f"An unexpected error occurred while generating code review: {e}"
             )
-            return None
+            raise LLMError.wrapping("Review generation", e) from e
 
     @staticmethod
     def _standing_summary(previous_summary: Optional[str]) -> str:
@@ -438,11 +507,13 @@ class LiteLLMProvider(LLMInterface):
         )
 
         def summarize(shape=None) -> str:
+            messages = [{"role": "user", "content": prompt}]
+            if shape:
+                return self._validated_response(
+                    lambda: self._structured(messages, shape), shape, "summary"
+                )
             response = litellm.completion(
-                **self._credentials(),
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                **({"response_format": shape} if shape else {}),
+                **self._credentials(), model=self.model, messages=messages
             )
             self._spent(response, "summary")
             return response.choices[0].message.content

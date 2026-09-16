@@ -1,0 +1,26 @@
+{
+  "action": "synchronize",
+  "pull_request": {
+    "url": "https://api.github.com/repos/example/app/pulls/181",
+    "title": "feat(review): Add review.stop_when_closed setting",
+    "number": 181,
+    "body": "Add `review.stop_when_closed`, on by default, settable per repository, workspace or organisation. A review still running when its pull request closes is stopped. Merged or not, a closed pull request is treated the same.\n\nA queued review is cancelled. A running one is asked between passes, because work inside a thread cannot be stopped from outside it.\n",
+    "user": {
+      "login": "example-user",
+      "type": "User"
+    }
+  },
+  "repository": {
+    "full_name": "example/app",
+    "name": "app",
+    "owner": {
+      "login": "example",
+      "type": "Organization"
+    }
+  },
+  "sender": {
+    "login": "example-user",
+    "id": 1,
+    "type": "User"
+  }
+}

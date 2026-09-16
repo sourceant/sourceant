@@ -1,5 +1,8 @@
 import os
+import json
+from pathlib import Path
 import pytest
+from litellm import ModelResponse
 
 from src.llms.errors import LLMError
 from unittest.mock import patch, MagicMock
@@ -28,6 +31,10 @@ def provider():
 @pytest.fixture
 def mock_completion():
     with patch("src.llms.litellm_provider.litellm") as mock_litellm:
+        captured = Path(__file__).parents[1] / "fixtures/deepseek/review.json"
+        mock_litellm.completion.return_value = ModelResponse(
+            **json.loads(captured.read_text())
+        )
         yield mock_litellm
 
 
@@ -163,8 +170,8 @@ def test_generate_code_review_preserves_llm_verdict_approve(provider, mock_compl
 def test_generate_code_review_api_error(provider, mock_completion):
     mock_completion.completion.side_effect = Exception("API is down")
 
-    result = provider.generate_code_review("- old\n+ new")
-    assert result is None
+    with pytest.raises(LLMError, match="API is down"):
+        provider.generate_code_review("- old\n+ new")
 
 
 def test_generate_summary_empty_suggestions(provider):
@@ -528,5 +535,6 @@ class TestAProviderRefusingToKeepAPrompt:
     ):
         mock_completion.completion.side_effect = Exception("the provider is down")
 
-        assert provider.generate_code_review("+ changed") is None
+        with pytest.raises(LLMError, match="the provider is down"):
+            provider.generate_code_review("+ changed")
         assert mock_completion.completion.call_count == 1
