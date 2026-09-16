@@ -52,11 +52,31 @@ class PluginManager:
         Args:
             directory: Path to plugin directory
         """
-        if directory.exists() and directory.is_dir():
-            self._plugin_directories.append(directory)
-            logger.info(f"Added plugin directory: {directory}")
-        else:
+        if not directory.exists() or not directory.is_dir():
             logger.warning(f"Plugin directory does not exist: {directory}")
+            return
+        # Resolved, so a relative spelling and a symlink to one place are one
+        # entry rather than two searches of it.
+        where = directory.resolve()
+        if where in self._plugin_directories:
+            logger.debug(f"Plugin directory already searched: {where}")
+            return
+        self._plugin_directories.append(where)
+        logger.info(f"Added plugin directory: {where}")
+
+    def _registered(self, plugin: BasePlugin) -> Optional[BasePlugin]:
+        """Whatever is already registered under this plugin's name.
+
+        Loading is reached twice, once where the tools a server advertises are
+        collected and once by the application's own startup. The name is taken
+        from the metadata because that is the key the registry itself uses; an
+        entry point name or a class name can differ from it.
+        """
+        info = self.registry.get_plugin_info(plugin.metadata.name)
+        if info is None:
+            return None
+        logger.debug(f"Plugin already loaded, keeping it: {plugin.metadata.name}")
+        return info.plugin
 
     def set_plugin_config(self, plugin_name: str, config: Dict[str, Any]):
         """
@@ -271,6 +291,10 @@ class PluginManager:
 
             # Create plugin instance
             plugin_instance = plugin_class(config=plugin_config)
+
+            already = self._registered(plugin_instance)
+            if already is not None:
+                return already
             plugin_instance.bind_services(self.services)
 
             # Validate configuration if plugin has schema and is enabled
@@ -323,6 +347,10 @@ class PluginManager:
             plugin_class = ep.load()
             plugin_config = self._plugin_configs.get(name, {})
             plugin_instance = plugin_class(config=plugin_config)
+
+            already = self._registered(plugin_instance)
+            if already is not None:
+                return already
             plugin_instance.bind_services(self.services)
 
             metadata = plugin_instance.metadata

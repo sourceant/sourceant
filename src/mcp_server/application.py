@@ -70,7 +70,6 @@ def load_plugins() -> None:
     Only as far as initializing. Starting them subscribes to webhook events,
     which the application's own lifespan does when it is serving them.
     """
-    import asyncio
     from pathlib import Path
 
     from src.core.plugins import plugin_manager
@@ -81,9 +80,38 @@ def load_plugins() -> None:
         await plugin_manager.initialize_plugins()
 
     try:
-        asyncio.run(load())
+        _finish(load())
     except Exception as error:  # noqa: BLE001 - serve core's own tools regardless
         logger.warning(f"MCP tools from plugins are unavailable: {error}")
+
+
+def _finish(work) -> None:
+    """Run a coroutine to completion from a caller that may already be async.
+
+    asyncio.run refuses inside a running loop, and this is reached both at
+    import, where there is no loop, and from a command that is already
+    running one.
+
+    With a loop already running the work is done on a fresh one in a worker
+    thread, which closes when it returns. Nothing the work binds to that loop
+    can outlive it.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(work)
+            return
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(asyncio.run, work).result()
+    except BaseException:
+        # Unconditional: closing one that already finished does nothing, and
+        # one that never started warns on its own if it is left open.
+        work.close()
+        raise
 
 
 def mcp_surface() -> Optional[Surface]:

@@ -26,8 +26,14 @@ class ReviewPrompts:
         return "code_reviewer_prompts"
 
     def add_tools(self, server, surface: Surface | None) -> None:
+        self._workspace_prompts(server)
         if surface is not None and not surface.reaches_checkout:
             return
+        self._checkout_prompts(server)
+
+    @staticmethod
+    def _checkout_prompts(server) -> None:
+        """Reads a working tree, so only a surface that reaches one gets these."""
 
         @server.prompt(
             name="review",
@@ -49,6 +55,10 @@ class ReviewPrompts:
                 "If no repository is named and more than one is registered, ask "
                 "me which one rather than guessing."
             )
+
+    @staticmethod
+    def _workspace_prompts(server) -> None:
+        """Needs only the workspace the token names, so every surface gets these."""
 
         @server.prompt(
             name="context",
