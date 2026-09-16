@@ -405,7 +405,7 @@ class Readings:
             revision=revision,
         )
         proposals = tuple(
-            _with(proposal, job.payload.get("system_id")) for proposal in proposals
+            _with(proposal, job.payload["system_id"]) for proposal in proposals
         )
         _kept(store, scope, proposals, bool(job.payload.get("persist", True)))
         if reads.refused:
