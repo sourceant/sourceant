@@ -97,6 +97,31 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.stop_when_closed",
+        label="Stop reviewing a closed pull request",
+        description=(
+            "Stop a review that is still running when its pull request is "
+            "closed or merged. Off, the review finishes and posts."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=True,
+        group="Review",
+    ),
+    Setting(
+        key="review.stop_on_new_push",
+        label="Stop reviewing a revision that has been replaced",
+        description=(
+            "Stop a review that is still running when new commits are pushed "
+            "to its pull request. Off, the review of the older revision "
+            "finishes and posts."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=True,
+        group="Review",
+    ),
+    Setting(
         key="review.draft_pull_requests",
         label="Review draft pull requests",
         description=(
