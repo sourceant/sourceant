@@ -194,6 +194,68 @@ class TestAskingForADiscovery(BaseTestCase):
 
         assert watched.status_code == 404
 
+    def test_reading_proposals_belong_to_the_system_that_requested_them(
+        self, monkeypatch
+    ):
+        from src.core.topology.discovery import Readings
+        from src.core.topology.models import TopologyEvidence, TopologyRelationship
+
+        self.both()
+        proposal = TopologyRelationship(
+            id="checkout->billing:consumes",
+            source_id="checkout",
+            target_id="billing",
+            type="consumes",
+            status="pending",
+            properties={"inferred_from": "reading"},
+            evidence=(
+                TopologyEvidence(id="reading", kind="reading", source="checkout"),
+            ),
+        )
+
+        class Reading:
+            refused = ""
+            unfinished = False
+
+            def __init__(self, *args):
+                pass
+
+            def propose(self, *args, **kwargs):
+                return (proposal,)
+
+        monkeypatch.setattr("src.core.topology.proposing.WhatItReads", Reading)
+        monkeypatch.setattr(
+            "src.core.model.provider_for", lambda configuration: Model()
+        )
+        monkeypatch.setattr(
+            "src.core.topology.store.topology_repository",
+            lambda services: self.repository,
+        )
+        monkeypatch.setattr(
+            "src.core.topology.reading.contents_reader", lambda *args: None
+        )
+        monkeypatch.setattr(
+            "src.core.topology.discovery.remember_read", lambda *args: None
+        )
+        asked = self.discover(refresh=True).json()["data"]
+        job = next(
+            job
+            for job in job_store().in_batch(asked["batch_id"])
+            if job.kind == READING
+        )
+
+        assert Readings().run(job).succeeded
+
+        response = self.client.post(
+            "/api/topology/search", json={}, headers=self.headers
+        )
+        assert response.status_code == 200
+        saved = response.json()["data"]["relationships"][0]
+        assert saved["properties"]["system_id"] == "system:commerce"
+        assert saved["properties"]["inferred_from"] == "reading"
+        assert saved["properties"]["provenance"]["evidence"][0]["id"] == "reading"
+        assert saved["evidence"][0]["id"] == "reading"
+
     def test_a_repository_outside_the_workspace_is_refused(self):
         self.both()
 
