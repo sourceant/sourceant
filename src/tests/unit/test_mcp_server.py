@@ -395,8 +395,28 @@ async def test_mcp_topology_tools_are_unavailable_without_a_repository():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "resource_url, host, origin",
+    [
+        (
+            "https://sourceant.example.com/mcp",
+            "sourceant.example.com",
+            "https://sourceant.example.com",
+        ),
+        (
+            "https://sourceant.example.com/mcp",
+            "sourceant.example.com:443",
+            "https://sourceant.example.com:443",
+        ),
+        (
+            "https://sourceant.example.com:8443/mcp",
+            "sourceant.example.com:8443",
+            "https://sourceant.example.com:8443",
+        ),
+    ],
+)
 async def test_streamable_http_serves_what_the_caller_is_entitled_to(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, resource_url, host, origin
 ):
     monkeypatch.setenv("JWT_SECRET", "test-secret-value-with-at-least-32-bytes")
     knowledge = SQLKnowledgeRepository(
@@ -426,7 +446,7 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
             ),
             auth=AuthSettings(
                 issuer_url="https://issuer.example.com",
-                resource_server_url="https://sourceant.example.com/mcp",
+                resource_server_url=resource_url,
                 required_scopes=["sourceant"],
             ),
             token_verifier=SourceAntTokenVerifier(
@@ -461,12 +481,28 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
         )
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
-            base_url="http://localhost:8000",
-            headers={"Authorization": f"Bearer {token}"},
+            base_url=origin,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Host": host,
+                "Origin": origin,
+            },
             follow_redirects=True,
         ) as client:
+            refused = await client.post(
+                "/mcp/", json={}, headers={"Host": "untrusted.example.com"}
+            )
+            assert refused.status_code == 421
+            refused = await client.post(
+                "/mcp/", json={}, headers={"Origin": "https://untrusted.example.com"}
+            )
+            assert refused.status_code == 403
+            refused = await client.post(
+                "/mcp/", json={}, headers={"Host": "sourceant.example.com:9443"}
+            )
+            assert refused.status_code == 421
             async with streamable_http_client(
-                "http://localhost:8000/mcp/", http_client=client
+                resource_url + "/", http_client=client
             ) as streams:
                 async with ClientSession(streams[0], streams[1]) as session:
                     await session.initialize()

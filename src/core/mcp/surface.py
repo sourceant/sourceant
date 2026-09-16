@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -75,6 +76,13 @@ def hosted_surface(
     scope_resolver: Callable[[Scope], Scope],
     requirement_scope_resolver: Optional[Callable[[Scope], Scope]] = None,
 ) -> Surface:
+    if auth.resource_server_url is None:
+        raise ValueError("a hosted MCP surface needs a resource URL")
+    resource = urlsplit(str(auth.resource_server_url))
+    hosts = [resource.netloc]
+    if resource.port is None:
+        port = 443 if resource.scheme == "https" else 80
+        hosts.append(f"{resource.netloc}:{port}")
     return Surface(
         environment=HOSTED,
         auth=auth,
@@ -82,4 +90,9 @@ def hosted_surface(
         scope_resolver=scope_resolver,
         requirement_scope_resolver=requirement_scope_resolver,
         reaches_checkout=False,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=hosts,
+            allowed_origins=[f"{resource.scheme}://{host}" for host in hosts],
+        ),
     )
