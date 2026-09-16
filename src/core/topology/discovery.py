@@ -404,6 +404,9 @@ class Readings:
             about=str(job.payload.get("about") or ""),
             revision=revision,
         )
+        proposals = tuple(
+            _with(proposal, job.payload["system_id"]) for proposal in proposals
+        )
         _kept(store, scope, proposals, bool(job.payload.get("persist", True)))
         if reads.refused:
             # A reading that never ran and one that found nothing look the same
