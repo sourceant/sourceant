@@ -79,6 +79,10 @@ def hosted_surface(
     if auth.resource_server_url is None:
         raise ValueError("a hosted MCP surface needs a resource URL")
     resource = urlsplit(str(auth.resource_server_url))
+    hosts = [resource.netloc]
+    if resource.port is None:
+        port = 443 if resource.scheme == "https" else 80
+        hosts.append(f"{resource.netloc}:{port}")
     return Surface(
         environment=HOSTED,
         auth=auth,
@@ -88,7 +92,7 @@ def hosted_surface(
         reaches_checkout=False,
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
-            allowed_hosts=[resource.netloc],
-            allowed_origins=[f"{resource.scheme}://{resource.netloc}"],
+            allowed_hosts=hosts,
+            allowed_origins=[f"{resource.scheme}://{host}" for host in hosts],
         ),
     )
