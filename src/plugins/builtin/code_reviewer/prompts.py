@@ -26,9 +26,13 @@ class ReviewPrompts:
         return "code_reviewer_prompts"
 
     def add_tools(self, server, surface: Surface | None) -> None:
+        self._workspace_prompts(server)
         if surface is not None and not surface.reaches_checkout:
             return
+        self._checkout_prompts(server)
 
+    @staticmethod
+    def _checkout_prompts(server) -> None:
         @server.prompt(
             name="review",
             title="Review my working tree",
@@ -50,6 +54,8 @@ class ReviewPrompts:
                 "me which one rather than guessing."
             )
 
+    @staticmethod
+    def _workspace_prompts(server) -> None:
         @server.prompt(
             name="context",
             title="What SourceAnt knows about this code",
