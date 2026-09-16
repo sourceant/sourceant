@@ -56,6 +56,64 @@ from src.utils.logger import logger
 from src.utils.review_record_service import get_last_reviewed_sha, save_review_record
 
 
+def resume_reviewing(repository: str, number: int) -> None:
+    """Let a reopened pull request be reviewed again."""
+    if not repository or not number:
+        return
+    from src.core.review.stopping import resume
+
+    resume(repository, number)
+
+
+def supersede_review(repository: str, number: int, revision: str) -> None:
+    """Record the revision now under review and drop other queued reviews."""
+    if not repository or not number or not revision:
+        return
+    from src.core.review.stopping import supersede
+
+    supersede(repository, number, revision)
+    _drop_queued(repository, number)
+
+
+def stop_reviewing(repository: str, number: int) -> None:
+    """Cancel a queued review of this pull request and stop a running one."""
+    if not repository or not number:
+        return
+    from src.core.review.stopping import abandon
+
+    abandon(repository, number)
+    logger.info("Stopped reviewing %s#%s: it was closed", repository, number)
+    _drop_queued(repository, number)
+
+
+def _drop_queued(repository: str, number: int) -> None:
+    """Cancel queued deliveries for this pull request."""
+    from src.core.jobs import job_store
+    from src.models.repository_event import RepositoryEvent
+
+    try:
+        store = job_store()
+        waiting = list(store.pending())
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not read the queue", exc_info=True)
+        return
+
+    for job in waiting:
+        try:
+            event_id = (job.payload or {}).get("repository_event_id")
+            if event_id is None:
+                continue
+            event = RepositoryEvent.get(int(event_id))
+            if (
+                event is not None
+                and event.repository_full_name == repository
+                and event.number == number
+            ):
+                store.cancel(job.id)
+        except Exception:  # noqa: BLE001
+            logger.warning("Could not cancel job %s", job.id, exc_info=True)
+
+
 def unreachable_model(model: str, missing, chosen: str) -> dict:
     """Why a review stopped before reading, in terms that name the model.
 
@@ -131,6 +189,7 @@ class CodeReviewerPlugin(BasePlugin):
                 "pull_request.synchronize",
                 "pull_request.reopened",
                 "pull_request.ready_for_review",
+                "pull_request.closed",
             ],
         )
 
@@ -257,15 +316,36 @@ class CodeReviewerPlugin(BasePlugin):
                 head_sha=head_sha,
             )
 
+            settings = Configuration(
+                repository=repository_context.get("full_name"),
+                workspace=payload.get("sourceant_workspace_id"),
+                user=payload.get("sourceant_owner_id"),
+            ).with_workspace()
+
+            if event_type.endswith(".closed"):
+                if settings.value("review.stop_when_closed"):
+                    stop_reviewing(
+                        repository_context.get("full_name") or "",
+                        pull_request.number or 0,
+                    )
+                return {"processed": False, "reason": "the pull request is closed"}
+
+            if event_type.endswith(".reopened"):
+                resume_reviewing(
+                    repository_context.get("full_name") or "",
+                    pull_request.number or 0,
+                )
+
+            stop_on_push = bool(settings.value("review.stop_on_new_push"))
+            if head_sha and stop_on_push:
+                supersede_review(
+                    repository_context.get("full_name") or "",
+                    pull_request.number or 0,
+                    head_sha,
+                )
+
             # Check if we should skip this PR
-            skip_reason = self._should_skip_review(
-                pull_request,
-                Configuration(
-                    repository=repository_context.get("full_name"),
-                    workspace=payload.get("sourceant_workspace_id"),
-                    user=payload.get("sourceant_owner_id"),
-                ).with_workspace(),
-            )
+            skip_reason = self._should_skip_review(pull_request, settings)
             if skip_reason:
                 logger.info(f"Skipping review: {skip_reason}")
                 return {"processed": False, "reason": skip_reason}
@@ -290,7 +370,11 @@ class CodeReviewerPlugin(BasePlugin):
                 # it out again here would throw away the answer.
                 workspace=payload.get("sourceant_workspace_id"),
                 user=payload.get("sourceant_owner_id"),
+                revision=(head_sha or "") if stop_on_push else "",
             )
+
+            if review_result.get("status") == "error":
+                raise RuntimeError(review_result.get("message") or "Review failed")
 
             # Broadcast review completion event
             if review_result.get("status") == "success":
@@ -372,6 +456,7 @@ class CodeReviewerPlugin(BasePlugin):
         post: bool = True,
         workspace: str | None = None,
         user: str | None = None,
+        revision: str = "",
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -382,6 +467,8 @@ class CodeReviewerPlugin(BasePlugin):
             pr_metadata: Optional PR metadata dict
             event_type: Event type string (e.g. "pull_request.synchronize")
             repository_full_name: Full repo name (e.g. "owner/repo")
+            revision: Commit being reviewed. Empty disables the revision check,
+                so the review runs whatever has since been pushed.
 
         Returns:
             Review generation and posting results
@@ -583,6 +670,7 @@ class CodeReviewerPlugin(BasePlugin):
                 code_scope=code_scope,
                 metadata=pr_metadata,
                 coverage=coverage,
+                revision=revision,
                 analysis=analysis,
             )
             if final_review is None:
@@ -652,6 +740,13 @@ class CodeReviewerPlugin(BasePlugin):
                     line_mapper=line_mapper,
                     configuration=configuration,
                 )
+                if post_result.get("status") == "error":
+                    return {
+                        "status": "error",
+                        "message": post_result.get("message")
+                        or "Review posting failed",
+                        "error_type": "review_posting_failed",
+                    }
                 if pull_request.head_sha and pull_request.base_sha:
                     save_review_record(
                         repo_full_name,

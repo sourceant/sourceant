@@ -27,6 +27,7 @@ from src.plugins.builtin.code_reviewer.context import (
     requirements_section,
 )
 from src.core.review_context import LazyChangedFileCodeIndex
+from src.core.review.stopping import abandoned as given_up
 from src.core.review_coverage import Coverage, SKILLS
 from src.core.review_evidence import (
     CachedChangedFileEvidenceReader,
@@ -111,6 +112,15 @@ def _batched(parsed_files, budget: int, cost) -> list[list]:
     return batches
 
 
+def _stopped(changes, metadata, revision: str) -> bool:
+    """Whether this review is no longer wanted."""
+    return given_up(
+        str(changes.scope.get("repository") or ""),
+        int((metadata or {}).get("number") or 0),
+        revision,
+    )
+
+
 @dataclass
 class CodeReviewer:
     """Registered against core's Reviewer interface.
@@ -135,13 +145,22 @@ class CodeReviewer:
         metadata: dict | None = None,
         coverage: Coverage | None = None,
         analysis: Analysis | None = None,
+        revision: str = "",
     ) -> CodeReview | None:
         """The review, or None where there was nothing to read.
+
+        `revision` is the commit being read. Where another revision has since
+        become the current one, the review is stopped.
+
+        None also where the review was stopped: a caller cannot tell the two
+        apart from the return alone.
 
         A caller that passes a coverage record gets back what this was able
         to read written into it, which is the only way to tell a review that
         found nothing from one that could not look.
         """
+        if _stopped(changes, metadata, revision):
+            return None
         parsed_files = parse_diff(changes.diff)
         if not parsed_files:
             return None
@@ -266,6 +285,7 @@ class CodeReviewer:
                 read_content,
                 file_limit,
                 code_scope,
+                revision=revision,
             )
 
         answer = read(sections)
@@ -555,7 +575,8 @@ class CodeReviewer:
         read_content,
         file_limit,
         code_scope,
-    ) -> CodeReview:
+        revision="",
+    ) -> CodeReview | None:
         """Read the change in parts and put what each said together.
 
         Concurrently: the parts do not depend on each other, and in turn they
@@ -568,6 +589,8 @@ class CodeReviewer:
         rejections: List[str] = []
 
         def read(batch):
+            if _stopped(changes, metadata, revision):
+                return None
             paths = [one.file_path for one in batch]
             about_these = None
             if existing_comments:
@@ -597,6 +620,9 @@ class CodeReviewer:
 
         with ThreadPoolExecutor(max_workers=min(len(batches), MAX_AT_ONCE)) as pool:
             answers = list(pool.map(read, batches))
+
+        if _stopped(changes, metadata, revision):
+            return None
 
         for answer in answers:
             if answer and answer.code_suggestions:
