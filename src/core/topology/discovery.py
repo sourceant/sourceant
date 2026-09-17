@@ -174,13 +174,14 @@ def remember_read(repository: str, revision: str, targets: Sequence[str]) -> Non
     """Keep that this reading was done, so asking again does not pay twice."""
     if not revision:
         return
-    from src.core.cache import cache
+    from src.core.cache import Owner, cache
 
     cache().set(
         REMEMBERED,
         reading_key(repository, revision, targets),
         "read",
         ttl=REMEMBERED_FOR,
+        scope=Owner("repository", repository) if repository else None,
     )
 
 

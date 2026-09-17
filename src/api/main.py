@@ -68,6 +68,7 @@ app = FastAPI(
 )
 
 from src.api.routes import requirements, artifacts, usage
+from src.api.routes import caches as cache_endpoints
 from src.api.routes import code as code_endpoints
 from src.api.routes import jobs as job_endpoints
 from src.api.routes import knowledge as knowledge_endpoints
@@ -88,6 +89,7 @@ app.include_router(repo_endpoints.router, prefix="/api/repos", tags=["repositori
 app.include_router(routing_endpoints.router, prefix="/api/routing", tags=["routing"])
 app.include_router(review_endpoints.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(triage_endpoints.router, prefix="/api/triage", tags=["triage"])
+app.include_router(cache_endpoints.router, prefix="/api/caches", tags=["caches"])
 app.include_router(settings_endpoints.router, prefix="/api/settings", tags=["settings"])
 app.include_router(topology_endpoints.router, prefix="/api/topology", tags=["topology"])
 app.include_router(code_endpoints.router, prefix="/api/code", tags=["code"])

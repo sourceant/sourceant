@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import Index, Text, UniqueConstraint
 from sqlmodel import Field
 
 from src.models.base_model import BaseModel
@@ -14,6 +14,7 @@ class CacheEntry(BaseModel, table=True):
     # other's row.
     __table_args__ = (
         UniqueConstraint("namespace", "key", name="uq_cache_entries_namespace_key"),
+        Index("ix_cache_entries_scope", "scope_type", "scope_id"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -23,3 +24,6 @@ class CacheEntry(BaseModel, table=True):
     key: str = Field(max_length=255, index=True)
     value: str = Field(sa_type=Text)
     expires_at: datetime = Field(index=True)
+    # Nullable: an entry whose writer named nobody still has to answer.
+    scope_type: str | None = Field(default=None, max_length=32)
+    scope_id: str | None = Field(default=None, max_length=255)

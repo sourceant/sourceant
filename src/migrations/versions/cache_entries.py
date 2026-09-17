@@ -19,12 +19,18 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("scope_type", sa.String(length=32), nullable=True),
+        sa.Column("scope_id", sa.String(length=255), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("namespace", "key", name="uq_cache_entries_namespace_key"),
     )
     op.create_index("ix_cache_entries_expires_at", "cache_entries", ["expires_at"])
+    op.create_index(
+        "ix_cache_entries_scope", "cache_entries", ["scope_type", "scope_id"]
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_cache_entries_scope", table_name="cache_entries")
     op.drop_index("ix_cache_entries_expires_at", table_name="cache_entries")
     op.drop_table("cache_entries")
