@@ -253,7 +253,7 @@ class LiteLLMProvider(LLMInterface):
         Nothing is recorded as consumed on a reused answer, because nothing
         was: the saving shows in the usage report as calls that did not happen.
         """
-        from src.core.cache import cache, keyed
+        from src.core.cache import cache, keyed, owner
         from src.core.settings import value_of
 
         repository = str(self._attribution.get("repository") or "")
@@ -292,7 +292,9 @@ class LiteLLMProvider(LLMInterface):
             cache().forget(RESPONSES, key)
         answered = ask()
         if answered and (usable is None or usable(answered)):
-            cache().set(RESPONSES, key, answered, ttl=ttl)
+            cache().set(
+                RESPONSES, key, answered, ttl=ttl, scope=owner(self._attribution)
+            )
         return answered
 
     def _validated_response(self, ask, schema, purpose: str) -> str:

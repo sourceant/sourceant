@@ -13,7 +13,7 @@ import hashlib
 from src.config.settings import choice
 from src.core.services import ServiceRegistry, service_registry
 
-from .interfaces import Cache
+from .interfaces import Cache, Owner
 from .redis import RedisCache
 from .sql import SQLCache
 
@@ -44,4 +44,36 @@ def keyed(*parts: str) -> str:
     return hashlib.sha256("\0".join(parts).encode()).hexdigest()
 
 
-__all__ = ["Cache", "RedisCache", "SQLCache", "cache", "keyed"]
+def owner(attribution) -> "Owner | None":
+    """The narrowest thing an entry can be said to belong to.
+
+    A repository before the workspace holding it, so clearing one repository
+    does not take the rest of the workspace with it. Only these two: an entry
+    recorded against anything the clear cannot name could never be dropped.
+    """
+    for kind in ("repository", "workspace"):
+        named = (attribution or {}).get(kind)
+        if named:
+            return Owner(kind, str(named))
+    return None
+
+
+#: What can be cleared, and what to call it.
+CLEARABLE = {
+    "model-response": "Model answers",
+    "topology.reading": "Connection readings",
+    "review.abandoned": "Stopped reviews",
+    "review.revision": "Reviewed revisions",
+}
+
+
+__all__ = [
+    "CLEARABLE",
+    "Cache",
+    "RedisCache",
+    "SQLCache",
+    "Owner",
+    "cache",
+    "keyed",
+    "owner",
+]

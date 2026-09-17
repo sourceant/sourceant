@@ -6,6 +6,7 @@ import time
 from typing import Optional
 
 from src.config.settings import REDIS_HOST, REDIS_PORT
+from src.core.cache.interfaces import Owner
 from src.utils.logger import logger
 
 # How long to leave a cache that would not answer alone before trying it
@@ -54,6 +55,15 @@ class RedisCache:
     def _named(namespace: str, key: str) -> str:
         return f"{namespace}:{key}"
 
+    @staticmethod
+    def _belonging(namespace: str, scope: Owner) -> str:
+        """The set naming what one scope has in one namespace.
+
+        A key here is a hash, so nothing in it says who the entry was for.
+        Reading it back by scope means writing down the membership as it goes.
+        """
+        return f"{namespace}:belongs:{scope.type}:{scope.id}"
+
     def get(self, namespace: str, key: str) -> Optional[str]:
         client = self._connected()
         if client is None:
@@ -66,12 +76,26 @@ class RedisCache:
             return None
         return kept.decode() if isinstance(kept, bytes) else kept
 
-    def set(self, namespace: str, key: str, value: str, *, ttl: int = 0) -> None:
+    def set(
+        self,
+        namespace: str,
+        key: str,
+        value: str,
+        *,
+        ttl: int = 0,
+        scope: Optional[Owner] = None,
+    ) -> None:
         client = self._connected()
         if client is None or ttl <= 0:
             return
         try:
             client.setex(self._named(namespace, key), ttl, value)
+            if scope is not None:
+                belonging = self._belonging(namespace, scope)
+                client.sadd(belonging, key)
+                # Not GT: a key with no expiry counts as infinite for that, so
+                # the set the sadd just made would never be given one at all.
+                client.expire(belonging, ttl)
         except Exception as e:
             logger.warning(f"Could not write the cache: {e}")
             self._dropped()
@@ -85,6 +109,35 @@ class RedisCache:
         except Exception as e:
             logger.warning(f"Could not clear the cache: {e}")
             self._dropped()
+
+    def clear(self, namespace: str, scope: Optional[Owner] = None) -> int:
+        client = self._connected()
+        if client is None:
+            return 0
+        try:
+            if scope is not None:
+                belonging = self._belonging(namespace, scope)
+                keys = [
+                    self._named(namespace, k.decode() if isinstance(k, bytes) else k)
+                    for k in client.smembers(belonging)
+                ]
+                dropped = client.delete(*keys) if keys else 0
+                client.delete(belonging)
+                return int(dropped)
+            dropped = 0
+            batch = []
+            for found in client.scan_iter(match=f"{namespace}:*", count=500):
+                batch.append(found)
+                if len(batch) >= 500:
+                    dropped += client.delete(*batch)
+                    batch = []
+            if batch:
+                dropped += client.delete(*batch)
+            return int(dropped)
+        except Exception as e:
+            logger.warning(f"Could not clear the cache: {e}")
+            self._dropped()
+            return 0
 
     def _dropped(self) -> None:
         """Let go of a client that stopped answering, so the next call redials."""

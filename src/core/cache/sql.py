@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from src.config.db import get_engine
+from src.core.cache.interfaces import Owner
 from src.models.cache_entry import CacheEntry
 from src.utils.logger import logger
 
@@ -83,7 +84,15 @@ class SQLCache:
             logger.warning(f"Could not read the cache: {e}")
             return None
 
-    def set(self, namespace: str, key: str, value: str, *, ttl: int = 0) -> None:
+    def set(
+        self,
+        namespace: str,
+        key: str,
+        value: str,
+        *,
+        ttl: int = 0,
+        scope: Optional[Owner] = None,
+    ) -> None:
         if ttl <= 0:
             return
         try:
@@ -97,6 +106,8 @@ class SQLCache:
                     "value": value,
                     "expires_at": now + timedelta(seconds=ttl),
                     "updated_at": now,
+                    "scope_type": scope.type if scope else None,
+                    "scope_id": scope.id if scope else None,
                 }
                 written = connection.execute(
                     sa.update(_table())
@@ -110,6 +121,25 @@ class SQLCache:
                 )
         except Exception as e:
             logger.warning(f"Could not write the cache: {e}")
+
+    def clear(self, namespace: str, scope: Optional[Owner] = None) -> int:
+        try:
+            engine = get_engine()
+            if engine is None:
+                return 0
+            self._ready(engine)
+            where = _table().c.namespace == namespace
+            if scope is not None:
+                where = sa.and_(
+                    where,
+                    _table().c.scope_type == scope.type,
+                    _table().c.scope_id == scope.id,
+                )
+            with engine.begin() as connection:
+                return connection.execute(sa.delete(_table()).where(where)).rowcount
+        except Exception as e:
+            logger.warning(f"Could not clear the cache: {e}")
+            return 0
 
     def forget(self, namespace: str, key: str) -> None:
         try:

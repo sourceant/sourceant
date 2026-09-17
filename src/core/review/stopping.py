@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.config.settings import whole_number
-from src.core.cache import cache, keyed
+from src.core.cache import Owner, cache, keyed
 from src.utils.logger import logger
 
 NAMESPACE = "review.abandoned"
@@ -21,7 +21,13 @@ def abandon(repository: str, number: int) -> None:
     if not repository or not number:
         return
     try:
-        cache().set(NAMESPACE, _key(repository, number), "abandoned", ttl=KEPT_FOR)
+        cache().set(
+            NAMESPACE,
+            _key(repository, number),
+            "abandoned",
+            ttl=KEPT_FOR,
+            scope=Owner("repository", repository),
+        )
     except Exception:  # noqa: BLE001
         logger.warning("Could not abandon %s#%s", repository, number, exc_info=True)
 
@@ -41,7 +47,13 @@ def supersede(repository: str, number: int, revision: str) -> None:
     if not repository or not number or not revision:
         return
     try:
-        cache().set(CURRENT, _key(repository, number), revision, ttl=KEPT_FOR)
+        cache().set(
+            CURRENT,
+            _key(repository, number),
+            revision,
+            ttl=KEPT_FOR,
+            scope=Owner("repository", repository),
+        )
     except Exception:  # noqa: BLE001
         logger.warning("Could not supersede %s#%s", repository, number, exc_info=True)
 
