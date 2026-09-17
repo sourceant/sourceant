@@ -1,0 +1,32 @@
+{
+  "id": "0c4c181d-5708-455f-98bb-183ee215c9df",
+  "created": 1789642764,
+  "model": "deepseek-flash",
+  "object": "chat.completion",
+  "system_fingerprint": "aeb56401ca74e127821c4f9126dcb669",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "The project name is **Orchard**.\n\n(I read `README.md` exactly once, using only the `read_file` tool \u2014 the file's heading is `# Orchard`, described as \"A small test project.\")",
+        "role": "assistant",
+        "reasoning_content": "The project name is \"Orchard\". I called read_file exactly once. No other tools. State the project name."
+      },
+      "provider_specific_fields": {}
+    }
+  ],
+  "usage": {
+    "completion_tokens": 70,
+    "prompt_tokens": 396,
+    "total_tokens": 466,
+    "completion_tokens_details": {
+      "reasoning_tokens": 24
+    },
+    "prompt_tokens_details": {
+      "cached_tokens": 256
+    },
+    "prompt_cache_hit_tokens": 256,
+    "prompt_cache_miss_tokens": 140
+  }
+}

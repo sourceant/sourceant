@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 
+from src.llms.messages import assistant_message
+
 from src.core.search import SearchQuery
 from src.utils.logger import logger
 
@@ -182,6 +184,7 @@ class WhatToLookFor:
                 return tuple(done)
             calls = answer.get("tool_calls") or ()
             if not calls:
+                messages.append(assistant_message(answer))
                 left = [
                     name
                     for name in repositories
@@ -208,23 +211,7 @@ class WhatToLookFor:
                     }
                 )
                 continue
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": answer.get("content") or "",
-                    "tool_calls": [
-                        {
-                            "id": call["id"],
-                            "type": "function",
-                            "function": {
-                                "name": call["name"],
-                                "arguments": call["arguments"],
-                            },
-                        }
-                        for call in calls
-                    ],
-                }
-            )
+            messages.append(assistant_message(answer))
             for call in calls:
                 found = self._run(call, repositories, len(done))
                 done.append(found)

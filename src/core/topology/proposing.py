@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping, Optional, Sequence
 
 from src.core.topology.models import TopologyEvidence, TopologyRelationship
+from src.llms.messages import assistant_message
 from src.utils.logger import logger
 
 READ_FILE = "read_file"
@@ -329,7 +330,7 @@ class WhatItReads:
             if not calls:
                 done = True
                 break
-            messages.append(_said(answer, calls))
+            messages.append(assistant_message(answer))
             for call in calls:
                 spoken, proposed = self._run(call, targets, reads)
                 if proposed is not None:
@@ -469,21 +470,3 @@ def _numbered(contents: str, most: int = 400) -> list[str]:
         f"{number}: {line}"
         for number, line in enumerate(contents.splitlines()[:most], start=1)
     ]
-
-
-def _said(answer, calls) -> dict:
-    return {
-        "role": "assistant",
-        "content": answer.get("content") or "",
-        "tool_calls": [
-            {
-                "id": call["id"],
-                "type": "function",
-                "function": {
-                    "name": call["name"],
-                    "arguments": call["arguments"],
-                },
-            }
-            for call in calls
-        ],
-    }
