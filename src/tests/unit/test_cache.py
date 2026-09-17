@@ -297,20 +297,29 @@ class TestKeepingASearchRound:
 
     @staticmethod
     def _round(name="search_code", arguments='{"terms": ["cache"]}'):
-        from types import SimpleNamespace
+        from litellm import ModelResponse
 
-        call = SimpleNamespace(
-            id="call_1",
-            function=SimpleNamespace(name=name, arguments=arguments),
-        )
-        return SimpleNamespace(
+        return ModelResponse(
             choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content="looking", tool_calls=[call])
-                )
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "looking",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": name, "arguments": arguments},
+                            }
+                        ],
+                    }
+                }
             ],
-            usage=SimpleNamespace(prompt_tokens=5000, completion_tokens=40),
-            _hidden_params={},
+            usage={
+                "prompt_tokens": 5000,
+                "completion_tokens": 40,
+                "total_tokens": 5040,
+            },
         )
 
     def _model(self):

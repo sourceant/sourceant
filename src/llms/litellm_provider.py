@@ -78,6 +78,7 @@ class LiteLLMProvider(LLMInterface):
         # nowhere after it, so it is carried rather than looked up again.
         self._attribution = attribution or {}
         self._schema_refused = False
+        self._tool_choice_refused = False
 
     def _spent(self, response, purpose: str) -> None:
         """Keep what the provider says the call consumed.
@@ -564,19 +565,63 @@ class LiteLLMProvider(LLMInterface):
         reads the code as it is now rather than as it was.
         """
 
+        try:
+            params = litellm.get_supported_openai_params(model=self.model)
+        except Exception:
+            params = None
+        choice_supported = params is None or "tool_choice" in params
+        try:
+            info = litellm.get_model_info(self.model)
+        except Exception:
+            info = {}
+        choice_supported = (
+            choice_supported and info.get("supports_tool_choice") is not False
+        )
+
         def ask() -> str:
-            response = litellm.completion(
-                **self._credentials(),
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                tool_choice="required" if require else "auto",
-            )
+            options = {}
+            if choice_supported and not self._tool_choice_refused:
+                options["tool_choice"] = "required" if require else "auto"
+            try:
+                response = litellm.completion(
+                    **self._credentials(),
+                    model=self.model,
+                    messages=messages,
+                    tools=tools,
+                    **options,
+                )
+            except BadRequestError as error:
+                said = str(error).lower()
+                if not options or not (
+                    "tool_choice" in said
+                    and any(
+                        word in said
+                        for word in (
+                            "does not support",
+                            "not supported",
+                            "unsupported",
+                            "incompatible",
+                        )
+                    )
+                ):
+                    raise
+                self._tool_choice_refused = True
+                response = litellm.completion(
+                    **self._credentials(),
+                    model=self.model,
+                    messages=messages,
+                    tools=tools,
+                )
             self._spent(response, purpose)
             answered = response.choices[0].message
+            if require and not answered.tool_calls:
+                raise LLMError("The model did not make the required tool call")
+            message = answered.model_dump(exclude_none=True)
+            message["content"] = answered.content or ""
             return json.dumps(
                 {
                     "content": answered.content or "",
+                    "assistant_message": message,
                     "tool_calls": [
                         {
                             "id": call.id,
@@ -588,10 +633,13 @@ class LiteLLMProvider(LLMInterface):
                 }
             )
 
-        # The tools and whether one was compulsory decide the answer as much
-        # as the conversation does, so all three name the round.
         question = json.dumps(
-            {"messages": messages, "tools": tools, "require": require},
+            {
+                "messages": messages,
+                "tools": tools,
+                "require": require,
+                "conversation_version": 2,
+            },
             sort_keys=True,
             default=str,
         )
