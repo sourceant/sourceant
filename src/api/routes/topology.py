@@ -592,7 +592,11 @@ async def read_connections(
     # Named with the workspace as well as the repository, so what a reading
     # costs is answerable to whoever asked for it.
     provider = provider_for(
-        Configuration(repository=payload.repository, workspace=scope.get("workspace"))
+        Configuration(
+            repository=payload.repository,
+            workspace=scope.get("workspace"),
+            user=str(user["user_id"]),
+        )
     )
     if provider is None:
         raise HTTPException(400, "No model is configured to read with")
@@ -713,7 +717,9 @@ async def discover_connections(
     # so a deployment with no usable model says so once.
     provider = provider_for(
         Configuration(
-            repository=payload.assets[0].repository, workspace=scope.get("workspace")
+            repository=payload.assets[0].repository,
+            workspace=scope.get("workspace"),
+            user=str(user["user_id"]),
         )
     )
     if provider is None:
@@ -741,6 +747,7 @@ async def discover_connections(
         },
         persist=payload.persist,
         refresh=payload.refresh,
+        user=str(user["user_id"]),
     )
     # The response builds its own, so the route's declared status is not what
     # a caller sees unless it is said here too.

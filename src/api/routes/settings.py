@@ -22,8 +22,9 @@ from src.core.settings import (
     WORKSPACE,
     Resolved,
     clear_value,
+    clear_provider,
     for_scope,
-    resolve_all,
+    resolve,
     set_value,
 )
 
@@ -78,14 +79,10 @@ def _authorize_user_scope(scope: Scope, scope_id: str, user: dict) -> None:
         )
 
 
-def _resolved_at(scope: Scope, scope_id: str) -> tuple[Resolved, ...]:
-    if scope == USER:
-        return resolve_all(user=scope_id)
-    if scope == REPOSITORY:
-        return resolve_all(repository=scope_id)
-    if scope == WORKSPACE:
-        return resolve_all(workspace=scope_id)
-    return resolve_all(organization=scope_id)
+def _resolved_at(scope: Scope, scope_id: str, user_id: str) -> tuple[Resolved, ...]:
+    context = {scope: scope_id}
+    context.setdefault("user", user_id)
+    return tuple(resolve(setting.key, **context) for setting in for_scope(scope))
 
 
 def _described(resolved: Resolved) -> dict:
@@ -113,6 +110,17 @@ def _described(resolved: Resolved) -> dict:
         "choices": list(setting.choices) if setting else [],
         "group": setting.group if setting else "General",
     }
+
+
+def _described_at(resolved: Resolved, scope: Scope, scope_id: str) -> dict:
+    from src.models.config import Config
+
+    result = _described(resolved)
+    stored = Config.get_value(scope, scope_id, resolved.key)
+    result["stored_here"] = stored is not None
+    result["stored_value"] = None if result["secret"] else stored
+    result["stored_is_set"] = bool(stored) if result["secret"] else None
+    return result
 
 
 # Both of these wait on something outside this process, and neither awaits it.
@@ -159,8 +167,8 @@ async def read_settings(
 ):
     """Every setting that applies here, resolved, with where each came from."""
     _authorize_user_scope(scope, scope_id, user)
-    resolved = _resolved_at(scope, scope_id)
-    return success_response([_described(item) for item in resolved])
+    resolved = _resolved_at(scope, scope_id, str(user["user_id"]))
+    return success_response([_described_at(item, scope, scope_id) for item in resolved])
 
 
 @router.put("/{scope}/{scope_id:path}/{key}")
@@ -191,12 +199,17 @@ async def reset_setting(
 ):
     """Stop setting this here, so it goes back to whatever it inherits."""
     _authorize_user_scope(scope, scope_id, user)
+    if key not in {setting.key for setting in for_scope(scope)}:
+        raise HTTPException(status_code=404, detail=f"Unknown setting: {key}")
     try:
-        clear_value(scope, scope_id, key)
+        if key in ("model.name", "model.api_key"):
+            clear_provider(scope, scope_id)
+        else:
+            clear_value(scope, scope_id, key)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown setting: {key}")
 
-    resolved = _resolved_at(scope, scope_id)
+    resolved = _resolved_at(scope, scope_id, str(user["user_id"]))
     current = next((item for item in resolved if item.key == key), None)
     if current is None:
         raise HTTPException(status_code=404, detail=f"Unknown setting: {key}")

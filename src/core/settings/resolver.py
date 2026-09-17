@@ -76,6 +76,55 @@ def resolve(
     """Resolve one setting: the work's own scopes first, then the person's."""
     setting = get(key)
 
+    if key in ("model.api_key", "model.base_url"):
+        context = dict(
+            repository=repository,
+            organization=organization,
+            user=user,
+            workspace=workspace,
+        )
+        model = resolve("model.name", **context)
+        if key == "model.base_url":
+            credential = resolve("model.api_key", **context)
+            source = credential.source if credential.value else model.source
+            identifier = credential.source_id if credential.value else model.source_id
+            value = _stored(setting, source, identifier) if identifier else None
+            return Resolved(
+                key,
+                value if value is not None else setting.default,
+                source if value is not None else "default",
+                identifier if value is not None else None,
+                setting,
+            )
+        holder = (
+            (workspace_holding(repository) if repository else None)
+            if workspace is UNSTATED
+            else workspace
+        )
+        for source, identifier in ((WORKSPACE, holder), (USER, user)):
+            if not identifier:
+                continue
+            configured = _stored(get("model.name"), source, identifier)
+            if not configured or not model.value:
+                continue
+            if configured != model.value:
+                from litellm import get_llm_provider
+
+                try:
+                    configured_provider = get_llm_provider(configured)[1]
+                    model_provider = get_llm_provider(model.value)[1]
+                except Exception:
+                    logger.warning(
+                        "Could not identify providers when resolving model.api_key"
+                    )
+                    continue
+                if configured_provider != model_provider:
+                    continue
+            value = _stored(setting, source, identifier)
+            if value is not None:
+                return Resolved(key, value, source, identifier, setting)
+        return Resolved(key, setting.default, "default", None, setting)
+
     if repository:
         value = _stored(setting, REPOSITORY, repository)
         if value is not None:
@@ -149,3 +198,12 @@ def clear_value(scope: str, scope_id: str, key: str) -> None:
     """Remove a value so the scope goes back to inheriting."""
     setting = get(key)
     Config.delete_value(scope, scope_id, setting.key)
+
+
+def clear_provider(scope: str, scope_id: str) -> None:
+    keys = {"model.name", "model.api_key", "model.base_url"}
+    Config.delete_values(
+        scope,
+        scope_id,
+        tuple(setting.key for setting in for_scope(scope) if setting.key in keys),
+    )

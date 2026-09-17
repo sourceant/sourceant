@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.api.routes.code import require_local
-from src.api.routes.settings import _described
+from src.api.routes.settings import _described, _described_at
 from src.core.environment import LOCAL, environment
 from src.core.model import SettingsLLMSource
 from src.core.settings.configuration import Configuration
@@ -47,9 +47,13 @@ def read_local_settings():
     A credential answers whether it is set rather than what it is. See
     ``settings.py``.
     """
-    return success_response(
-        [_described(resolved) for resolved in resolve_all(user=LOCAL)]
-    )
+    settings = [
+        _described_at(resolved, USER, LOCAL) for resolved in resolve_all(user=LOCAL)
+    ]
+    for setting in settings:
+        if setting["secret"]:
+            setting["is_set"] = setting["stored_is_set"]
+    return success_response(settings)
 
 
 class ValueInput(BaseModel):

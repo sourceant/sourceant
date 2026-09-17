@@ -115,6 +115,7 @@ def reading_job(
     revision: str = "",
     persist: bool = True,
     batch_id: Optional[int] = None,
+    user: Optional[str] = None,
 ) -> JobRequest:
     """The pass that reads one repository's code for what it declares nowhere.
 
@@ -130,6 +131,7 @@ def reading_job(
             "targets": list(targets)[:MOST_TARGETS],
             "about": about,
             "revision": revision,
+            "user": user,
             "workspace": workspace,
             "system_id": system_id,
             "persist": persist,
@@ -361,7 +363,11 @@ class Readings:
         # Attributed to the workspace as well as the repository, so what a
         # discovery costs is answerable to whoever asked for it.
         provider = provider_for(
-            Configuration(repository=name, workspace=workspace or None)
+            Configuration(
+                repository=name,
+                workspace=workspace or None,
+                user=job.payload.get("user"),
+            )
         )
         if provider is None:
             return JobOutcome.failed("no model is configured to read with")
@@ -434,6 +440,7 @@ def discover(
     about: Mapping[str, str],
     persist: bool = True,
     refresh: bool = False,
+    user: Optional[str] = None,
     services: ServiceRegistry = service_registry,
 ) -> dict:
     """Ask for a discovery, and answer with what was asked for.
@@ -506,6 +513,7 @@ def discover(
                 revision=revisions.get(asset["repository"], ""),
                 persist=persist,
                 batch_id=batch.id,
+                user=user,
             ),
             services=services,
         )

@@ -12,6 +12,7 @@ from .definitions import (
 )
 from .resolver import (
     clear_value,
+    clear_provider,
     organization_of,
     resolve,
     resolve_all,
@@ -29,6 +30,7 @@ __all__ = [
     "Resolved",
     "Setting",
     "clear_value",
+    "clear_provider",
     "for_scope",
     "get",
     "organization_of",

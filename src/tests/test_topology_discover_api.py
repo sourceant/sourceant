@@ -131,6 +131,7 @@ class TestAskingForADiscovery(BaseTestCase):
         queued = job_store().in_batch(asked["batch_id"])
         assert [job.kind for job in queued] == [MANIFESTS, READING, READING]
         assert all(job.tenant == self.workspace_id for job in queued)
+        assert all(job.payload["user"] == "1" for job in queued if job.kind == READING)
 
     def test_a_discovery_says_how_far_it_has_got(self):
         self.both()
@@ -224,8 +225,10 @@ class TestAskingForADiscovery(BaseTestCase):
                 return (proposal,)
 
         monkeypatch.setattr("src.core.topology.proposing.WhatItReads", Reading)
+        configurations = []
         monkeypatch.setattr(
-            "src.core.model.provider_for", lambda configuration: Model()
+            "src.core.model.provider_for",
+            lambda configuration: configurations.append(configuration) or Model(),
         )
         monkeypatch.setattr(
             "src.core.topology.store.topology_repository",
@@ -245,6 +248,7 @@ class TestAskingForADiscovery(BaseTestCase):
         )
 
         assert Readings().run(job).succeeded
+        assert configurations[0].user == "1"
 
         response = self.client.post(
             "/api/topology/search", json={}, headers=self.headers
