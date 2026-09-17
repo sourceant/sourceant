@@ -178,11 +178,16 @@ def test_workspace_fallback_does_not_use_another_users_key(settings_client):
     assert settings["model.name"]["value"] == ""
 
 
-def test_workspace_model_never_inherits_a_different_providers_key(settings_client):
+@pytest.mark.parametrize(
+    "workspace_model", ("gemini/gemini-3.5-flash", "unknown-provider/model")
+)
+def test_workspace_model_never_inherits_a_different_providers_key(
+    settings_client, workspace_model
+):
     for scope, identifier, key, value in (
         ("user", "42", "model.name", "deepseek/deepseek-v4-flash"),
         ("user", "42", "model.api_key", "your-api-key-here"),
-        ("workspace", "workspace-1", "model.name", "gemini/gemini-3.5-flash"),
+        ("workspace", "workspace-1", "model.name", workspace_model),
     ):
         assert (
             settings_client.put(
@@ -196,7 +201,7 @@ def test_workspace_model_never_inherits_a_different_providers_key(settings_clien
         "/api/settings/workspace/workspace-1", headers=_headers()
     )
     settings = {one["key"]: one for one in response.json()["data"]}
-    assert settings["model.name"]["value"] == "gemini/gemini-3.5-flash"
+    assert settings["model.name"]["value"] == workspace_model
     assert settings["model.api_key"]["is_set"] is False
 
 
@@ -276,6 +281,47 @@ def test_invalid_repository_key_deletion_preserves_model(settings_client):
     response = settings_client.get(path, headers=_headers())
     model = next(one for one in response.json()["data"] if one["key"] == "model.name")
     assert model["stored_value"] == "openai/gpt-4o"
+
+
+def test_repository_provider_deletion_only_clears_repository_settings(settings_client):
+    for scope, identifier, values in (
+        (
+            "user",
+            "42",
+            {"model.name": "openai/gpt-4o", "model.api_key": "your-api-key-here"},
+        ),
+        (
+            "repository",
+            "acme/web",
+            {
+                "model.name": "openai/gpt-4o-mini",
+                "model.base_url": "https://example.com",
+            },
+        ),
+    ):
+        for key, value in values.items():
+            assert (
+                settings_client.put(
+                    f"/api/settings/{scope}/{identifier}/{key}",
+                    headers=_headers(),
+                    json={"value": value},
+                ).status_code
+                == 200
+            )
+    deleted = settings_client.delete(
+        "/api/settings/repository/acme/web/model.name", headers=_headers()
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["data"]["value"] == "openai/gpt-4o"
+    response = settings_client.get(
+        "/api/settings/repository/acme/web", headers=_headers()
+    )
+    settings = {one["key"]: one for one in response.json()["data"]}
+    assert settings["model.name"]["stored_here"] is False
+    assert settings["model.base_url"]["stored_here"] is False
+    personal = settings_client.get("/api/settings/user/42", headers=_headers())
+    key = next(one for one in personal.json()["data"] if one["key"] == "model.api_key")
+    assert key["stored_is_set"] is True
 
 
 def test_turning_reviews_off_is_offered_where_it_can_be_set(settings_client):

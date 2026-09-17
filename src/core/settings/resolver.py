@@ -111,12 +111,14 @@ def resolve(
                 from litellm import get_llm_provider
 
                 try:
-                    if (
-                        get_llm_provider(configured)[1]
-                        != get_llm_provider(model.value)[1]
-                    ):
-                        continue
+                    configured_provider = get_llm_provider(configured)[1]
+                    model_provider = get_llm_provider(model.value)[1]
                 except Exception:
+                    logger.warning(
+                        "Could not identify providers when resolving model.api_key"
+                    )
+                    continue
+                if configured_provider != model_provider:
                     continue
             value = _stored(setting, source, identifier)
             if value is not None:
@@ -198,5 +200,10 @@ def clear_value(scope: str, scope_id: str, key: str) -> None:
     Config.delete_value(scope, scope_id, setting.key)
 
 
-def clear_values(scope: str, scope_id: str, keys: tuple[str, ...]) -> None:
-    Config.delete_values(scope, scope_id, tuple(get(key).key for key in keys))
+def clear_provider(scope: str, scope_id: str) -> None:
+    keys = {"model.name", "model.api_key", "model.base_url"}
+    Config.delete_values(
+        scope,
+        scope_id,
+        tuple(setting.key for setting in for_scope(scope) if setting.key in keys),
+    )
