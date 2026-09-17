@@ -13,6 +13,6 @@ def assistant_message(answer: dict) -> dict:
                     "arguments": call["arguments"],
                 },
             }
-            for call in answer.get("tool_calls", ())
+            for call in answer.get("tool_calls") or ()
         ],
     }

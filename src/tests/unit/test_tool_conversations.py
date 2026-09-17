@@ -1,3 +1,5 @@
+import pytest
+
 from src.core.review_search import WhatToLookFor
 from src.core.topology.proposing import WhatItReads
 from src.llms.messages import assistant_message
@@ -53,8 +55,16 @@ def test_review_search_carries_the_full_assistant_message_to_the_next_round():
     assert model.followup[2]["role"] == "tool"
 
 
-def test_plugins_without_an_assistant_message_keep_the_existing_contract():
-    assert assistant_message({"content": "done", "tool_calls": []}) == {
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"content": "done"},
+        {"content": "done", "tool_calls": []},
+        {"content": "done", "tool_calls": None},
+    ],
+)
+def test_plugins_without_an_assistant_message_keep_the_existing_contract(answer):
+    assert assistant_message(answer) == {
         "role": "assistant",
         "content": "done",
         "tool_calls": [],
