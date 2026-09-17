@@ -22,6 +22,7 @@ from src.core.settings import (
     WORKSPACE,
     Resolved,
     clear_value,
+    clear_values,
     for_scope,
     resolve,
     set_value,
@@ -202,20 +203,9 @@ async def reset_setting(
         raise HTTPException(status_code=404, detail=f"Unknown setting: {key}")
     try:
         if key in ("model.name", "model.api_key"):
-            from sqlmodel import delete
-            from src.models.config import Config, get_session
-
-            with next(get_session()) as session:
-                session.exec(
-                    delete(Config).where(
-                        Config.configurable_type == scope,
-                        Config.configurable_id == scope_id,
-                        Config.key.in_(
-                            ("model.name", "model.api_key", "model.base_url")
-                        ),
-                    )
-                )
-                session.commit()
+            clear_values(
+                scope, scope_id, ("model.name", "model.api_key", "model.base_url")
+            )
         else:
             clear_value(scope, scope_id, key)
     except KeyError:

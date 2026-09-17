@@ -77,11 +77,15 @@ def resolve(
     setting = get(key)
 
     if key in ("model.api_key", "model.base_url"):
-        model = resolve("model.name", repository, organization, user, workspace)
+        context = dict(
+            repository=repository,
+            organization=organization,
+            user=user,
+            workspace=workspace,
+        )
+        model = resolve("model.name", **context)
         if key == "model.base_url":
-            credential = resolve(
-                "model.api_key", repository, organization, user, workspace
-            )
+            credential = resolve("model.api_key", **context)
             source = credential.source if credential.value else model.source
             identifier = credential.source_id if credential.value else model.source_id
             value = _stored(setting, source, identifier) if identifier else None
@@ -192,3 +196,7 @@ def clear_value(scope: str, scope_id: str, key: str) -> None:
     """Remove a value so the scope goes back to inheriting."""
     setting = get(key)
     Config.delete_value(scope, scope_id, setting.key)
+
+
+def clear_values(scope: str, scope_id: str, keys: tuple[str, ...]) -> None:
+    Config.delete_values(scope, scope_id, tuple(get(key).key for key in keys))

@@ -130,17 +130,24 @@ class Config(BaseModel, table=True):
         cls, configurable_type: str, configurable_id: str, key: str
     ) -> bool:
         """Remove a config entry so the entity falls back to what it inherits."""
+        return cls.delete_values(configurable_type, configurable_id, (key,))
+
+    @classmethod
+    def delete_values(
+        cls, configurable_type: str, configurable_id: str, keys: tuple[str, ...]
+    ) -> bool:
         with next(get_session()) as session:
-            entry = session.exec(
+            entries = session.exec(
                 select(cls).where(
                     cls.configurable_type == configurable_type,
                     cls.configurable_id == configurable_id,
-                    cls.key == key,
+                    cls.key.in_(keys),
                 )
-            ).first()
-            if entry is None:
+            ).all()
+            if not entries:
                 return False
-            session.delete(entry)
+            for entry in entries:
+                session.delete(entry)
             session.commit()
         return True
 
