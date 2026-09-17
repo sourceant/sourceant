@@ -76,6 +76,49 @@ def resolve(
     """Resolve one setting: the work's own scopes first, then the person's."""
     setting = get(key)
 
+    if key in ("model.api_key", "model.base_url"):
+        model = resolve("model.name", repository, organization, user, workspace)
+        if key == "model.base_url":
+            credential = resolve(
+                "model.api_key", repository, organization, user, workspace
+            )
+            source = credential.source if credential.value else model.source
+            identifier = credential.source_id if credential.value else model.source_id
+            value = _stored(setting, source, identifier) if identifier else None
+            return Resolved(
+                key,
+                value if value is not None else setting.default,
+                source if value is not None else "default",
+                identifier if value is not None else None,
+                setting,
+            )
+        holder = (
+            (workspace_holding(repository) if repository else None)
+            if workspace is UNSTATED
+            else workspace
+        )
+        for source, identifier in ((WORKSPACE, holder), (USER, user)):
+            if not identifier:
+                continue
+            configured = _stored(get("model.name"), source, identifier)
+            if not configured or not model.value:
+                continue
+            if configured != model.value:
+                from litellm import get_llm_provider
+
+                try:
+                    if (
+                        get_llm_provider(configured)[1]
+                        != get_llm_provider(model.value)[1]
+                    ):
+                        continue
+                except Exception:
+                    continue
+            value = _stored(setting, source, identifier)
+            if value is not None:
+                return Resolved(key, value, source, identifier, setting)
+        return Resolved(key, setting.default, "default", None, setting)
+
     if repository:
         value = _stored(setting, REPOSITORY, repository)
         if value is not None:
