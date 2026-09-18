@@ -46,6 +46,35 @@ def test_the_models_offered_come_from_the_router_rather_than_a_list_here(client)
         assert entry["models"], f"{entry['provider']} offered nothing"
 
 
+def test_every_model_offered_carries_the_provider_that_routes_it(client):
+    """litellm prices models by name and routes them by prefix, and the two
+    disagree: a bare name resolves only for the few providers that predate the
+    prefix convention. Anything offered here is stored as model.name and handed
+    back to litellm, so it has to be the form that routes."""
+    answered = client.get("/api/settings/models", headers=_headers())
+
+    catalogue = answered.json()["data"]
+    for entry in catalogue:
+        for model in entry["models"]:
+            assert model.startswith(
+                f"{entry['provider']}/"
+            ), f"{entry['provider']} offered {model}, which names no provider"
+
+
+def test_a_model_listed_both_bare_and_prefixed_is_offered_once(client):
+    """Listed twice, the bare one sorts first and is the one that cannot be
+    routed, so the working entry is the one nobody reaches."""
+    answered = client.get("/api/settings/models", headers=_headers())
+
+    catalogue = answered.json()["data"]
+    deepseek = next(
+        (entry for entry in catalogue if entry["provider"] == "deepseek"), None
+    )
+    assert deepseek is not None
+    assert "deepseek-v4-flash" not in deepseek["models"]
+    assert "deepseek/deepseek-v4-flash" in deepseek["models"]
+
+
 def test_a_model_the_key_cannot_use_is_reported_before_it_is_saved(client):
     """A provider's catalogue says what exists. An account may use a subset, and
     the two only differ once somebody is already waiting on a scan."""
