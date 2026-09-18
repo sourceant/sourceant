@@ -36,6 +36,22 @@ PRIVATE_ENDPOINTS = os.getenv("LLM_ALLOW_PRIVATE_ENDPOINTS", "").lower() in (
 )
 
 
+def _routable(provider: str, model: str, offered_by: set[str]) -> Optional[str]:
+    """The name to offer for one model, or None when another entry covers it.
+
+    litellm's catalogue is priced by name, not routed by it: the same model is
+    listed both bare and prefixed, and only the prefixed form resolves for a
+    provider that predates the prefix convention. Dropping the bare name where
+    its prefixed twin exists leaves one entry per model rather than two that
+    look alike and behave differently.
+    """
+    if model.startswith(f"{provider}/"):
+        return model
+    if f"{provider}/{model}" in offered_by:
+        return None
+    return f"{provider}/{model}"
+
+
 @lru_cache(maxsize=1)
 def offered() -> list[dict]:
     """Every model litellm can route to, by provider.
@@ -47,12 +63,24 @@ def offered() -> list[dict]:
     litellm refreshes this from the network when it is imported and falls back
     to the copy it ships with otherwise, so a deployment with no outbound access
     offers an older list rather than none.
+
+    Only what answers a prompt is offered. The same catalogue prices image
+    generation, embeddings and transcription, and none of those can be asked to
+    propose anything.
     """
     import litellm
 
     catalogue = []
     for provider, models in litellm.models_by_provider.items():
-        named = sorted(models)
+        offered_by = set(models)
+        named = sorted(
+            {
+                routable
+                for model in models
+                if (litellm.model_cost.get(model) or {}).get("mode") == "chat"
+                and (routable := _routable(provider, model, offered_by))
+            }
+        )
         if named:
             catalogue.append({"provider": provider, "models": named})
     catalogue.sort(key=lambda entry: entry["provider"])
