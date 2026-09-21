@@ -137,6 +137,33 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.overview.show_minor_suggestions",
+        label="Show minor suggestions in overview",
+        description="Include minor suggestions in the overview when available.",
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=True,
+        group="Review",
+    ),
+    Setting(
+        key="review.overview.show_critical_findings",
+        label="Show critical findings in overview",
+        description="Include critical findings in the overview when available.",
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=True,
+        group="Review",
+    ),
+    Setting(
+        key="review.overview.show_regressions",
+        label="Show regressions in overview",
+        description="Include regressions in the overview when available.",
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=True,
+        group="Review",
+    ),
+    Setting(
         key="review.reuse_days",
         label="Reuse a review for",
         description=(

@@ -148,6 +148,9 @@ def deliver(
     delivery_id=None,
     force_fallback=False,
 ):
+    from src.core.settings.configuration import Configuration
+
+    configuration = configuration or Configuration(repository=repository.full_name)
     marker = delivery_id or marker_for(repository, pull_request, review)
     tag = f"<!-- SOURCEANT_REVIEW:{marker} -->"
     root = f"https://api.github.com/repos/{repository.owner}/{repository.name}"
@@ -215,7 +218,7 @@ def deliver(
                 repository.owner,
                 repository.name,
                 pull_request.number,
-                github._format_summary(review.summary),
+                github._format_summary(review.summary, configuration),
                 headers,
             )
         return {

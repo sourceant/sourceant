@@ -516,8 +516,14 @@ class GitHub(ProviderAdapter):
             logger.exception("Failed to create or update overview comment")
             raise
 
-    def _format_summary(self, summary: CodeReviewSummary) -> str:
+    def _format_summary(self, summary: CodeReviewSummary, configuration=None) -> str:
         """Formats the structured summary into a markdown string."""
+
+        def shown(section):
+            return configuration is None or configuration.value(
+                f"review.overview.show_{section}"
+            )
+
         parts = ["# Code Review Summary\n\n"]
         if summary.overview:
             parts.append(f"{summary.overview}\n\n")
@@ -528,17 +534,17 @@ class GitHub(ProviderAdapter):
                 parts.append(f"- {item}\n")
             parts.append("\n")
 
-        if summary.regressions:
+        if summary.regressions and shown("regressions"):
             parts.append("### 📉 Regressions\n")
             for item in summary.regressions:
                 parts.append(f"- {item}\n")
             parts.append("\n")
 
-        for heading, findings in (
-            ("Critical Issues", summary.critical_issues),
-            ("Minor Suggestions", summary.minor_suggestions),
+        for heading, section, findings in (
+            ("Critical Issues", "critical_findings", summary.critical_issues),
+            ("Minor Suggestions", "minor_suggestions", summary.minor_suggestions),
         ):
-            if findings:
+            if findings and shown(section):
                 parts.append(f"### {heading}\n")
                 parts.extend(f"- {finding}\n" for finding in findings)
                 parts.append("\n")
