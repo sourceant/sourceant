@@ -158,13 +158,13 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
         services.contribute(JobHandler, Deliveries(services), "sourceant_core")
         services.contribute(JobHandler, ReviewPosting(), "sourceant_core")
         worker = Worker(store, INTERACTIVE, services=services)
-        worker.work(max_jobs=1)
+        assert worker.work(max_jobs=1, max_time=15) == 1
         with engine.connect() as connection:
             queued = connection.execute(
                 select(job_table.c.id).where(job_table.c.kind == "review.post")
             ).first()
         if queued:
-            worker.work(max_jobs=1)
+            assert worker.work(max_jobs=1, max_time=15) == 1
     with engine.connect() as connection:
         job = (
             connection.execute(select(job_table).order_by(job_table.c.id.desc()))

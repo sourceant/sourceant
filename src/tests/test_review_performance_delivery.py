@@ -254,7 +254,7 @@ class WebhookDeliveryTests(unittest.TestCase):
             services.contribute(JobHandler, Deliveries(services), "test")
             services.contribute(JobHandler, ReviewPosting(), "test")
             worker = Worker(store, INTERACTIVE, services=services)
-            worker.work(max_jobs=1)
+            self.assertEqual(worker.work(max_jobs=1, max_time=15), 1)
             self.assertEqual(completion.call_count, 2 + expert_count)
             self.assertTrue(
                 all("create_requirement_tables.py" not in prompt for prompt in prompts)
@@ -279,7 +279,7 @@ class WebhookDeliveryTests(unittest.TestCase):
                 },
                 {"status": "partial_success", "message": "Review findings delivered"},
             ]
-            worker.work(max_jobs=1)
+            self.assertEqual(worker.work(max_jobs=1, max_time=15), 1)
             with engine.begin() as connection:
                 posting = (
                     connection.execute(
@@ -295,7 +295,7 @@ class WebhookDeliveryTests(unittest.TestCase):
                     .where(job_table.c.id == posting["id"])
                     .values(available_at=posting["created_at"])
                 )
-            worker.work(max_jobs=1)
+            self.assertEqual(worker.work(max_jobs=1, max_time=15), 1)
             self.assertEqual(completion.call_count, 2 + expert_count)
             self.assertTrue(github.post_review.call_args.kwargs["force_fallback"])
             with engine.connect() as connection:
