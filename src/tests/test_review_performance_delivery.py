@@ -44,7 +44,6 @@ from src.plugins.builtin.code_reviewer.plugin import CodeReviewerPlugin
 from src.utils.diff_parser import parse_diff
 from src.utils.line_mapper import LineMapper
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

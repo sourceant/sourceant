@@ -4,7 +4,6 @@ from threading import BoundedSemaphore, Lock
 
 from src.config.settings import whole_number
 
-
 MODEL_CONCURRENCY = whole_number("REVIEW_MODEL_CONCURRENCY", 6)
 model_slots = BoundedSemaphore(MODEL_CONCURRENCY)
 

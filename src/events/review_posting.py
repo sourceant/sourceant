@@ -12,7 +12,6 @@ from src.utils.diff_parser import parse_diff
 from src.utils.line_mapper import LineMapper
 from src.utils.review_record_service import save_review_record, get_last_reviewed_sha
 
-
 KIND = "review.post"
 
 
