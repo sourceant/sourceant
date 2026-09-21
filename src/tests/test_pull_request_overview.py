@@ -168,8 +168,8 @@ def test_http_preview_overview_reads_all_pr_changes(
         if include_nitpicks and finding.category == SuggestionCategory.CLARITY
     ]
     rendered = GitHub._format_summary(None, summary)
-    assert ("### Minor Suggestions" in rendered) == bool(summary.minor_suggestions)
-    assert ("### Critical Issues" in rendered) == bool(summary.critical_issues)
+    assert ("### 💡 Minor Suggestions" in rendered) == bool(summary.minor_suggestions)
+    assert ("### 🚨 Critical Issues" in rendered) == bool(summary.critical_issues)
     for finding in findings:
         assert (finding.comment in rendered) == (
             include_nitpicks or finding.category == SuggestionCategory.BUG

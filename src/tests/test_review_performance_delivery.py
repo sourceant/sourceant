@@ -92,6 +92,17 @@ class ReviewPerformanceTests(unittest.TestCase):
             self.assertEqual(parallel_map(reader, ["first.py"] * 8), ["first.py"] * 8)
         self.assertEqual(sorted(calls), ["first.py", "second.py"])
 
+    def test_failed_file_reads_can_be_retried(self):
+        failure = RuntimeError("Temporary read failure")
+        read = Mock(side_effect=[failure, "recovered source"])
+        reader = SharedReader(read)
+        with self.assertRaisesRegex(RuntimeError, "Temporary read failure"):
+            reader("a.py")
+        self.assertNotIn("a.py", reader.pending)
+        self.assertEqual(reader("a.py"), "recovered source")
+        self.assertEqual(reader("a.py"), "recovered source")
+        self.assertEqual(read.call_count, 2)
+
     def test_actual_github_failures_are_retryable(self):
         for captured in json.loads(
             (FIXTURES / "github/review-posting-errors.json").read_text()
@@ -318,6 +329,88 @@ class WebhookDeliveryTests(unittest.TestCase):
 
 
 class FindingsDeliveryTests(unittest.TestCase):
+    def test_authentication_request_failures_keep_retry_information(self):
+        captured = json.loads(
+            (FIXTURES / "github/review-posting-errors.json").read_text()
+        )[0]
+        response = requests.Response()
+        response.status_code = int(captured["status"])
+        response._content = json.dumps(captured).encode()
+        response.headers["Retry-After"] = "90"
+        for stage in ("installation", "token"):
+            for timed_out in (False, True):
+                with (
+                    self.subTest(stage=stage, timed_out=timed_out),
+                    patch.dict(
+                        "os.environ",
+                        {
+                            "GITHUB_APP_ID": "test-app",
+                            "GITHUB_APP_PRIVATE_KEY_PATH": "unused.pem",
+                            "GITHUB_APP_CLIENT_ID": "test-client",
+                        },
+                    ),
+                    ExitStack() as stack,
+                ):
+                    github = GitHub()
+                    stack.enter_context(
+                        patch.object(github, "generate_jwt", return_value="placeholder")
+                    )
+                    if stage == "token":
+                        stack.enter_context(
+                            patch.object(github, "get_installation_id", return_value=1)
+                        )
+                    call = stack.enter_context(
+                        patch(
+                            (
+                                "requests.get"
+                                if stage == "installation"
+                                else "requests.post"
+                            ),
+                            side_effect=(
+                                requests.Timeout("Temporary timeout")
+                                if timed_out
+                                else None
+                            ),
+                            return_value=response,
+                        )
+                    )
+                    result = github.post_review(
+                        Repository(owner="sourceant", name="sourceant"),
+                        PullRequest(number=189, head_sha="head"),
+                        CodeReview(verdict=Verdict.COMMENT, code_suggestions=[]),
+                        LineMapper([]),
+                    )
+                    self.assertEqual(result["status"], "pending")
+                    self.assertEqual(result["retry_after"], 60 if timed_out else 90)
+                    self.assertEqual(call.call_count, 1)
+
+    def test_invalid_authentication_configuration_is_not_retried(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "GITHUB_APP_ID": "test-app",
+                "GITHUB_APP_PRIVATE_KEY_PATH": "unused.pem",
+                "GITHUB_APP_CLIENT_ID": "test-client",
+            },
+        ):
+            github = GitHub()
+        with (
+            patch.object(
+                github, "generate_jwt", side_effect=ValueError("Invalid private key")
+            ),
+            patch("requests.post") as send,
+        ):
+            result = github.post_review(
+                Repository(owner="sourceant", name="sourceant"),
+                PullRequest(number=189, head_sha="head"),
+                CodeReview(verdict=Verdict.COMMENT, code_suggestions=[]),
+                LineMapper([]),
+            )
+            self.assertEqual(
+                result, {"status": "error", "message": "Invalid private key"}
+            )
+            send.assert_not_called()
+
     def test_unanchored_findings_are_posted_in_a_native_review_body(self):
         finding = CodeSuggestion.model_validate(
             json.loads((FIXTURES / "github/local-review-praise.json").read_text())[1]

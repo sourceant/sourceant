@@ -16,9 +16,9 @@ from src.models.config import Config
 @pytest.mark.parametrize(
     "section,heading",
     [
-        ("minor_suggestions", "Minor Suggestions"),
-        ("critical_findings", "Critical Issues"),
-        ("regressions", "Regressions"),
+        ("minor_suggestions", "### 💡 Minor Suggestions"),
+        ("critical_findings", "### 🚨 Critical Issues"),
+        ("regressions", "### 📉 Regressions"),
     ],
 )
 def test_overview_visibility_is_configurable_through_http(tmp_path, section, heading):
@@ -61,7 +61,11 @@ def test_overview_visibility_is_configurable_through_http(tmp_path, section, hea
             assert "Key Improvements" in rendered
             assert all(
                 other in rendered
-                for other in ("Minor Suggestions", "Critical Issues", "Regressions")
+                for other in (
+                    "### 💡 Minor Suggestions",
+                    "### 🚨 Critical Issues",
+                    "### 📉 Regressions",
+                )
                 if other != heading
             )
             response = client.delete(f"/api/settings/workspace/one/{key}")

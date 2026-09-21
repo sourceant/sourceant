@@ -31,9 +31,9 @@ Under Review settings, `review.overview.show_minor_suggestions`, `review.overvie
 
 Every suggestion is classified as one of `REFACTOR`, `STYLE`, `PERFORMANCE`, `BUG`, `SECURITY`, `CLARITY`, `DOCUMENTATION`, or `IMPROVEMENT`.
 
-A native review is attempted first. Findings without a valid inline location are included in its body. If GitHub rejects the inline payload, posting retries as a native review with every finding in its body. Only if that review is also rejected does a separate findings comment explain the failure and include file links. This fallback does not submit an approval or a changes-requested review. Large findings sets are split across numbered comments. Retries resume the same delivery and reuse comments already posted for it; a later review gets its own findings comment.
+A native review is attempted first. Findings without a valid inline location are included in its body. If GitHub rejects the inline payload with a non-rate-limit 422 response, posting retries as a native review with every finding in its body. Only if that review also receives a non-rate-limit 422 response does a separate findings comment explain the failure and include file links. This fallback does not submit an approval or a changes-requested review. Large findings sets are split across numbered comments. Retries resume the same delivery and reuse comments already posted for it; a later review gets its own findings comment.
 
-With the database queue, generation and posting are separate jobs. Rate limits delay posting with increasing waits; they do not rerun the model. A review is recorded as completed only after its findings and overview have been delivered. A failed posting job remains visible in the job queue.
+With the database queue, generation and posting are separate jobs. Rate limits delay posting with increasing waits; they do not rerun the model. A review is recorded as completed only after its findings and overview have been delivered. A failed posting job remains visible in the job queue. Outside database mode, transient posting failures retry the same generated review up to three attempts, respecting GitHub’s retry delay and increasing waits. Permanent failures stop immediately.
 
 ### What is filtered before posting
 

@@ -181,14 +181,6 @@ The diff below uses a decoupled format where removed and added code are shown in
     harder to change, weaker in a case that used to work, or a capability that
     is gone.
 
-    Always return all three schema fields: `overview`, `key_improvements`, and
-    `regressions`. Keep the overview to at most three sentences and 75 words.
-    Use at most three bullets per list, each at most 20 words. Group related
-    changes instead of listing files or functions. Preserve the main changes
-    across all supplied parts without repeating them in multiple fields.
-    State behavior and consequences directly. Omit praise, introductory filler,
-    review-process narration, headings inside fields, and implementation walkthroughs.
-
     The content within these fields should be formatted using **GitHub-flavored Markdown**.
 
     The current change context below is authoritative. It contains either the full

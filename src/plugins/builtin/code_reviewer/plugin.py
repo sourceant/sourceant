@@ -5,9 +5,11 @@ Subscribes to pull request events and generates automated code reviews.
 """
 
 import difflib
+import time
 from concurrent.futures import ThreadPoolExecutor
 from src.core.parallel import SharedReader, submit
 from src.core.review.exclusions import review_diff
+from src.core.review.stopping import abandoned
 import re
 from typing import Dict, Any, Optional, List
 
@@ -785,13 +787,22 @@ class CodeReviewerPlugin(BasePlugin):
                         "message": "Review generated; delivery queued",
                         "posting_job_id": job_id,
                     }
-                post_result = github.post_review(
-                    repository=repository,
-                    pull_request=pull_request,
-                    code_review=final_review,
-                    line_mapper=line_mapper,
-                    configuration=configuration,
-                )
+                for attempt in range(3):
+                    if abandoned(repo_full_name, pull_request.number, revision):
+                        return {
+                            "status": "skipped",
+                            "message": "Review no longer wanted",
+                        }
+                    post_result = github.post_review(
+                        repository=repository,
+                        pull_request=pull_request,
+                        code_review=final_review,
+                        line_mapper=line_mapper,
+                        configuration=configuration,
+                    )
+                    if post_result.get("status") != "pending" or attempt == 2:
+                        break
+                    time.sleep(max(post_result.get("retry_after", 60), 60 * 2**attempt))
                 if post_result.get("status") in ("error", "pending"):
                     return {
                         "status": "error",

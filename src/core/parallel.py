@@ -37,5 +37,7 @@ class SharedReader:
             try:
                 future.set_result(self.read(path))
             except BaseException as error:
+                with self.lock:
+                    self.pending.pop(path, None)
                 future.set_exception(error)
         return future.result()

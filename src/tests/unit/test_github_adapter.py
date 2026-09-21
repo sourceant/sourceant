@@ -520,6 +520,9 @@ def test_post_review_uses_line_side_and_commit_id(
         assert review_call is not None
         payload = review_call[1]["json"]
         assert payload["commit_id"] == "abc123"
+        assert payload["body"].startswith(
+            "Review complete. See the overview comment for a summary.\n\n"
+        )
         comment = payload["comments"][0]
         assert "line" in comment
         assert "side" in comment

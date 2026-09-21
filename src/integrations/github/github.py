@@ -93,7 +93,7 @@ class GitHub(ProviderAdapter):
             if hasattr(e, "response") and e.response is not None:
                 error_msg += f" - Response: {e.response.text}"
             logger.error(error_msg)
-            raise ValueError(error_msg)
+            raise
 
     def get_installation_access_token(self, owner: str, repo: str) -> str:
         """Get an installation access token for a repository, with caching."""
@@ -156,7 +156,7 @@ class GitHub(ProviderAdapter):
             if hasattr(e, "response") and e.response is not None:
                 error_msg += f" - Response: {e.response.text}"
             logger.error(error_msg)
-            raise ValueError(error_msg)
+            raise
 
     def download_repository_archive(
         self,
@@ -541,8 +541,8 @@ class GitHub(ProviderAdapter):
             parts.append("\n")
 
         for heading, section, findings in (
-            ("Critical Issues", "critical_findings", summary.critical_issues),
-            ("Minor Suggestions", "minor_suggestions", summary.minor_suggestions),
+            ("🚨 Critical Issues", "critical_findings", summary.critical_issues),
+            ("💡 Minor Suggestions", "minor_suggestions", summary.minor_suggestions),
         ):
             if findings and shown(section):
                 parts.append(f"### {heading}\n")

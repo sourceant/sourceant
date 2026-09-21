@@ -205,7 +205,7 @@ def deliver(
             "\n".join(
                 finding_sections(repository, pull_request, unanchored) + tool_findings
             )
-            or "Review complete."
+            or "Review complete. See the overview comment for a summary."
         )
         comments = [comment for comment in comments if comment is not None]
         needs_fallback = not found and fallback is not None
@@ -270,3 +270,5 @@ def deliver(
             "retry_after": delay or 60,
             "message": str(error),
         }
+    except ValueError as error:
+        return {"status": "error", "message": str(error)}
