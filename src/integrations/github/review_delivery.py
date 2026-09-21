@@ -83,7 +83,12 @@ def finding_sections(repository, pull_request, review):
             else pull_request.head_sha
         )
         link = f"https://github.com/{repository.owner}/{repository.name}/blob/{revision}/{quote(path, safe='/')}"
-        if suggestion.end_line:
+        if (
+            suggestion.end_line
+            and 0
+            < (suggestion.start_line or suggestion.end_line)
+            <= suggestion.end_line
+        ):
             link += f"#L{suggestion.start_line or suggestion.end_line}-L{suggestion.end_line}"
         section = f"### [{path}]({link})\n\n{suggestion.comment or ''}\n"
         if suggestion.suggested_code:
@@ -131,7 +136,13 @@ def post_findings(repository, pull_request, review, headers, marker):
         if found:
             ids.append(found["id"])
             continue
-        body = f"## Review findings ({index + 1}/{len(parts)})\n\n{part}\n\nVerdict: {review.verdict.value}\n\n{tag}"
+        body = (
+            f"## Review findings ({index + 1}/{len(parts)})\n\n"
+            "GitHub could not accept this review as a native pull request review. "
+            "The findings are posted here instead. This comment does not submit "
+            "an approval or a changes-requested review.\n\n"
+            f"{part}\n\nVerdict: {review.verdict.value}\n\n{tag}"
+        )
         response = requests.post(url, headers=headers, json={"body": body}, timeout=30)
         response.raise_for_status()
         ids.append(response.json()["id"])
@@ -146,7 +157,6 @@ def deliver(
     mapper,
     configuration,
     delivery_id=None,
-    force_fallback=False,
 ):
     from src.core.settings.configuration import Configuration
 
@@ -169,47 +179,74 @@ def deliver(
         )
         comments = [comment_for(one, mapper) for one in review.code_suggestions or ()]
         model_findings = {one.comment for one in review.code_suggestions or ()}
-        tool_findings = review.summary and any(
-            text not in model_findings
-            for text in [
-                *review.summary.critical_issues,
-                *review.summary.minor_suggestions,
+        tool_findings = (
+            [
+                text
+                for text in [
+                    *review.summary.critical_issues,
+                    *review.summary.minor_suggestions,
+                ]
+                if text not in model_findings
             ]
+            if review.summary
+            else []
         )
-        needs_fallback = not found and (
-            force_fallback
-            or fallback is not None
-            or tool_findings
-            or any(one is None for one in comments)
+        unanchored = review.model_copy(
+            update={
+                "code_suggestions": [
+                    one
+                    for one, comment in zip(review.code_suggestions or (), comments)
+                    if comment is None
+                ],
+                "summary": None,
+            }
         )
+        body = (
+            "\n".join(
+                finding_sections(repository, pull_request, unanchored) + tool_findings
+            )
+            or "Review complete."
+        )
+        comments = [comment for comment in comments if comment is not None]
+        needs_fallback = not found and fallback is not None
         if (
             not found
             and not needs_fallback
-            and (comments or review.verdict.value != "COMMENT")
+            and (
+                comments
+                or unanchored.code_suggestions
+                or tool_findings
+                or review.verdict.value != "COMMENT"
+            )
         ):
-            try:
-                response = requests.post(
-                    f"{root}/pulls/{pull_request.number}/reviews",
-                    headers=headers,
-                    json={
-                        "commit_id": pull_request.head_sha,
-                        "event": review.verdict.value,
-                        "body": f"Review complete.\n\n{tag}",
-                        "comments": comments,
-                    },
-                    timeout=60,
+            attempts = [(comments, body)]
+            if comments:
+                attempts.append(
+                    ([], "\n".join(finding_sections(repository, pull_request, review)))
                 )
-                response.raise_for_status()
-            except requests.HTTPError as error:
-                if retry_after(error.response) is not None:
-                    return {
-                        "status": "pending",
-                        "retry_after": retry_after(error.response),
-                        "fallback": True,
-                        "message": "GitHub temporarily blocked posting",
-                    }
-                if error.response is None or error.response.status_code != 422:
-                    raise
+            for inline, review_body in attempts:
+                try:
+                    response = requests.post(
+                        f"{root}/pulls/{pull_request.number}/reviews",
+                        headers=headers,
+                        json={
+                            "commit_id": pull_request.head_sha,
+                            "event": review.verdict.value,
+                            "body": f"{review_body}\n\n{tag}",
+                            "comments": inline,
+                        },
+                        timeout=60,
+                    )
+                    response.raise_for_status()
+                    break
+                except requests.HTTPError as error:
+                    if (
+                        retry_after(error.response) is not None
+                        or error.response is None
+                        or error.response.status_code != 422
+                    ):
+                        raise
+            else:
                 needs_fallback = True
         if needs_fallback:
             post_findings(repository, pull_request, review, headers, marker)

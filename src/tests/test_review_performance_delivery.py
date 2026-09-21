@@ -26,7 +26,10 @@ from src.core.parallel import SharedReader, parallel_map
 from src.core.services import ServiceRegistry
 from src.events.delivery import Deliveries
 from src.events.review_posting import ReviewPosting
-from src.integrations.github.review_delivery import comment_for, retry_after
+from src.integrations.github.review_delivery import (
+    comment_for,
+    retry_after,
+)
 from src.integrations.github.github import GitHub
 from src.models.repository import Repository
 from src.models.pull_request import PullRequest
@@ -121,7 +124,10 @@ class WebhookDeliveryTests(unittest.TestCase):
             with self.subTest(experts=experts):
                 self._webhook_delivery(experts, count)
 
-    def _webhook_delivery(self, experts, expert_count):
+    def test_lookup_failure_retries_native_posting(self):
+        self._webhook_delivery("", 0, rejected=False)
+
+    def _webhook_delivery(self, experts, expert_count, rejected=True):
         with ExitStack() as stack:
             folder = stack.enter_context(TemporaryDirectory())
             engine = create_engine(
@@ -273,7 +279,11 @@ class WebhookDeliveryTests(unittest.TestCase):
             github.post_review.side_effect = [
                 {
                     "status": "pending",
-                    "message": "GitHub temporarily blocked posting",
+                    "message": (
+                        "GitHub temporarily blocked posting"
+                        if rejected
+                        else "Comment lookup timed out"
+                    ),
                     "retry_after": 60,
                 },
                 {"status": "partial_success", "message": "Review findings delivered"},
@@ -296,7 +306,7 @@ class WebhookDeliveryTests(unittest.TestCase):
                 )
             self.assertEqual(worker.work(max_jobs=1, max_time=15), 1)
             self.assertEqual(completion.call_count, 2 + expert_count)
-            self.assertTrue(github.post_review.call_args.kwargs["force_fallback"])
+            self.assertNotIn("force_fallback", github.post_review.call_args.kwargs)
             with engine.connect() as connection:
                 self.assertEqual(len(connection.execute(select(ReviewRecord)).all()), 1)
                 self.assertEqual(
@@ -308,7 +318,71 @@ class WebhookDeliveryTests(unittest.TestCase):
 
 
 class FindingsDeliveryTests(unittest.TestCase):
+    def test_unanchored_findings_are_posted_in_a_native_review_body(self):
+        finding = CodeSuggestion.model_validate(
+            json.loads((FIXTURES / "github/local-review-praise.json").read_text())[1]
+        )
+        review = CodeReview(verdict=Verdict.COMMENT, code_suggestions=[finding])
+        repository = Repository(owner="sourceant", name="sourceant")
+        pull = PullRequest(number=189, head_sha="head", base_sha="base")
+        native = json.loads((FIXTURES / "github/native-review.json").read_text())
+        posted = []
+
+        def response(body):
+            result = requests.Response()
+            result.status_code = 200
+            result._content = json.dumps(body).encode()
+            return result
+
+        def get(url, **kwargs):
+            return response(posted if url.endswith("/reviews") else [])
+
+        def post(url, **kwargs):
+            self.assertTrue(url.endswith("/reviews"))
+            self.assertEqual(kwargs["json"]["comments"], [])
+            self.assertIn(finding.comment, kwargs["json"]["body"])
+            self.assertNotIn("#L168-L164", kwargs["json"]["body"])
+            posted.append({**native, "body": kwargs["json"]["body"]})
+            raise requests.Timeout("Response lost after GitHub accepted the review")
+
+        with patch.dict(
+            "os.environ",
+            {
+                "GITHUB_APP_ID": "test-app",
+                "GITHUB_APP_PRIVATE_KEY_PATH": "unused-test-key.pem",
+                "GITHUB_APP_CLIENT_ID": "test-client",
+            },
+        ):
+            github = GitHub()
+        with (
+            patch.object(
+                github,
+                "get_installation_access_token",
+                return_value="your-api-key-here",
+            ),
+            patch("requests.get", side_effect=get),
+            patch("requests.post", side_effect=post) as send,
+        ):
+            mapper = LineMapper(
+                parse_diff((FIXTURES / "review-overview/full.diff").read_text())
+            )
+            first = github.post_review(
+                repository, pull, review, mapper, delivery_id="unanchored"
+            )
+            self.assertEqual(first["status"], "pending")
+            second = github.post_review(
+                repository, pull, review, mapper, delivery_id="unanchored"
+            )
+            self.assertEqual(second["status"], "success")
+            self.assertEqual(send.call_count, 1)
+
     def test_rejected_review_resumes_as_new_findings_comment_once(self):
+        self._rejected_review(body_succeeds=False)
+
+    def test_rejected_inline_payload_retries_a_native_review_with_all_findings(self):
+        self._rejected_review(body_succeeds=True)
+
+    def _rejected_review(self, body_succeeds):
         captured = json.loads(
             (FIXTURES / "github/review-posting-errors.json").read_text()
         )[0]
@@ -344,10 +418,17 @@ class FindingsDeliveryTests(unittest.TestCase):
 
         def post(url, **kwargs):
             if url.endswith("/reviews"):
+                if not kwargs["json"]["comments"]:
+                    self.assertIn(finding.comment, kwargs["json"]["body"])
+                    if body_succeeds:
+                        native = json.loads(
+                            (FIXTURES / "github/native-review.json").read_text()
+                        )
+                        return response(201, native)
                 return response(int(captured["status"]), captured)
             created = {**comment_response, "body": kwargs["json"]["body"]}
             posted.append(created)
-            return response(201, created)
+            raise requests.Timeout("Response lost after GitHub accepted the comment")
 
         with patch.dict(
             "os.environ",
@@ -372,40 +453,47 @@ class FindingsDeliveryTests(unittest.TestCase):
             )
             self.assertEqual(first["status"], "pending")
             self.assertEqual(posted, [])
-            second = github.post_review(
-                repository,
-                pr_model,
-                review,
-                mapper,
-                delivery_id="delivery-one",
-                force_fallback=True,
-            )
-            self.assertEqual(second["status"], "partial_success")
+            with patch(
+                "src.integrations.github.review_delivery.retry_after", return_value=None
+            ):
+                second = github.post_review(
+                    repository,
+                    pr_model,
+                    review,
+                    mapper,
+                    delivery_id="delivery-one",
+                )
+            if body_succeeds:
+                self.assertEqual(second["status"], "success")
+                self.assertEqual(posted, [])
+                self.assertEqual(send.call_count, 3)
+                return
+            self.assertEqual(second["status"], "pending")
             self.assertEqual(len(posted), 1)
             self.assertIn(finding.file_name, posted[0]["body"])
             self.assertIn(finding.comment, posted[0]["body"])
+            self.assertIn("could not accept this review", posted[0]["body"])
             self.assertIn(f"#L{line}-L{line}", posted[0]["body"])
-            github.post_review(
+            resumed = github.post_review(
                 repository,
                 pr_model,
                 review,
                 mapper,
                 delivery_id="delivery-one",
-                force_fallback=True,
             )
+            self.assertEqual(resumed["status"], "partial_success")
             self.assertEqual(len(posted), 1)
             github.post_review(
                 repository,
                 pr_model,
                 review,
                 mapper,
-                delivery_id="delivery-two",
-                force_fallback=True,
+                delivery_id="delivery-one",
             )
-            self.assertEqual(len(posted), 2)
+            self.assertEqual(len(posted), 1)
             self.assertEqual(
                 sum(call.args[0].endswith("/reviews") for call in send.call_args_list),
-                1,
+                3,
             )
 
 

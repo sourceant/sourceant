@@ -68,7 +68,6 @@ class ReviewPosting:
             LineMapper(parse_diff(payload["diff"])),
             configuration=configuration,
             delivery_id=payload["delivery_id"],
-            force_fallback=job.attempt > 1,
         )
         if result["status"] == "pending":
             return JobOutcome.failed(

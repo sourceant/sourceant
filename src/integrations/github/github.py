@@ -737,7 +737,6 @@ class GitHub(ProviderAdapter):
         line_mapper,
         configuration=None,
         delivery_id=None,
-        force_fallback=False,
     ):
         from src.integrations.github.review_delivery import deliver
 
@@ -749,7 +748,6 @@ class GitHub(ProviderAdapter):
             line_mapper,
             configuration,
             delivery_id,
-            force_fallback,
         )
 
     def list_open_pull_requests(
