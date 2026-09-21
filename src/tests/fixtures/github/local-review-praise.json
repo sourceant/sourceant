@@ -1,0 +1,26 @@
+[
+  {
+    "file_name": "src/prompts/prompts.py",
+    "position": 3,
+    "start_line": 42,
+    "end_line": 44,
+    "side": "RIGHT",
+    "comment": "These new guidelines for prompt formatting are clear and concise. They will help ensure consistent and high-quality output from the language model, improving the overall reliability of the review process.",
+    "category": "CLARITY",
+    "suggested_code": "+    - Keep each comment to at most three short sentences and 60 words: the concrete problem, its trigger or consequence, and the fix\n+    - Include only evidence needed to act on the finding. Do not narrate your investigation, repeat the code, or add headings, praise, disclaimers, or multiple examples\n+    - Put replacement code only in `suggested_code`, not again in the comment\n+    - Report every distinct actionable issue, but explain each issue once",
+    "existing_code": "-    - If existing code is good enough, make NO comment about it at all",
+    "claims": []
+  },
+  {
+    "file_name": "src/prompts/prompts.py",
+    "position": 22,
+    "start_line": 168,
+    "end_line": 164,
+    "side": "LEFT",
+    "comment": "The refined guidelines for the `overview`, `key_improvements`, and `regressions` fields improve the structure and focus of the review summary. This ensures summaries are consistently informative and easy to digest.",
+    "category": "CLARITY",
+    "suggested_code": "+        \"overview\": \"<One short paragraph describing the main behavioral changes.>\",\n+         \"key_improvements\": [\n+             \"<An improvement, can reference a file path.>\"\n+         ],\n+         \"regressions\": [\n+             \"<A regression, can reference a file path.>\"\n+         ],\n+    }\n+    ```\n+    The `overview` is a high-level description of what changed in the pull\n+    request, the `key_improvements` describe benefits or new capabilities,\n+    and `regressions` describe something that is worse: harder to change,\n+    weaker in a case that used to work, or a capability that\n+    is gone.\n+\n+    Always return all three schema fields: `overview`, `key_improvements`, and\n+    `regressions`. Keep the overview to at most three sentences and 75 words.\n+    Use at most three bullets per list, each at most 20 words. Group related\n+    changes instead of listing files or functions. Preserve the main changes\n+    across all supplied parts without repeating them in multiple fields.\n+    State behavior and consequences directly. Omit praise, introductory filler,\n+    review-process narration, headings inside fields, and implementation walkthroughs.",
+    "existing_code": "-        \"overview\": \"\u2728 <A high-level overview of the code changes and the review.>\",\n         \"key_improvements\": [\n             \"<An improvement, can reference a file path.>\"\n         ],\n         \"regressions\": [\n             \"<A regression, can reference a file path.>\"\n         ],\n     }\n     ```\n     The `overview` is a high-level description of what changed in the pull\n     request, the `key_improvements` describe benefits or new capabilities,\n     and `regressions` describe something that is worse: harder to change,\n     weaker in a case that used to work, or a capability that\n     is gone.",
+    "claims": []
+  }
+]

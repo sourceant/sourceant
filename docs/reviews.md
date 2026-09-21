@@ -21,7 +21,7 @@ Deliveries to the OAuth webhook endpoint are recorded as activity but not review
 
 Two things, both tied to the same run.
 
-**An overview comment**, created once and edited in place on later runs, so a pull request carries one summary rather than a new one per push. It contains the overview, key improvements, and finding counts. Detailed findings stay with the inline review or findings comment.
+**An overview comment**, created once and edited in place on later runs. It contains a short overview, key improvements, regressions, critical issues, and minor suggestions. Empty lists are omitted. Replacement code stays with the inline review or findings comment.
 
 **A review with inline comments**, submitted with the verdict as its event: `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`. An inline comment carries the finding, plus a GitHub suggestion block where the model produced replacement code, so it can be committed from the pull request. A verdict of `REQUEST_CHANGES` is a real changes-requested review: on a branch with protection that requires review resolution, it holds the merge until it is resolved or dismissed.
 
