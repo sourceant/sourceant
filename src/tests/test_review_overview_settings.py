@@ -73,3 +73,109 @@ def test_overview_visibility_is_configurable_through_http(tmp_path, section, hea
             assert heading not in GitHub._format_summary(None, empty, configuration)
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize("only_nitpicks", [False, True])
+def test_nitpicks_require_opt_in_through_http(tmp_path, only_nitpicks):
+    from unittest.mock import Mock
+
+    from src.core.change_context.models import ChangedFile, ChangeSet
+    from src.core.scope import Scope
+    from src.core.services import ServiceRegistry
+    from src.models.code_review import (
+        CodeReview,
+        CodeSuggestion,
+        SuggestionCategory,
+        Verdict,
+    )
+    from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'settings.db'}")
+    Config.__table__.create(engine)
+    app = FastAPI()
+    app.include_router(settings.router, prefix="/api/settings")
+    app.dependency_overrides[get_current_user] = lambda: {
+        "user_id": "42",
+        "scope": {"workspace_id": "one"},
+    }
+    configuration = Configuration(workspace="one", user="42")
+    categories = list(SuggestionCategory)
+    important = {
+        SuggestionCategory.BUG,
+        SuggestionCategory.SECURITY,
+        SuggestionCategory.PERFORMANCE,
+    }
+    if only_nitpicks:
+        categories = [category for category in categories if category not in important]
+    suggestions = [
+        CodeSuggestion(
+            file_name="a.py",
+            start_line=1,
+            end_line=1,
+            side="RIGHT",
+            suggested_code=None,
+            category=category,
+            comment=f"Finding for {category.value}",
+        )
+        for category in categories
+    ]
+    answer = CodeReview(
+        summary=CodeReviewSummary(
+            overview="Changes a value.", minor_suggestions=[], critical_issues=[]
+        ),
+        verdict=Verdict.COMMENT,
+        code_suggestions=suggestions,
+    )
+    changes = ChangeSet(
+        scope=Scope.from_mapping({"repository": "acme/web"}),
+        configuration=configuration,
+        files=(ChangedFile(path="a.py"),),
+        diff="diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n",
+    )
+    reviewer = CodeReviewer(services=ServiceRegistry())
+    provider = Mock()
+    provider.count_tokens.side_effect = len
+    key = "review.include_nitpicks"
+    try:
+        with (
+            patch("src.config.db.engine", engine),
+            TestClient(app) as client,
+            patch.object(reviewer, "_in_one_pass", return_value=answer) as reading,
+        ):
+            catalogue = client.get("/api/settings/catalogue?scope=workspace").json()[
+                "data"
+            ]
+            offered = next(item for item in catalogue if item["key"] == key)
+            assert offered["group"] == "Review"
+            assert offered["default"] is False
+            for enabled in (False, True, False):
+                if enabled:
+                    response = client.put(
+                        f"/api/settings/workspace/one/{key}", json={"value": True}
+                    )
+                    assert response.status_code == 200, response.text
+                else:
+                    response = client.delete(f"/api/settings/workspace/one/{key}")
+                    assert response.status_code == 200, response.text
+                result = reviewer.review(changes, provider=provider)
+                expected = (
+                    suggestions
+                    if enabled
+                    else [s for s in suggestions if s.category in important]
+                )
+                assert result.code_suggestions == expected
+                assert result.summary.minor_suggestions == [
+                    s.comment
+                    for s in expected
+                    if s.category
+                    not in {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
+                ]
+                assert result.verdict == (
+                    Verdict.COMMENT
+                    if enabled and only_nitpicks
+                    else Verdict.APPROVE if only_nitpicks else Verdict.REQUEST_CHANGES
+                )
+                knowledge = reading.call_args.args[9].knowledge or ""
+                assert ("Nitpicks are disabled" in knowledge) is not enabled
+    finally:
+        engine.dispose()

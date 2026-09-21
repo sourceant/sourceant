@@ -201,6 +201,7 @@ class CodeReviewer:
         ]
 
         configuration = changes.configuration
+        include_nitpicks = configuration.value("review.include_nitpicks") is True
         file_limit = (
             configuration.value("review.structural_context_file_limit")
             or DEFAULT_FILE_LIMIT
@@ -229,6 +230,27 @@ class CodeReviewer:
             ),
             analysis=analysis.rendered() if analysis else None,
         )
+
+        if not include_nitpicks:
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        Told(
+                            "Finding policy",
+                            "Nitpicks are disabled. Report only concrete bugs, security "
+                            "issues, or material performance problems supported by the "
+                            "changed code. Omit style, naming, clarity, documentation, "
+                            "refactoring, and optional improvements from findings and "
+                            "overview sections. Do not relabel cosmetic advice as a bug "
+                            "or performance issue. State the failing scenario and its "
+                            "impact; speculative benefits or tiny optimizations do not "
+                            "qualify. This policy applies to every expert pass too.",
+                        ).rendered(),
+                    ]
+                ),
+            )
 
         evidence = self._evidence(changes, durable_code, read_content, code_scope)
         metadata = metadata or self._metadata(changes)
@@ -385,6 +407,12 @@ class CodeReviewer:
 
         unique, seen = [], set()
         for suggestion in self._beyond(analysis, combined):
+            if not include_nitpicks and suggestion.category not in {
+                SuggestionCategory.BUG,
+                SuggestionCategory.SECURITY,
+                SuggestionCategory.PERFORMANCE,
+            }:
+                continue
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
             keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
             if suggestion.suggested_code:

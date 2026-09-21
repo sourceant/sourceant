@@ -218,6 +218,19 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.include_nitpicks",
+        label="Include nitpicks",
+        description=(
+            "Include style, naming, clarity, documentation, refactoring, and "
+            "optional improvement suggestions. Off by default; reviews focus on "
+            "bugs, security issues, and material performance problems."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=False,
+        group="Review",
+    ),
+    Setting(
         key="review.expert_passes",
         label="Expert review passes",
         description=(

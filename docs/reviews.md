@@ -23,6 +23,8 @@ Two things, both tied to the same run.
 
 **An overview comment**, created once and edited in place on later runs. It contains a short overview, key improvements, regressions, critical issues, and minor suggestions. Empty lists are omitted. Replacement code stays with the inline review or findings comment.
 
+Under Review settings, `review.include_nitpicks` defaults to off. Enable it to include style, naming, clarity, documentation, refactoring, and optional improvement suggestions. Without it, model findings are limited to bugs, security issues, and material performance problems. Deterministic tool results remain available.
+
 Under Review settings, `review.overview.show_minor_suggestions`, `review.overview.show_critical_findings`, and `review.overview.show_regressions` control those overview sections independently. All default to on and only show a section when it has content. Hiding a section does not remove findings from the review or change its verdict.
 
 **A review with inline comments**, submitted with the verdict as its event: `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`. An inline comment carries the finding, plus a GitHub suggestion block where the model produced replacement code, so it can be committed from the pull request. A verdict of `REQUEST_CHANGES` is a real changes-requested review: on a branch with protection that requires review resolution, it holds the merge until it is resolved or dismissed.
