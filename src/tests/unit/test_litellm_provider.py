@@ -356,6 +356,29 @@ def test_summary_with_full_change_context_uses_the_existing_format(
     assert '"key_improvements"' in prompt
 
 
+@pytest.mark.parametrize("include_nitpicks", [None, False, True])
+def test_summary_applies_nitpick_policy(provider, mock_completion, include_nitpicks):
+    captured = Path(__file__).parents[1] / "fixtures/deepseek/overview.json"
+    mock_completion.completion.return_value = ModelResponse(
+        **json.loads(captured.read_text())
+    )
+    options = {} if include_nitpicks is None else {"include_nitpicks": include_nitpicks}
+    full_diff = (
+        Path(__file__).parents[1] / "fixtures/review-overview/full.diff"
+    ).read_text()
+    result = provider.generate_summary([], change_context=full_diff, **options)
+    call = mock_completion.completion.call_args.kwargs
+    prompt = call["messages"][0]["content"]
+    assert ("Nitpicks are disabled throughout this summary." in prompt) is (
+        include_nitpicks is not True
+    )
+    assert full_diff in prompt
+    assert call["response_format"] is CodeReviewOverview
+    assert result.overview == "The change updates a function."
+    assert result.key_improvements == []
+    assert result.regressions == []
+
+
 class TestWhatAModelNeedsToAuthenticateWith:
     """Which variable holds a key is a fact about the provider, so litellm
     answers it rather than a table kept here."""

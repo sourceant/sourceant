@@ -37,6 +37,7 @@ class LLMInterface(ABC):
         as_text: bool = False,
         previous_summary: Optional[str] = None,
         change_context: Optional[str] = None,
+        include_nitpicks: bool = False,
     ) -> Union[CodeReviewSummary, str]:
         pass
 

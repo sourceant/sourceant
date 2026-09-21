@@ -28,11 +28,13 @@ def summarize_changes(
     )
     if not batches:
         raise ValueError("The full pull request diff is unavailable")
+    include_nitpicks = configuration.value("review.include_nitpicks") is True
 
     def describe(data, findings=()):
         written = provider.generate_summary(
             list(findings),
             change_context=json.dumps({"metadata": metadata or {}, **data}),
+            include_nitpicks=include_nitpicks,
         )
         if not isinstance(written, CodeReviewSummary) or not written.overview.strip():
             raise ValueError("The model did not produce a pull request summary")

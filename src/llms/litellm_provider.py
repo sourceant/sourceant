@@ -493,6 +493,7 @@ class LiteLLMProvider(LLMInterface):
         as_text: bool = False,
         previous_summary: Optional[str] = None,
         change_context: Optional[str] = None,
+        include_nitpicks: bool = False,
     ) -> Union[CodeReviewSummary, str]:
         if not suggestions and not change_context:
             summary = CodeReviewSummary(
@@ -514,6 +515,16 @@ class LiteLLMProvider(LLMInterface):
             previous_summary=self._standing_summary(previous_summary),
             change_context=change_context or "",
         )
+        if not include_nitpicks:
+            prompt += (
+                "\n\nNitpicks are disabled throughout this summary. Omit style, "
+                "naming, clarity, documentation, refactoring, and optional "
+                "improvement advice, including any carried over from supplied "
+                "partial summaries. Regressions must describe concrete bugs, "
+                "security issues, or material performance problems supported by "
+                "the changed code. Do not relabel cosmetic concerns as regressions. "
+                "Still describe actual changes in the overview and key improvements."
+            )
 
         def summarize(shape=None) -> str:
             messages = [{"role": "user", "content": prompt}]

@@ -175,6 +175,10 @@ def test_http_preview_overview_reads_all_pr_changes(
             include_nitpicks or finding.category == SuggestionCategory.BUG
         )
     assert provider.generate_summary.call_count == (3 if budget == 1 else 1)
+    assert all(
+        call.kwargs["include_nitpicks"] is include_nitpicks
+        for call in provider.generate_summary.call_args_list
+    )
     provider.generate_text.assert_not_called()
     if budget == 1:
         assert len([item for item in supplied if "diff" in item]) == 2
