@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from src.utils.logger import logger
+from src.core.parallel import parallel_map
 
 
 @contextmanager
@@ -38,14 +39,21 @@ def written_out(paths: Iterable[str], read_content: Callable[[str], str | None])
 def _written(
     root: Path, paths: Iterable[str], read_content: Callable[[str], str | None]
 ) -> Sequence[str]:
-    for path in paths:
-        if not path or Path(path).is_absolute() or ".." in Path(path).parts:
-            continue
+    paths = list(paths)
+
+    def fetch(path):
         try:
-            content = read_content(path)
+            return read_content(path)
         except Exception:
             logger.warning("Could not read %s to examine it", path, exc_info=True)
-            continue
+            return None
+
+    safe = [
+        p
+        for p in paths
+        if p and not Path(p).is_absolute() and ".." not in Path(p).parts
+    ]
+    for path, content in zip(safe, parallel_map(fetch, safe)):
         # A forge answers with whatever it has. Anything that is not text is
         # not something a tool can examine.
         if not isinstance(content, str):

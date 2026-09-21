@@ -41,7 +41,6 @@ from src.core.skills import (
     BLOCKING,
     Change,
     LLMSkillChecker,
-    PhraseSkillSelector,
     Skill,
     SkillVerdict,
     split,
@@ -331,15 +330,21 @@ class WorkingTreeReviews:
             wanted = set(skills)
             chosen = tuple(skill for skill in everything if skill.id in wanted)
         else:
-            chosen = PhraseSkillSelector().select(
-                everything,
-                Change(
-                    title=changes.title,
-                    description=changes.description,
-                    paths=changes.paths,
-                ),
-                limit=MAX_SKILLS,
-            )
+            from src.core.skills.selection import for_review
+
+            try:
+                chosen = for_review(
+                    everything,
+                    Change(
+                        title=changes.title,
+                        description=changes.description,
+                        paths=changes.paths,
+                    ),
+                    configuration.value("review.expert_passes"),
+                    limit=MAX_SKILLS,
+                )
+            except ValueError as error:
+                raise ReviewRefused(400, str(error)) from error
 
         recorded = ()
         if self.knowledge is not None:
@@ -398,7 +403,27 @@ class WorkingTreeReviews:
                 503, "Nothing here is able to review. The code reviewer is not loaded."
             )
 
+        from src.core.review.exclusions import review_diff
+
         coverage = Coverage()
+        diff, omitted = review_diff(changes.diff, configuration)
+        for path in omitted:
+            coverage.record(
+                "changed file",
+                "exclusion pattern",
+                answered=False,
+                target=path,
+                reason="excluded by review.exclude_patterns",
+            )
+        if not diff.strip():
+            answer["note"] = "All changed files are excluded from review."
+            answer["coverage"] = coverage.as_dict()
+            return answer
+        changes = replace(
+            changes,
+            diff=diff,
+            files=tuple(f for f in changes.files if f.path not in omitted),
+        )
 
         # This path has a real checkout, so the tools read it where it sits.
         analysis = examine(root, list(changes.paths), self.services)
@@ -430,6 +455,9 @@ class WorkingTreeReviews:
                 ),
                 skills=tuple(
                     skill for skill in chosen if skill.kind == SkillType.REVIEW_PASS
+                ),
+                expert_passes="\n".join(
+                    skill.id for skill in chosen if skill.kind == SkillType.REVIEW_PASS
                 ),
                 # A checkout is indexed as it is, not as a commit, so the
                 # graph is filed under the repository alone.

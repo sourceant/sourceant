@@ -31,7 +31,12 @@ def get_last_reviewed_sha(repo_full_name: str, pr_number: int) -> Optional[str]:
 
 
 def save_review_record(
-    repo_full_name: str, pr_number: int, head_sha: str, base_sha: str
+    repo_full_name: str,
+    pr_number: int,
+    head_sha: str,
+    base_sha: str,
+    *,
+    strict: bool = False,
 ) -> None:
     if STATELESS_MODE:
         return
@@ -50,3 +55,5 @@ def save_review_record(
         )
     except Exception as e:
         logger.warning(f"Failed to save review record: {e}")
+        if strict:
+            raise

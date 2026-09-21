@@ -36,6 +36,7 @@ class Reviewer(Protocol):
         previous_summary: str | None = None,
         told: Sequence[Told] = (),
         skills: Sequence[Skill] = (),
+        expert_passes: str | None = None,
         code_scope: Scope | None = None,
         metadata: dict | None = None,
     ) -> CodeReview | None: ...

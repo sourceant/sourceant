@@ -50,6 +50,9 @@ def read_and_unread(coverage: Coverage) -> str:
             "the system graph could not be read",
         )
         lines.append(f"Nothing outside this repository was read: {why}.")
+    omitted = [a.target for a in coverage.attempts if a.method == "exclusion pattern"]
+    if omitted:
+        lines.append("Excluded by review patterns: " + ", ".join(omitted) + ".")
     return "\n".join(lines)
 
 

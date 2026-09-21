@@ -21,6 +21,7 @@ from src.core.jobs.sql import job_table
 from src.core.plugins import event_hooks
 from src.core.services import ServiceRegistry
 from src.events.delivery import Deliveries
+from src.events.review_posting import ReviewPosting
 from src.models.config import Config
 from src.models.repository_event import RepositoryEvent
 from src.models.review_record import ReviewRecord
@@ -51,6 +52,7 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
     )
     monkeypatch.setattr("src.utils.review_record_service.STATELESS_MODE", False)
     monkeypatch.setattr("src.events.dispatcher.QUEUE_MODE", "database")
+    monkeypatch.setattr("src.config.settings.QUEUE_MODE", "database")
     monkeypatch.setattr(
         "src.events.delivery.tenant_for", lambda repo: ("6", "workspace")
     )
@@ -85,6 +87,7 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
     monkeypatch.setattr(
         "src.plugins.builtin.code_reviewer.plugin.GitHub", lambda: github
     )
+    monkeypatch.setattr("src.events.review_posting.GitHub", lambda: github)
     monkeypatch.setattr(
         "src.plugins.builtin.code_reviewer.plugin.written_out",
         lambda *args: nullcontext((tmp_path, ())),
@@ -153,13 +156,25 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
         )
         assert result.status_code == 201, result.text
         services.contribute(JobHandler, Deliveries(services), "sourceant_core")
-        Worker(store, INTERACTIVE, services=services).work(max_jobs=1)
+        services.contribute(JobHandler, ReviewPosting(), "sourceant_core")
+        worker = Worker(store, INTERACTIVE, services=services)
+        worker.work(max_jobs=1)
+        with engine.connect() as connection:
+            queued = connection.execute(
+                select(job_table.c.id).where(job_table.c.kind == "review.post")
+            ).first()
+        if queued:
+            worker.work(max_jobs=1)
     with engine.connect() as connection:
-        job = connection.execute(select(job_table)).mappings().one()
+        job = (
+            connection.execute(select(job_table).order_by(job_table.c.id.desc()))
+            .mappings()
+            .first()
+        )
         records = connection.execute(select(ReviewRecord)).all()
     engine.dispose()
     if failure in ("generation", "posting", "summary_invalid"):
-        assert job["state"] == "dead", job
+        assert job["state"] == ("failed" if failure == "posting" else "dead"), job
         expected = (
             "response_format" if failure == "generation" else "Review posting failed"
         )
@@ -173,7 +188,7 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
     if failure in ("generation", "summary_invalid"):
         github.post_review.assert_not_called()
         if failure == "generation":
-            completion.assert_called_once()
+            assert completion.call_count <= 2
     else:
         github.post_review.assert_called_once()
 

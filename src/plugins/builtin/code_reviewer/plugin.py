@@ -5,6 +5,9 @@ Subscribes to pull request events and generates automated code reviews.
 """
 
 import difflib
+from concurrent.futures import ThreadPoolExecutor
+from src.core.parallel import SharedReader, submit
+from src.core.review.exclusions import review_diff
 import re
 from typing import Dict, Any, Optional, List
 
@@ -45,7 +48,7 @@ from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.core.scope import Scope
 from src.integrations.github.github import GitHub
 from src.llms.llm_factory import llm
-from src.models.code_review import Verdict
+from src.models.code_review import Verdict, summary_from
 from src.models.pull_request import PullRequest
 from src.models.repository import Repository
 from src.utils.diff_parser import parse_diff
@@ -371,6 +374,18 @@ class CodeReviewerPlugin(BasePlugin):
                 workspace=payload.get("sourceant_workspace_id"),
                 user=payload.get("sourceant_owner_id"),
                 revision=(head_sha or "") if stop_on_push else "",
+                completion_event={
+                    "repository": repository_context,
+                    "pull_request": {
+                        "number": pull_request.number,
+                        "title": pull_request.title,
+                        "base_sha": base_sha,
+                        "head_sha": head_sha,
+                        "draft": pull_request.draft,
+                    },
+                    "user_context": user_context,
+                    "original_event": event_data,
+                },
             )
 
             if review_result.get("status") == "error":
@@ -457,6 +472,7 @@ class CodeReviewerPlugin(BasePlugin):
         workspace: str | None = None,
         user: str | None = None,
         revision: str = "",
+        completion_event: Optional[dict] = None,
     ) -> Dict[str, Any]:
         """
         Generate code review and post it to GitHub.
@@ -518,16 +534,22 @@ class CodeReviewerPlugin(BasePlugin):
 
             raw_diff = raw_diff or full_diff
 
-            # Parse diff and create line mapper
-            parsed_files = parse_diff(raw_diff)
-            line_mapper = LineMapper(parsed_files)
-
             from src.core.workspace import workspace_holding
 
             workspace = workspace or workspace_holding(repo_full_name)
             configuration = Configuration(
                 repository=repo_full_name, workspace=workspace, user=user
             )
+            full_diff, omitted = review_diff(full_diff, configuration)
+            raw_diff, _ = review_diff(raw_diff, configuration)
+            parsed_files = parse_diff(raw_diff)
+            line_mapper = LineMapper(parse_diff(full_diff))
+            if not raw_diff.strip():
+                return {
+                    "status": "skipped",
+                    "message": "All changed files are excluded from review.",
+                    "excluded_files": list(omitted),
+                }
             llm_instance = provider_for(configuration)
             if llm_instance is None:
                 return {
@@ -558,17 +580,11 @@ class CodeReviewerPlugin(BasePlugin):
             previous_summary = github.get_previous_review_summary(
                 repository.owner, repository.name, pull_request.number
             )
-            content_cache: Dict[str, str | None] = {}
-
-            def read_changed_file(path: str) -> str | None:
-                if path not in content_cache:
-                    content_cache[path] = github.get_file_content(
-                        repository.owner,
-                        repository.name,
-                        path,
-                        pull_request.head_sha,
-                    )
-                return content_cache[path]
+            read_changed_file = SharedReader(
+                lambda path: github.get_file_content(
+                    repository.owner, repository.name, path, pull_request.head_sha
+                )
+            )
 
             code_scope = Scope.from_mapping(
                 {
@@ -594,6 +610,14 @@ class CodeReviewerPlugin(BasePlugin):
                 review_skills = skill_library.all(workspace or "", repo_full_name)
 
             coverage = Coverage()
+            for path in omitted:
+                coverage.record(
+                    "changed file",
+                    "exclusion pattern",
+                    answered=False,
+                    target=path,
+                    reason="excluded by review.exclude_patterns",
+                )
 
             # A tool needs files on a disk and this path never clones one, so
             # the changed files are written out as they stand after the change.
@@ -636,43 +660,56 @@ class CodeReviewerPlugin(BasePlugin):
                     target=repo_full_name,
                     reason=("nothing said which graph to read for this repository"),
                 )
-            final_review = CodeReviewer(services=self.services).review(
-                ChangeSet(
-                    scope=Scope.from_mapping({"repository": repo_full_name}),
-                    configuration=configuration,
-                    requirement_scopes=(
-                        (
-                            Scope.from_mapping(
-                                {"workspace": workspace, "repository": repo_full_name}
-                            ),
-                            Scope.from_mapping({"workspace": workspace}),
-                        )
-                        if workspace
-                        else ()
+            with ThreadPoolExecutor(max_workers=1) as overview_pool:
+                overview = submit(
+                    overview_pool,
+                    summarize_changes,
+                    full_diff,
+                    llm_instance,
+                    configuration,
+                    pr_metadata,
+                )
+                final_review = CodeReviewer(services=self.services).review(
+                    ChangeSet(
+                        scope=Scope.from_mapping({"repository": repo_full_name}),
+                        configuration=configuration,
+                        requirement_scopes=(
+                            (
+                                Scope.from_mapping(
+                                    {
+                                        "workspace": workspace,
+                                        "repository": repo_full_name,
+                                    }
+                                ),
+                                Scope.from_mapping({"workspace": workspace}),
+                            )
+                            if workspace
+                            else ()
+                        ),
+                        impact_scope=(
+                            Scope.from_mapping({"workspace": workspace})
+                            if workspace
+                            else None
+                        ),
+                        files=changed,
+                        revision=pull_request.head_sha or "",
+                        base_revision=pull_request.base_sha or "",
+                        title=pull_request.title or "",
+                        description=getattr(pull_request, "body", "") or "",
+                        diff=raw_diff,
                     ),
-                    impact_scope=(
-                        Scope.from_mapping({"workspace": workspace})
-                        if workspace
-                        else None
-                    ),
-                    files=changed,
-                    revision=pull_request.head_sha or "",
-                    base_revision=pull_request.base_sha or "",
-                    title=pull_request.title or "",
-                    description=getattr(pull_request, "body", "") or "",
-                    diff=raw_diff,
-                ),
-                provider=llm_instance,
-                skills=review_skills,
-                read_content=read_changed_file,
-                existing_comments=existing_comments,
-                previous_summary=previous_summary,
-                code_scope=code_scope,
-                metadata=pr_metadata,
-                coverage=coverage,
-                revision=revision,
-                analysis=analysis,
-            )
+                    provider=llm_instance,
+                    skills=review_skills,
+                    read_content=read_changed_file,
+                    existing_comments=existing_comments,
+                    previous_summary=previous_summary,
+                    code_scope=code_scope,
+                    metadata=pr_metadata,
+                    coverage=coverage,
+                    revision=revision,
+                    analysis=analysis,
+                )
+                written_overview = overview.result()
             if final_review is None:
                 return {
                     "status": "error",
@@ -692,12 +729,8 @@ class CodeReviewerPlugin(BasePlugin):
                     )
                     final_review.verdict = verdict_from(final_review.code_suggestions)
 
-            final_review.summary = summarize_changes(
-                full_diff,
-                llm_instance,
-                configuration,
-                pr_metadata,
-                final_review.code_suggestions or (),
+            final_review.summary = summary_from(
+                final_review.code_suggestions or (), written_overview
             )
             also_reported(final_review, analysis)
             if final_review.summary is not None:
@@ -733,6 +766,25 @@ class CodeReviewerPlugin(BasePlugin):
             # Post review to GitHub, unless this is a preview run
             post_result = None
             if post:
+                from src.config.settings import QUEUE_MODE
+
+                if QUEUE_MODE == "database":
+                    from src.events.review_posting import queue_review
+
+                    job_id = queue_review(
+                        repository,
+                        pull_request,
+                        final_review,
+                        full_diff,
+                        configuration,
+                        self.services,
+                        completion_event,
+                    )
+                    return {
+                        "status": "pending",
+                        "message": "Review generated; delivery queued",
+                        "posting_job_id": job_id,
+                    }
                 post_result = github.post_review(
                     repository=repository,
                     pull_request=pull_request,
@@ -740,7 +792,7 @@ class CodeReviewerPlugin(BasePlugin):
                     line_mapper=line_mapper,
                     configuration=configuration,
                 )
-                if post_result.get("status") == "error":
+                if post_result.get("status") in ("error", "pending"):
                     return {
                         "status": "error",
                         "message": post_result.get("message")

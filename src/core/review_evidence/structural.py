@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import ast
-
 import logging
 import re
 from collections.abc import Callable
 
 from src.core.language_pack import Error, ProcessConfig, detect_language, process
+from src.core.parallel import SharedReader
 
 from .models import (
     EvidenceDecision,
@@ -35,12 +35,10 @@ class CachedChangedFileEvidenceReader:
             raise ValueError("character_limit must be positive")
         self._read_content = read_content
         self._character_limit = character_limit
-        self._cache: dict[str, FileEvidence | None] = {}
+        self._read = SharedReader(self._extract)
 
     def read(self, path: str) -> FileEvidence | None:
-        if path not in self._cache:
-            self._cache[path] = self._extract(path)
-        return self._cache[path]
+        return self._read(path)
 
     def _extract(self, path: str) -> FileEvidence | None:
         language = detect_language(path)

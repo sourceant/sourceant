@@ -7,6 +7,7 @@ from src.core.skills import (
     BLOCKING,
     Catalogue,
     Change,
+    Change,
     DirectorySkillSource,
     LLMSkillChecker,
     PhraseSkillSelector,
@@ -636,3 +637,44 @@ def test_ascii_words_are_read_exactly_as_before():
 
     assert WORDS.findall("reviewcode2 ab") == ["reviewcode2", "ab"]
     assert WORDS.findall("snake_case") == ["snake", "case"]
+
+
+class TestConfiguredExpertPasses:
+    def test_explicit_passes_keep_guidance_and_are_not_limited_to_five(self):
+        from src.core.skills.models import SkillType
+        from src.core.skills.selection import for_review
+
+        experts = tuple(
+            Skill(
+                id=f"expert-{number}",
+                name=f"Expert {number}",
+                description="Specialist",
+                body="Check the change.",
+                metadata={"sourceant": {"type": "review-pass"}},
+            )
+            for number in range(6)
+        )
+        guidance = Skill(
+            id="team-guidance",
+            name="Team guidance",
+            description="Team rules",
+            body="Preserve compatibility.",
+            metadata={"sourceant": {"review": True}},
+        )
+        chosen = for_review(
+            (*experts, guidance),
+            Change(),
+            "\n".join(skill.id for skill in experts),
+        )
+        assert [
+            skill.id for skill in chosen if skill.kind == SkillType.REVIEW_PASS
+        ] == [skill.id for skill in experts]
+        assert guidance in chosen
+        assert for_review((*experts, guidance), Change(), "") == (guidance,)
+
+    def test_unknown_pass_is_reported_instead_of_running_other_experts(self):
+        import pytest
+        from src.core.skills.selection import for_review
+
+        with pytest.raises(ValueError, match="Unknown expert review passes: absent"):
+            for_review((), Change(), "absent")

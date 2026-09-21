@@ -156,8 +156,9 @@ def test_http_preview_overview_reads_all_pr_changes(
         if finding.category == SuggestionCategory.CLARITY
     ]
     rendered = GitHub._format_summary(None, summary)
-    assert ("### 💡 Minor Suggestions" in rendered) == with_findings
-    assert ("### 🚨 Critical Issues" in rendered) == with_findings
+    assert "### 💡 Minor Suggestions" not in rendered
+    assert "### 🚨 Critical Issues" not in rendered
+    assert f"Findings: {len(findings)}" in rendered
     assert provider.generate_summary.call_count == (3 if budget == 1 else 1)
     provider.generate_text.assert_not_called()
     if budget == 1:

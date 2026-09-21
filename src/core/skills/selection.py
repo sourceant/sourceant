@@ -22,7 +22,32 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from .matching import any_match
-from .models import Change, Skill, SkillScope
+from .models import Change, Skill, SkillScope, SkillType
+
+
+def for_review(
+    skills: Sequence[Skill],
+    change: Change,
+    expert_passes: str = "auto",
+    limit: int = 5,
+) -> tuple[Skill, ...]:
+    selector = PhraseSkillSelector()
+    if not isinstance(expert_passes, str) or expert_passes.strip() == "auto":
+        return selector.select(skills, change, limit=limit)
+    requested = tuple(dict.fromkeys(expert_passes.split()))
+    experts = {
+        skill.id: skill for skill in skills if skill.kind == SkillType.REVIEW_PASS
+    }
+    missing = [identifier for identifier in requested if identifier not in experts]
+    if missing:
+        raise ValueError("Unknown expert review passes: " + ", ".join(missing))
+    guidance = selector.select(
+        tuple(skill for skill in skills if skill.kind != SkillType.REVIEW_PASS),
+        change,
+        limit=limit,
+    )
+    return (*guidance, *(experts[identifier] for identifier in requested))
+
 
 # Letters rather than ASCII: skills and the prose around code are written
 # in whatever language somebody works in, and matching on A to Z splits

@@ -292,7 +292,7 @@ def test_create_or_update_overview_comment_create(
 ):
     with (
         patch(
-            "src.integrations.github.github.GitHub._find_overview_comment",
+            "src.integrations.github.review_delivery.existing",
             return_value=None,
         ),
         patch("requests.post") as mock_post,
@@ -321,7 +321,7 @@ def test_create_or_update_overview_comment_update(
 ):
     with (
         patch(
-            "src.integrations.github.github.GitHub._find_overview_comment",
+            "src.integrations.github.review_delivery.existing",
             return_value={"id": 123, "body": "old summary"},
         ),
         patch("requests.patch") as mock_patch,
@@ -457,7 +457,14 @@ def test_post_review_uses_line_side_and_commit_id(
     github_instance, repository_instance, pull_request_instance
 ):
     """Review comments use line/side and payload includes commit_id."""
+    from pathlib import Path
     from src.utils.line_mapper import LineMapper
+    from src.utils.diff_parser import parse_diff
+
+    parsed = parse_diff(
+        (Path(__file__).parents[1] / "fixtures/review-overview/full.diff").read_text()
+    )[0]
+    line = next(number for number, side in parsed.line_to_position if side == "RIGHT")
 
     from src.models.code_review import SuggestionCategory
 
@@ -466,10 +473,10 @@ def test_post_review_uses_line_side_and_commit_id(
         verdict=Verdict.COMMENT,
         code_suggestions=[
             CodeSuggestion(
-                file_name="test.py",
+                file_name=parsed.file_path,
                 position=5,
-                start_line=10,
-                end_line=10,
+                start_line=line,
+                end_line=line,
                 side=Side.RIGHT,
                 comment="Fix this.",
                 category=SuggestionCategory.STYLE,
@@ -478,7 +485,7 @@ def test_post_review_uses_line_side_and_commit_id(
         ],
     )
 
-    mock_mapper = MagicMock(spec=LineMapper)
+    mock_mapper = LineMapper([parsed])
 
     with (
         patch(
@@ -486,7 +493,7 @@ def test_post_review_uses_line_side_and_commit_id(
             return_value="test_token",
         ),
         patch(
-            "src.integrations.github.github.GitHub._find_overview_comment",
+            "src.integrations.github.review_delivery.existing",
             return_value=None,
         ),
         patch("requests.post") as mock_post,
@@ -516,7 +523,7 @@ def test_post_review_uses_line_side_and_commit_id(
         comment = payload["comments"][0]
         assert "line" in comment
         assert "side" in comment
-        assert comment["line"] == 10
+        assert comment["line"] == line
         assert comment["side"] == "RIGHT"
 
 

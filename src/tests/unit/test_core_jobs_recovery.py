@@ -18,7 +18,8 @@ import sqlalchemy as sa
 from src.core.jobs.models import INTERACTIVE, JobRequest
 from src.core.jobs.sql import SQLJobStore
 
-WORKER = textwrap.dedent("""
+WORKER = textwrap.dedent(
+    """
     import sys, time
     import sqlalchemy as sa
     from src.core.jobs.sql import SQLJobStore
@@ -38,7 +39,8 @@ WORKER = textwrap.dedent("""
     store = SQLJobStore(sa.create_engine(sys.argv[1]), lease_seconds=2)
     Worker(store, INTERACTIVE, name="doomed", poll_seconds=0.1,
            heartbeat_seconds=0.5, services=services).work()
-    """)
+    """
+)
 
 
 def test_a_job_survives_the_worker_being_killed_outright(tmp_path):

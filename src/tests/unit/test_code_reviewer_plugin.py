@@ -23,6 +23,11 @@ from src.models.pull_request import PullRequest
 from src.core.responses import success_response
 
 
+@pytest.fixture(autouse=True)
+def synchronous_posting(monkeypatch):
+    monkeypatch.setattr("src.config.settings.QUEUE_MODE", "request")
+
+
 # Settings are looked up by key, so a fixture has to answer by key. Returning
 # one number for every setting made the reading budget whatever the file limit
 # happened to be, and a budget of twenty tokens reads any change in parts.
@@ -873,14 +878,14 @@ def test_a_review_records_what_it_spent_against_the_repository(
     assert len(kept) == 2
     assert {record.purpose for record in kept} == {"review", "summary"}
     assert all(record.owner_id == "test_owner/test_repo" for record in kept)
-    assert kept[0].purpose == "review"
-    assert (kept[0].owner_type, kept[0].owner_id) == (
+    review_usage = next(record for record in kept if record.purpose == "review")
+    assert (review_usage.owner_type, review_usage.owner_id) == (
         "repository",
         "test_owner/test_repo",
     )
-    assert (kept[0].input_tokens, kept[0].output_tokens) == (900, 120)
-    assert kept[0].cost_micro == 1_200
-    assert kept[0].provider == "gemini"
+    assert (review_usage.input_tokens, review_usage.output_tokens) == (900, 120)
+    assert review_usage.cost_micro == 1_200
+    assert review_usage.provider == "gemini"
 
 
 class TestAReviewSaysWhatItWasAbleToRead:

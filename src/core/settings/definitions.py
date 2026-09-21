@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 from src.config.settings import DEFAULT_TOKEN_LIMIT, REVIEW_DRAFT_PRS
 from src.models.config import ConfigType
+from src.core.settings.review_defaults import DEFAULT_EXCLUSIONS
 
 # Where a setting can be given a value. Order matters: the narrowest scope that
 # has a value wins, which is what lets a repository depart from its
@@ -188,6 +189,36 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=0,
         maximum=1000,
         group="Review",
+    ),
+    Setting(
+        key="review.expert_passes",
+        label="Expert review passes",
+        description=(
+            "Use auto for automatic selection, or list exact skill IDs, one per "
+            "line, to run only those expert passes. An empty list disables expert "
+            "passes. General review and guidance still apply. Built-in system "
+            "skills do not require a parent system."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default="auto",
+        group="Review",
+        listed=True,
+    ),
+    Setting(
+        key="review.exclude_patterns",
+        label="Files excluded from review",
+        description=(
+            "Glob patterns, one per line. A filename pattern matches at any depth; "
+            "patterns containing / match repository-relative paths. Lockfiles are "
+            "excluded by default. Replace the list to customize it or clear it to "
+            "review every file. Dependency manifests remain included."
+        ),
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=DEFAULT_EXCLUSIONS,
+        group="Review",
+        listed=True,
     ),
     Setting(
         key="review.reading_budget",

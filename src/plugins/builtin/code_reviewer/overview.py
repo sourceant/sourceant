@@ -1,5 +1,7 @@
 import json
-from concurrent.futures import ThreadPoolExecutor
+
+from src.core.parallel import parallel_map
+from src.core.review.exclusions import review_diff
 
 from src.core.settings.configuration import Configuration
 from src.plugins.builtin.code_reviewer.reviewing import (
@@ -14,6 +16,13 @@ from src.models.code_review import CodeReviewSummary, summary_from
 def summarize_changes(
     diff, provider, configuration: Configuration, metadata=None, suggestions=()
 ):
+    diff, omitted = review_diff(diff, configuration)
+    if omitted and not diff.strip():
+        return CodeReviewSummary(
+            overview="All changed files are excluded from review.",
+            minor_suggestions=[],
+            critical_issues=[],
+        )
     batches = _batched(
         parse_diff(diff), CodeReviewer._budget(configuration), provider.count_tokens
     )
@@ -35,8 +44,7 @@ def summarize_changes(
             suggestions if len(batches) == 1 else (),
         )
 
-    with ThreadPoolExecutor(max_workers=min(len(batches), MAX_AT_ONCE)) as pool:
-        descriptions = list(pool.map(describe_batch, batches))
+    descriptions = parallel_map(describe_batch, batches, MAX_AT_ONCE)
     while len(descriptions) > 1:
         descriptions = [
             describe(

@@ -1,0 +1,21 @@
+DEFAULT_EXCLUSIONS = "\n".join(
+    (
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lock",
+        "bun.lockb",
+        "composer.lock",
+        "poetry.lock",
+        "uv.lock",
+        "Pipfile.lock",
+        "Cargo.lock",
+        "Gemfile.lock",
+        "go.sum",
+        "pubspec.lock",
+        "packages.lock.json",
+        "Podfile.lock",
+        "Package.resolved",
+    )
+)

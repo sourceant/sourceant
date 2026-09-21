@@ -482,9 +482,17 @@ class GitHub(ProviderAdapter):
         headers: Dict[str, str],
     ) -> None:
         """Create or update the main summary comment on a PR."""
-        existing_comment = self._find_overview_comment(owner, repo, pr_number, headers)
+        from src.integrations.github.review_delivery import existing
+
+        existing_comment = existing(
+            f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
+            headers,
+            COMMENT_MARKER,
+        )
 
         body = f"{summary}\n\n{COMMENT_MARKER}"
+        if existing_comment and existing_comment.get("body") == body:
+            return
 
         try:
             if existing_comment:
@@ -504,10 +512,9 @@ class GitHub(ProviderAdapter):
             response.raise_for_status()
             logger.info("Successfully created/updated overview comment.")
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to create or update overview comment: {e}")
-            if hasattr(e, "response") and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+        except requests.exceptions.RequestException:
+            logger.exception("Failed to create or update overview comment")
+            raise
 
     def _format_summary(self, summary: CodeReviewSummary) -> str:
         """Formats the structured summary into a markdown string."""
@@ -527,17 +534,8 @@ class GitHub(ProviderAdapter):
                 parts.append(f"- {item}\n")
             parts.append("\n")
 
-        if summary.minor_suggestions:
-            parts.append("### 💡 Minor Suggestions\n")
-            for item in summary.minor_suggestions:
-                parts.append(f"- {item}\n")
-            parts.append("\n")
-
-        if summary.critical_issues:
-            parts.append("### 🚨 Critical Issues\n")
-            for item in summary.critical_issues:
-                parts.append(f"- {item}\n")
-            parts.append("\n")
+        count = len(summary.minor_suggestions) + len(summary.critical_issues)
+        parts.append(f"Findings: {count}. See the review findings for details.\n\n")
 
         if summary.systems:
             parts.append(summary.systems)
@@ -721,200 +719,26 @@ class GitHub(ProviderAdapter):
 
     def post_review(
         self,
-        repository: Repository,
-        pull_request: PullRequest,
-        code_review: CodeReview,
-        line_mapper: LineMapper,
-        configuration: Optional["Configuration"] = None,
-    ) -> Dict[str, Any]:
-        """Orchestrates posting a complete code review to a GitHub pull request."""
-        from src.core.settings.configuration import Configuration
+        repository,
+        pull_request,
+        code_review,
+        line_mapper,
+        configuration=None,
+        delivery_id=None,
+        force_fallback=False,
+    ):
+        from src.integrations.github.review_delivery import deliver
 
-        if configuration is None:
-            configuration = Configuration(repository=repository.full_name)
-        if pull_request.number is None:
-            error_msg = "Cannot post review without a valid pull request number."
-            logger.error(error_msg)
-            return {
-                "status": "error",
-                "message": error_msg,
-                "error_type": "missing_pr_number",
-            }
-
-        try:
-            access_token = self.get_installation_access_token(
-                repository.owner, repository.name
-            )
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github.v3+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-
-            if code_review.summary:
-                formatted_summary = self._format_summary(code_review.summary)
-
-                existing_comment = self._find_overview_comment(
-                    repository.owner, repository.name, pull_request.number, headers
-                )
-                if existing_comment and not self._llm_for(
-                    configuration
-                ).is_summary_different(
-                    summary_a=existing_comment["body"],
-                    summary_b=formatted_summary,
-                ):
-                    logger.info(
-                        f"PR #{pull_request.number} summary is semantically unchanged. Skipping update."
-                    )
-                else:
-                    self._create_or_update_overview_comment(
-                        repository.owner,
-                        repository.name,
-                        pull_request.number,
-                        formatted_summary,
-                        headers,
-                    )
-
-            comments = []
-            if code_review.code_suggestions:
-                for suggestion in code_review.code_suggestions:
-                    if not suggestion or not suggestion.file_name:
-                        continue
-
-                    comment_body = suggestion.comment or ""
-                    if suggestion.suggested_code:
-                        comment_body += (
-                            f"\n\n```suggestion\n{suggestion.suggested_code}\n```"
-                        )
-
-                    comment = {
-                        "path": suggestion.file_name,
-                        "body": comment_body,
-                    }
-
-                    side = suggestion.side.value if suggestion.side else "RIGHT"
-                    if (
-                        suggestion.start_line
-                        and suggestion.end_line
-                        and suggestion.start_line < suggestion.end_line
-                    ):
-                        comment["start_line"] = suggestion.start_line
-                        comment["line"] = suggestion.end_line
-                        comment["side"] = side
-                        comment["start_side"] = side
-                    else:
-                        comment["line"] = suggestion.end_line
-                        comment["side"] = side
-
-                    comments.append(comment)
-
-            review_body = "Review complete. See the overview comment for a summary."
-            if not comments:
-                logger.info("No valid code suggestions were generated to post.")
-                review_body = "Review complete. No specific code suggestions were generated. See the overview comment for a summary."
-
-            review_payload = {
-                "commit_id": pull_request.head_sha,
-                "body": review_body,
-                "event": code_review.verdict.value,
-                "comments": comments,
-            }
-
-            review_response_data = {}
-            if comments or code_review.verdict != Verdict.COMMENT:
-                review_response_data = self._post_review_with_retry(
-                    repository.owner,
-                    repository.name,
-                    pull_request.number,
-                    review_payload,
-                    headers,
-                )
-            else:
-                logger.info(
-                    "No suggestions to post and verdict is COMMENT. Skipping formal review submission."
-                )
-
-            logger.info(f"Successfully posted review to PR #{pull_request.number}")
-            return {
-                "status": "success",
-                "message": f"Review posted to GitHub for PR #{pull_request.number}",
-                "review_data": review_response_data,
-            }
-
-        except (requests.exceptions.RequestException, ValueError) as e:
-            error_msg = f"Error posting review to GitHub: {e}"
-            if hasattr(e, "response") and e.response is not None:
-                error_msg += f" - Response: {e.response.text}"
-            logger.error(error_msg)
-
-            # Fallback: Post review content as a comment when API review posting fails
-            logger.info(
-                "Attempting fallback: posting review as comment instead of formal review"
-            )
-
-            # Always update the overview comment even when fallback is used
-            if code_review.summary:
-                formatted_summary = self._format_summary(code_review.summary)
-                existing_comment = self._find_overview_comment(
-                    repository.owner, repository.name, pull_request.number, headers
-                )
-                if not existing_comment or self._llm_for(
-                    configuration
-                ).is_summary_different(
-                    summary_a=existing_comment["body"],
-                    summary_b=formatted_summary,
-                ):
-                    self._create_or_update_overview_comment(
-                        repository.owner,
-                        repository.name,
-                        pull_request.number,
-                        formatted_summary,
-                        headers,
-                    )
-
-            fallback_result = self._post_review_as_fallback_comment(
-                repository, pull_request, code_review, headers
-            )
-            if fallback_result["status"] == "success":
-                return {
-                    "status": "partial_success",
-                    "message": f"Review API failed, but posted as comment: {error_msg}",
-                    "error_type": "github_api_error_with_fallback",
-                    "fallback_comment_id": fallback_result.get("comment_id"),
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": f"{error_msg}. Fallback comment also failed: {fallback_result['message']}",
-                    "error_type": "github_api_error",
-                }
-        except Exception as e:
-            error_msg = f"An unexpected error occurred: {e}"
-            logger.exception(error_msg)
-
-            # Fallback for unexpected errors too
-            try:
-                logger.info(
-                    "Attempting fallback after unexpected error: posting review as comment"
-                )
-                fallback_result = self._post_review_as_fallback_comment(
-                    repository, pull_request, code_review, headers
-                )
-                if fallback_result["status"] == "success":
-                    return {
-                        "status": "partial_success",
-                        "message": f"Unexpected error occurred, but posted as comment: {error_msg}",
-                        "error_type": "unexpected_error_with_fallback",
-                        "fallback_comment_id": fallback_result.get("comment_id"),
-                    }
-            except Exception as fallback_e:
-                logger.error(f"Fallback comment posting also failed: {fallback_e}")
-
-            return {
-                "status": "error",
-                "message": error_msg,
-                "error_type": "unexpected_error",
-            }
+        return deliver(
+            self,
+            repository,
+            pull_request,
+            code_review,
+            line_mapper,
+            configuration,
+            delivery_id,
+            force_fallback,
+        )
 
     def list_open_pull_requests(
         self, owner: str, repo: str, max_pages: int = 10
