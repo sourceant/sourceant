@@ -350,7 +350,15 @@ class FindingsDeliveryTests(unittest.TestCase):
             posted.append(created)
             return response(201, created)
 
-        github = GitHub()
+        with patch.dict(
+            "os.environ",
+            {
+                "GITHUB_APP_ID": "test-app",
+                "GITHUB_APP_PRIVATE_KEY_PATH": "unused-test-key.pem",
+                "GITHUB_APP_CLIENT_ID": "test-client",
+            },
+        ):
+            github = GitHub()
         with (
             patch.object(
                 github,
