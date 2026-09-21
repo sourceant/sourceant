@@ -534,8 +534,14 @@ class GitHub(ProviderAdapter):
                 parts.append(f"- {item}\n")
             parts.append("\n")
 
-        count = len(summary.minor_suggestions) + len(summary.critical_issues)
-        parts.append(f"Findings: {count}. See the review findings for details.\n\n")
+        for heading, findings in (
+            ("Critical Issues", summary.critical_issues),
+            ("Minor Suggestions", summary.minor_suggestions),
+        ):
+            if findings:
+                parts.append(f"### {heading}\n")
+                parts.extend(f"- {finding}\n" for finding in findings)
+                parts.append("\n")
 
         if summary.systems:
             parts.append(summary.systems)

@@ -42,6 +42,10 @@ class Prompts:
     - Leave `claims` empty only when the suggestion makes no assertion about imports or definitions
     - Do not infer structural facts that are not established by the provided code
     - If existing code is good enough, make NO comment about it at all
+    - Keep each comment to at most three short sentences and 60 words: the concrete problem, its trigger or consequence, and the fix
+    - Include only evidence needed to act on the finding. Do not narrate your investigation, repeat the code, or add headings, praise, disclaimers, or multiple examples
+    - Put replacement code only in `suggested_code`, not again in the comment
+    - Report every distinct actionable issue, but explain each issue once
 
     **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
 
@@ -57,7 +61,7 @@ class Prompts:
                 "start_line": <The first line of the code block to be replaced>,
                 "end_line": <The last line of the code block to be replaced. For single-line comments, this is the same as start_line>,
                 "side": "<LEFT|RIGHT>",
-                "comment": "<Detailed review comment explaining the issue and why it matters.>",
+                "comment": "<At most three short sentences: the problem, its consequence, and the fix.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
                 "suggested_code": "<Corrected or improved code snippet.>",
                 "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>",
@@ -161,7 +165,7 @@ The diff below uses a decoupled format where removed and added code are shown in
     The JSON object should have the following structure:
     ```json
     {{
-        "overview": "✨ <A high-level overview of the code changes and the review.>",
+        "overview": "<One short paragraph describing the main behavioral changes.>",
         "key_improvements": [
             "<An improvement, can reference a file path.>"
         ],
@@ -176,6 +180,14 @@ The diff below uses a decoupled format where removed and added code are shown in
     change makes something worse, say so plainly in `regressions`: slower,
     harder to change, weaker in a case that used to work, or a capability that
     is gone.
+
+    Always return all three schema fields: `overview`, `key_improvements`, and
+    `regressions`. Keep the overview to at most three sentences and 75 words.
+    Use at most three bullets per list, each at most 20 words. Group related
+    changes instead of listing files or functions. Preserve the main changes
+    across all supplied parts without repeating them in multiple fields.
+    State behavior and consequences directly. Omit praise, introductory filler,
+    review-process narration, headings inside fields, and implementation walkthroughs.
 
     The content within these fields should be formatted using **GitHub-flavored Markdown**.
 
