@@ -46,6 +46,8 @@ CODE_SCOPE = SCOPE.extend({"revision": "head_sha_def"})
 # one number for every setting made the reading budget whatever the file limit
 # happened to be, and a budget of twenty tokens reads any change in parts.
 def _setting(key, **_):
+    if key == "review.include_nitpicks":
+        return True
     if key == "review.reading_budget":
         return 1_000_000
     return 20

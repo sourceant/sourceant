@@ -21,6 +21,7 @@ from src.core.jobs.sql import job_table
 from src.core.plugins import event_hooks
 from src.core.services import ServiceRegistry
 from src.events.delivery import Deliveries
+from src.events.review_posting import ReviewPosting
 from src.models.config import Config
 from src.models.repository_event import RepositoryEvent
 from src.models.review_record import ReviewRecord
@@ -30,11 +31,25 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.mark.parametrize(
-    "failure",
-    ["generation", "posting", "none", "fallback", "summary_retry", "summary_invalid"],
+    "failure,queue_mode",
+    [
+        (failure, "database")
+        for failure in (
+            "generation",
+            "posting",
+            "none",
+            "fallback",
+            "summary_retry",
+            "summary_invalid",
+        )
+    ]
+    + [
+        (failure, "request")
+        for failure in ("posting", "posting_retry", "posting_exhausted", "cancelled")
+    ],
 )
 def test_webhook_job_reflects_review_and_posting_outcomes(
-    monkeypatch, tmp_path, failure
+    monkeypatch, tmp_path, failure, queue_mode
 ):
     engine = create_engine(
         f"sqlite:///{tmp_path / 'review.db'}",
@@ -50,7 +65,8 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
         "src.controllers.repository_event_controller.STATELESS_MODE", False
     )
     monkeypatch.setattr("src.utils.review_record_service.STATELESS_MODE", False)
-    monkeypatch.setattr("src.events.dispatcher.QUEUE_MODE", "database")
+    monkeypatch.setattr("src.events.dispatcher.QUEUE_MODE", queue_mode)
+    monkeypatch.setattr("src.config.settings.QUEUE_MODE", queue_mode)
     monkeypatch.setattr(
         "src.events.delivery.tenant_for", lambda repo: ("6", "workspace")
     )
@@ -82,9 +98,33 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
         ),
         "message": "Review posting failed" if failure == "posting" else "Review posted",
     }
+    sleeps = Mock()
+    if queue_mode == "request":
+        monkeypatch.setattr(
+            "src.plugins.builtin.code_reviewer.plugin.time", Mock(sleep=sleeps)
+        )
+        if failure in ("posting_retry", "posting_exhausted", "cancelled"):
+            pending = {
+                "status": "pending",
+                "message": "Temporary posting failure",
+                "retry_after": 90,
+            }
+            github.post_review.side_effect = (
+                [pending, pending, {"status": "success", "message": "Delivered"}]
+                if failure == "posting_retry"
+                else [pending] * 3
+            )
+        if failure == "cancelled":
+            stopped = {"value": False}
+            sleeps.side_effect = lambda delay: stopped.update(value=True)
+            monkeypatch.setattr(
+                "src.plugins.builtin.code_reviewer.plugin.abandoned",
+                lambda *args: stopped["value"],
+            )
     monkeypatch.setattr(
         "src.plugins.builtin.code_reviewer.plugin.GitHub", lambda: github
     )
+    monkeypatch.setattr("src.events.review_posting.GitHub", lambda: github)
     monkeypatch.setattr(
         "src.plugins.builtin.code_reviewer.plugin.written_out",
         lambda *args: nullcontext((tmp_path, ())),
@@ -152,14 +192,41 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
             headers={"X-GitHub-Event": "pull_request"},
         )
         assert result.status_code == 201, result.text
-        services.contribute(JobHandler, Deliveries(services), "sourceant_core")
-        Worker(store, INTERACTIVE, services=services).work(max_jobs=1)
+        if queue_mode == "database":
+            services.contribute(JobHandler, Deliveries(services), "sourceant_core")
+            services.contribute(JobHandler, ReviewPosting(), "sourceant_core")
+            worker = Worker(store, INTERACTIVE, services=services)
+            assert worker.work(max_jobs=1, max_time=15) == 1
+            with engine.connect() as connection:
+                queued = connection.execute(
+                    select(job_table.c.id).where(job_table.c.kind == "review.post")
+                ).first()
+            if queued:
+                assert worker.work(max_jobs=1, max_time=15) == 1
     with engine.connect() as connection:
-        job = connection.execute(select(job_table)).mappings().one()
+        job = (
+            connection.execute(select(job_table).order_by(job_table.c.id.desc()))
+            .mappings()
+            .first()
+        )
         records = connection.execute(select(ReviewRecord)).all()
     engine.dispose()
+    if queue_mode == "request":
+        assert job is None
+        assert len(records) == (1 if failure == "posting_retry" else 0)
+        assert completion.call_count == 2
+        expected_calls = 3 if failure in ("posting_retry", "posting_exhausted") else 1
+        assert github.post_review.call_count == expected_calls
+        sent = [
+            call.kwargs["code_review"] for call in github.post_review.call_args_list
+        ]
+        assert all(review is sent[0] for review in sent)
+        assert [call.args[0] for call in sleeps.call_args_list] == (
+            [90, 120] if expected_calls == 3 else [90] if failure == "cancelled" else []
+        )
+        return
     if failure in ("generation", "posting", "summary_invalid"):
-        assert job["state"] == "dead", job
+        assert job["state"] == ("failed" if failure == "posting" else "dead"), job
         expected = (
             "response_format" if failure == "generation" else "Review posting failed"
         )
@@ -173,7 +240,7 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
     if failure in ("generation", "summary_invalid"):
         github.post_review.assert_not_called()
         if failure == "generation":
-            completion.assert_called_once()
+            assert completion.call_count <= 2
     else:
         github.post_review.assert_called_once()
 

@@ -80,6 +80,12 @@ class LiteLLMProvider(LLMInterface):
         self._schema_refused = False
         self._tool_choice_refused = False
 
+    def _completion(self, **kwargs):
+        from src.core.parallel import model_slots
+
+        with model_slots:
+            return litellm.completion(**kwargs)
+
     def _spent(self, response, purpose: str) -> None:
         """Keep what the provider says the call consumed.
 
@@ -328,7 +334,7 @@ class LiteLLMProvider(LLMInterface):
         )
         if native:
             try:
-                return litellm.completion(
+                return self._completion(
                     **self._credentials(),
                     model=self.model,
                     messages=messages,
@@ -359,7 +365,7 @@ class LiteLLMProvider(LLMInterface):
         instructions = "Return only a JSON object matching this schema:\n" + json.dumps(
             schema.model_json_schema()
         )
-        return litellm.completion(
+        return self._completion(
             **self._credentials(),
             model=self.model,
             messages=[*messages, {"role": "user", "content": instructions}],
@@ -487,6 +493,7 @@ class LiteLLMProvider(LLMInterface):
         as_text: bool = False,
         previous_summary: Optional[str] = None,
         change_context: Optional[str] = None,
+        include_nitpicks: bool = False,
     ) -> Union[CodeReviewSummary, str]:
         if not suggestions and not change_context:
             summary = CodeReviewSummary(
@@ -508,6 +515,16 @@ class LiteLLMProvider(LLMInterface):
             previous_summary=self._standing_summary(previous_summary),
             change_context=change_context or "",
         )
+        if not include_nitpicks:
+            prompt += (
+                "\n\nNitpicks are disabled throughout this summary. Omit style, "
+                "naming, clarity, documentation, refactoring, and optional "
+                "improvement advice, including any carried over from supplied "
+                "partial summaries. Regressions must describe concrete bugs, "
+                "security issues, or material performance problems supported by "
+                "the changed code. Do not relabel cosmetic concerns as regressions. "
+                "Still describe actual changes in the overview and key improvements."
+            )
 
         def summarize(shape=None) -> str:
             messages = [{"role": "user", "content": prompt}]
@@ -515,7 +532,7 @@ class LiteLLMProvider(LLMInterface):
                 return self._validated_response(
                     lambda: self._structured(messages, shape), shape, "summary"
                 )
-            response = litellm.completion(
+            response = self._completion(
                 **self._credentials(), model=self.model, messages=messages
             )
             self._spent(response, "summary")
@@ -583,7 +600,7 @@ class LiteLLMProvider(LLMInterface):
             if choice_supported and not self._tool_choice_refused:
                 options["tool_choice"] = "required" if require else "auto"
             try:
-                response = litellm.completion(
+                response = self._completion(
                     **self._credentials(),
                     model=self.model,
                     messages=messages,
@@ -606,7 +623,7 @@ class LiteLLMProvider(LLMInterface):
                 ):
                     raise
                 self._tool_choice_refused = True
-                response = litellm.completion(
+                response = self._completion(
                     **self._credentials(),
                     model=self.model,
                     messages=messages,
@@ -651,7 +668,7 @@ class LiteLLMProvider(LLMInterface):
 
     def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         def say() -> str:
-            response = litellm.completion(
+            response = self._completion(
                 **self._credentials(),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
@@ -671,7 +688,7 @@ class LiteLLMProvider(LLMInterface):
         )
 
         def compare() -> str:
-            response = litellm.completion(
+            response = self._completion(
                 **self._credentials(),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],

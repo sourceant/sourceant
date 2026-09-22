@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from threading import Lock
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -43,6 +44,7 @@ class LazyChangedFileCodeIndex:
         ][:file_limit]
         self._read_content = read_content
         self._index: InMemoryCodeIndex | None = None
+        self._lock = Lock()
 
     def search(self, query: CodeSearch) -> CodeSearchResult:
         return self._resolve().search(query)
@@ -51,11 +53,12 @@ class LazyChangedFileCodeIndex:
         return self._resolve().traverse(traversal)
 
     def _resolve(self) -> InMemoryCodeIndex:
-        if self._index is None:
-            self._index = build_changed_file_code_index(
-                self._scope, self._paths, self._read_content
-            )
-        return self._index
+        with self._lock:
+            if self._index is None:
+                self._index = build_changed_file_code_index(
+                    self._scope, self._paths, self._read_content
+                )
+            return self._index
 
 
 class DefaultReviewCodeContextPreparer:

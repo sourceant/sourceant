@@ -52,7 +52,10 @@ class CodeSuggestion(BaseModel):
         ...,
         description="The side of the suggestion. New changes appear the RIGHT side.",
     )
-    comment: str = Field(..., description="The suggestion summary or comment.")
+    comment: str = Field(
+        ...,
+        description="The problem, consequence, and fix in at most three sentences and 60 words.",
+    )
     category: Optional[SuggestionCategory] = Field(
         ...,
         description="The category of the suggestion, ex: 'style', 'performance', etc.",
@@ -127,21 +130,18 @@ class CodeReviewOverview(BaseModel):
 
     overview: str = Field(
         ...,
-        description="A high-level overview of the code changes and the review.",
+        description="Main behavioral changes in at most three sentences and 75 words.",
     )
     key_improvements: List[str] = Field(
         default_factory=list,
         description=(
-            "A list of key improvements, which may contain references to "
-            "paths. Leave empty if none."
+            "At most three key improvements, each at most 20 words. "
+            "Leave empty if none."
         ),
     )
     regressions: List[str] = Field(
         default_factory=list,
-        description=(
-            "A list of regressions, which may contain references to paths. "
-            "Leave empty if none."
-        ),
+        description="At most three regressions, each at most 20 words. Leave empty if none.",
     )
 
 

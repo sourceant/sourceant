@@ -11,6 +11,7 @@ from src.api.routes.local_reviews import get_reviews, get_working_tree_reviewer
 from src.core.review import Reviewer
 from src.core.services import ServiceRegistry
 from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
+from src.plugins.builtin.code_reviewer import working_tree
 from src.plugins.builtin.code_reviewer.working_tree import WorkingTreeReviews
 from src.plugins.builtin.local.folders import RegisteredFolders
 from src.plugins.builtin.local.skills import SkillsOnDisk
@@ -263,7 +264,8 @@ class TestLocalReview(BaseTestCase):
             }
         )
         monkeypatch.setattr(
-            "src.plugins.builtin.code_reviewer.working_tree.provider_for",
+            working_tree,
+            "provider_for",
             lambda *_, **__: model,
         )
         self.register()
@@ -286,7 +288,8 @@ class TestLocalReview(BaseTestCase):
             }
         )
         monkeypatch.setattr(
-            "src.plugins.builtin.code_reviewer.working_tree.provider_for",
+            working_tree,
+            "provider_for",
             lambda *_, **__: model,
         )
         self.register()
@@ -301,7 +304,8 @@ class TestLocalReview(BaseTestCase):
 
     def test_judging_without_a_model_is_refused_rather_than_guessed(self, monkeypatch):
         monkeypatch.setattr(
-            "src.plugins.builtin.code_reviewer.working_tree.provider_for",
+            working_tree,
+            "provider_for",
             lambda *_, **__: None,
         )
         self.register()
@@ -334,7 +338,8 @@ class TestLocalReview(BaseTestCase):
             ),
         )
         monkeypatch.setattr(
-            "src.plugins.builtin.code_reviewer.working_tree.provider_for",
+            working_tree,
+            "provider_for",
             lambda *_, **__: model,
         )
         self.register()
@@ -353,7 +358,8 @@ class TestLocalReview(BaseTestCase):
     def test_the_reviewer_is_told_what_the_team_wrote_down(self, monkeypatch):
         model = FakeModel({"passed": True})
         monkeypatch.setattr(
-            "src.plugins.builtin.code_reviewer.working_tree.provider_for",
+            working_tree,
+            "provider_for",
             lambda *_, **__: model,
         )
         self.register()

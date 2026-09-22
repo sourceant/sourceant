@@ -13,7 +13,10 @@ from typing import Any, Callable, List, Sequence
 
 from rapidfuzz import fuzz
 
-from src.config.settings import APP_ENV
+from src.core.parallel import parallel_map
+from src.core.review.exclusions import review_diff
+from src.core.skills.matching import matches
+from src.core.skills.selection import for_review
 from src.core.analysis import Analysis, also_reported
 from src.core.change_context import ChangeSet
 from src.core.code_index import CodeIndexReader
@@ -41,7 +44,6 @@ from src.core.scope import Scope
 from src.core.skills import (
     Change,
     LLMSkillChecker,
-    PhraseSkillSelector,
     Skill,
     SkillSource,
     SkillType,
@@ -53,6 +55,7 @@ from src.core.services import ServiceRegistry, service_registry
 from src.core.settings.configuration import Configuration
 from src.models.code_review import (
     CodeReview,
+    CodeReviewSummary,
     summary_from,
     Side,
     SuggestionCategory,
@@ -141,6 +144,7 @@ class CodeReviewer:
         previous_summary: str | None = None,
         told: Sequence[Told] = (),
         skills: Sequence[Skill] = (),
+        expert_passes: str | None = None,
         code_scope: Scope | None = None,
         metadata: dict | None = None,
         coverage: Coverage | None = None,
@@ -161,11 +165,34 @@ class CodeReviewer:
         """
         if _stopped(changes, metadata, revision):
             return None
+        coverage = coverage if coverage is not None else Coverage()
+        filtered_diff, omitted = review_diff(changes.diff, changes.configuration)
+        for path in omitted:
+            coverage.record(
+                "changed file",
+                "exclusion pattern",
+                answered=False,
+                target=path,
+                reason="excluded by review.exclude_patterns",
+            )
+        if omitted and not filtered_diff.strip():
+            return CodeReview(
+                summary=CodeReviewSummary(
+                    overview="All changed files are excluded from review.",
+                    minor_suggestions=[],
+                    critical_issues=[],
+                ),
+                verdict=Verdict.COMMENT,
+                code_suggestions=[],
+            )
+        changes = replace(
+            changes,
+            diff=filtered_diff,
+            files=tuple(f for f in changes.files if f.path not in omitted),
+        )
         parsed_files = parse_diff(changes.diff)
         if not parsed_files:
             return None
-        coverage = coverage if coverage is not None else Coverage()
-
         line_mapper = LineMapper(parsed_files)
         readable = [
             parsed_file.file_path
@@ -174,6 +201,7 @@ class CodeReviewer:
         ]
 
         configuration = changes.configuration
+        include_nitpicks = configuration.value("review.include_nitpicks") is True
         file_limit = (
             configuration.value("review.structural_context_file_limit")
             or DEFAULT_FILE_LIMIT
@@ -203,20 +231,45 @@ class CodeReviewer:
             analysis=analysis.rendered() if analysis else None,
         )
 
+        if not include_nitpicks:
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        Told(
+                            "Finding policy",
+                            "Nitpicks are disabled. Report only concrete bugs, security "
+                            "issues, or material performance problems supported by the "
+                            "changed code. Omit style, naming, clarity, documentation, "
+                            "refactoring, and optional improvements from findings and "
+                            "overview sections. Do not relabel cosmetic advice as a bug "
+                            "or performance issue. State the failing scenario and its "
+                            "impact; speculative benefits or tiny optimizations do not "
+                            "qualify. This policy applies to every expert pass too.",
+                        ).rendered(),
+                    ]
+                ),
+            )
+
         evidence = self._evidence(changes, durable_code, read_content, code_scope)
         metadata = metadata or self._metadata(changes)
 
         readers = (durable_code, local_code)
         budget = self._budget(configuration)
-        total = sum(provider.count_tokens(one.diff_text) for one in parsed_files)
 
         available = {skill.id: skill for skill in skills}
         for source in self.services.contributions(SkillSource):
             for skill in source.read():
                 available[skill.id] = skill
-        chosen = PhraseSkillSelector().select(
+        chosen = for_review(
             tuple(available.values()),
             Change(changes.title, changes.description, changes.paths, changes.diff),
+            (
+                configuration.value("review.expert_passes")
+                if expert_passes is None
+                else expert_passes
+            ),
         )
         # Most skills are a pointer at the page that holds the rule, and a
         # change judged against a pointer is judged against nothing.
@@ -249,13 +302,24 @@ class CodeReviewer:
                 ),
             )
 
-        def read(pass_sections):
+        def read(pass_sections, paths=()):
+            pass_files = [
+                one
+                for one in parsed_files
+                if not paths or matches(one.file_path, paths)
+            ]
+            if not pass_files:
+                return None
+            pass_changes = replace(
+                changes, diff="\n".join(one.diff_text for one in pass_files)
+            )
+            total = sum(provider.count_tokens(one.diff_text) for one in pass_files)
             if total <= budget:
                 logger.info("The whole change fits in one reading.")
                 return self._in_one_pass(
                     provider,
-                    changes,
-                    parsed_files,
+                    pass_changes,
+                    pass_files,
                     line_mapper,
                     readers,
                     evidence,
@@ -268,12 +332,12 @@ class CodeReviewer:
                     code_scope,
                 )
 
-            batches = _batched(parsed_files, budget, provider.count_tokens)
-            logger.info(f"Reading {len(parsed_files)} files in {len(batches)} passes.")
+            batches = _batched(pass_files, budget, provider.count_tokens)
+            logger.info(f"Reading {len(pass_files)} files in {len(batches)} passes.")
             return self._in_batches(
                 provider,
-                changes,
-                parsed_files,
+                pass_changes,
+                pass_files,
                 batches,
                 line_mapper,
                 readers,
@@ -288,10 +352,11 @@ class CodeReviewer:
                 revision=revision,
             )
 
-        answer = read(sections)
         focused = [skill for skill in selected if skill.kind == SkillType.REVIEW_PASS]
-        combined = list(answer.code_suggestions or ())
-        for skill in focused:
+
+        def run_pass(skill):
+            if skill is None:
+                return read(sections)
             instructions = (
                 "Review only the concern defined by this skill. Return the existing "
                 "structured review format. Report only findings supported by the "
@@ -299,7 +364,7 @@ class CodeReviewer:
                 "has already been removed.\n\n" + skill.body
             )
             try:
-                checked = read(
+                return read(
                     replace(
                         sections,
                         knowledge=self._joined(
@@ -308,7 +373,8 @@ class CodeReviewer:
                                 Told(skill.name, instructions).rendered(),
                             ]
                         ),
-                    )
+                    ),
+                    skill.paths,
                 )
             except Exception as error:  # noqa: BLE001 - one pass, not the review
                 # One pass is one extra reading. Losing it costs what it
@@ -323,14 +389,30 @@ class CodeReviewer:
                     target=skill.id,
                     reason=f"the pass did not finish: {type(error).__name__}",
                 )
-                continue
-            combined.extend(checked.code_suggestions or ())
+                return None
+
+        answers = parallel_map(run_pass, [None, *focused])
+        answer = answers[0]
+        if answer is None:
+            return None
+        combined = [
+            finding
+            for result in answers
+            if result
+            for finding in (result.code_suggestions or ())
+        ]
         self._check_they_were_applied(
             provider, changes, configuration, guidance, coverage
         )
 
         unique, seen = [], set()
         for suggestion in self._beyond(analysis, combined):
+            if not include_nitpicks and suggestion.category not in {
+                SuggestionCategory.BUG,
+                SuggestionCategory.SECURITY,
+                SuggestionCategory.PERFORMANCE,
+            }:
+                continue
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
             keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
             if suggestion.suggested_code:
@@ -618,8 +700,7 @@ class CodeReviewer:
                 analysis=sections.analysis,
             )
 
-        with ThreadPoolExecutor(max_workers=min(len(batches), MAX_AT_ONCE)) as pool:
-            answers = list(pool.map(read, batches))
+        answers = parallel_map(read, batches, MAX_AT_ONCE)
 
         if _stopped(changes, metadata, revision):
             return None
@@ -669,7 +750,7 @@ class CodeReviewer:
                 )
                 continue
             mapped_result = line_mapper.validate_and_map_suggestion(
-                suggestion, strict_mode=(APP_ENV == "production")
+                suggestion, strict_mode=True
             )
             if mapped_result:
                 mapping, reason = mapped_result
@@ -678,24 +759,20 @@ class CodeReviewer:
                 suggestion.side = Side(mapping["side"])
                 if "start_line" in mapping:
                     suggestion.start_line = mapping["start_line"]
-                # What it declared, and what it asserted in words without
-                # declaring. A review sure enough to report a missing name in
-                # prose is the one that does not state the claim, and that is
-                # the claim worth checking.
-                decision = validator.validate(
-                    list(suggestion.claims) + list(claimed_absent(suggestion.comment)),
-                    evidence.read(suggestion.file_name) if evidence else None,
-                    at=suggestion.start_line,
+            decision = validator.validate(
+                list(suggestion.claims) + list(claimed_absent(suggestion.comment)),
+                evidence.read(suggestion.file_name) if evidence else None,
+                at=suggestion.start_line,
+            )
+            if decision.contradicted:
+                if evidence_rejections is not None:
+                    evidence_rejections.append(decision.reason)
+                logger.info(
+                    f"Filtered contradicted suggestion for {suggestion.file_name}: "
+                    f"{decision.reason}"
                 )
-                if decision.contradicted:
-                    if evidence_rejections is not None:
-                        evidence_rejections.append(decision.reason)
-                    logger.info(
-                        f"Filtered contradicted suggestion for {suggestion.file_name}: "
-                        f"{decision.reason}"
-                    )
-                    continue
-                result.append(suggestion)
+                continue
+            result.append(suggestion)
         return result
 
 

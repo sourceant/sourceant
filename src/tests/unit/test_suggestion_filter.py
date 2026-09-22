@@ -33,6 +33,19 @@ def test_purely_positive_comment_filtered(suggestion_filter):
     assert len(removed) == 1
 
 
+def test_captured_review_praise_is_not_actionable(suggestion_filter):
+    import json
+    from pathlib import Path
+
+    captured = Path(__file__).parents[1] / "fixtures/github/local-review-praise.json"
+    suggestions = [
+        CodeSuggestion.model_validate(item) for item in json.loads(captured.read_text())
+    ]
+    kept, removed = suggestion_filter.filter_suggestions(suggestions)
+    assert kept == []
+    assert removed == suggestions
+
+
 def test_negative_comment_kept(suggestion_filter):
     suggestion = _make_suggestion(comment="This has a bug in the loop logic.")
     kept, removed = suggestion_filter.filter_suggestions([suggestion])

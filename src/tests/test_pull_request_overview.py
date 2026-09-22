@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from src.api.routes import reviews
+from src.api.routes import reviews, settings
 from src.core.plugins.plugin_registry import plugin_registry
 from src.core.settings.configuration import Configuration
+from src.models.config import Config
 from src.models.code_review import (
     CodeReview,
     CodeReviewSummary,
@@ -27,10 +28,21 @@ FIXTURES = Path(__file__).parent / "fixtures/review-overview"
 
 @pytest.mark.parametrize("budget", [100000, 1])
 @pytest.mark.parametrize("with_findings", [False, True])
+@pytest.mark.parametrize("include_nitpicks", [False, True])
 def test_http_preview_overview_reads_all_pr_changes(
-    api, monkeypatch, budget, with_findings
+    api, monkeypatch, budget, with_findings, include_nitpicks
 ):
-    client, headers, _, _ = api
+    client, headers, _, engine = api
+    Config.__table__.create(engine, checkfirst=True)
+    monkeypatch.setattr("src.config.db.engine", engine)
+    client.app.include_router(settings.router, prefix="/api/settings")
+    if include_nitpicks:
+        configured = client.put(
+            "/api/settings/workspace/one/review.include_nitpicks",
+            headers=headers(),
+            json={"value": True},
+        )
+        assert configured.status_code == 200, configured.text
     client.app.include_router(reviews.router, prefix="/api/reviews")
     monkeypatch.setattr(
         "src.api.routes.requirements.connected_names",
@@ -153,12 +165,20 @@ def test_http_preview_overview_reads_all_pr_changes(
     assert summary.minor_suggestions == [
         finding.comment
         for finding in findings
-        if finding.category == SuggestionCategory.CLARITY
+        if include_nitpicks and finding.category == SuggestionCategory.CLARITY
     ]
     rendered = GitHub._format_summary(None, summary)
-    assert ("### 💡 Minor Suggestions" in rendered) == with_findings
-    assert ("### 🚨 Critical Issues" in rendered) == with_findings
+    assert ("### 💡 Minor Suggestions" in rendered) == bool(summary.minor_suggestions)
+    assert ("### 🚨 Critical Issues" in rendered) == bool(summary.critical_issues)
+    for finding in findings:
+        assert (finding.comment in rendered) == (
+            include_nitpicks or finding.category == SuggestionCategory.BUG
+        )
     assert provider.generate_summary.call_count == (3 if budget == 1 else 1)
+    assert all(
+        call.kwargs["include_nitpicks"] is include_nitpicks
+        for call in provider.generate_summary.call_args_list
+    )
     provider.generate_text.assert_not_called()
     if budget == 1:
         assert len([item for item in supplied if "diff" in item]) == 2

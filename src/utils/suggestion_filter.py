@@ -62,6 +62,9 @@ class SuggestionFilter:
         r"\b(?:remov(?:e|es|ed|ing)|replac(?:e|es|ed|ing)|"
         r"simplif(?:y|ies|ied|ying)|fix(?:es|ed|ing)?|"
         r"address(?:es|ed|ing)?|avoid(?:s|ed|ing)?)\b",
+        r"\b(?:improv(?:es|ed|ing)|enhanc(?:es|ed|ing)|ensures)\b",
+        r"\bhelp(?:s)? ensure\b",
+        r"^(?:the|these|they)\b[^.!?]{0,160}\b(?:improve|enhance)\b",
     ]
 
     ABBREVIATIONS = ("e.g.", "i.e.", "etc.", "vs.", "cf.", "approx.", "resp.")
