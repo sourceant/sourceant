@@ -46,8 +46,73 @@ class Prompts:
     - Include only evidence needed to act on the finding. Do not narrate your investigation, repeat the code, or add headings, praise, disclaimers, or multiple examples
     - Put replacement code only in `suggested_code`, not again in the comment
     - Report every distinct actionable issue, but explain each issue once
+    - Answer `trigger`, `blast`, `impact` and `certainty` on every suggestion. They decide how it is ranked
 
     **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
+
+    _RANKING = """## Ranking a finding
+    Every suggestion answers four questions about the line it is on. How much the
+    finding matters is worked out from the answers, so answer what is true rather
+    than what sounds serious.
+
+    `trigger`: what causes this? It need not be a person.
+    - `anyone`: an unauthenticated caller
+    - `authenticated`: any signed-in user
+    - `operator`: an administrator acting deliberately
+    - `service`: another service calling in with its own credentials
+    - `event`: an inbound message, such as a webhook or a queue message
+    - `automation`: work the system starts itself: a cron, a sweep, a worker, a retry
+    - `deploy`: a release, a migration, or a startup path
+    - `environment`: a condition rather than a caller: a dropped connection, a full
+      disk, an expired certificate, a clock change
+
+    `blast`: who is worse off once it happens?
+    - `everyone`: every user, or all the data
+    - `many`: a whole class of users, such as one tenant, one plan or one region
+    - `one`: only the caller who caused it
+    - `nobody`: no user is
+
+    Code that only ever runs on a schedule is `automation`, not `operator`. An
+    operator is somebody who could already do this without the defect; a job
+    that runs by itself holds no such authority.
+
+    A finding on a line nothing reaches has an `impact` of `none`. Answer what
+    would cause it if anything did.
+
+    A failure that no caller brings about is `environment`, not `anyone`. The
+    disk filling is not something an attacker reached for.
+
+    `impact`: what goes wrong?
+    - `data_loss`: correct data is destroyed or overwritten with no way back
+    - `corruption`: wrong values are written and kept, and nothing signals it.
+      An operation that stops halfway and leaves the rest undone is this
+    - `disclosure`: data reaches someone who should not see it
+    - `escalation`: someone can act beyond their authority
+    - `wrong_answer`: the caller gets an incorrect result that is not persisted
+    - `hang`: it does not finish, or consumes unbounded memory, connections or time
+    - `crash`: the operation dies unexpectedly
+    - `degraded`: it works, but costs more time or money than it should
+    - `rejected`: the bad path is already refused with a clear error, so nothing wrong persists
+    - `none`: there is no runtime consequence
+
+    `certainty`: does it happen?
+    - `always`: the bad path runs every time this code runs
+    - `conditional`: it runs on some inputs or in some states, and you can name them
+    - `possible`: it depends on an assumption about code you have not been shown
+
+    A value the next layer refuses is `rejected`, not `crash`. A finding about naming,
+    structure or documentation is `none`. A defect in another repository is described
+    by what happens there, not by the change that caused it.
+
+    `category` says what kind of thing the finding is, never how much it matters:
+    - `BUG`: the code does something other than what it is meant to do
+    - `SECURITY`: the code lets someone do something they should not be able to
+    - `PERFORMANCE`: the code is correct but wasteful
+    - `STYLE`: formatting or naming
+    - `REFACTOR`: the structure could be simpler
+    - `CLARITY`: correct, but hard to follow
+    - `DOCUMENTATION`: a comment or docstring is missing or wrong
+    - `IMPROVEMENT`: none of the above"""
 
     _JSON_FORMAT_HEADER = """## Feedback Format (JSON)
     Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**"""
@@ -63,6 +128,10 @@ class Prompts:
                 "side": "<LEFT|RIGHT>",
                 "comment": "<At most three short sentences: the problem, its consequence, and the fix.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
+                "trigger": "<anyone|authenticated|operator|service|event|automation|deploy|environment>",
+                "blast": "<everyone|many|one|nobody>",
+                "impact": "<data_loss|corruption|disclosure|escalation|wrong_answer|hang|crash|degraded|rejected|none>",
+                "certainty": "<always|conditional|possible>",
                 "suggested_code": "<Corrected or improved code snippet.>",
                 "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>",
                 "claims": [
@@ -113,6 +182,9 @@ Return findings only. Leave summary null; the complete change is summarized afte
 {_JSON_FORMAT_HEADER}
 
 {_CODE_SUGGESTIONS_RULES}
+
+{_RANKING}
+
 {_JSON_SCHEMA_EXAMPLE}
 
 ---
