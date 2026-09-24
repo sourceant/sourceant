@@ -40,9 +40,11 @@ class Trigger(enum.Enum):
     ANYONE = "anyone"
     AUTHENTICATED = "authenticated"
     OPERATOR = "operator"
-    DEPLOY = "deploy"
-    AUTOMATION = "automation"
+    SERVICE = "service"
     EVENT = "event"
+    AUTOMATION = "automation"
+    DEPLOY = "deploy"
+    ENVIRONMENT = "environment"
 
 
 class Blast(enum.Enum):
@@ -205,13 +207,17 @@ class CodeSuggestion(BaseModel):
     trigger: Optional[Trigger] = Field(
         None,
         description=(
-            "What causes this, which need not be a person. 'anyone' if an "
-            "unauthenticated caller can, 'authenticated' if any signed-in "
-            "user can, 'operator' if an administrator acting deliberately "
-            "can, 'deploy' if a release, migration or startup path does, "
-            "'automation' if the system does it unattended, such as a cron, "
-            "a queue worker, a sweep or a retry, 'event' if an inbound "
-            "message from another system does, such as a webhook."
+            "What causes this, which need not be a person. 'anyone' for "
+            "an unauthenticated caller, 'authenticated' for any signed-in "
+            "user, 'operator' for an administrator acting deliberately, "
+            "'service' for another service calling in with its own "
+            "credentials, 'event' for an inbound message such as a webhook "
+            "or a queue message, 'automation' for work the system starts "
+            "itself such as a cron, a sweep, a worker or a retry, 'deploy' "
+            "for a release, a migration or a startup path, 'environment' "
+            "for a condition rather than a caller, such as a dropped "
+            "connection, a full disk, an expired certificate or a clock "
+            "change."
         ),
     )
     blast: Optional[Blast] = Field(

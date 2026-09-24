@@ -98,12 +98,16 @@ def test_a_defect_on_a_line_nothing_reaches_is_a_nitpick():
     assert is_nitpick(dead)
 
 
-@pytest.mark.parametrize("unattended", [Trigger.AUTOMATION, Trigger.EVENT])
-def test_unattended_work_does_not_borrow_an_operator_s_authority(unattended):
+@pytest.mark.parametrize(
+    "unattended",
+    [Trigger.AUTOMATION, Trigger.EVENT, Trigger.SERVICE, Trigger.ENVIRONMENT],
+)
+def test_a_cause_with_no_authority_does_not_borrow_an_operator_s(unattended):
     """A cron is not an administrator who could already do this.
 
-    Without somewhere of its own to go it would be filed as an operator, and
-    the softening that answers for a person would answer for it too.
+    Without somewhere of its own to go each of these would be filed as an
+    operator, and the softening that answers for a person would answer for
+    it too.
     """
     by_itself = ranked(unattended, Blast.EVERYONE, Impact.DISCLOSURE)
     by_hand = ranked(Trigger.OPERATOR, Blast.EVERYONE, Impact.DISCLOSURE)

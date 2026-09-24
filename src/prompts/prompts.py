@@ -59,9 +59,12 @@ class Prompts:
     - `anyone`: an unauthenticated caller
     - `authenticated`: any signed-in user
     - `operator`: an administrator acting deliberately
+    - `service`: another service calling in with its own credentials
+    - `event`: an inbound message, such as a webhook or a queue message
+    - `automation`: work the system starts itself: a cron, a sweep, a worker, a retry
     - `deploy`: a release, a migration, or a startup path
-    - `automation`: the system itself, unattended: a cron, a queue worker, a sweep, a retry
-    - `event`: an inbound message from another system, such as a webhook
+    - `environment`: a condition rather than a caller: a dropped connection, a full
+      disk, an expired certificate, a clock change
 
     `blast`: who is worse off once it happens?
     - `everyone`: every user, or all the data
@@ -75,6 +78,9 @@ class Prompts:
 
     A finding on a line nothing reaches has an `impact` of `none`. Answer what
     would cause it if anything did.
+
+    A failure that no caller brings about is `environment`, not `anyone`. The
+    disk filling is not something an attacker reached for.
 
     `impact`: what goes wrong?
     - `data_loss`: correct data is destroyed or overwritten with no way back
@@ -122,7 +128,7 @@ class Prompts:
                 "side": "<LEFT|RIGHT>",
                 "comment": "<At most three short sentences: the problem, its consequence, and the fix.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
-                "trigger": "<anyone|authenticated|operator|deploy|automation|event>",
+                "trigger": "<anyone|authenticated|operator|service|event|automation|deploy|environment>",
                 "blast": "<everyone|many|one|nobody>",
                 "impact": "<data_loss|corruption|disclosure|escalation|wrong_answer|hang|crash|degraded|rejected|none>",
                 "certainty": "<always|conditional|possible>",
