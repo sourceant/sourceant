@@ -87,6 +87,8 @@ class Severity(enum.Enum):
     NIT = "nit"
 
 
+#: Short because the table below is read as a table. Worst first, so a step
+#: along it is a step towards advice a reader can ignore.
 _B, _A, _N = Severity.BLOCKING, Severity.ADVISORY, Severity.NIT
 _LADDER = (_B, _A, _N)
 
@@ -124,6 +126,11 @@ _QUESTIONS = ("trigger", "blast", "impact", "certainty")
 
 
 def _softer(severity: Severity, steps: int) -> Severity:
+    """Move along the ladder, stopping at either end.
+
+    One step softens. A negative step hardens, which reads backwards and is
+    why every caller below says which it means in the condition above it.
+    """
     at = _LADDER.index(severity) + steps
     return _LADDER[max(0, min(len(_LADDER) - 1, at))]
 
@@ -157,7 +164,7 @@ def severity_of(suggestion) -> Severity:
 
     severity = _BASE[impact]
     if blast is Blast.EVERYONE and impact not in _NOTHING_PERSISTS:
-        severity = _softer(severity, -1)
+        severity = _softer(severity, -1)  # harder
     elif blast in (Blast.ONE, Blast.NOBODY):
         severity = _softer(severity, 1)
     if trigger in _ALREADY_AUTHORISED and impact in _BEYOND_AUTHORITY:
@@ -418,16 +425,10 @@ def summary_from(
     with the findings, a review of a change nobody could fault reads exactly
     like a review that found nothing to say.
     """
-    critical = [
-        suggestion.comment
-        for suggestion in suggestions
-        if severity_of(suggestion) is Severity.BLOCKING
-    ]
-    minor = [
-        suggestion.comment
-        for suggestion in suggestions
-        if severity_of(suggestion) is not Severity.BLOCKING
-    ]
+    critical, minor = [], []
+    for suggestion in suggestions:
+        ranked = critical if severity_of(suggestion) is Severity.BLOCKING else minor
+        ranked.append(suggestion.comment)
     counted = (
         f"Review found {len(suggestions)} actionable issue(s)."
         if suggestions
