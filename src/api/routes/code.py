@@ -44,7 +44,7 @@ from src.core.code_index import (
 )
 from src.core.code_index.attention import attention
 from src.core.code_index.clustering import Modularity, degrees
-from src.core.code_index.linking import index_directories, index_paths, resolve
+from src.core.code_index.relationships import joined
 from src.core.responses import success_response
 from src.core.services import service_registry
 
@@ -132,80 +132,6 @@ def node_payload(node: CodeNode) -> dict[str, Any]:
     return payload
 
 
-def joined(nodes, edges):
-    """The graph with its files joined to the files they import.
-
-    An import is stored as the text somebody wrote, so on its own it joins a
-    file to a name and nothing else: a repository drawn from that is one island
-    per file, which is a picture of a directory listing rather than of code. The
-    connections between files are most of what anybody is looking for.
-
-    An import that resolves becomes the edge between the two files and its own
-    node goes: it stood for a file, and now the file is there.
-
-    One that does not resolve names something outside the repository, and it
-    goes too. It has nothing on the far side of it, so it draws as a spur off
-    the file that wrote it, and a hundred of those is a picture of a package
-    manifest rather than of the code. The index keeps them either way; this is
-    only about what is drawn.
-    """
-    paths = {}
-    imports = {}
-    for node in nodes:
-        labels = {label.lower() for label in node.labels}
-        if "file" in labels:
-            paths[node.properties.get("file_path", "")] = node.id
-        elif "import" in labels:
-            imports[node.id] = node
-
-    if not imports:
-        return nodes, edges
-
-    named = [name for name in paths if name]
-    by_name = index_paths(named)
-    inside = index_directories(named)
-
-    resolved: dict[str, tuple[str, ...]] = {}
-    for node_id, node in imports.items():
-        importer = str(node.properties.get("file_path", ""))
-        found = resolve(by_name, importer, str(node.properties.get("name", "")), inside)
-        reached = tuple(paths[path] for path in found if path in paths)
-        if reached:
-            resolved[node_id] = reached
-
-    kept_nodes = tuple(node for node in nodes if node.id not in imports)
-    kept_edges = []
-    seen: set[tuple[str, str]] = set()
-    for edge in edges:
-        if edge.source_id not in imports and edge.target_id not in imports:
-            kept_edges.append(edge)
-            continue
-        if edge.source_id in imports and edge.source_id not in resolved:
-            continue
-        if edge.target_id in imports and edge.target_id not in resolved:
-            continue
-        for source in resolved.get(edge.source_id, (edge.source_id,)):
-            for target in resolved.get(edge.target_id, (edge.target_id,)):
-                if source == target or (source, target) in seen:
-                    continue
-                seen.add((source, target))
-                kept_edges.append(
-                    CodeEdge(
-                        f"imports:{source}:{target}",
-                        source,
-                        target,
-                        "IMPORTS",
-                        # Which of these was read and which was worked out. An
-                        # import was in the file; the file it points at was
-                        # matched against the paths the repository has, and is
-                        # a good guess rather than a fact. A drawing that
-                        # cannot tell them apart presents both as fact.
-                        {"origin": "inferred"},
-                    )
-                )
-    return kept_nodes, tuple(kept_edges)
-
-
 @router.get("/repositories")
 def read_repositories():
     """Every repository registered on this machine, for a client drawing all of them."""
@@ -279,6 +205,9 @@ def read_graph(
     path_prefix: str = Query(""),
     include_tests: bool = Query(False),
     node_limit: int = Query(MAX_GRAPH_NODES, ge=1, le=MAX_GRAPH_NODES),
+    focus: str = Query(""),
+    depth: int = Query(2, ge=1, le=5),
+    q: str = Query("", max_length=500),
     index: Any = Depends(get_code_index),
 ):
     """A whole scope at once, in the shape a graph view draws."""
@@ -297,6 +226,46 @@ def read_graph(
         )
     )
     nodes, edges = joined(result.nodes, result.edges)
+
+    if focus:
+        known = {node.id for node in nodes}
+        if focus not in known:
+            raise HTTPException(404, "The selected node is not in this graph")
+        neighbours: dict[str, set[str]] = {}
+        for edge in edges:
+            neighbours.setdefault(edge.source_id, set()).add(edge.target_id)
+            neighbours.setdefault(edge.target_id, set()).add(edge.source_id)
+        selected = {focus}
+        frontier = {focus}
+        for _ in range(depth):
+            frontier = {
+                other for node in frontier for other in neighbours.get(node, ())
+            } - selected
+            selected.update(frontier)
+            if not frontier:
+                break
+        nodes = tuple(node for node in nodes if node.id in selected)
+    if q.strip():
+        term = q.strip().casefold()
+        nodes = tuple(
+            node
+            for node in nodes
+            if node.id == focus
+            or any(
+                term in str(value).casefold()
+                for value in (
+                    node.id,
+                    node.properties.get("name", ""),
+                    node.properties.get("file_path", ""),
+                )
+            )
+        )
+    selected = {node.id for node in nodes}
+    edges = tuple(
+        edge
+        for edge in edges
+        if edge.source_id in selected and edge.target_id in selected
+    )
 
     # How busy a node is decides how it is drawn, and which part it belongs to
     # decides its colour. Both are about the graph rather than any one node, so
@@ -330,7 +299,7 @@ def read_graph(
                 for part in grouped.communities
             ],
             "truncated": result.truncated,
-            "focus": None,
+            "focus": focus or None,
         }
     )
 

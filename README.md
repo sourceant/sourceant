@@ -63,10 +63,16 @@ decision that constrains it.
 | | |
 |---|---|
 | Code | `search_code`, `trace_code` |
+| Local indexing | `get_index_status`, `index_repository` |
+| Skills (when a library is configured) | `search_skills`, `get_skill` |
 | Knowledge | `put_knowledge`, `search_knowledge`, `put_knowledge_relationship` |
 | Requirements | `put_requirement`, `link_requirement`, `search_requirements`, `get_requirement_coverage` |
 | System | `put_topology_entity`, `put_topology_relationship`, `traverse_topology` |
 | All of it, in one pack | `get_context` |
+
+Skill discovery returns names and descriptions. `get_skill` reads bounded
+instructions without installing or executing them. Hosted calls use the
+authenticated workspace; repository skills require access to that repository.
 
 You ask for it in plain language:
 

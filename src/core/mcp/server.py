@@ -519,6 +519,9 @@ def create_mcp_server(
             "truncated": report.truncated,
         }
 
+    from src.core.mcp.skills import add_skill_tools
+
+    add_skill_tools(server, services, requirement_scope, surface)
     _add_registered_tools(server, surface, services)
     return server
 

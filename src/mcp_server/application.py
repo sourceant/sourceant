@@ -181,7 +181,7 @@ def _assemble(surface: Surface):
         review_state=finding_store() or InMemoryFindingStore(),
         requirements=requirements,
     )
-    return create_mcp_server(
+    server = create_mcp_server(
         provider,
         code=code,
         knowledge=knowledge,
@@ -189,6 +189,26 @@ def _assemble(surface: Surface):
         requirements=requirements,
         surface=surface,
     )
+    if surface.reaches_checkout:
+        from src.core.repositories import RepositoryRegistry
+        from src.mcp_server.indexing import add_index_tools
+
+        try:
+            repositories = service_registry.resolve(RepositoryRegistry)
+        except LookupError:
+            repositories = None
+        engine = get_engine()
+        if repositories is not None and engine is not None:
+            fallback = SQLCodeIndexRepository(engine)
+
+            def read_index():
+                try:
+                    return service_registry.resolve(CodeIndexReader)
+                except LookupError:
+                    return fallback
+
+            add_index_tools(server, repositories, read_index)
+    return server
 
 
 def _repositories(engine):
