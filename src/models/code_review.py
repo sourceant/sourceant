@@ -89,27 +89,39 @@ _RANKED_BY_CATEGORY = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
 _WORTH_SAYING = _RANKED_BY_CATEGORY | {SuggestionCategory.PERFORMANCE}
 
 
-def severity_of(suggestion) -> Severity:
-    """How much one finding matters.
+def _answered(suggestion):
+    """The pair a finding is ranked by, or None where it answered neither.
 
-    A suggestion that answered neither question is ranked by its category,
-    which is what ranked every finding before the questions existed.
+    Half an answer ranks nothing. Both callers below ask this one question so
+    that a missing reach cannot mean one thing to the ranking and another to
+    the filter.
     """
     reach = getattr(suggestion, "reach", None)
     impact = getattr(suggestion, "impact", None)
-    if reach is None or impact is None:
+    return None if reach is None or impact is None else (reach, impact)
+
+
+def severity_of(suggestion) -> Severity:
+    """How much one finding matters.
+
+    A suggestion that did not answer is ranked by its category, which is what
+    ranked every finding before the questions existed.
+    """
+    answered = _answered(suggestion)
+    if answered is None:
         category = getattr(suggestion, "category", None)
         return _B if category in _RANKED_BY_CATEGORY else _A
+    reach, impact = answered
     return _SEVERITY[impact][reach]
 
 
 def is_nitpick(suggestion) -> bool:
     """Advice a reader is free to ignore.
 
-    A suggestion with no impact to judge is filtered by the category it was
+    A suggestion that did not answer is filtered by the category it was
     filtered by before.
     """
-    if getattr(suggestion, "impact", None) is None:
+    if _answered(suggestion) is None:
         return getattr(suggestion, "category", None) not in _WORTH_SAYING
     return severity_of(suggestion) is Severity.NIT
 

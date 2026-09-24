@@ -84,6 +84,16 @@ def test_a_finding_that_answered_neither_question_is_ranked_by_category():
     assert severity_of(finding(category=SuggestionCategory.STYLE)) is Severity.ADVISORY
 
 
+def test_half_an_answer_is_ranked_and_filtered_as_no_answer():
+    impact_only = finding(category=SuggestionCategory.STYLE, impact=Impact.NONE)
+    reach_only = finding(category=SuggestionCategory.STYLE, reach=Reach.ANYONE)
+    neither = finding(category=SuggestionCategory.STYLE)
+
+    for partial in (impact_only, reach_only):
+        assert severity_of(partial) is severity_of(neither)
+        assert is_nitpick(partial) is is_nitpick(neither)
+
+
 def test_a_finding_with_no_runtime_consequence_is_a_nitpick():
     assert is_nitpick(finding(reach=Reach.OPERATOR, impact=Impact.NONE))
     assert not is_nitpick(finding(reach=Reach.ANYONE, impact=Impact.DEGRADED))
