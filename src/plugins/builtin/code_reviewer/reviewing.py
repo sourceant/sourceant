@@ -56,9 +56,11 @@ from src.core.settings.configuration import Configuration
 from src.models.code_review import (
     CodeReview,
     CodeReviewSummary,
+    is_nitpick,
+    severity_of,
     summary_from,
+    Severity,
     Side,
-    SuggestionCategory,
     Verdict,
 )
 from src.utils.diff_parser import ParsedDiff, parse_diff
@@ -407,11 +409,7 @@ class CodeReviewer:
 
         unique, seen = [], set()
         for suggestion in self._beyond(analysis, combined):
-            if not include_nitpicks and suggestion.category not in {
-                SuggestionCategory.BUG,
-                SuggestionCategory.SECURITY,
-                SuggestionCategory.PERFORMANCE,
-            }:
+            if not include_nitpicks and is_nitpick(suggestion):
                 continue
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
             keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
@@ -785,17 +783,11 @@ def verdict_from(suggestions: List) -> Verdict:
     if not suggestions:
         return Verdict.APPROVE
 
-    critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
-    security_keywords = ["vulnerability", "exploit", "injection"]
+    blocking = any(
+        suggestion
+        and suggestion.comment
+        and severity_of(suggestion) is Severity.BLOCKING
+        for suggestion in suggestions
+    )
 
-    critical_count = 0
-    for suggestion in suggestions:
-        if not suggestion or not suggestion.comment:
-            continue
-        comment_lower = suggestion.comment.lower()
-        if suggestion.category in critical_categories or any(
-            keyword in comment_lower for keyword in security_keywords
-        ):
-            critical_count += 1
-
-    return Verdict.REQUEST_CHANGES if critical_count else Verdict.COMMENT
+    return Verdict.REQUEST_CHANGES if blocking else Verdict.COMMENT

@@ -34,6 +34,86 @@ class SuggestionCategory(enum.Enum):
     IMPROVEMENT = "IMPROVEMENT"
 
 
+class Reach(enum.Enum):
+    """Who can get to the line a finding is about."""
+
+    ANYONE = "anyone"
+    AUTHENTICATED = "authenticated"
+    OPERATOR = "operator"
+    UNREACHABLE = "unreachable"
+
+
+class Impact(enum.Enum):
+    """What happens when they do, worst first."""
+
+    DATA_LOSS = "data_loss"
+    CORRUPTION = "corruption"
+    DISCLOSURE = "disclosure"
+    WRONG_ANSWER = "wrong_answer"
+    HANG = "hang"
+    CRASH = "crash"
+    DEGRADED = "degraded"
+    REJECTED = "rejected"
+    NONE = "none"
+
+
+class Severity(enum.Enum):
+    """How much a finding matters."""
+
+    BLOCKING = "blocking"
+    ADVISORY = "advisory"
+    NIT = "nit"
+
+
+_REACH_ORDER = (Reach.ANYONE, Reach.AUTHENTICATED, Reach.OPERATOR, Reach.UNREACHABLE)
+_B, _A, _N = Severity.BLOCKING, Severity.ADVISORY, Severity.NIT
+
+#: Severity is policy, so it is written once here rather than decided per
+#: finding by whichever model answered.
+_SEVERITY = {
+    impact: dict(zip(_REACH_ORDER, row))
+    for impact, row in {
+        Impact.DATA_LOSS: (_B, _B, _B, _A),
+        Impact.CORRUPTION: (_B, _B, _B, _A),
+        Impact.DISCLOSURE: (_B, _B, _A, _A),
+        Impact.WRONG_ANSWER: (_B, _B, _A, _A),
+        Impact.HANG: (_B, _B, _A, _A),
+        Impact.CRASH: (_B, _A, _A, _A),
+        Impact.DEGRADED: (_A, _A, _A, _N),
+        Impact.REJECTED: (_A, _A, _A, _N),
+        Impact.NONE: (_N, _N, _N, _N),
+    }.items()
+}
+
+_RANKED_BY_CATEGORY = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
+_WORTH_SAYING = _RANKED_BY_CATEGORY | {SuggestionCategory.PERFORMANCE}
+
+
+def severity_of(suggestion) -> Severity:
+    """How much one finding matters.
+
+    A suggestion that answered neither question is ranked by its category,
+    which is what ranked every finding before the questions existed.
+    """
+    reach = getattr(suggestion, "reach", None)
+    impact = getattr(suggestion, "impact", None)
+    if reach is None or impact is None:
+        category = getattr(suggestion, "category", None)
+        return _B if category in _RANKED_BY_CATEGORY else _A
+    return _SEVERITY[impact][reach]
+
+
+def is_nitpick(suggestion) -> bool:
+    """Advice a reader is free to ignore.
+
+    A suggestion with no impact to judge is filtered by the category it was
+    filtered by before.
+    """
+    if getattr(suggestion, "impact", None) is None:
+        return getattr(suggestion, "category", None) not in _WORTH_SAYING
+    return severity_of(suggestion) is Severity.NIT
+
+
 class CodeSuggestion(BaseModel):
     """Represents a single code suggestion with file and line number."""
 
@@ -60,6 +140,30 @@ class CodeSuggestion(BaseModel):
         ...,
         description="The category of the suggestion, ex: 'style', 'performance', etc.",
     )
+    reach: Optional[Reach] = Field(
+        None,
+        description=(
+            "Who can get to this line. 'anyone' if an unauthenticated caller "
+            "can, 'authenticated' if any signed-in user can, 'operator' if "
+            "only an administrator or a deploy can, 'unreachable' if no "
+            "caller can get here at all."
+        ),
+    )
+    impact: Optional[Impact] = Field(
+        None,
+        description=(
+            "What happens when they do. 'data_loss' if correct data is "
+            "destroyed with no way back, 'corruption' if wrong values are "
+            "written and kept with nothing signalling it, 'disclosure' if "
+            "data reaches someone who should not see it, 'wrong_answer' if "
+            "the caller gets an incorrect result that is not persisted, "
+            "'hang' if it does not finish or consumes unbounded resources, "
+            "'crash' if the operation dies unexpectedly, 'degraded' if it "
+            "works but costs more time or money than it should, 'rejected' "
+            "if the bad path is already refused with a clear error, 'none' "
+            "if there is no runtime consequence at all."
+        ),
+    )
     suggested_code: Optional[str] = Field(
         ...,
         description="The actual suggestion block of code. HIGHLY RECOMMENDED to include.",
@@ -84,13 +188,15 @@ class CodeSuggestion(BaseModel):
         """Optional to write here, required to answer with.
 
         Structured output follows the schema rather than the prose asking for
-        it: left optional, the field is omitted and every assertion goes
-        unchecked. Nothing in this codebase has to state claims to build one.
+        it: left optional, the field is omitted, every assertion goes
+        unchecked and every finding falls back to being ranked by category.
+        Nothing in this codebase has to state them to build one.
         """
         schema = handler(core_schema)
         required = list(schema.get("required", []))
-        if "claims" not in required:
-            required.append("claims")
+        for field in ("claims", "reach", "impact"):
+            if field not in required:
+                required.append(field)
         schema["required"] = required
         return schema
 
@@ -221,16 +327,15 @@ def summary_from(
     with the findings, a review of a change nobody could fault reads exactly
     like a review that found nothing to say.
     """
-    critical_categories = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
     critical = [
         suggestion.comment
         for suggestion in suggestions
-        if suggestion.category in critical_categories
+        if severity_of(suggestion) is Severity.BLOCKING
     ]
     minor = [
         suggestion.comment
         for suggestion in suggestions
-        if suggestion.category not in critical_categories
+        if severity_of(suggestion) is not Severity.BLOCKING
     ]
     counted = (
         f"Review found {len(suggestions)} actionable issue(s)."

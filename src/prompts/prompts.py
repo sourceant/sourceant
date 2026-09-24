@@ -46,8 +46,44 @@ class Prompts:
     - Include only evidence needed to act on the finding. Do not narrate your investigation, repeat the code, or add headings, praise, disclaimers, or multiple examples
     - Put replacement code only in `suggested_code`, not again in the comment
     - Report every distinct actionable issue, but explain each issue once
+    - Answer `reach` and `impact` on every suggestion. They decide how it is ranked
 
     **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
+
+    _RANKING = """## Ranking a finding
+    Every suggestion answers two questions about the line it is on. How much the
+    finding matters is worked out from the pair, so answer what is true rather than
+    what sounds serious.
+
+    `reach`: who can get to this line?
+    - `anyone`: an unauthenticated caller can
+    - `authenticated`: any signed-in user can
+    - `operator`: only an administrator, an internal tool, or a deploy can
+    - `unreachable`: no caller can get here at all
+
+    `impact`: what happens when they do?
+    - `data_loss`: correct data is destroyed or overwritten with no way back
+    - `corruption`: wrong values are written and kept, and nothing signals it
+    - `disclosure`: data reaches someone who should not see it
+    - `wrong_answer`: the caller gets an incorrect result that is not persisted
+    - `hang`: it does not finish, or consumes unbounded memory, connections or time
+    - `crash`: the operation dies unexpectedly
+    - `degraded`: it works, but costs more time or money than it should
+    - `rejected`: the bad path is already refused with a clear error, so nothing wrong persists
+    - `none`: there is no runtime consequence
+
+    A value the next layer refuses is `rejected`, not `crash`. A finding about naming,
+    structure or documentation is `none`.
+
+    `category` says what kind of thing the finding is, never how much it matters:
+    - `BUG`: the code does something other than what it is meant to do
+    - `SECURITY`: the code lets someone do something they should not be able to
+    - `PERFORMANCE`: the code is correct but wasteful
+    - `STYLE`: formatting or naming
+    - `REFACTOR`: the structure could be simpler
+    - `CLARITY`: correct, but hard to follow
+    - `DOCUMENTATION`: a comment or docstring is missing or wrong
+    - `IMPROVEMENT`: none of the above"""
 
     _JSON_FORMAT_HEADER = """## Feedback Format (JSON)
     Your response **must** be a single JSON object that conforms to the schema provided in the `CodeReview` tool definition. **All string values, especially the summary, must be formatted using GitHub-flavored Markdown.**"""
@@ -63,6 +99,8 @@ class Prompts:
                 "side": "<LEFT|RIGHT>",
                 "comment": "<At most three short sentences: the problem, its consequence, and the fix.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
+                "reach": "<anyone|authenticated|operator|unreachable>",
+                "impact": "<data_loss|corruption|disclosure|wrong_answer|hang|crash|degraded|rejected|none>",
                 "suggested_code": "<Corrected or improved code snippet.>",
                 "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>",
                 "claims": [
@@ -113,6 +151,9 @@ Return findings only. Leave summary null; the complete change is summarized afte
 {_JSON_FORMAT_HEADER}
 
 {_CODE_SUGGESTIONS_RULES}
+
+{_RANKING}
+
 {_JSON_SCHEMA_EXAMPLE}
 
 ---
