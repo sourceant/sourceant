@@ -55,17 +55,24 @@ class Prompts:
     finding matters is worked out from the answers, so answer what is true rather
     than what sounds serious.
 
-    `trigger`: who can cause this?
-    - `anyone`: an unauthenticated caller can
-    - `authenticated`: any signed-in user can
-    - `operator`: only an administrator, an internal tool, or a deploy can
-    - `nobody`: no caller can reach this line at all
+    `trigger`: what causes this? It need not be a person.
+    - `anyone`: an unauthenticated caller
+    - `authenticated`: any signed-in user
+    - `operator`: an administrator acting deliberately
+    - `deploy`: a release, a migration, or a startup path
+    - `automation`: the system itself, unattended: a cron, a queue worker, a sweep, a retry
+    - `event`: an inbound message from another system, such as a webhook
+    - `nothing`: neither a caller nor a job reaches this line
 
     `blast`: who is worse off once it happens?
     - `everyone`: every user, or all the data
     - `many`: a whole class of users, such as one tenant, one plan or one region
     - `one`: only the caller who caused it
     - `nobody`: no user is
+
+    Code that only ever runs on a schedule is `automation`, not `operator`. An
+    operator is somebody who could already do this without the defect; a job
+    that runs by itself holds no such authority.
 
     `impact`: what goes wrong?
     - `data_loss`: correct data is destroyed or overwritten with no way back
@@ -113,7 +120,7 @@ class Prompts:
                 "side": "<LEFT|RIGHT>",
                 "comment": "<At most three short sentences: the problem, its consequence, and the fix.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
-                "trigger": "<anyone|authenticated|operator|nobody>",
+                "trigger": "<anyone|authenticated|operator|deploy|automation|event|nothing>",
                 "blast": "<everyone|many|one|nobody>",
                 "impact": "<data_loss|corruption|disclosure|escalation|wrong_answer|hang|crash|degraded|rejected|none>",
                 "certainty": "<always|conditional|possible>",

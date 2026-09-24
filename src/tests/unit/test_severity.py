@@ -53,10 +53,22 @@ def ranked(trigger, blast, impact, certainty=Certainty.ALWAYS, **rest):
         ((Trigger.ANYONE, Blast.ONE, Impact.CRASH), Severity.ADVISORY),
         # An injection only an operator can reach, who could already do it.
         ((Trigger.OPERATOR, Blast.EVERYONE, Impact.ESCALATION), Severity.ADVISORY),
+        # The same, reached by a release rather than by a person at a keyboard.
+        ((Trigger.DEPLOY, Blast.EVERYONE, Impact.DISCLOSURE), Severity.ADVISORY),
     ],
 )
 def test_the_answers_decide_the_severity(answers, expected):
     assert severity_of(ranked(*answers)) is expected
+
+
+@pytest.mark.parametrize("harmless", [Impact.REJECTED, Impact.NONE])
+def test_reaching_everybody_does_not_worsen_what_leaves_nothing_behind(harmless):
+    """A refusal refuses the same way however many people arrive."""
+    everywhere = ranked(Trigger.ANYONE, Blast.EVERYONE, harmless)
+    once = ranked(Trigger.ANYONE, Blast.MANY, harmless)
+
+    assert severity_of(everywhere) is severity_of(once)
+    assert severity_of(everywhere) is not Severity.BLOCKING
 
 
 def test_a_finding_resting_on_an_assumption_is_a_nitpick():
@@ -78,10 +90,24 @@ def test_naming_when_it_happens_softens_it_by_one():
     assert severity_of(sometimes) is Severity.ADVISORY
 
 
-def test_a_line_no_caller_reaches_is_a_nitpick():
-    assert severity_of(ranked(Trigger.NOBODY, Blast.EVERYONE, Impact.DATA_LOSS)) is (
+def test_a_line_nothing_reaches_is_a_nitpick():
+    assert severity_of(ranked(Trigger.NOTHING, Blast.EVERYONE, Impact.DATA_LOSS)) is (
         Severity.NIT
     )
+
+
+@pytest.mark.parametrize("unattended", [Trigger.AUTOMATION, Trigger.EVENT])
+def test_unattended_work_does_not_borrow_an_operator_s_authority(unattended):
+    """A cron is not an administrator who could already do this.
+
+    Without somewhere of its own to go it would be filed as an operator, and
+    the softening that answers for a person would answer for it too.
+    """
+    by_itself = ranked(unattended, Blast.EVERYONE, Impact.DISCLOSURE)
+    by_hand = ranked(Trigger.OPERATOR, Blast.EVERYONE, Impact.DISCLOSURE)
+
+    assert severity_of(by_itself) is Severity.BLOCKING
+    assert severity_of(by_hand) is Severity.ADVISORY
 
 
 def test_two_bugs_are_ranked_by_what_they_do_and_not_by_being_bugs():

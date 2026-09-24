@@ -35,12 +35,20 @@ class SuggestionCategory(enum.Enum):
 
 
 class Trigger(enum.Enum):
-    """Who can cause the finding to happen."""
+    """What causes the finding to happen.
+
+    Not only people. Work the system starts by itself reaches code no user
+    ever calls, and it carries no authority, so it cannot be described as an
+    operator without borrowing one.
+    """
 
     ANYONE = "anyone"
     AUTHENTICATED = "authenticated"
     OPERATOR = "operator"
-    NOBODY = "nobody"
+    DEPLOY = "deploy"
+    AUTOMATION = "automation"
+    EVENT = "event"
+    NOTHING = "nothing"
 
 
 class Blast(enum.Enum):
@@ -100,8 +108,17 @@ _BASE = {
     Impact.NONE: _N,
 }
 
-#: The impacts an operator was already able to cause without the defect, so
-#: reaching them as one is not the escalation it is for anybody else.
+#: Nothing wrong survives these, so how many people arrive does not make them
+#: worse: a refusal refuses the same way for everybody, and a naming choice in
+#: a much-used function is still a naming choice.
+_NOTHING_PERSISTS = {Impact.REJECTED, Impact.NONE}
+
+#: The impacts somebody with administrative authority could already cause
+#: without the defect, so reaching them that way is not the escalation it is
+#: for anybody else. A deploy counts; unattended work does not, because it
+#: has no authority to be already holding, and an inbound event does not,
+#: because whoever sent it may not be trusted at all.
+_ALREADY_AUTHORISED = {Trigger.OPERATOR, Trigger.DEPLOY}
 _BEYOND_AUTHORITY = {Impact.DISCLOSURE, Impact.ESCALATION}
 
 _RANKED_BY_CATEGORY = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
@@ -139,15 +156,15 @@ def severity_of(suggestion) -> Severity:
         return _B if category in _RANKED_BY_CATEGORY else _A
 
     trigger, blast, impact, certainty = answered
-    if trigger is Trigger.NOBODY or certainty is Certainty.POSSIBLE:
+    if trigger is Trigger.NOTHING or certainty is Certainty.POSSIBLE:
         return _N
 
     severity = _BASE[impact]
-    if blast is Blast.EVERYONE:
+    if blast is Blast.EVERYONE and impact not in _NOTHING_PERSISTS:
         severity = _softer(severity, -1)
     elif blast in (Blast.ONE, Blast.NOBODY):
         severity = _softer(severity, 1)
-    if trigger is Trigger.OPERATOR and impact in _BEYOND_AUTHORITY:
+    if trigger in _ALREADY_AUTHORISED and impact in _BEYOND_AUTHORITY:
         severity = _softer(severity, 1)
     if certainty is Certainty.CONDITIONAL:
         severity = _softer(severity, 1)
@@ -194,10 +211,14 @@ class CodeSuggestion(BaseModel):
     trigger: Optional[Trigger] = Field(
         None,
         description=(
-            "Who can cause this. 'anyone' if an unauthenticated caller can, "
-            "'authenticated' if any signed-in user can, 'operator' if only an "
-            "administrator, an internal tool or a deploy can, 'nobody' if no "
-            "caller can reach this line at all."
+            "What causes this, which need not be a person. 'anyone' if an "
+            "unauthenticated caller can, 'authenticated' if any signed-in "
+            "user can, 'operator' if an administrator acting deliberately "
+            "can, 'deploy' if a release, migration or startup path does, "
+            "'automation' if the system does it unattended, such as a cron, "
+            "a queue worker, a sweep or a retry, 'event' if an inbound "
+            "message from another system does, such as a webhook, 'nothing' "
+            "if neither a caller nor a job reaches this line."
         ),
     )
     blast: Optional[Blast] = Field(
