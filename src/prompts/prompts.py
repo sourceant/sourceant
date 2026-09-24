@@ -46,25 +46,33 @@ class Prompts:
     - Include only evidence needed to act on the finding. Do not narrate your investigation, repeat the code, or add headings, praise, disclaimers, or multiple examples
     - Put replacement code only in `suggested_code`, not again in the comment
     - Report every distinct actionable issue, but explain each issue once
-    - Answer `reach` and `impact` on every suggestion. They decide how it is ranked
+    - Answer `trigger`, `blast`, `impact` and `certainty` on every suggestion. They decide how it is ranked
 
     **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
 
     _RANKING = """## Ranking a finding
-    Every suggestion answers two questions about the line it is on. How much the
-    finding matters is worked out from the pair, so answer what is true rather than
-    what sounds serious.
+    Every suggestion answers four questions about the line it is on. How much the
+    finding matters is worked out from the answers, so answer what is true rather
+    than what sounds serious.
 
-    `reach`: who can get to this line?
+    `trigger`: who can cause this?
     - `anyone`: an unauthenticated caller can
     - `authenticated`: any signed-in user can
     - `operator`: only an administrator, an internal tool, or a deploy can
-    - `unreachable`: no caller can get here at all
+    - `nobody`: no caller can reach this line at all
 
-    `impact`: what happens when they do?
+    `blast`: who is worse off once it happens?
+    - `everyone`: every user, or all the data
+    - `many`: a whole class of users, such as one tenant, one plan or one region
+    - `one`: only the caller who caused it
+    - `nobody`: no user is
+
+    `impact`: what goes wrong?
     - `data_loss`: correct data is destroyed or overwritten with no way back
-    - `corruption`: wrong values are written and kept, and nothing signals it
+    - `corruption`: wrong values are written and kept, and nothing signals it.
+      An operation that stops halfway and leaves the rest undone is this
     - `disclosure`: data reaches someone who should not see it
+    - `escalation`: someone can act beyond their authority
     - `wrong_answer`: the caller gets an incorrect result that is not persisted
     - `hang`: it does not finish, or consumes unbounded memory, connections or time
     - `crash`: the operation dies unexpectedly
@@ -72,8 +80,14 @@ class Prompts:
     - `rejected`: the bad path is already refused with a clear error, so nothing wrong persists
     - `none`: there is no runtime consequence
 
+    `certainty`: does it happen?
+    - `always`: the bad path runs every time this code runs
+    - `conditional`: it runs on some inputs or in some states, and you can name them
+    - `possible`: it depends on an assumption about code you have not been shown
+
     A value the next layer refuses is `rejected`, not `crash`. A finding about naming,
-    structure or documentation is `none`.
+    structure or documentation is `none`. A defect in another repository is described
+    by what happens there, not by the change that caused it.
 
     `category` says what kind of thing the finding is, never how much it matters:
     - `BUG`: the code does something other than what it is meant to do
@@ -99,8 +113,10 @@ class Prompts:
                 "side": "<LEFT|RIGHT>",
                 "comment": "<At most three short sentences: the problem, its consequence, and the fix.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
-                "reach": "<anyone|authenticated|operator|unreachable>",
-                "impact": "<data_loss|corruption|disclosure|wrong_answer|hang|crash|degraded|rejected|none>",
+                "trigger": "<anyone|authenticated|operator|nobody>",
+                "blast": "<everyone|many|one|nobody>",
+                "impact": "<data_loss|corruption|disclosure|escalation|wrong_answer|hang|crash|degraded|rejected|none>",
+                "certainty": "<always|conditional|possible>",
                 "suggested_code": "<Corrected or improved code snippet.>",
                 "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>",
                 "claims": [

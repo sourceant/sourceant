@@ -34,27 +34,45 @@ class SuggestionCategory(enum.Enum):
     IMPROVEMENT = "IMPROVEMENT"
 
 
-class Reach(enum.Enum):
-    """Who can get to the line a finding is about."""
+class Trigger(enum.Enum):
+    """Who can cause the finding to happen."""
 
     ANYONE = "anyone"
     AUTHENTICATED = "authenticated"
     OPERATOR = "operator"
-    UNREACHABLE = "unreachable"
+    NOBODY = "nobody"
+
+
+class Blast(enum.Enum):
+    """Who is worse off once it does."""
+
+    EVERYONE = "everyone"
+    MANY = "many"
+    ONE = "one"
+    NOBODY = "nobody"
 
 
 class Impact(enum.Enum):
-    """What happens when they do, worst first."""
+    """What goes wrong, worst first."""
 
     DATA_LOSS = "data_loss"
     CORRUPTION = "corruption"
     DISCLOSURE = "disclosure"
+    ESCALATION = "escalation"
     WRONG_ANSWER = "wrong_answer"
     HANG = "hang"
     CRASH = "crash"
     DEGRADED = "degraded"
     REJECTED = "rejected"
     NONE = "none"
+
+
+class Certainty(enum.Enum):
+    """Whether it happens, or only could."""
+
+    ALWAYS = "always"
+    CONDITIONAL = "conditional"
+    POSSIBLE = "possible"
 
 
 class Severity(enum.Enum):
@@ -65,54 +83,75 @@ class Severity(enum.Enum):
     NIT = "nit"
 
 
-_REACH_ORDER = (Reach.ANYONE, Reach.AUTHENTICATED, Reach.OPERATOR, Reach.UNREACHABLE)
 _B, _A, _N = Severity.BLOCKING, Severity.ADVISORY, Severity.NIT
+_LADDER = (_B, _A, _N)
 
-#: Severity is policy, so it is written once here rather than decided per
-#: finding by whichever model answered.
-_SEVERITY = {
-    impact: dict(zip(_REACH_ORDER, row))
-    for impact, row in {
-        Impact.DATA_LOSS: (_B, _B, _B, _A),
-        Impact.CORRUPTION: (_B, _B, _B, _A),
-        Impact.DISCLOSURE: (_B, _B, _A, _A),
-        Impact.WRONG_ANSWER: (_B, _B, _A, _A),
-        Impact.HANG: (_B, _B, _A, _A),
-        Impact.CRASH: (_B, _A, _A, _A),
-        Impact.DEGRADED: (_A, _A, _A, _N),
-        Impact.REJECTED: (_A, _A, _A, _N),
-        Impact.NONE: (_N, _N, _N, _N),
-    }.items()
+#: What the impact alone would be, before anything about who or how often.
+_BASE = {
+    Impact.DATA_LOSS: _B,
+    Impact.CORRUPTION: _B,
+    Impact.DISCLOSURE: _B,
+    Impact.ESCALATION: _B,
+    Impact.WRONG_ANSWER: _B,
+    Impact.HANG: _B,
+    Impact.CRASH: _B,
+    Impact.DEGRADED: _A,
+    Impact.REJECTED: _A,
+    Impact.NONE: _N,
 }
+
+#: The impacts an operator was already able to cause without the defect, so
+#: reaching them as one is not the escalation it is for anybody else.
+_BEYOND_AUTHORITY = {Impact.DISCLOSURE, Impact.ESCALATION}
 
 _RANKED_BY_CATEGORY = {SuggestionCategory.BUG, SuggestionCategory.SECURITY}
 _WORTH_SAYING = _RANKED_BY_CATEGORY | {SuggestionCategory.PERFORMANCE}
 
+_QUESTIONS = ("trigger", "blast", "impact", "certainty")
+
+
+def _softer(severity: Severity, steps: int) -> Severity:
+    at = _LADDER.index(severity) + steps
+    return _LADDER[max(0, min(len(_LADDER) - 1, at))]
+
 
 def _answered(suggestion):
-    """The pair a finding is ranked by, or None where it answered neither.
+    """What a finding was ranked by, or None where it did not answer.
 
-    Half an answer ranks nothing. Both callers below ask this one question so
-    that a missing reach cannot mean one thing to the ranking and another to
-    the filter.
+    All four or none. Every caller asks this one question so that a missing
+    answer cannot mean one thing to the ranking and another to the filter.
     """
-    reach = getattr(suggestion, "reach", None)
-    impact = getattr(suggestion, "impact", None)
-    return None if reach is None or impact is None else (reach, impact)
+    given = [getattr(suggestion, name, None) for name in _QUESTIONS]
+    return None if any(answer is None for answer in given) else given
 
 
 def severity_of(suggestion) -> Severity:
     """How much one finding matters.
 
-    A suggestion that did not answer is ranked by its category, which is what
-    ranked every finding before the questions existed.
+    Severity is policy, so it is decided here from what a finding answered
+    rather than by whichever model wrote it. A suggestion that did not answer
+    is ranked by its category, which is what ranked every finding before the
+    questions existed.
     """
     answered = _answered(suggestion)
     if answered is None:
         category = getattr(suggestion, "category", None)
         return _B if category in _RANKED_BY_CATEGORY else _A
-    reach, impact = answered
-    return _SEVERITY[impact][reach]
+
+    trigger, blast, impact, certainty = answered
+    if trigger is Trigger.NOBODY or certainty is Certainty.POSSIBLE:
+        return _N
+
+    severity = _BASE[impact]
+    if blast is Blast.EVERYONE:
+        severity = _softer(severity, -1)
+    elif blast in (Blast.ONE, Blast.NOBODY):
+        severity = _softer(severity, 1)
+    if trigger is Trigger.OPERATOR and impact in _BEYOND_AUTHORITY:
+        severity = _softer(severity, 1)
+    if certainty is Certainty.CONDITIONAL:
+        severity = _softer(severity, 1)
+    return severity
 
 
 def is_nitpick(suggestion) -> bool:
@@ -152,28 +191,48 @@ class CodeSuggestion(BaseModel):
         ...,
         description="The category of the suggestion, ex: 'style', 'performance', etc.",
     )
-    reach: Optional[Reach] = Field(
+    trigger: Optional[Trigger] = Field(
         None,
         description=(
-            "Who can get to this line. 'anyone' if an unauthenticated caller "
-            "can, 'authenticated' if any signed-in user can, 'operator' if "
-            "only an administrator or a deploy can, 'unreachable' if no "
-            "caller can get here at all."
+            "Who can cause this. 'anyone' if an unauthenticated caller can, "
+            "'authenticated' if any signed-in user can, 'operator' if only an "
+            "administrator, an internal tool or a deploy can, 'nobody' if no "
+            "caller can reach this line at all."
+        ),
+    )
+    blast: Optional[Blast] = Field(
+        None,
+        description=(
+            "Who is worse off once it happens. 'everyone' if every user or all "
+            "the data is affected, 'many' if a whole class of users is, such "
+            "as one tenant or one plan, 'one' if only the caller who caused it "
+            "is, 'nobody' if no user is."
         ),
     )
     impact: Optional[Impact] = Field(
         None,
         description=(
-            "What happens when they do. 'data_loss' if correct data is "
-            "destroyed with no way back, 'corruption' if wrong values are "
-            "written and kept with nothing signalling it, 'disclosure' if "
-            "data reaches someone who should not see it, 'wrong_answer' if "
-            "the caller gets an incorrect result that is not persisted, "
-            "'hang' if it does not finish or consumes unbounded resources, "
+            "What goes wrong. 'data_loss' if correct data is destroyed with no "
+            "way back, 'corruption' if wrong values are written and kept with "
+            "nothing signalling it, which includes an operation that stops "
+            "halfway and leaves the rest undone, 'disclosure' if data reaches "
+            "someone who should not see it, 'escalation' if someone can act "
+            "beyond their authority, 'wrong_answer' if the caller gets an "
+            "incorrect result that is not persisted, 'hang' if it does not "
+            "finish or consumes unbounded memory, connections or time, "
             "'crash' if the operation dies unexpectedly, 'degraded' if it "
-            "works but costs more time or money than it should, 'rejected' "
-            "if the bad path is already refused with a clear error, 'none' "
-            "if there is no runtime consequence at all."
+            "works but costs more time or money than it should, 'rejected' if "
+            "the bad path is already refused with a clear error, 'none' if "
+            "there is no runtime consequence at all."
+        ),
+    )
+    certainty: Optional[Certainty] = Field(
+        None,
+        description=(
+            "Whether it happens. 'always' if the bad path runs every time this "
+            "code runs, 'conditional' if it runs on some inputs or in some "
+            "states you can name, 'possible' if it depends on an assumption "
+            "about code you have not been shown."
         ),
     )
     suggested_code: Optional[str] = Field(
@@ -206,7 +265,7 @@ class CodeSuggestion(BaseModel):
         """
         schema = handler(core_schema)
         required = list(schema.get("required", []))
-        for field in ("claims", "reach", "impact"):
+        for field in ("claims", *_QUESTIONS):
             if field not in required:
                 required.append(field)
         schema["required"] = required
