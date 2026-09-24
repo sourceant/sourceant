@@ -35,12 +35,7 @@ class SuggestionCategory(enum.Enum):
 
 
 class Trigger(enum.Enum):
-    """What causes the finding to happen.
-
-    Not only people. Work the system starts by itself reaches code no user
-    ever calls, and it carries no authority, so it cannot be described as an
-    operator without borrowing one.
-    """
+    """What causes the finding to happen."""
 
     ANYONE = "anyone"
     AUTHENTICATED = "authenticated"
@@ -48,7 +43,6 @@ class Trigger(enum.Enum):
     DEPLOY = "deploy"
     AUTOMATION = "automation"
     EVENT = "event"
-    NOTHING = "nothing"
 
 
 class Blast(enum.Enum):
@@ -156,7 +150,7 @@ def severity_of(suggestion) -> Severity:
         return _B if category in _RANKED_BY_CATEGORY else _A
 
     trigger, blast, impact, certainty = answered
-    if trigger is Trigger.NOTHING or certainty is Certainty.POSSIBLE:
+    if certainty is Certainty.POSSIBLE:
         return _N
 
     severity = _BASE[impact]
@@ -217,8 +211,7 @@ class CodeSuggestion(BaseModel):
             "can, 'deploy' if a release, migration or startup path does, "
             "'automation' if the system does it unattended, such as a cron, "
             "a queue worker, a sweep or a retry, 'event' if an inbound "
-            "message from another system does, such as a webhook, 'nothing' "
-            "if neither a caller nor a job reaches this line."
+            "message from another system does, such as a webhook."
         ),
     )
     blast: Optional[Blast] = Field(

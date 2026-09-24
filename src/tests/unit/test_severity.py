@@ -90,10 +90,12 @@ def test_naming_when_it_happens_softens_it_by_one():
     assert severity_of(sometimes) is Severity.ADVISORY
 
 
-def test_a_line_nothing_reaches_is_a_nitpick():
-    assert severity_of(ranked(Trigger.NOTHING, Blast.EVERYONE, Impact.DATA_LOSS)) is (
-        Severity.NIT
-    )
+def test_a_defect_on_a_line_nothing_reaches_is_a_nitpick():
+    """It has no cause to name, so what it has is no consequence."""
+    dead = ranked(Trigger.ANYONE, Blast.NOBODY, Impact.NONE)
+
+    assert severity_of(dead) is Severity.NIT
+    assert is_nitpick(dead)
 
 
 @pytest.mark.parametrize("unattended", [Trigger.AUTOMATION, Trigger.EVENT])

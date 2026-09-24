@@ -62,7 +62,6 @@ class Prompts:
     - `deploy`: a release, a migration, or a startup path
     - `automation`: the system itself, unattended: a cron, a queue worker, a sweep, a retry
     - `event`: an inbound message from another system, such as a webhook
-    - `nothing`: neither a caller nor a job reaches this line
 
     `blast`: who is worse off once it happens?
     - `everyone`: every user, or all the data
@@ -73,6 +72,9 @@ class Prompts:
     Code that only ever runs on a schedule is `automation`, not `operator`. An
     operator is somebody who could already do this without the defect; a job
     that runs by itself holds no such authority.
+
+    A finding on a line nothing reaches has an `impact` of `none`. Answer what
+    would cause it if anything did.
 
     `impact`: what goes wrong?
     - `data_loss`: correct data is destroyed or overwritten with no way back
@@ -120,7 +122,7 @@ class Prompts:
                 "side": "<LEFT|RIGHT>",
                 "comment": "<At most three short sentences: the problem, its consequence, and the fix.>",
                 "category": "<BUG|SECURITY|PERFORMANCE|STYLE|REFACTOR|CLARITY|DOCUMENTATION|IMPROVEMENT>",
-                "trigger": "<anyone|authenticated|operator|deploy|automation|event|nothing>",
+                "trigger": "<anyone|authenticated|operator|deploy|automation|event>",
                 "blast": "<everyone|many|one|nobody>",
                 "impact": "<data_loss|corruption|disclosure|escalation|wrong_answer|hang|crash|degraded|rejected|none>",
                 "certainty": "<always|conditional|possible>",
