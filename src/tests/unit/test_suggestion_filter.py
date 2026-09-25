@@ -100,7 +100,6 @@ def test_comment_only_is_an_explicit_choice(suggestion_filter):
     suggestion = _make_suggestion(
         comment="This loses pending jobs during shutdown. Drain them before exiting.",
         suggested_code=None,
-        existing_code=None,
     )
     assert suggestion_filter.filter_suggestions([suggestion])[0] == []
     suggestion.comment_only = True
@@ -115,12 +114,21 @@ def test_comment_only_still_filters_praise(suggestion_filter):
     assert suggestion_filter.filter_suggestions([suggestion])[0] == []
 
 
-def test_comment_only_reaches_inline_delivery_only_with_a_valid_anchor():
+@pytest.mark.parametrize(
+    "policy,expected",
+    [("drop", False), ("warn", True), ("keep", True), ("unknown", False)],
+)
+def test_comment_only_respects_missing_code_policy_and_validates_anchors(
+    monkeypatch, policy, expected
+):
     from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
     from src.integrations.github.review_delivery import comment_for
     from src.utils.diff_parser import parse_diff
     from src.utils.line_mapper import LineMapper
 
+    monkeypatch.setattr(
+        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", policy
+    )
     mapper = LineMapper(
         parse_diff("--- a/test.py\n+++ b/test.py\n@@ -1 +1 @@\n-shutdown()\n+exit()\n")
     )
@@ -131,6 +139,9 @@ def test_comment_only_reaches_inline_delivery_only_with_a_valid_anchor():
     )
     suggestion.comment_only = True
     kept = CodeReviewer().process([suggestion], SuggestionFilter(), mapper)
+    if not expected:
+        assert kept == []
+        return
     assert kept == [suggestion]
     delivered = comment_for(kept[0], mapper)
     assert delivered["line"] == 1

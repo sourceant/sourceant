@@ -269,7 +269,7 @@ class CodeSuggestion(BaseModel):
             "line without a replacement patch. Explain the problem, consequence, "
             "and needed action in comment, and set suggested_code to null. "
             "Use false when proposing replacement code. This does not bypass "
-            "evidence checks or the nitpick policy."
+            "evidence checks, the missing existing-code policy, or the nitpick policy."
         ),
     )
     suggested_code: Optional[str] = Field(

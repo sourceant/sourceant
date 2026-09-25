@@ -149,7 +149,7 @@ class SuggestionFilter:
         if not suggestion.comment_only and not suggestion.suggested_code:
             return False, "no suggested code"
 
-        if not suggestion.existing_code and not suggestion.comment_only:
+        if not suggestion.existing_code:
             policy = REVIEW_MISSING_EXISTING_CODE_POLICY
             if policy not in {"drop", "warn", "keep"}:
                 logger.warning(
