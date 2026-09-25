@@ -37,8 +37,12 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
         assert {"review", "context", "remember", "skill:retry-check"} <= prompts
         context = await session.get_prompt("context", {"about": "retries"})
         assert "retries" in context.messages[0].content.text
-        names = {tool.name for tool in (await session.list_tools()).tools}
+        tools = {tool.name: tool for tool in (await session.list_tools()).tools}
+        names = set(tools)
         assert {"search_skills", "get_skill", "save_skill", "delete_skill"} <= names
+        for name in ("search_skills", "save_skill"):
+            assert "type" in tools[name].inputSchema["properties"]
+            assert "kind" not in tools[name].inputSchema["properties"]
         saved = await session.call_tool(
             "save_skill",
             {
@@ -46,7 +50,7 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
                 "id": "requirements-check",
                 "name": "Requirements check",
                 "description": "Check requirements",
-                "kind": "requirements-analysis",
+                "type": "requirements-analysis",
                 "content": {
                     "instructions": "Check acceptance criteria.",
                     "examples": ["Missing failure case"],
@@ -73,7 +77,8 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
             "get_skill", {"scope": {}, "id": "requirements-check"}
         )
         assert not read_saved.isError, read_saved
-        assert read_saved.structuredContent["kind"] == "requirements-analysis"
+        assert read_saved.structuredContent["type"] == "requirements-analysis"
+        assert "kind" not in read_saved.structuredContent
         assert read_saved.structuredContent["properties"] == {"license": "MIT"}
         assert read_saved.structuredContent["truncated"] is False
         assert read_saved.structuredContent["body_truncated"] is False
@@ -88,7 +93,7 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
         assert clipped.structuredContent["truncated"] is True
         selected = await session.call_tool(
             "search_skills",
-            {"scope": {}, "kind": "requirements-analysis", "purpose": "requirements"},
+            {"scope": {}, "type": "requirements-analysis", "purpose": "requirements"},
         )
         assert selected.structuredContent["total"] == 1
         deleted = await session.call_tool(
@@ -124,7 +129,7 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
                 "name": "Updated check",
                 "description": "Check requirements",
                 "body": "Check failure cases.",
-                "kind": "requirements-analysis",
+                "type": "requirements-analysis",
             },
         )
         assert not updated.isError, updated

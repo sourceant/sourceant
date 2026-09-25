@@ -36,13 +36,13 @@ def for_review(
         return selector.select(skills, change, limit=limit)
     requested = tuple(dict.fromkeys(expert_passes.split()))
     experts = {
-        skill.id: skill for skill in skills if skill.kind == SkillType.REVIEW_PASS
+        skill.id: skill for skill in skills if skill.type == SkillType.REVIEW_PASS
     }
     missing = [identifier for identifier in requested if identifier not in experts]
     if missing:
         raise ValueError("Unknown expert review passes: " + ", ".join(missing))
     guidance = selector.select(
-        tuple(skill for skill in skills if skill.kind != SkillType.REVIEW_PASS),
+        tuple(skill for skill in skills if skill.type != SkillType.REVIEW_PASS),
         change,
         limit=limit,
     )

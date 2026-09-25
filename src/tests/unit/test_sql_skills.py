@@ -111,9 +111,26 @@ def test_skills_migration_matches_the_store(tmp_path):
             create_skills.upgrade()
     library = SQLSkillLibrary(engine)
     library.write(
-        "one", Skill("retry", "Retry", "Retries", "Bound retries."), scope="workspace"
+        "one",
+        Skill(
+            "retry",
+            "Retry",
+            "Retries",
+            "Bound retries.",
+            metadata={"sourceant": {"type": "requirements-analysis"}},
+            applications={"requirements": True},
+        ),
+        scope="workspace",
     )
     assert library.one("one", "retry").body == "Bound retries."
+    assert library.one("one", "retry").type == "requirements-analysis"
+    assert library.one("one", "retry").applies_to("requirements") is True
+    assert not hasattr(library.one("one", "retry"), "kind")
+    from sqlalchemy import inspect
+
+    columns = {column["name"] for column in inspect(engine).get_columns("skills")}
+    assert "type" in columns
+    assert "kind" not in columns
 
 
 @pytest.mark.asyncio

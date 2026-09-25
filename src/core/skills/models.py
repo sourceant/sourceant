@@ -91,7 +91,7 @@ class Skill:
         return None
 
     @property
-    def kind(self) -> str:
+    def type(self) -> str:
         ours = self.metadata.get(NAMESPACE)
         if isinstance(ours, Mapping):
             value = ours.get("type", SkillType.GUIDANCE.value)

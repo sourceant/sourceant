@@ -37,7 +37,7 @@ skill_table = Table(
     Column("description", Text, nullable=False),
     Column("content", JSON, nullable=False),
     Column("scope", String(32), nullable=False),
-    Column("kind", String(128), nullable=False),
+    Column("type", String(128), nullable=False),
     Column("automatic", Boolean, nullable=False),
     Column("paths", JSON, nullable=False),
     Column("metadata", JSON, nullable=False),
@@ -103,14 +103,14 @@ class SQLSkillLibrary:
                     extra = dict(row["metadata"])
                     if (
                         isinstance(extra.get(NAMESPACE), dict)
-                        or row["kind"] != SkillType.GUIDANCE.value
+                        or row["type"] != SkillType.GUIDANCE.value
                     ):
                         own = (
                             dict(extra[NAMESPACE])
                             if isinstance(extra.get(NAMESPACE), dict)
                             else {}
                         )
-                        own["type"] = row["kind"]
+                        own["type"] = row["type"]
                         extra[NAMESPACE] = own
                     found[row["id"]] = Skill(
                         row["id"],
@@ -202,8 +202,8 @@ class SQLSkillLibrary:
             raise SkillWriteError("A skill needs a description and instructions")
         if len(kept.name) > 200:
             raise SkillWriteError("Skill name exceeds 200 characters")
-        if len(kept.kind) > 128:
-            raise SkillWriteError("Skill kind exceeds 128 characters")
+        if len(kept.type) > 128:
+            raise SkillWriteError("Skill type exceeds 128 characters")
         content = dict(kept.content)
         if "instructions" in content and content["instructions"] != kept.body:
             raise SkillWriteError("Body and content instructions must agree")
@@ -233,7 +233,7 @@ class SQLSkillLibrary:
                 "description": kept.description,
                 "content": content,
                 "scope": kept.origin,
-                "kind": kept.kind,
+                "type": kept.type,
                 "automatic": kept.automatic,
                 "paths": list(kept.paths),
                 "metadata": extra,
@@ -253,7 +253,7 @@ class SQLSkillLibrary:
                 "description": "",
                 "content": {},
                 "scope": SkillScope(scope).value,
-                "kind": SkillType.GUIDANCE.value,
+                "type": SkillType.GUIDANCE.value,
                 "automatic": False,
                 "paths": [],
                 "metadata": {},
