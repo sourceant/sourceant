@@ -96,6 +96,53 @@ def test_identical_code_filtered(suggestion_filter):
     assert len(removed) == 1
 
 
+def test_comment_only_is_an_explicit_choice(suggestion_filter):
+    suggestion = _make_suggestion(
+        comment="This loses pending jobs during shutdown. Drain them before exiting.",
+        suggested_code=None,
+        existing_code=None,
+    )
+    assert suggestion_filter.filter_suggestions([suggestion])[0] == []
+    suggestion.comment_only = True
+    assert suggestion_filter.filter_suggestions([suggestion])[0] == [suggestion]
+    suggestion.suggested_code = "fixed()"
+    assert suggestion_filter.filter_suggestions([suggestion])[0] == []
+
+
+def test_comment_only_still_filters_praise(suggestion_filter):
+    suggestion = _make_suggestion(comment="Great implementation!", suggested_code=None)
+    suggestion.comment_only = True
+    assert suggestion_filter.filter_suggestions([suggestion])[0] == []
+
+
+def test_comment_only_reaches_inline_delivery_only_with_a_valid_anchor():
+    from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
+    from src.integrations.github.review_delivery import comment_for
+    from src.utils.diff_parser import parse_diff
+    from src.utils.line_mapper import LineMapper
+
+    mapper = LineMapper(
+        parse_diff("--- a/test.py\n+++ b/test.py\n@@ -1 +1 @@\n-shutdown()\n+exit()\n")
+    )
+    suggestion = _make_suggestion(
+        comment="This loses pending jobs during shutdown. Drain them before exiting.",
+        suggested_code=None,
+        existing_code=None,
+    )
+    suggestion.comment_only = True
+    kept = CodeReviewer().process([suggestion], SuggestionFilter(), mapper)
+    assert kept == [suggestion]
+    delivered = comment_for(kept[0], mapper)
+    assert delivered["line"] == 1
+    assert delivered["body"] == suggestion.comment
+    suggestion.start_line = suggestion.end_line = 1000
+    assert CodeReviewer().process([suggestion], SuggestionFilter(), mapper) == []
+
+
+def test_model_must_choose_whether_a_finding_is_comment_only():
+    assert "comment_only" in CodeSuggestion.model_json_schema()["required"]
+
+
 def test_informational_neutral_comment_filtered(suggestion_filter):
     suggestion = _make_suggestion(comment="This function returns an integer.")
     kept, removed = suggestion_filter.filter_suggestions([suggestion])

@@ -754,6 +754,12 @@ class CodeReviewer:
             mapped_result = line_mapper.validate_and_map_suggestion(
                 suggestion, strict_mode=True
             )
+            if suggestion.comment_only and not mapped_result:
+                logger.info(
+                    "Filtered comment-only finding without a valid diff anchor for %s",
+                    suggestion.file_name,
+                )
+                continue
             if mapped_result:
                 mapping, reason = mapped_result
                 suggestion.position = mapping.get("position")

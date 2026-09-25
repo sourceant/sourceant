@@ -262,9 +262,19 @@ class CodeSuggestion(BaseModel):
             "about code you have not been shown."
         ),
     )
+    comment_only: bool = Field(
+        False,
+        description=(
+            "Set true to intentionally report an actionable issue at a specific "
+            "line without a replacement patch. Explain the problem, consequence, "
+            "and needed action in comment, and set suggested_code to null. "
+            "Use false when proposing replacement code. This does not bypass "
+            "evidence checks or the nitpick policy."
+        ),
+    )
     suggested_code: Optional[str] = Field(
         ...,
-        description="The actual suggestion block of code. HIGHLY RECOMMENDED to include.",
+        description="Replacement code, or null when comment_only is true.",
     )
     existing_code: Optional[str] = Field(
         None,
@@ -292,7 +302,7 @@ class CodeSuggestion(BaseModel):
         """
         schema = handler(core_schema)
         required = list(schema.get("required", []))
-        for field in ("claims", *_QUESTIONS):
+        for field in ("claims", "comment_only", *_QUESTIONS):
             if field not in required:
                 required.append(field)
         schema["required"] = required

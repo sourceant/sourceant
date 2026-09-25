@@ -106,7 +106,10 @@ class TestWhatTheFileSaysBack:
 class TestAReviewThatSaysItThroughTheReviewer:
     """The whole point, driven where a suggestion is actually filtered."""
 
-    def test_a_suggestion_claiming_a_defined_name_is_missing_is_dropped(self):
+    @pytest.mark.parametrize("comment_only", [False, True])
+    def test_a_suggestion_claiming_a_defined_name_is_missing_is_dropped(
+        self, comment_only
+    ):
         from src.core.review_evidence import CachedChangedFileEvidenceReader
         from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
         from src.models.code_review import CodeSuggestion, Side, SuggestionCategory
@@ -132,7 +135,8 @@ class TestAReviewThatSaysItThroughTheReviewer:
                 "This will lead to a `NameError`."
             ),
             existing_code="    return work[:LIMIT]",
-            suggested_code="    return work[:6]",
+            suggested_code=None if comment_only else "    return work[:6]",
+            comment_only=comment_only,
         )
 
         kept = CodeReviewer().process(

@@ -22,17 +22,18 @@ class Prompts:
     - **Single-Line Suggestions**: `start_line` and `end_line` should be the **same number**.
     - **Line Number Source**: Each line in `__new hunk__` is prefixed with its exact file line number. Use these numbers directly as your `start_line` and `end_line`. Do NOT count from hunk headers.
     - **CRITICAL: `existing_code`**: You **MUST** provide the **exact code snippet** from the diff that your suggestion targets. Copy it character-for-character from the diff, excluding the line number prefix, but including the `+` or `-` prefix. This is the primary anchor for placing your comment.
-    - **Drop-in Replacement**: `suggested_code` **MUST** be a drop-in-replacement for `existing_code`. It **MUST NOT** include any surrounding, unchanged lines of code. **Especially for unchanged lines BEFORE the target lines**.
+    - **Drop-in Replacement**: When `comment_only` is false, `suggested_code` **MUST** be a drop-in replacement for `existing_code`. It **MUST NOT** include surrounding, unchanged lines of code.
     - **Only Comment on Changed Lines**: You can ONLY comment on lines that appear in the diff with `+` or `-` prefixes. Context lines (no prefix) cannot receive comments."""
 
-    _CODE_SUGGESTIONS_RULES = """**CRITICAL**: The `code_suggestions` array is **ONLY for actionable suggestions that propose specific code changes**.
+    _CODE_SUGGESTIONS_RULES = """**CRITICAL**: The `code_suggestions` array is **ONLY for actionable findings with a concrete problem and needed action**.
     - **NEVER** include positive affirmations, praise, or "good job" comments
     - **NEVER** highlight existing good code without suggesting an improvement
     - **NEVER** comment on code just to acknowledge it exists
     - **NEVER** suggest code that is identical or substantially similar to existing code
     - **NEVER** include a suggestion if no actionable improvement exists. Omit it entirely
     - **ONLY** include suggestions that identify actual issues and propose fixes
-    - Each suggestion MUST include `suggested_code` that is meaningfully different and better than existing code
+    - For a replacement patch, set `comment_only` to false and provide `suggested_code` that meaningfully fixes the issue.
+    - When an actionable issue cannot be fixed with a safe replacement at the target lines, set `comment_only` to true and `suggested_code` to null. Pinpoint the relevant lines and explain the problem, consequence, and needed action. Do not invent a patch just to report the issue.
     - Encode each structural fact that the issue depends on in `claims`
     - A claim states the expected fact using `subject`, `predicate`, and `expected`
     - Use `IMPORTED` for import presence and `DEFINED` for symbol definitions
@@ -132,7 +133,8 @@ class Prompts:
                 "blast": "<everyone|many|one|nobody>",
                 "impact": "<data_loss|corruption|disclosure|escalation|wrong_answer|hang|crash|degraded|rejected|none>",
                 "certainty": "<always|conditional|possible>",
-                "suggested_code": "<Corrected or improved code snippet.>",
+                "comment_only": false,
+                "suggested_code": "<Corrected code snippet, or null for an intentional comment-only finding.>",
                 "existing_code": "<The exact block of original code to be replaced. MUST be provided if suggesting a change to existing code.>",
                 "claims": [
                     {{

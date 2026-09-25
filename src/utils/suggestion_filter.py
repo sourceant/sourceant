@@ -143,10 +143,13 @@ class SuggestionFilter:
         if not suggestion.comment:
             return False, "empty comment"
 
-        if not suggestion.suggested_code:
+        if suggestion.comment_only and suggestion.suggested_code is not None:
+            return False, "comment-only finding includes replacement code"
+
+        if not suggestion.comment_only and not suggestion.suggested_code:
             return False, "no suggested code"
 
-        if not suggestion.existing_code:
+        if not suggestion.existing_code and not suggestion.comment_only:
             policy = REVIEW_MISSING_EXISTING_CODE_POLICY
             if policy not in {"drop", "warn", "keep"}:
                 logger.warning(
