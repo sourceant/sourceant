@@ -23,7 +23,7 @@ def upgrade():
         sa.Column("paths", sa.JSON(), nullable=False),
         sa.Column("metadata", sa.JSON(), nullable=False),
         sa.Column("properties", sa.JSON(), nullable=False),
-        sa.Column("deleted", sa.Boolean(), nullable=False),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("scope_id", "id"),
     )
     op.create_table(

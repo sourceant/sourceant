@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import create_engine, select
 
@@ -17,13 +19,22 @@ def test_database_skills_persist_with_scope_precedence_and_deletion(tmp_path):
     assert other.one("one", "retry", "acme/app").body == changed.body
     assert other.one("two", "retry", "acme/app") is None
     assert not other.forget("two", "retry", scope="workspace")
+    before_deletion = datetime.now(timezone.utc)
     assert other.forget("one", "retry", scope="repository", repository="acme/app")
+    after_deletion = datetime.now(timezone.utc)
     assert other.one("one", "retry", "acme/app").body == skill.body
     store.write("one", changed, scope="workspace")
     with engine.connect() as connection:
         rows = connection.execute(select(skill_table)).mappings().all()
         assert len(rows) == 2
-        active = next(row for row in rows if not row["deleted"])
+        active = next(row for row in rows if row["deleted_at"] is None)
+        removed = next(row for row in rows if row["deleted_at"] is not None)
+        assert "deleted" not in active
+        assert (
+            before_deletion
+            <= removed["deleted_at"].replace(tzinfo=timezone.utc)
+            <= after_deletion
+        )
         assert active["name"] == changed.name
         assert active["description"] == changed.description
         assert active["content"] == {"instructions": changed.body}
@@ -33,6 +44,17 @@ def test_database_skills_persist_with_scope_precedence_and_deletion(tmp_path):
     assert other.one("one", "retry").body == changed.body
     assert other.forget("one", "retry", scope="workspace")
     assert other.all("one") == ()
+    store.write("one", skill, scope="workspace")
+    assert other.one("one", "retry").body == skill.body
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                select(skill_table.c.deleted_at).where(
+                    skill_table.c.scope == "workspace"
+                )
+            ).scalar_one()
+            is None
+        )
     with pytest.raises(SkillWriteError):
         store.write("", skill, scope="workspace")
     with pytest.raises(SkillWriteError):

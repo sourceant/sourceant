@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, replace
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    DateTime,
     JSON,
     ForeignKeyConstraint,
     Index,
@@ -40,7 +42,7 @@ skill_table = Table(
     Column("paths", JSON, nullable=False),
     Column("metadata", JSON, nullable=False),
     Column("properties", JSON, nullable=False),
-    Column("deleted", Boolean, nullable=False),
+    Column("deleted_at", DateTime(timezone=True), nullable=True),
 )
 application_table = Table(
     "skill_applications",
@@ -95,7 +97,7 @@ class SQLSkillLibrary:
                 ]
             found = {}
             for row in rows:
-                if row["deleted"]:
+                if row["deleted_at"] is not None:
                     found[row["id"]] = None
                 else:
                     extra = dict(row["metadata"])
@@ -236,7 +238,7 @@ class SQLSkillLibrary:
                 "paths": list(kept.paths),
                 "metadata": extra,
                 "properties": dict(kept.properties),
-                "deleted": False,
+                "deleted_at": None,
             },
             applications,
         )
@@ -256,7 +258,7 @@ class SQLSkillLibrary:
                 "paths": [],
                 "metadata": {},
                 "properties": {},
-                "deleted": True,
+                "deleted_at": datetime.now(timezone.utc),
             },
         )
 
