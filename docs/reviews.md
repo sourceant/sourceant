@@ -40,7 +40,7 @@ With the database queue, generation and posting are separate jobs. Rate limits d
 | Filter | Effect |
 |---|---|
 | Praise detection | A comment that only says the code is fine is dropped rather than posted. `POSITIVE_SENTIMENT_THRESHOLD` (default `0.3`) sets how positive a comment has to read before it counts as praise |
-| Missing anchor | A suggestion that does not quote the code it wants changed cannot be placed reliably. `REVIEW_MISSING_EXISTING_CODE_POLICY` decides: `drop` (default) discards it, `warn` keeps it and says so, `keep` keeps it silently |
+| Missing anchor | Every finding must quote non-empty existing code so its location can be found in the diff. Findings without it are discarded, including comments without replacement code. |
 | Already said | A suggestion matching one SourceAnt already posted on the pull request is dropped, and the verdict is recalculated from what survives |
 | Repeat approval | A second approval on a pull request SourceAnt has already approved is downgraded to a comment |
 
@@ -86,7 +86,6 @@ Reuse is best effort: when Redis is unavailable the review is simply generated a
 |---|---|---|
 | `REVIEW_DRAFT_PRS` | `false` | Review draft pull requests |
 | `POSITIVE_SENTIMENT_THRESHOLD` | `0.3` | How positive a comment must read to be treated as praise and dropped |
-| `REVIEW_MISSING_EXISTING_CODE_POLICY` | `drop` | What happens to a suggestion with no anchoring code: `drop`, `warn`, `keep` |
 | `REVIEW_MODEL_CONCURRENCY` | `6` | Maximum concurrent model calls per process |
 | `LLM_PROBE_TIMEOUT` | `15` | Seconds a provider gets to answer a model check |
 | `LLM_RESOLVE_TIMEOUT` | `5` | Seconds a custom endpoint's name gets to resolve |

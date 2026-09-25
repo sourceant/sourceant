@@ -108,7 +108,6 @@ A generated review is kept per revision so the same commit is not reviewed twice
 |---|---|---|
 | `REVIEW_DRAFT_PRS` | `false` | Review draft pull requests |
 | `POSITIVE_SENTIMENT_THRESHOLD` | `0.3` | How positive a comment must read before it is treated as praise and dropped |
-| `REVIEW_MISSING_EXISTING_CODE_POLICY` | `drop` | A suggestion that does not quote the code it changes: `drop`, `warn`, or `keep` |
 
 See [Code Review](reviews.md).
 

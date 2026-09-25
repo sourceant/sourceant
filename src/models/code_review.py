@@ -269,7 +269,8 @@ class CodeSuggestion(BaseModel):
             "line without a replacement patch. Explain the problem, consequence, "
             "and needed action in comment, and set suggested_code to null. "
             "Use false when proposing replacement code. This does not bypass "
-            "evidence checks, the missing existing-code policy, or the nitpick policy."
+            "evidence checks or the nitpick policy. Always provide existing_code "
+            "to anchor the finding."
         ),
     )
     suggested_code: Optional[str] = Field(
@@ -278,7 +279,7 @@ class CodeSuggestion(BaseModel):
     )
     existing_code: Optional[str] = Field(
         None,
-        description="The original code to be replaced. If provided, this is used to anchor the suggestion instead of line numbers.",
+        description="Required non-empty code quoted from the diff to anchor the finding, including comment-only findings.",
     )
     claims: List[ReviewClaim] = Field(
         default_factory=list,
@@ -302,7 +303,7 @@ class CodeSuggestion(BaseModel):
         """
         schema = handler(core_schema)
         required = list(schema.get("required", []))
-        for field in ("claims", "comment_only", *_QUESTIONS):
+        for field in ("claims", "comment_only", "existing_code", *_QUESTIONS):
             if field not in required:
                 required.append(field)
         schema["required"] = required

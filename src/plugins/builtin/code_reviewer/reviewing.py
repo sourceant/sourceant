@@ -765,8 +765,7 @@ class CodeReviewer:
                 suggestion.position = mapping.get("position")
                 suggestion.end_line = mapping["line"]
                 suggestion.side = Side(mapping["side"])
-                if "start_line" in mapping:
-                    suggestion.start_line = mapping["start_line"]
+                suggestion.start_line = mapping.get("start_line", mapping["line"])
             decision = validator.validate(
                 list(suggestion.claims) + list(claimed_absent(suggestion.comment)),
                 evidence.read(suggestion.file_name) if evidence else None,

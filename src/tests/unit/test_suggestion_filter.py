@@ -114,44 +114,36 @@ def test_comment_only_still_filters_praise(suggestion_filter):
     assert suggestion_filter.filter_suggestions([suggestion])[0] == []
 
 
-@pytest.mark.parametrize(
-    "policy,expected",
-    [("drop", False), ("warn", True), ("keep", True), ("unknown", False)],
-)
-def test_comment_only_respects_missing_code_policy_and_validates_anchors(
-    monkeypatch, policy, expected
-):
+def test_comment_only_uses_quoted_code_to_find_its_line():
     from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
     from src.integrations.github.review_delivery import comment_for
     from src.utils.diff_parser import parse_diff
     from src.utils.line_mapper import LineMapper
 
-    monkeypatch.setattr(
-        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", policy
-    )
     mapper = LineMapper(
         parse_diff("--- a/test.py\n+++ b/test.py\n@@ -1 +1 @@\n-shutdown()\n+exit()\n")
     )
     suggestion = _make_suggestion(
         comment="This loses pending jobs during shutdown. Drain them before exiting.",
         suggested_code=None,
-        existing_code=None,
+        existing_code="exit()",
     )
     suggestion.comment_only = True
+    suggestion.start_line = suggestion.end_line = 1000
     kept = CodeReviewer().process([suggestion], SuggestionFilter(), mapper)
-    if not expected:
-        assert kept == []
-        return
     assert kept == [suggestion]
     delivered = comment_for(kept[0], mapper)
     assert delivered["line"] == 1
     assert delivered["body"] == suggestion.comment
     suggestion.start_line = suggestion.end_line = 1000
+    suggestion.existing_code = "missing_from_diff()"
     assert CodeReviewer().process([suggestion], SuggestionFilter(), mapper) == []
 
 
 def test_model_must_choose_whether_a_finding_is_comment_only():
-    assert "comment_only" in CodeSuggestion.model_json_schema()["required"]
+    assert {"comment_only", "existing_code"} <= set(
+        CodeSuggestion.model_json_schema()["required"]
+    )
 
 
 def test_informational_neutral_comment_filtered(suggestion_filter):
@@ -161,51 +153,19 @@ def test_informational_neutral_comment_filtered(suggestion_filter):
     assert len(removed) == 1
 
 
-def test_missing_existing_code_dropped_by_default(suggestion_filter, monkeypatch):
-    monkeypatch.setattr(
-        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "drop"
-    )
-    suggestion = _make_suggestion(
-        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
-    )
-    kept, removed = suggestion_filter.filter_suggestions([suggestion])
-    assert len(kept) == 0
-    assert len(removed) == 1
-
-
-def test_missing_existing_code_warn_policy_keeps(suggestion_filter, monkeypatch):
-    monkeypatch.setattr(
-        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "warn"
-    )
-    suggestion = _make_suggestion(
-        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
-    )
-    kept, removed = suggestion_filter.filter_suggestions([suggestion])
-    assert len(kept) == 1
-    assert len(removed) == 0
-
-
-def test_missing_existing_code_keep_policy_keeps(suggestion_filter, monkeypatch):
-    monkeypatch.setattr(
-        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "keep"
-    )
-    suggestion = _make_suggestion(
-        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
-    )
-    kept, removed = suggestion_filter.filter_suggestions([suggestion])
-    assert len(kept) == 1
-    assert len(removed) == 0
-
-
-def test_invalid_existing_code_policy_falls_back_to_drop(
-    suggestion_filter, monkeypatch
+@pytest.mark.parametrize("existing_code", [None, "", " \n\t"])
+@pytest.mark.parametrize("comment_only", [False, True])
+@pytest.mark.parametrize("legacy_policy", ["drop", "warn", "keep"])
+def test_missing_existing_code_is_always_rejected(
+    suggestion_filter, monkeypatch, existing_code, comment_only, legacy_policy
 ):
-    monkeypatch.setattr(
-        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", "invalid"
-    )
+    monkeypatch.setenv("REVIEW_MISSING_EXISTING_CODE_POLICY", legacy_policy)
     suggestion = _make_suggestion(
-        comment="Fix the bug here", existing_code=None, suggested_code="fixed()"
+        comment="Fix the bug here",
+        existing_code=existing_code,
+        suggested_code=None if comment_only else "fixed()",
     )
+    suggestion.comment_only = comment_only
     kept, removed = suggestion_filter.filter_suggestions([suggestion])
     assert len(kept) == 0
     assert len(removed) == 1
