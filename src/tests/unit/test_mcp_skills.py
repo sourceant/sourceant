@@ -75,6 +75,17 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
         assert not read_saved.isError, read_saved
         assert read_saved.structuredContent["kind"] == "requirements-analysis"
         assert read_saved.structuredContent["properties"] == {"license": "MIT"}
+        assert read_saved.structuredContent["truncated"] is False
+        assert read_saved.structuredContent["body_truncated"] is False
+        clipped = await session.call_tool(
+            "get_skill", {"scope": {}, "id": "requirements-check", "max_characters": 50}
+        )
+        assert not clipped.isError, clipped
+        assert clipped.structuredContent["body"] == "Check acceptance criteria."
+        assert clipped.structuredContent["body_truncated"] is False
+        assert clipped.structuredContent["details_truncated"] is True
+        assert clipped.structuredContent["content"] is None
+        assert clipped.structuredContent["truncated"] is True
         selected = await session.call_tool(
             "search_skills",
             {"scope": {}, "kind": "requirements-analysis", "purpose": "requirements"},
@@ -132,6 +143,7 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
         assert not read.isError, read
         assert read.structuredContent["body"] == "Use"
         assert read.structuredContent["truncated"] is True
+        assert read.structuredContent["body_truncated"] is True
         missing = await session.call_tool("get_skill", {"scope": {}, "id": "missing"})
         assert missing.isError
         invalid = await session.call_tool("search_skills", {"scope": {}, "limit": 1000})

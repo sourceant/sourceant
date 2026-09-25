@@ -43,6 +43,7 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             "paths": list(skill.paths),
         }
         truncated = len(json.dumps(extra)) > max_characters
+        body_truncated = len(skill.body) > max_characters
         return {
             "id": skill.id,
             "name": skill.name,
@@ -51,7 +52,8 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             "origin": skill.origin,
             "automatic": skill.automatic,
             "body": skill.body[:max_characters],
-            "truncated": len(skill.body) > max_characters,
+            "body_truncated": body_truncated,
+            "truncated": truncated or body_truncated or len(skill.description) > 2000,
             **{key: None if truncated else value for key, value in extra.items()},
             "content_truncated": truncated,
             "details_truncated": truncated,
