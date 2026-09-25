@@ -22,6 +22,7 @@ from src.core.code_index import (
 )
 from src.core.context import DefaultContextProvider
 from src.core.contracts import InMemoryContractRepository
+from src.core.grouping import groups
 from src.core.knowledge import (
     InMemoryKnowledgeRepository,
     SQLKnowledgeRepository,
@@ -198,6 +199,7 @@ def _assemble(surface: Surface):
         knowledge=knowledge,
         topology=topology,
         requirements=requirements,
+        groups=groups(requirements=requirements),
         surface=surface,
         skills=skills,
     )
