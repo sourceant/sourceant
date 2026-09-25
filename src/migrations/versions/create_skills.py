@@ -16,7 +16,7 @@ def upgrade():
         sa.Column("id", sa.String(255), nullable=False),
         sa.Column("name", sa.String(200), nullable=False),
         sa.Column("description", sa.Text(), nullable=False),
-        sa.Column("context", sa.JSON(), nullable=False),
+        sa.Column("content", sa.JSON(), nullable=False),
         sa.Column("scope", sa.String(32), nullable=False),
         sa.Column("kind", sa.String(32), nullable=False),
         sa.Column("reviews", sa.Boolean(), nullable=True),

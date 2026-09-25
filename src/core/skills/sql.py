@@ -30,7 +30,7 @@ skill_table = Table(
     Column("id", String(255), primary_key=True),
     Column("name", String(200), nullable=False),
     Column("description", Text, nullable=False),
-    Column("context", JSON, nullable=False),
+    Column("content", JSON, nullable=False),
     Column("scope", String(32), nullable=False),
     Column("kind", String(32), nullable=False),
     Column("reviews", Boolean, nullable=True),
@@ -95,13 +95,13 @@ class SQLSkillLibrary:
                         row["id"],
                         row["name"],
                         row["description"],
-                        row["context"]["instructions"],
+                        row["content"]["instructions"],
                         origin=row["scope"],
                         paths=tuple(row["paths"]),
                         metadata=extra,
                         automatic=row["automatic"],
                         properties=row["properties"],
-                        context=row["context"],
+                        content=row["content"],
                     )
             return found
 
@@ -161,10 +161,10 @@ class SQLSkillLibrary:
             raise SkillWriteError("A skill needs a description and instructions")
         if len(kept.name) > 200:
             raise SkillWriteError("Skill name exceeds 200 characters")
-        context = dict(kept.context)
-        if "instructions" in context and context["instructions"] != kept.body:
-            raise SkillWriteError("Body and context instructions must agree")
-        context["instructions"] = kept.body
+        content = dict(kept.content)
+        if "instructions" in content and content["instructions"] != kept.body:
+            raise SkillWriteError("Body and content instructions must agree")
+        content["instructions"] = kept.body
         try:
             document = json.dumps(asdict(kept), allow_nan=False)
         except (TypeError, ValueError) as error:
@@ -185,7 +185,7 @@ class SQLSkillLibrary:
             {
                 "name": kept.name,
                 "description": kept.description,
-                "context": context,
+                "content": content,
                 "scope": kept.origin,
                 "kind": kept.kind.value,
                 "reviews": kept.reviews,
@@ -196,7 +196,7 @@ class SQLSkillLibrary:
                 "deleted": False,
             },
         )
-        return replace(kept, context=context)
+        return replace(kept, content=content)
 
     def hide(self, workspace, identifier, *, scope, repository=""):
         self._put(
@@ -205,7 +205,7 @@ class SQLSkillLibrary:
             {
                 "name": "",
                 "description": "",
-                "context": {},
+                "content": {},
                 "scope": SkillScope(scope).value,
                 "kind": SkillType.GUIDANCE.value,
                 "reviews": None,

@@ -77,8 +77,8 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
         skill = library.one(workspace, id, repository)
         if skill is None:
             raise ValueError("Skill not found in this scope")
-        context = {**skill.context, "instructions": skill.body}
-        context_truncated = len(json.dumps(context)) > max_characters
+        content = {**skill.content, "instructions": skill.body}
+        content_truncated = len(json.dumps(content)) > max_characters
         return {
             "id": skill.id,
             "name": skill.name,
@@ -87,6 +87,6 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             "automatic": skill.automatic,
             "body": skill.body[:max_characters],
             "truncated": len(skill.body) > max_characters,
-            "context": None if context_truncated else context,
-            "context_truncated": context_truncated,
+            "content": None if content_truncated else content,
+            "content_truncated": content_truncated,
         }

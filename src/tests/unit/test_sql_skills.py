@@ -26,7 +26,7 @@ def test_database_skills_persist_with_scope_precedence_and_deletion(tmp_path):
         active = next(row for row in rows if not row["deleted"])
         assert active["name"] == changed.name
         assert active["description"] == changed.description
-        assert active["context"] == {"instructions": changed.body}
+        assert active["content"] == {"instructions": changed.body}
         assert active["scope"] == "workspace"
         assert active["automatic"] is True
         assert "document" not in active
