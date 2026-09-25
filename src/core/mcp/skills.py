@@ -89,4 +89,8 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             "truncated": len(skill.body) > max_characters,
             "content": None if content_truncated else content,
             "content_truncated": content_truncated,
+            "applications": {
+                **({"review": skill.reviews} if skill.reviews is not None else {}),
+                **skill.applications,
+            },
         }

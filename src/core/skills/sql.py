@@ -8,10 +8,13 @@ from sqlalchemy import (
     Boolean,
     Column,
     JSON,
+    ForeignKeyConstraint,
+    Index,
     MetaData,
     String,
     Table,
     Text,
+    delete,
     select,
 )
 from sqlalchemy.dialects import mysql, postgresql, sqlite
@@ -33,12 +36,23 @@ skill_table = Table(
     Column("content", JSON, nullable=False),
     Column("scope", String(32), nullable=False),
     Column("kind", String(32), nullable=False),
-    Column("reviews", Boolean, nullable=True),
     Column("automatic", Boolean, nullable=False),
     Column("paths", JSON, nullable=False),
     Column("metadata", JSON, nullable=False),
     Column("properties", JSON, nullable=False),
     Column("deleted", Boolean, nullable=False),
+)
+application_table = Table(
+    "skill_applications",
+    metadata,
+    Column("scope_id", BigInteger, primary_key=True),
+    Column("skill_id", String(255), primary_key=True),
+    Column("purpose", String(64), primary_key=True),
+    Column("enabled", Boolean, nullable=False),
+    ForeignKeyConstraint(
+        ["scope_id", "skill_id"], ["skills.scope_id", "skills.id"], ondelete="CASCADE"
+    ),
+    Index("ix_skill_applications_scope_purpose", "scope_id", "purpose", "enabled"),
 )
 
 
@@ -70,7 +84,15 @@ class SQLSkillLibrary:
             query = select(skill_table).where(skill_table.c.scope_id == key)
             if identifier is not None:
                 query = query.where(skill_table.c.id == identifier)
-            rows = connection.execute(query).mappings()
+            rows = connection.execute(query).mappings().all()
+            uses = select(application_table).where(application_table.c.scope_id == key)
+            if identifier is not None:
+                uses = uses.where(application_table.c.skill_id == identifier)
+            applications = {}
+            for use in connection.execute(uses).mappings():
+                applications.setdefault(use["skill_id"], {})[use["purpose"]] = use[
+                    "enabled"
+                ]
             found = {}
             for row in rows:
                 if row["deleted"]:
@@ -80,7 +102,6 @@ class SQLSkillLibrary:
                     if (
                         isinstance(extra.get(NAMESPACE), dict)
                         or row["kind"] != SkillType.GUIDANCE.value
-                        or row["reviews"] is not None
                     ):
                         own = (
                             dict(extra[NAMESPACE])
@@ -88,8 +109,6 @@ class SQLSkillLibrary:
                             else {}
                         )
                         own["type"] = row["kind"]
-                        if row["reviews"] is not None:
-                            own[REVIEW] = row["reviews"]
                         extra[NAMESPACE] = own
                     found[row["id"]] = Skill(
                         row["id"],
@@ -102,6 +121,7 @@ class SQLSkillLibrary:
                         automatic=row["automatic"],
                         properties=row["properties"],
                         content=row["content"],
+                        applications=applications.get(row["id"], {}),
                     )
             return found
 
@@ -133,7 +153,7 @@ class SQLSkillLibrary:
             workspace, scope=SkillScope.WORKSPACE, identifier=identifier
         ).get(identifier)
 
-    def _put(self, target, identifier, fields):
+    def _put(self, target, identifier, fields, applications=None):
         with self.engine.begin() as connection:
             key = scopes.remembered(connection, target)
             values = dict(scope_id=key, id=identifier, **fields)
@@ -151,6 +171,25 @@ class SQLSkillLibrary:
             else:
                 raise SkillWriteError("Unsupported skills database")
             connection.execute(statement)
+            connection.execute(
+                delete(application_table).where(
+                    application_table.c.scope_id == key,
+                    application_table.c.skill_id == identifier,
+                )
+            )
+            if applications:
+                connection.execute(
+                    application_table.insert(),
+                    [
+                        {
+                            "scope_id": key,
+                            "skill_id": identifier,
+                            "purpose": purpose,
+                            "enabled": enabled,
+                        }
+                        for purpose, enabled in applications.items()
+                    ],
+                )
 
     def write(self, workspace, skill, *, scope, repository=""):
         target = self.scope(workspace, scope, repository)
@@ -174,6 +213,9 @@ class SQLSkillLibrary:
         if len(document.encode()) > 100_000:
             raise SkillWriteError("Skill exceeds the storage limit")
         extra = dict(kept.metadata)
+        applications = dict(kept.applications)
+        if kept.reviews is not None:
+            applications.setdefault(REVIEW, kept.reviews)
         if isinstance(extra.get(NAMESPACE), dict):
             own = dict(extra[NAMESPACE])
             own.pop("type", None)
@@ -188,15 +230,15 @@ class SQLSkillLibrary:
                 "content": content,
                 "scope": kept.origin,
                 "kind": kept.kind.value,
-                "reviews": kept.reviews,
                 "automatic": kept.automatic,
                 "paths": list(kept.paths),
                 "metadata": extra,
                 "properties": dict(kept.properties),
                 "deleted": False,
             },
+            applications,
         )
-        return replace(kept, content=content)
+        return replace(kept, content=content, applications=applications)
 
     def hide(self, workspace, identifier, *, scope, repository=""):
         self._put(
@@ -208,7 +250,6 @@ class SQLSkillLibrary:
                 "content": {},
                 "scope": SkillScope(scope).value,
                 "kind": SkillType.GUIDANCE.value,
-                "reviews": None,
                 "automatic": False,
                 "paths": [],
                 "metadata": {},

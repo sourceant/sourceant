@@ -61,10 +61,34 @@ class Skill:
     automatic: bool = True
     properties: Mapping[str, Any] = field(default_factory=dict)
     content: Mapping[str, Any] = field(default_factory=dict)
+    applications: Mapping[str, bool] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.id or not self.name:
             raise ValueError("a skill needs an id and a name")
+        if (
+            not isinstance(self.applications, Mapping)
+            or len(self.applications) > 50
+            or any(
+                not isinstance(key, str)
+                or not key
+                or len(key) > 64
+                or key != key.strip()
+                or not isinstance(value, bool)
+                for key, value in self.applications.items()
+            )
+        ):
+            raise ValueError("Applications must map up to 50 purpose names to booleans")
+
+    def applies_to(self, purpose: str) -> bool | None:
+        if purpose in self.applications:
+            return self.applications[purpose]
+        if purpose == REVIEW:
+            ours = self.metadata.get(NAMESPACE)
+            if isinstance(ours, Mapping):
+                said = ours.get(REVIEW)
+                return said if isinstance(said, bool) else None
+        return None
 
     @property
     def kind(self) -> SkillType:
@@ -83,11 +107,7 @@ class Skill:
         None where nobody has said, which is most of them: a skill is not
         written with this product in mind, and being silent is not a no.
         """
-        ours = self.metadata.get(NAMESPACE)
-        if not isinstance(ours, Mapping):
-            return None
-        said = ours.get(REVIEW)
-        return said if isinstance(said, bool) else None
+        return self.applies_to(REVIEW)
 
 
 @dataclass(frozen=True)

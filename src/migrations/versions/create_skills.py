@@ -19,7 +19,6 @@ def upgrade():
         sa.Column("content", sa.JSON(), nullable=False),
         sa.Column("scope", sa.String(32), nullable=False),
         sa.Column("kind", sa.String(32), nullable=False),
-        sa.Column("reviews", sa.Boolean(), nullable=True),
         sa.Column("automatic", sa.Boolean(), nullable=False),
         sa.Column("paths", sa.JSON(), nullable=False),
         sa.Column("metadata", sa.JSON(), nullable=False),
@@ -27,7 +26,26 @@ def upgrade():
         sa.Column("deleted", sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint("scope_id", "id"),
     )
+    op.create_table(
+        "skill_applications",
+        sa.Column("scope_id", sa.BigInteger(), nullable=False),
+        sa.Column("skill_id", sa.String(255), nullable=False),
+        sa.Column("purpose", sa.String(64), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.PrimaryKeyConstraint("scope_id", "skill_id", "purpose"),
+        sa.ForeignKeyConstraint(
+            ["scope_id", "skill_id"],
+            ["skills.scope_id", "skills.id"],
+            ondelete="CASCADE",
+        ),
+    )
+    op.create_index(
+        "ix_skill_applications_scope_purpose",
+        "skill_applications",
+        ["scope_id", "purpose", "enabled"],
+    )
 
 
 def downgrade():
+    op.drop_table("skill_applications")
     op.drop_table("skills")

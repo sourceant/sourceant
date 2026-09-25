@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import create_engine, select
 
 from src.core.skills import Skill, SkillWriteError
-from src.core.skills.sql import SQLSkillLibrary, skill_table
+from src.core.skills.sql import SQLSkillLibrary, skill_table, application_table
 
 
 def test_database_skills_persist_with_scope_precedence_and_deletion(tmp_path):
@@ -37,6 +37,43 @@ def test_database_skills_persist_with_scope_precedence_and_deletion(tmp_path):
         store.write("", skill, scope="workspace")
     with pytest.raises(SkillWriteError):
         store.write("one", skill, scope="system")
+
+
+def test_application_rules_are_extensible_and_preserve_legacy_review_settings(tmp_path):
+    from dataclasses import replace
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'applications.db'}")
+    store = SQLSkillLibrary(engine, create_schema=True)
+    skill = Skill(
+        "retry",
+        "Retries",
+        "Check retries",
+        "Bound retries.",
+        metadata={"sourceant": {"review": False}},
+        applications={"planning": True, "documentation": False},
+    )
+    store.write("one", skill, scope="workspace")
+    read = SQLSkillLibrary(engine).one("one", "retry")
+    assert read.reviews is False
+    assert read.applies_to("planning") is True
+    assert read.applies_to("documentation") is False
+    assert read.applies_to("future-purpose") is None
+    with engine.connect() as connection:
+        assert "reviews" not in skill_table.c
+        assert len(connection.execute(select(application_table)).all()) == 3
+    store.write(
+        "one",
+        replace(skill, metadata={}, applications={"future-purpose": True}),
+        scope="workspace",
+    )
+    read = store.one("one", "retry")
+    assert read.reviews is None
+    assert read.applies_to("planning") is None
+    assert read.applies_to("future-purpose") is True
+    assert store.one("two", "retry") is None
+    store.forget("one", "retry", scope="workspace")
+    with engine.connect() as connection:
+        assert connection.execute(select(application_table)).all() == []
 
 
 def test_skills_migration_matches_the_store(tmp_path):
