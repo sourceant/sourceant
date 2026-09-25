@@ -47,7 +47,7 @@ class MemberInput(BaseModel):
     rather than moving it, because a requirement can belong to more than one."""
 
     member_type: str = Field(min_length=1, max_length=64)
-    member_id: str = Field(min_length=1, max_length=500)
+    member_id: str = Field(min_length=1, max_length=255)
     repo: str = ""
 
 

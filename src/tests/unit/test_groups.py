@@ -1,6 +1,7 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import String, create_engine
 
+from src.core.groups.sql import member_table
 from src.core.groups import (
     BREADTH,
     MAX_DEPTH,
@@ -55,6 +56,21 @@ def _group(identity="refunds", name="Refunds", type="feature", parent_id=""):
 
 def _requirement(identity, summary="Refunds settle within a business day"):
     return Requirement(id=identity, kind="requirement", status="open", summary=summary)
+
+
+def test_the_membership_key_fits_what_mysql_will_index(store):
+    """MySQL counts four bytes a character towards a 3072 byte key limit.
+
+    Postgres and SQLite do not, so a key too wide for MySQL passes every test
+    that does not do this arithmetic and fails when the table is created there.
+    """
+    key = [column for column in member_table.primary_key.columns]
+    width = sum(
+        (column.type.length or 0) * 4 if isinstance(column.type, String) else 8
+        for column in key
+    )
+
+    assert width <= 3072, f"the membership key needs {width} bytes"
 
 
 def test_a_group_holds_requirements_from_two_repositories(store, requirements):
@@ -174,8 +190,8 @@ def test_a_group_refuses_what_its_columns_cannot_hold(store):
         Group("refunds", "feature", "open", "Refunds", "", "h" * 501)
     with pytest.raises(ValueError, match="type must contain at most 64"):
         GroupMember("refunds", "r" * 65, "r1", BILLING)
-    with pytest.raises(ValueError, match="identity must contain at most 500"):
-        GroupMember("refunds", "requirement", "r" * 501, BILLING)
+    with pytest.raises(ValueError, match="identity must contain at most 255"):
+        GroupMember("refunds", "requirement", "r" * 256, BILLING)
 
 
 def test_a_group_cannot_hold_itself():
