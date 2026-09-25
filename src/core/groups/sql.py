@@ -59,7 +59,7 @@ member_table = Table(
     Column("group_id", String(255), primary_key=True),
     Column("member_scope_id", BigInteger, primary_key=True),
     Column("member_type", String(64), primary_key=True),
-    Column("member_id", String(500), primary_key=True),
+    Column("member_id", String(255), primary_key=True),
     # Nothing keeps a thing to one group. Each group's own count is exact; a
     # sum across groups is not, since a shared member sits in each of them.
     Index(

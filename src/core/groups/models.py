@@ -71,7 +71,7 @@ class GroupMember:
         for name, value, limit in (
             ("group", self.group_id, 255),
             ("type", self.member_type, 64),
-            ("identity", self.member_id, 500),
+            ("identity", self.member_id, 255),
         ):
             if len(value) > limit:
                 raise ValueError(

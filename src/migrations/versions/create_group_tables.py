@@ -58,7 +58,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("member_type", sa.String(length=64), nullable=False),
-        sa.Column("member_id", sa.String(length=500), nullable=False),
+        sa.Column("member_id", sa.String(length=255), nullable=False),
         sa.PrimaryKeyConstraint(
             "scope_id", "group_id", "member_scope_id", "member_type", "member_id"
         ),
