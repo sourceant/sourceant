@@ -31,7 +31,65 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
     )
     async with create_connected_server_and_client_session(server) as session:
         names = {tool.name for tool in (await session.list_tools()).tools}
-        assert {"search_skills", "get_skill"} <= names
+        assert {"search_skills", "get_skill", "save_skill", "delete_skill"} <= names
+        saved = await session.call_tool(
+            "save_skill",
+            {
+                "scope": {},
+                "id": "requirements-check",
+                "name": "Requirements check",
+                "description": "Check requirements",
+                "kind": "requirements-analysis",
+                "content": {
+                    "instructions": "Check acceptance criteria.",
+                    "examples": ["Missing failure case"],
+                },
+                "metadata": {"owner": "platform"},
+                "properties": {"license": "MIT"},
+                "paths": ["specs/**"],
+                "applications": {"requirements": True, "review": False},
+                "automatic": False,
+            },
+        )
+        assert not saved.isError, saved
+        read_saved = await session.call_tool(
+            "get_skill", {"scope": {}, "id": "requirements-check"}
+        )
+        assert not read_saved.isError, read_saved
+        assert read_saved.structuredContent["kind"] == "requirements-analysis"
+        assert read_saved.structuredContent["properties"] == {"license": "MIT"}
+        selected = await session.call_tool(
+            "search_skills",
+            {"scope": {}, "kind": "requirements-analysis", "purpose": "requirements"},
+        )
+        assert selected.structuredContent["total"] == 1
+        deleted = await session.call_tool(
+            "delete_skill", {"scope": {}, "id": "requirements-check"}
+        )
+        assert deleted.structuredContent["deleted"] is True
+        imported = await session.call_tool(
+            "save_skill",
+            {
+                "scope": {},
+                "id": "imported-check",
+                "document": "---\nname: Imported check\ndescription: Check requirements\nlicense: MIT\nmetadata:\n  sourceant:\n    type: requirements-analysis\n---\n\nCheck acceptance criteria.\n",
+            },
+        )
+        assert not imported.isError, imported
+        assert imported.structuredContent["properties"]["license"] == "MIT"
+        updated = await session.call_tool(
+            "save_skill",
+            {
+                "scope": {},
+                "id": "imported-check",
+                "name": "Updated check",
+                "description": "Check requirements",
+                "body": "Check failure cases.",
+                "kind": "requirements-analysis",
+            },
+        )
+        assert not updated.isError, updated
+        assert updated.structuredContent["body"] == "Check failure cases."
         found = await session.call_tool(
             "search_skills", {"scope": {}, "text": "retry limits"}
         )

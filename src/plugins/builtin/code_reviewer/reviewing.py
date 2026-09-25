@@ -278,18 +278,22 @@ class CodeReviewer:
         selected = split(chosen)
         applied = {skill.id for skill in chosen}
         for skill in selected:
-            coverage.record(SKILLS, skill.kind.value, answered=True, target=skill.id)
+            coverage.record(SKILLS, skill.kind, answered=True, target=skill.id)
         # A skill that matched and did not fit leaves no trace anywhere else.
         for skill in available.values():
             if skill.id not in applied:
                 coverage.record(
                     SKILLS,
-                    skill.kind.value,
+                    skill.kind,
                     answered=False,
                     target=skill.id,
                     reason="did not apply to this change",
                 )
-        guidance = [skill for skill in selected if skill.kind == SkillType.GUIDANCE]
+        guidance = [
+            skill
+            for skill in selected
+            if skill.kind not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
+        ]
         if guidance:
             sections = replace(
                 sections,
@@ -386,7 +390,7 @@ class CodeReviewer:
                 )
                 coverage.record(
                     SKILLS,
-                    skill.kind.value,
+                    skill.kind,
                     answered=False,
                     target=skill.id,
                     reason=f"the pass did not finish: {type(error).__name__}",

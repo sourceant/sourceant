@@ -64,15 +64,19 @@ decision that constrains it.
 |---|---|
 | Code | `search_code`, `trace_code` |
 | Local indexing | `get_index_status`, `index_repository` |
-| Skills (when a library is configured) | `search_skills`, `get_skill` |
+| Skills | `search_skills`, `get_skill`, `save_skill`, `delete_skill` |
 | Knowledge | `put_knowledge`, `search_knowledge`, `put_knowledge_relationship` |
 | Requirements | `put_requirement`, `link_requirement`, `search_requirements`, `get_requirement_coverage` |
 | System | `put_topology_entity`, `put_topology_relationship`, `traverse_topology` |
 | All of it, in one pack | `get_context` |
 
-Skill discovery returns names and descriptions. `get_skill` reads bounded
-instructions without installing or executing them. Hosted calls use the
-authenticated workspace; repository skills require access to that repository.
+Skill discovery supports kind and purpose filters. `get_skill` returns bounded
+instructions, structured content, metadata, properties, file patterns, and
+application rules. `save_skill` creates or replaces an owned skill from those
+fields or a portable document; `delete_skill` removes it from the selected scope.
+These tools do not execute skills. Hosted calls use the authenticated workspace;
+repository skills require access to that repository. Hosted SQL storage requires
+the skills migration; local skills stay in the local skill library.
 
 You ask for it in plain language:
 

@@ -35,7 +35,7 @@ skill_table = Table(
     Column("description", Text, nullable=False),
     Column("content", JSON, nullable=False),
     Column("scope", String(32), nullable=False),
-    Column("kind", String(32), nullable=False),
+    Column("kind", String(128), nullable=False),
     Column("automatic", Boolean, nullable=False),
     Column("paths", JSON, nullable=False),
     Column("metadata", JSON, nullable=False),
@@ -200,6 +200,8 @@ class SQLSkillLibrary:
             raise SkillWriteError("A skill needs a description and instructions")
         if len(kept.name) > 200:
             raise SkillWriteError("Skill name exceeds 200 characters")
+        if len(kept.kind) > 128:
+            raise SkillWriteError("Skill kind exceeds 128 characters")
         content = dict(kept.content)
         if "instructions" in content and content["instructions"] != kept.body:
             raise SkillWriteError("Body and content instructions must agree")
@@ -229,7 +231,7 @@ class SQLSkillLibrary:
                 "description": kept.description,
                 "content": content,
                 "scope": kept.origin,
-                "kind": kept.kind.value,
+                "kind": kept.kind,
                 "automatic": kept.automatic,
                 "paths": list(kept.paths),
                 "metadata": extra,

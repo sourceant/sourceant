@@ -91,14 +91,15 @@ class Skill:
         return None
 
     @property
-    def kind(self) -> SkillType:
+    def kind(self) -> str:
         ours = self.metadata.get(NAMESPACE)
         if isinstance(ours, Mapping):
-            try:
-                return SkillType(ours.get("type", SkillType.GUIDANCE))
-            except ValueError:
-                pass
-        return SkillType.GUIDANCE
+            value = ours.get("type", SkillType.GUIDANCE.value)
+            if isinstance(value, SkillType):
+                return value.value
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return SkillType.GUIDANCE.value
 
     @property
     def reviews(self) -> bool | None:
