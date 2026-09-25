@@ -288,9 +288,14 @@ async def test_mcp_requirement_coverage_exposes_truncation(tmp_path):
     server = create_mcp_server(
         DefaultContextProvider(requirements=requirements),
         requirements=requirements,
+        services=ServiceRegistry(),
     )
 
     async with create_connected_server_and_client_session(server) as session:
+        names = {prompt.name for prompt in (await session.list_prompts()).prompts}
+        assert "check_requirements" in names
+        command = await session.get_prompt("check_requirements")
+        assert "get_requirement_coverage" in command.messages[0].content.text
         result = await session.call_tool(
             "get_requirement_coverage",
             {"scope": {"project": "one"}},

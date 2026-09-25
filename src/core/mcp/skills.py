@@ -31,6 +31,10 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             target = "global"
         return workspace, repository, target
 
+    from src.core.mcp.skill_prompts import add_skill_prompts
+
+    add_skill_prompts(server, library, location)
+
     def details(skill, max_characters):
         extra = {
             "content": {**skill.content, "instructions": skill.body},

@@ -29,7 +29,14 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
     server = create_mcp_server(
         DefaultContextProvider(), services=services, surface=personal_surface()
     )
+    from src.plugins.builtin.code_reviewer.prompts import ReviewPrompts
+
+    ReviewPrompts().add_tools(server, personal_surface())
     async with create_connected_server_and_client_session(server) as session:
+        prompts = {prompt.name for prompt in (await session.list_prompts()).prompts}
+        assert {"review", "context", "remember", "skill:retry-check"} <= prompts
+        context = await session.get_prompt("context", {"about": "retries"})
+        assert "retries" in context.messages[0].content.text
         names = {tool.name for tool in (await session.list_tools()).tools}
         assert {"search_skills", "get_skill", "save_skill", "delete_skill"} <= names
         saved = await session.call_tool(
@@ -52,6 +59,16 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
             },
         )
         assert not saved.isError, saved
+        prompts = {prompt.name for prompt in (await session.list_prompts()).prompts}
+        assert {"use_skill", "choose_skill", "skill:requirements-check"} <= prompts
+        applied = await session.get_prompt(
+            "skill:requirements-check", {"task": "Check the checkout requirements"}
+        )
+        assert "Check acceptance criteria." in applied.messages[0].content.text
+        assert "Missing failure case" in applied.messages[0].content.text
+        assert "Check the checkout requirements" in applied.messages[0].content.text
+        invoked = await session.get_prompt("use_skill", {"id": "requirements-check"})
+        assert "Check acceptance criteria." in invoked.messages[0].content.text
         read_saved = await session.call_tool(
             "get_skill", {"scope": {}, "id": "requirements-check"}
         )
@@ -67,6 +84,17 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
             "delete_skill", {"scope": {}, "id": "requirements-check"}
         )
         assert deleted.structuredContent["deleted"] is True
+        assert "skill:requirements-check" not in {
+            prompt.name for prompt in (await session.list_prompts()).prompts
+        }
+        from mcp.shared.exceptions import McpError
+
+        with pytest.raises(McpError):
+            await session.get_prompt("skill:requirements-check")
+        with pytest.raises(McpError):
+            await session.get_prompt(
+                "use_skill", {"id": "retry-check", "repository": "unregistered"}
+            )
         imported = await session.call_tool(
             "save_skill",
             {
@@ -90,6 +118,8 @@ async def test_local_skills_are_readable_without_a_checkout(tmp_path, monkeypatc
         )
         assert not updated.isError, updated
         assert updated.structuredContent["body"] == "Check failure cases."
+        applied = await session.get_prompt("skill:imported-check")
+        assert "Check failure cases." in applied.messages[0].content.text
         found = await session.call_tool(
             "search_skills", {"scope": {}, "text": "retry limits"}
         )

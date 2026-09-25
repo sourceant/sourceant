@@ -521,6 +521,26 @@ def create_mcp_server(
             "truncated": report.truncated,
         }
 
+    if requirements is not None:
+
+        @server.prompt(
+            name="check_requirements",
+            title="Check requirements coverage",
+            description="Find requirements missing implementation or tests.",
+        )
+        def check_requirements(repository: str = "") -> str:
+            import json
+
+            scope = {"repository": repository} if repository else {}
+            requirement_scope(Scope.from_mapping(scope))
+            return (
+                "Check the recorded requirements and their implementation coverage. "
+                f"Use search_requirements and get_requirement_coverage with scope {json.dumps(scope)}. "
+                "Report requirements with no code links or no test links, and distinguish "
+                "missing links from confirmed missing implementation. Do not create or "
+                "change requirements unless I ask."
+            )
+
     from src.core.mcp.skills import add_skill_tools
 
     add_skill_tools(server, services, requirement_scope, surface, skills)
