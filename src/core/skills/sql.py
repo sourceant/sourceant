@@ -1,0 +1,273 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, replace
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    JSON,
+    ForeignKeyConstraint,
+    Index,
+    MetaData,
+    String,
+    Table,
+    Text,
+    delete,
+    select,
+)
+from sqlalchemy.dialects import mysql, postgresql, sqlite
+
+from src.core import scopes
+from src.core.scope import Scope
+
+from .models import NAMESPACE, REVIEW, Skill, SkillScope, SkillType
+from .writing import SkillWriteError, _checked
+
+metadata = MetaData()
+skill_table = Table(
+    "skills",
+    metadata,
+    Column("scope_id", BigInteger, primary_key=True),
+    Column("id", String(255), primary_key=True),
+    Column("name", String(200), nullable=False),
+    Column("description", Text, nullable=False),
+    Column("content", JSON, nullable=False),
+    Column("scope", String(32), nullable=False),
+    Column("kind", String(128), nullable=False),
+    Column("automatic", Boolean, nullable=False),
+    Column("paths", JSON, nullable=False),
+    Column("metadata", JSON, nullable=False),
+    Column("properties", JSON, nullable=False),
+    Column("deleted_at", DateTime(timezone=True), nullable=True),
+)
+application_table = Table(
+    "skill_applications",
+    metadata,
+    Column("scope_id", BigInteger, primary_key=True),
+    Column("skill_id", String(255), primary_key=True),
+    Column("purpose", String(64), primary_key=True),
+    Column("enabled", Boolean, nullable=False),
+    ForeignKeyConstraint(
+        ["scope_id", "skill_id"], ["skills.scope_id", "skills.id"], ondelete="CASCADE"
+    ),
+    Index("ix_skill_applications_scope_purpose", "scope_id", "purpose", "enabled"),
+)
+
+
+class SQLSkillLibrary:
+    def __init__(self, engine, *, create_schema=False):
+        self.engine = engine
+        if create_schema:
+            scopes.ensure(engine)
+            metadata.create_all(engine)
+
+    @staticmethod
+    def scope(workspace, scope, repository=""):
+        if not workspace:
+            raise SkillWriteError("A workspace is required")
+        if scope == SkillScope.WORKSPACE:
+            return Scope.from_mapping({"workspace": workspace})
+        if scope == SkillScope.REPOSITORY and repository:
+            return Scope.from_mapping(
+                {"workspace": workspace, "repository": repository}
+            )
+        raise SkillWriteError("Choose a workspace or repository skill scope")
+
+    def entries(self, workspace, *, scope, repository="", identifier=None):
+        target = self.scope(workspace, scope, repository)
+        with self.engine.connect() as connection:
+            key = scopes.known(connection, target)
+            if key is None:
+                return {}
+            query = select(skill_table).where(skill_table.c.scope_id == key)
+            if identifier is not None:
+                query = query.where(skill_table.c.id == identifier)
+            rows = connection.execute(query).mappings().all()
+            uses = select(application_table).where(application_table.c.scope_id == key)
+            if identifier is not None:
+                uses = uses.where(application_table.c.skill_id == identifier)
+            applications = {}
+            for use in connection.execute(uses).mappings():
+                applications.setdefault(use["skill_id"], {})[use["purpose"]] = use[
+                    "enabled"
+                ]
+            found = {}
+            for row in rows:
+                if row["deleted_at"] is not None:
+                    found[row["id"]] = None
+                else:
+                    extra = dict(row["metadata"])
+                    if (
+                        isinstance(extra.get(NAMESPACE), dict)
+                        or row["kind"] != SkillType.GUIDANCE.value
+                    ):
+                        own = (
+                            dict(extra[NAMESPACE])
+                            if isinstance(extra.get(NAMESPACE), dict)
+                            else {}
+                        )
+                        own["type"] = row["kind"]
+                        extra[NAMESPACE] = own
+                    found[row["id"]] = Skill(
+                        row["id"],
+                        row["name"],
+                        row["description"],
+                        row["content"]["instructions"],
+                        origin=row["scope"],
+                        paths=tuple(row["paths"]),
+                        metadata=extra,
+                        automatic=row["automatic"],
+                        properties=row["properties"],
+                        content=row["content"],
+                        applications=applications.get(row["id"], {}),
+                    )
+            return found
+
+    def all(self, workspace, repository=""):
+        found = self.entries(workspace, scope=SkillScope.WORKSPACE)
+        if repository:
+            found.update(
+                {
+                    key: value
+                    for key, value in self.entries(
+                        workspace, scope=SkillScope.REPOSITORY, repository=repository
+                    ).items()
+                    if value is not None
+                }
+            )
+        return tuple(found[key] for key in sorted(found) if found[key] is not None)
+
+    def one(self, workspace, identifier, repository=""):
+        if repository:
+            found = self.entries(
+                workspace,
+                scope=SkillScope.REPOSITORY,
+                repository=repository,
+                identifier=identifier,
+            ).get(identifier)
+            if found is not None:
+                return found
+        return self.entries(
+            workspace, scope=SkillScope.WORKSPACE, identifier=identifier
+        ).get(identifier)
+
+    def _put(self, target, identifier, fields, applications=None):
+        with self.engine.begin() as connection:
+            key = scopes.remembered(connection, target)
+            values = dict(scope_id=key, id=identifier, **fields)
+            dialect = connection.dialect.name
+            if dialect == "mysql":
+                statement = mysql.insert(skill_table).values(**values)
+                statement = statement.on_duplicate_key_update(**fields)
+            elif dialect in {"sqlite", "postgresql"}:
+                insert = sqlite.insert if dialect == "sqlite" else postgresql.insert
+                statement = insert(skill_table).values(**values)
+                statement = statement.on_conflict_do_update(
+                    index_elements=["scope_id", "id"],
+                    set_=fields,
+                )
+            else:
+                raise SkillWriteError("Unsupported skills database")
+            connection.execute(statement)
+            connection.execute(
+                delete(application_table).where(
+                    application_table.c.scope_id == key,
+                    application_table.c.skill_id == identifier,
+                )
+            )
+            if applications:
+                connection.execute(
+                    application_table.insert(),
+                    [
+                        {
+                            "scope_id": key,
+                            "skill_id": identifier,
+                            "purpose": purpose,
+                            "enabled": enabled,
+                        }
+                        for purpose, enabled in applications.items()
+                    ],
+                )
+
+    def write(self, workspace, skill, *, scope, repository=""):
+        target = self.scope(workspace, scope, repository)
+        kept = replace(
+            skill, id=_checked(skill.id), path="", origin=SkillScope(scope).value
+        )
+        if not kept.description.strip() or not kept.body.strip():
+            raise SkillWriteError("A skill needs a description and instructions")
+        if len(kept.name) > 200:
+            raise SkillWriteError("Skill name exceeds 200 characters")
+        if len(kept.kind) > 128:
+            raise SkillWriteError("Skill kind exceeds 128 characters")
+        content = dict(kept.content)
+        if "instructions" in content and content["instructions"] != kept.body:
+            raise SkillWriteError("Body and content instructions must agree")
+        content["instructions"] = kept.body
+        try:
+            document = json.dumps(asdict(kept), allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise SkillWriteError(
+                "Skill metadata must contain JSON-compatible values"
+            ) from error
+        if len(document.encode()) > 100_000:
+            raise SkillWriteError("Skill exceeds the storage limit")
+        extra = dict(kept.metadata)
+        applications = dict(kept.applications)
+        if kept.reviews is not None:
+            applications.setdefault(REVIEW, kept.reviews)
+        if isinstance(extra.get(NAMESPACE), dict):
+            own = dict(extra[NAMESPACE])
+            own.pop("type", None)
+            own.pop(REVIEW, None)
+            extra[NAMESPACE] = own
+        self._put(
+            target,
+            kept.id,
+            {
+                "name": kept.name,
+                "description": kept.description,
+                "content": content,
+                "scope": kept.origin,
+                "kind": kept.kind,
+                "automatic": kept.automatic,
+                "paths": list(kept.paths),
+                "metadata": extra,
+                "properties": dict(kept.properties),
+                "deleted_at": None,
+            },
+            applications,
+        )
+        return replace(kept, content=content, applications=applications)
+
+    def hide(self, workspace, identifier, *, scope, repository=""):
+        self._put(
+            self.scope(workspace, scope, repository),
+            _checked(identifier),
+            {
+                "name": "",
+                "description": "",
+                "content": {},
+                "scope": SkillScope(scope).value,
+                "kind": SkillType.GUIDANCE.value,
+                "automatic": False,
+                "paths": [],
+                "metadata": {},
+                "properties": {},
+                "deleted_at": datetime.now(timezone.utc),
+            },
+        )
+
+    def forget(self, workspace, identifier, *, scope, repository=""):
+        identifier = _checked(identifier)
+        if (
+            self.entries(workspace, scope=scope, repository=repository).get(identifier)
+            is None
+        ):
+            return False
+        self.hide(workspace, identifier, scope=scope, repository=repository)
+        return True

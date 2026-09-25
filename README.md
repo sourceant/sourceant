@@ -25,7 +25,7 @@ Out of the box, on your own machine:
 - **Local code review.** Read a checkout through the same reviewer a pull request goes through.
 - **Review on pull requests.** The same reviewer on the forge, commenting where the line is.
 - **Knowledge and requirements.** What you decided and what the software must do, kept between sessions and linked to the code that carries it.
-- **Skills over MCP.** SourceAnt discovers the skills you already have and serves them back to your coding tools.
+- **Skills over MCP.** Choose and apply your skills from coding tools that support MCP prompts.
 - **One place for every index.** All your repositories in a single local store, each under its own scope, and nothing written into your folders.
 - **Review across repositories.** A change in one repository read against the others it reaches.
 
@@ -63,6 +63,8 @@ decision that constrains it.
 | | |
 |---|---|
 | Code | `search_code`, `trace_code` |
+| Local indexing | `get_index_status`, `index_repository` |
+| Skills | `search_skills`, `get_skill`, `save_skill`, `delete_skill` |
 | Knowledge | `put_knowledge`, `search_knowledge`, `put_knowledge_relationship` |
 | Requirements | `put_requirement`, `link_requirement`, `search_requirements`, `get_requirement_coverage` |
 | System | `put_topology_entity`, `put_topology_relationship`, `traverse_topology` |

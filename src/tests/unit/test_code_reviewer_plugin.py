@@ -985,6 +985,7 @@ class TestASkillReachesTheReviewerAsItsContents:
     path followed those pointers; the pull request path did not.
     """
 
+    @pytest.mark.parametrize("kind", ["guidance", "requirements-analysis"])
     @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
     @patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
     @patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
@@ -999,6 +1000,7 @@ class TestASkillReachesTheReviewerAsItsContents:
         repository,
         pull_request,
         tmp_path,
+        kind,
     ):
         from src.core.skills import Skill, SkillLibrary
 
@@ -1015,7 +1017,7 @@ class TestASkillReachesTheReviewerAsItsContents:
             path=str(folder / "SKILL.md"),
             # Stated in by its author, so this holds the inlining to account
             # rather than the wording match that chooses a skill.
-            metadata={"sourceant": {"review": True}},
+            metadata={"sourceant": {"review": True, "type": kind}},
         )
 
         class _Library:

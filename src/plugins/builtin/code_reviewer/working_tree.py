@@ -451,7 +451,12 @@ class WorkingTreeReviews:
                 coverage=coverage,
                 told=told(
                     recorded,
-                    [skill for skill in chosen if skill.kind == SkillType.GUIDANCE],
+                    [
+                        skill
+                        for skill in chosen
+                        if skill.kind
+                        not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
+                    ],
                 ),
                 skills=tuple(
                     skill for skill in chosen if skill.kind == SkillType.REVIEW_PASS
@@ -496,7 +501,14 @@ class WorkingTreeReviews:
         )
         checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
 
-        whole = split([skill for skill in chosen if skill.kind == SkillType.GUIDANCE])
+        whole = split(
+            [
+                skill
+                for skill in chosen
+                if skill.kind
+                not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
+            ]
+        )
         focused = [skill for skill in chosen if skill.kind == SkillType.REVIEW_PASS]
         answer["skills"] = [skill_payload(skill) for skill in (*whole, *focused)]
 

@@ -278,18 +278,22 @@ class CodeReviewer:
         selected = split(chosen)
         applied = {skill.id for skill in chosen}
         for skill in selected:
-            coverage.record(SKILLS, skill.kind.value, answered=True, target=skill.id)
+            coverage.record(SKILLS, skill.kind, answered=True, target=skill.id)
         # A skill that matched and did not fit leaves no trace anywhere else.
         for skill in available.values():
             if skill.id not in applied:
                 coverage.record(
                     SKILLS,
-                    skill.kind.value,
+                    skill.kind,
                     answered=False,
                     target=skill.id,
                     reason="did not apply to this change",
                 )
-        guidance = [skill for skill in selected if skill.kind == SkillType.GUIDANCE]
+        guidance = [
+            skill
+            for skill in selected
+            if skill.kind not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
+        ]
         if guidance:
             sections = replace(
                 sections,
@@ -386,7 +390,7 @@ class CodeReviewer:
                 )
                 coverage.record(
                     SKILLS,
-                    skill.kind.value,
+                    skill.kind,
                     answered=False,
                     target=skill.id,
                     reason=f"the pass did not finish: {type(error).__name__}",
@@ -750,13 +754,18 @@ class CodeReviewer:
             mapped_result = line_mapper.validate_and_map_suggestion(
                 suggestion, strict_mode=True
             )
+            if suggestion.comment_only and not mapped_result:
+                logger.info(
+                    "Filtered comment-only finding without a valid diff anchor for %s",
+                    suggestion.file_name,
+                )
+                continue
             if mapped_result:
                 mapping, reason = mapped_result
                 suggestion.position = mapping.get("position")
                 suggestion.end_line = mapping["line"]
                 suggestion.side = Side(mapping["side"])
-                if "start_line" in mapping:
-                    suggestion.start_line = mapping["start_line"]
+                suggestion.start_line = mapping.get("start_line", mapping["line"])
             decision = validator.validate(
                 list(suggestion.claims) + list(claimed_absent(suggestion.comment)),
                 evidence.read(suggestion.file_name) if evidence else None,

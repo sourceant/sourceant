@@ -28,6 +28,7 @@ from src.core.review.findings import FindingQuery
 from src.core.mcp.surface import Surface
 from src.core.scope import Scope
 from src.core.services import ServiceRegistry, service_registry
+from src.core.skills import SkillLibrary
 from src.utils.logger import logger
 from src.core.topology import (
     TopologyEntity,
@@ -47,6 +48,7 @@ def create_mcp_server(
     requirements: RequirementsRepository | None = None,
     surface: "Surface | None" = None,
     services: ServiceRegistry = service_registry,
+    skills: SkillLibrary | None = None,
 ) -> FastMCP:
     server = FastMCP(
         name="SourceAnt",
@@ -519,6 +521,29 @@ def create_mcp_server(
             "truncated": report.truncated,
         }
 
+    if requirements is not None:
+
+        @server.prompt(
+            name="check_requirements",
+            title="Check requirements coverage",
+            description="Find requirements missing implementation or tests.",
+        )
+        def check_requirements(repository: str = "") -> str:
+            import json
+
+            scope = {"repository": repository} if repository else {}
+            requirement_scope(Scope.from_mapping(scope))
+            return (
+                "Check the recorded requirements and their implementation coverage. "
+                f"Use search_requirements and get_requirement_coverage with scope {json.dumps(scope)}. "
+                "Report requirements with no code links or no test links, and distinguish "
+                "missing links from confirmed missing implementation. Do not create or "
+                "change requirements unless I ask."
+            )
+
+    from src.core.mcp.skills import add_skill_tools
+
+    add_skill_tools(server, services, requirement_scope, surface, skills)
     _add_registered_tools(server, surface, services)
     return server
 

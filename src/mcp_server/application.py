@@ -172,6 +172,17 @@ def _local_mode() -> bool:
 
 def _assemble(surface: Surface):
     knowledge, topology, code, requirements = _repositories(get_engine())
+    from src.core.environment import HOSTED
+    from src.core.skills import SkillLibrary
+    from src.core.skills.sql import SQLSkillLibrary
+
+    skills = None
+    try:
+        skills = service_registry.resolve(SkillLibrary)
+    except LookupError:
+        engine = get_engine()
+        if surface.environment == HOSTED and engine is not None:
+            skills = SQLSkillLibrary(engine)
     provider = DefaultContextProvider(
         code=code,
         knowledge=knowledge,
@@ -181,14 +192,35 @@ def _assemble(surface: Surface):
         review_state=finding_store() or InMemoryFindingStore(),
         requirements=requirements,
     )
-    return create_mcp_server(
+    server = create_mcp_server(
         provider,
         code=code,
         knowledge=knowledge,
         topology=topology,
         requirements=requirements,
         surface=surface,
+        skills=skills,
     )
+    if surface.reaches_checkout:
+        from src.core.repositories import RepositoryRegistry
+        from src.mcp_server.indexing import add_index_tools
+
+        try:
+            repositories = service_registry.resolve(RepositoryRegistry)
+        except LookupError:
+            repositories = None
+        engine = get_engine()
+        if repositories is not None and engine is not None:
+            fallback = SQLCodeIndexRepository(engine)
+
+            def read_index():
+                try:
+                    return service_registry.resolve(CodeIndexReader)
+                except LookupError:
+                    return fallback
+
+            add_index_tools(server, repositories, read_index)
+    return server
 
 
 def _repositories(engine):

@@ -7,8 +7,8 @@ from typing import List, Optional, Tuple
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from src.config.settings import (
-    REVIEW_MISSING_EXISTING_CODE_POLICY,
     POSITIVE_SENTIMENT_THRESHOLD,
+    REVIEW_MISSING_EXISTING_CODE_POLICY,
 )
 from src.models.code_review import CodeSuggestion
 from src.utils.logger import logger
@@ -143,22 +143,24 @@ class SuggestionFilter:
         if not suggestion.comment:
             return False, "empty comment"
 
-        if not suggestion.suggested_code:
+        if suggestion.comment_only and suggestion.suggested_code is not None:
+            return False, "comment-only finding includes replacement code"
+
+        if not suggestion.comment_only and not suggestion.suggested_code:
             return False, "no suggested code"
 
-        if not suggestion.existing_code:
+        if not suggestion.existing_code or not suggestion.existing_code.strip():
             policy = REVIEW_MISSING_EXISTING_CODE_POLICY
             if policy not in {"drop", "warn", "keep"}:
                 logger.warning(
-                    f"Unknown REVIEW_MISSING_EXISTING_CODE_POLICY '{policy}', defaulting to drop."
+                    "Unknown REVIEW_MISSING_EXISTING_CODE_POLICY %r; defaulting to drop",
+                    policy,
                 )
                 policy = "drop"
             if policy == "drop":
                 return False, "missing existing_code"
             if policy == "warn":
-                logger.warning(
-                    "Suggestion missing existing_code; keeping due to policy."
-                )
+                logger.warning("Finding missing existing_code; keeping due to policy.")
 
         if self._is_code_identical(suggestion.existing_code, suggestion.suggested_code):
             return False, "suggested code identical to existing code"

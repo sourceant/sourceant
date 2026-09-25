@@ -80,6 +80,38 @@ class TestCodeApi(BaseTestCase):
             {"name": "acme/billing", "path": self.entry.path}
         ]
 
+    def test_focus_depth_and_search_narrow_the_http_graph(self):
+        params = {"repository": "acme/billing", "focus": "file:app/charge.py"}
+        near = self.client.get("/api/code/graph", params={**params, "depth": 1})
+        wider = self.client.get("/api/code/graph", params={**params, "depth": 2})
+        assert near.status_code == wider.status_code == 200
+        near_ids = {node["id"] for node in near.json()["data"]["nodes"]}
+        wide_ids = {node["id"] for node in wider.json()["data"]["nodes"]}
+        assert near_ids < wide_ids
+        assert near.json()["data"]["focus"] == params["focus"]
+        searched = self.client.get(
+            "/api/code/graph", params={"repository": "acme/billing", "q": "ledger"}
+        ).json()["data"]
+        assert searched["nodes"]
+        assert all("ledger" in node["path"] for node in searched["nodes"])
+        ids = {node["id"] for node in searched["nodes"]}
+        assert all(
+            edge["source"] in ids and edge["target"] in ids
+            for edge in searched["links"]
+        )
+        assert (
+            self.client.get(
+                "/api/code/graph", params={**params, "focus": "missing"}
+            ).status_code
+            == 404
+        )
+        assert (
+            self.client.get(
+                "/api/code/graph", params={**params, "depth": 6}
+            ).status_code
+            == 422
+        )
+
     def test_it_draws_a_registered_repository(self):
         response = self.client.get(
             "/api/code/graph", params={"repository": "acme/billing"}
