@@ -12,6 +12,7 @@ from src.core.requirements import (
     RequirementsReader,
     SQLRequirementsRepository,
 )
+from src.core.groups import Group, GroupMember, GroupsRepository, SQLGroupsRepository
 from src.core.knowledge import (
     KnowledgeLink,
     KnowledgeObject,
@@ -103,6 +104,19 @@ def _requirements(tmp_path, *, linked_path="test.py", tested=False):
     return store
 
 
+def _filing(tmp_path):
+    """A project holding a feature holding the requirement the change touches."""
+    store = SQLGroupsRepository(
+        create_engine(f"sqlite:///{tmp_path / 'groups.db'}"), create_schema=True
+    )
+    store.put(SCOPE, Group("billing-v2", "project", "open", "Billing v2"))
+    store.put(SCOPE, Group("refunds", "feature", "open", "Refunds", "billing-v2"))
+    store.put(SCOPE, Group("srs-2-3", "section", "approved", "2.3 Refunds"))
+    store.place(SCOPE, GroupMember("refunds", "requirement", "r1", SCOPE))
+    store.place(SCOPE, GroupMember("srs-2-3", "requirement", "r1", SCOPE))
+    return store
+
+
 def _run(plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha):
     mock_get_sha.return_value = None
     mock_github = MagicMock()
@@ -167,6 +181,73 @@ def test_a_requirement_on_a_changed_file_reaches_the_review(
     section = instance.generate_code_review.call_args.kwargs["requirements"]
     assert "Loading retries on a transient failure" in section
     assert "r1 (open)" in section
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+def test_a_review_is_told_which_feature_the_change_answers_to(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    services = ServiceRegistry()
+    services.register(RequirementsReader, _requirements(tmp_path), "test")
+    services.register(GroupsRepository, _filing(tmp_path), "test")
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    assert result["status"] == "success"
+    section = instance.generate_code_review.call_args.kwargs["requirements"]
+    assert "[Billing v2 > Refunds; 2.3 Refunds]" in section
+
+
+@patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
+@patch("src.plugins.builtin.code_reviewer.plugin.get_last_reviewed_sha")
+@patch("src.core.settings.configuration.Configuration.value", side_effect=_setting)
+@patch("src.plugins.builtin.code_reviewer.plugin.GitHub")
+@patch("src.plugins.builtin.code_reviewer.plugin.provider_for")
+def test_a_requirement_nobody_filed_reads_as_it_did_before(
+    mock_llm,
+    mock_github_cls,
+    mock_value_of,
+    mock_get_sha,
+    mock_save_record,
+    plugin,
+    repository,
+    pull_request,
+    tmp_path,
+):
+    services = ServiceRegistry()
+    services.register(RequirementsReader, _requirements(tmp_path), "test")
+    services.register(
+        GroupsRepository,
+        SQLGroupsRepository(
+            create_engine(f"sqlite:///{tmp_path / 'empty-groups.db'}"),
+            create_schema=True,
+        ),
+        "test",
+    )
+    plugin.bind_services(services)
+
+    result, instance = _run(
+        plugin, repository, pull_request, mock_github_cls, mock_llm, mock_get_sha
+    )
+
+    section = instance.generate_code_review.call_args.kwargs["requirements"]
+    assert "r1 (open):" in section
+    assert "[" not in section
 
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
