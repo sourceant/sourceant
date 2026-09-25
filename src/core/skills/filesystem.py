@@ -44,7 +44,7 @@ FENCE = "---"
 # What the skill format defines and this reads. Anything else an author wrote is
 # theirs and is carried through rather than interpreted.
 KNOWN = frozenset(
-    {"name", "description", "paths", "metadata", "disable-model-invocation"}
+    {"name", "description", "paths", "metadata", "context", "disable-model-invocation"}
 )
 
 # Whatever is written past this is guidance for a person or a model to read, not
@@ -135,6 +135,9 @@ def skill_from_markdown(
 ) -> Skill:
     fields, body = read_front_matter(text)
     metadata = fields.get("metadata")
+    context = dict(fields["context"]) if isinstance(fields.get("context"), dict) else {}
+    if "context" in fields:
+        context["instructions"] = body[:MAX_BODY]
     return Skill(
         id=identifier,
         name=str(fields.get("name") or identifier.rsplit("/", 1)[-1]),
@@ -144,6 +147,7 @@ def skill_from_markdown(
         origin=origin,
         paths=listed(fields.get("paths")),
         metadata=metadata if isinstance(metadata, dict) else {},
+        context=context,
         automatic=not bool(fields.get("disable-model-invocation")),
         properties={key: value for key, value in fields.items() if key not in KNOWN},
     )

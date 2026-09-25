@@ -64,6 +64,10 @@ def _rendered(skill: Skill) -> str:
         fields["paths"] = list(skill.paths)
     if skill.metadata:
         fields["metadata"] = dict(skill.metadata)
+    if skill.context:
+        fields["context"] = {
+            key: value for key, value in skill.context.items() if key != "instructions"
+        }
     if not skill.automatic:
         fields["disable-model-invocation"] = True
     fields.update(
@@ -115,6 +119,7 @@ def write_skill(root: Path, skill: Skill, origin: str = "repository") -> Skill:
         metadata=dict(skill.metadata),
         automatic=skill.automatic,
         properties=dict(skill.properties),
+        context=dict(skill.context),
     )
 
     handle, temporary = tempfile.mkstemp(dir=folder, prefix=".skill-", suffix=".md")

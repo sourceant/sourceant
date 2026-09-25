@@ -28,6 +28,7 @@ from src.core.review.findings import FindingQuery
 from src.core.mcp.surface import Surface
 from src.core.scope import Scope
 from src.core.services import ServiceRegistry, service_registry
+from src.core.skills import SkillLibrary
 from src.utils.logger import logger
 from src.core.topology import (
     TopologyEntity,
@@ -47,6 +48,7 @@ def create_mcp_server(
     requirements: RequirementsRepository | None = None,
     surface: "Surface | None" = None,
     services: ServiceRegistry = service_registry,
+    skills: SkillLibrary | None = None,
 ) -> FastMCP:
     server = FastMCP(
         name="SourceAnt",
@@ -521,7 +523,7 @@ def create_mcp_server(
 
     from src.core.mcp.skills import add_skill_tools
 
-    add_skill_tools(server, services, requirement_scope, surface)
+    add_skill_tools(server, services, requirement_scope, surface, skills)
     _add_registered_tools(server, surface, services)
     return server
 

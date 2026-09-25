@@ -60,6 +60,7 @@ class Skill:
     # chooses it on somebody's behalf.
     automatic: bool = True
     properties: Mapping[str, Any] = field(default_factory=dict)
+    context: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.id or not self.name:

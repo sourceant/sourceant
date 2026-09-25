@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from src.core.environment import LOCAL
@@ -7,11 +8,12 @@ from src.core.scope import Scope
 from src.core.skills import SkillLibrary
 
 
-def add_skill_tools(server, services, resolve_scope, surface):
-    try:
-        library = services.resolve(SkillLibrary)
-    except LookupError:
-        return
+def add_skill_tools(server, services, resolve_scope, surface, library=None):
+    if library is None:
+        try:
+            library = services.resolve(SkillLibrary)
+        except LookupError:
+            return
 
     def location(scope):
         active = resolve_scope(Scope.from_mapping(scope))
@@ -75,6 +77,8 @@ def add_skill_tools(server, services, resolve_scope, surface):
         skill = library.one(workspace, id, repository)
         if skill is None:
             raise ValueError("Skill not found in this scope")
+        context = {**skill.context, "instructions": skill.body}
+        context_truncated = len(json.dumps(context)) > max_characters
         return {
             "id": skill.id,
             "name": skill.name,
@@ -83,4 +87,6 @@ def add_skill_tools(server, services, resolve_scope, surface):
             "automatic": skill.automatic,
             "body": skill.body[:max_characters],
             "truncated": len(skill.body) > max_characters,
+            "context": None if context_truncated else context,
+            "context_truncated": context_truncated,
         }

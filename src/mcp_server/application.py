@@ -172,6 +172,17 @@ def _local_mode() -> bool:
 
 def _assemble(surface: Surface):
     knowledge, topology, code, requirements = _repositories(get_engine())
+    from src.core.environment import HOSTED
+    from src.core.skills import SkillLibrary
+    from src.core.skills.sql import SQLSkillLibrary
+
+    skills = None
+    try:
+        skills = service_registry.resolve(SkillLibrary)
+    except LookupError:
+        engine = get_engine()
+        if surface.environment == HOSTED and engine is not None:
+            skills = SQLSkillLibrary(engine)
     provider = DefaultContextProvider(
         code=code,
         knowledge=knowledge,
@@ -188,6 +199,7 @@ def _assemble(surface: Surface):
         topology=topology,
         requirements=requirements,
         surface=surface,
+        skills=skills,
     )
     if surface.reaches_checkout:
         from src.core.repositories import RepositoryRegistry
