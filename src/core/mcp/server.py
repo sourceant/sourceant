@@ -8,6 +8,14 @@ from mcp.server.fastmcp import FastMCP
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
 from src.core.context import ContextProvider, ContextRequest
 from src.core.contracts import ContractQuery
+from src.core.groups import (
+    MAX_DEPTH,
+    Group,
+    GroupMember,
+    GroupQuery,
+    GroupRollupReader,
+    GroupsRepository,
+)
 from src.core.knowledge import (
     KnowledgeLink,
     KnowledgeLinkWriter,
@@ -46,6 +54,7 @@ def create_mcp_server(
     knowledge: KnowledgeRepository | None = None,
     topology: TopologyRepository | None = None,
     requirements: RequirementsRepository | None = None,
+    groups: GroupsRepository | None = None,
     surface: "Surface | None" = None,
     services: ServiceRegistry = service_registry,
     skills: SkillLibrary | None = None,
@@ -74,6 +83,18 @@ def create_mcp_server(
     requirement_scope = (
         surface.requirement_scope_resolver if surface else None
     ) or resolve_scope
+
+    def group_scope(raw: dict[str, str]) -> Scope:
+        """Where a group is filed: one partition per workspace.
+
+        A group written with a repository named and searched for without one
+        would land in a different partition from the one it is read back out of,
+        because a scope matches by equality. What a group holds names its own
+        scope, so a workspace's group still holds work from any repository in it.
+        """
+        resolved = requirement_scope(Scope.from_mapping(raw))
+        workspace = resolved.get("workspace")
+        return Scope.from_mapping({"workspace": workspace}) if workspace else resolved
 
     @server.tool(
         name="search_code",
@@ -544,6 +565,143 @@ def create_mcp_server(
     from src.core.mcp.skills import add_skill_tools
 
     add_skill_tools(server, services, requirement_scope, surface, skills)
+
+    @server.tool(
+        name="put_group",
+        description=(
+            "Create or update a group: a project, a feature, a task, a release. "
+            "Name a parent to nest it. A group belongs to the workspace rather "
+            "than to one repository, so it holds work from any of them."
+        ),
+        structured_output=True,
+    )
+    def put_group(
+        scope: dict[str, str],
+        id: str,
+        name: str,
+        type: str = "feature",
+        status: str = "open",
+        parent_id: str = "",
+        external_ref: str = "",
+        properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        store = _require_groups(groups)
+        group = Group(id, type, status, name, parent_id, external_ref, properties or {})
+        store.put(group_scope(scope), group)
+        return asdict(group)
+
+    @server.tool(
+        name="place_in_group",
+        description=(
+            "File something under a group. It keeps whatever other groups hold "
+            "it, so a requirement every project answers to can sit in each of "
+            "them. Name the repository the thing itself belongs to."
+        ),
+        structured_output=True,
+    )
+    def place_in_group(
+        scope: dict[str, str],
+        group_id: str,
+        member_type: str,
+        member_id: str,
+        repository: str = "",
+    ) -> dict[str, Any]:
+        store = _require_groups(groups)
+        held = group_scope(scope)
+        member_scope = (
+            requirement_scope(Scope.from_mapping({**scope, "repository": repository}))
+            if repository
+            else requirement_scope(Scope.from_mapping(scope))
+        )
+        store.place(held, GroupMember(group_id, member_type, member_id, member_scope))
+        return {
+            "group_id": group_id,
+            "member_type": member_type,
+            "member_id": member_id,
+            "scope": dict(member_scope.values),
+        }
+
+    @server.tool(
+        name="unfile_from_group",
+        description=(
+            "Take something out of one group, leaving any other group that "
+            "holds it alone."
+        ),
+        structured_output=True,
+    )
+    def unfile_from_group(
+        scope: dict[str, str],
+        group_id: str,
+        member_type: str,
+        member_id: str,
+        repository: str = "",
+    ) -> dict[str, Any]:
+        store = _require_groups(groups)
+        member_scope = (
+            requirement_scope(Scope.from_mapping({**scope, "repository": repository}))
+            if repository
+            else requirement_scope(Scope.from_mapping(scope))
+        )
+        unfiled = store.unfile(
+            group_scope(scope), group_id, member_type, member_id, member_scope
+        )
+        return {"unfiled": unfiled, "group_id": group_id, "member_id": member_id}
+
+    @server.tool(
+        name="search_groups",
+        description=(
+            "Search groups by identity, kind, status, or what they are nested "
+            'in. Ask with parent_ids [""] for the outermost ones.'
+        ),
+        structured_output=True,
+    )
+    def search_groups(
+        scope: dict[str, str],
+        ids: list[str] | None = None,
+        types: list[str] | None = None,
+        statuses: list[str] | None = None,
+        parent_ids: list[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        store = _require_groups(groups)
+        result = store.search(
+            GroupQuery(
+                scope=group_scope(scope),
+                ids=frozenset(ids or ()),
+                types=frozenset(types or ()),
+                statuses=frozenset(statuses or ()),
+                parent_ids=frozenset(parent_ids or ()),
+                limit=limit,
+                offset=offset,
+            )
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="get_group_rollup",
+        description=(
+            "What a group adds up to, itself and everything nested in it: for "
+            "requirements, how many there are, how many have code, how many "
+            "have tests."
+        ),
+        structured_output=True,
+    )
+    def get_group_rollup(
+        scope: dict[str, str],
+        group_ids: list[str],
+        depth: int = MAX_DEPTH,
+    ) -> dict[str, Any]:
+        store = _require_groups(groups)
+        if not isinstance(store, GroupRollupReader):
+            raise ValueError("this group store cannot add a group up")
+        if not 1 <= depth <= MAX_DEPTH:
+            raise ValueError(f"depth must be between 1 and {MAX_DEPTH}")
+        if not 1 <= len(group_ids) <= 100:
+            raise ValueError("ask about between 1 and 100 groups")
+        rolled = store.rollup(group_scope(scope), frozenset(group_ids), depth=depth)
+        return {"items": [asdict(item) for item in rolled]}
+
     _add_registered_tools(server, surface, services)
     return server
 
@@ -554,6 +712,12 @@ def _require_requirements(
     if requirements is None:
         raise ValueError("requirements are not configured")
     return requirements
+
+
+def _require_groups(groups: GroupsRepository | None) -> GroupsRepository:
+    if groups is None:
+        raise ValueError("grouping is not configured")
+    return groups
 
 
 def _require_knowledge(

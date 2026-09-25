@@ -95,6 +95,10 @@ class ChangeContext:
     code: CodeTraversalResult | None = None
     knowledge: tuple[KnowledgeObject, ...] = ()
     requirements: tuple[Requirement, ...] = ()
+    #: Where each of those requirements is filed, by requirement id, read
+    #: outermost first ("Billing v2 > Refunds"). A review that is told which
+    #: feature a change answers to can say so; the ids alone cannot.
+    requirement_groups: Mapping[str, str] = field(default_factory=dict)
     impact: ChangeImpact | None = None
     truncated: bool = False
 

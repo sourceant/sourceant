@@ -21,6 +21,8 @@ from src.core.requirements import (
     RequirementsRepository,
     SQLRequirementsRepository,
 )
+from src.core.grouping import groups as grouping
+from src.core.requirements.grouping import TYPE as REQUIREMENT
 from src.core.responses import success_response
 from src.core.scope import Scope
 from src.core.services import service_registry
@@ -128,33 +130,73 @@ def search(
     statuses: list[str] = Query([], max_length=100),
     priorities: list[str] = Query([], max_length=100),
     ids: list[str] = Query([], max_length=100),
+    groups: list[str] = Query([], max_length=100),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
     store=Depends(get_requirements),
 ):
+    filing = grouping()
+    if groups and filing is None:
+        raise HTTPException(503, "Grouping is unavailable")
+    held = _held_by(filing, user, frozenset(groups)) if groups else None
     found = []
     total = 0
     remaining_offset = offset
     for scope in request_scopes(user, repo):
+        wanted = frozenset(ids)
+        if held is not None:
+            wanted = held.get(scope, frozenset())
+            if not wanted:
+                continue
+            if ids:
+                wanted = wanted & frozenset(ids)
+                if not wanted:
+                    continue
         result = store.search(
             RequirementQuery(
                 scope=scope,
                 kinds=frozenset(kinds),
                 statuses=frozenset(statuses),
                 priorities=frozenset(priorities),
-                ids=frozenset(ids),
+                ids=wanted,
                 limit=limit,
                 offset=remaining_offset,
             )
         )
         total += result.total
         remaining_offset = max(0, remaining_offset - result.total)
+        filed = (
+            filing.filed_under(
+                get_scope(user),
+                REQUIREMENT,
+                frozenset(item.id for item in result.items),
+                scope,
+            )
+            if filing is not None
+            else {}
+        )
         found.extend(
-            {**asdict(item), "repo": scope.get("repository", "")}
+            {
+                **asdict(item),
+                "repo": scope.get("repository", ""),
+                "group_ids": list(filed.get(item.id, ())),
+            }
             for item in result.items
         )
     return {"data": found[:limit], "total": total, "has_more": offset + limit < total}
+
+
+def _held_by(filing, user: dict, wanted: frozenset[str]):
+    """Which requirements those groups hold, by the scope each is filed in."""
+    if filing is None:
+        return {}
+    held: dict[Scope, set[str]] = {}
+    for member in filing.members(get_scope(user), wanted):
+        if member.member_type != REQUIREMENT:
+            continue
+        held.setdefault(member.member_scope, set()).add(member.member_id)
+    return {scope: frozenset(ids) for scope, ids in held.items()}
 
 
 @router.get("/coverage")

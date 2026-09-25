@@ -24,9 +24,12 @@ from src.core.knowledge import (
     KnowledgeObject,
     SQLKnowledgeRepository,
 )
+from src.core.groups import CheckedGroups, SQLGroupsRepository
 from src.core.requirements import Requirement, SQLRequirementsRepository
+from src.core.requirements.grouping import GroupableRequirements
 from src.core.scope import Scope
 from src.core.topology import SQLTopologyRepository
+from src.core.environment import LOCAL
 from src.core.mcp import (
     contribute_tools,
     create_mcp_server,
@@ -37,6 +40,7 @@ from src.core.services import ServiceRegistry
 from src.plugins.builtin.code_reviewer.tools import ReviewTools
 from src.mcp_server.application import create_http_mcp_server
 from src.core.mcp.auth import EntitledScopeResolver, SourceAntTokenVerifier
+from src.core.mcp.surface import Surface
 
 PROJECT = Scope.from_mapping({"project": "one"})
 OTHER_PROJECT = Scope.from_mapping({"project": "two"})
@@ -101,6 +105,11 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
         "link_requirement",
         "search_requirements",
         "get_requirement_coverage",
+        "put_group",
+        "place_in_group",
+        "unfile_from_group",
+        "search_groups",
+        "get_group_rollup",
         "link_knowledge",
     }
     assert result.isError is False
@@ -304,6 +313,180 @@ async def test_mcp_requirement_coverage_exposes_truncation(tmp_path):
     assert result.isError is False
     assert len(result.structuredContent["items"]) == 100
     assert result.structuredContent["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_groups_requirements_from_more_than_one_repository(tmp_path):
+    requirements = SQLRequirementsRepository(
+        create_engine(f"sqlite:///{tmp_path / 'requirements.db'}"),
+        create_schema=True,
+    )
+    billing = PROJECT.extend({"repository": "acme/billing"})
+    payments = PROJECT.extend({"repository": "acme/payments"})
+    requirements.put(billing, Requirement("r1", "requirement", "open", "Refund fast"))
+    requirements.put(payments, Requirement("r2", "requirement", "open", "Refund once"))
+    filing = CheckedGroups(
+        SQLGroupsRepository(
+            create_engine(f"sqlite:///{tmp_path / 'groups.db'}"), create_schema=True
+        ),
+        (GroupableRequirements(requirements),),
+    )
+    server = create_mcp_server(
+        DefaultContextProvider(requirements=requirements),
+        requirements=requirements,
+        groups=filing,
+    )
+
+    async with create_connected_server_and_client_session(server) as session:
+        made = await session.call_tool(
+            "put_group",
+            {"scope": {"project": "one"}, "id": "refunds", "name": "Refunds"},
+        )
+        assert made.isError is False
+
+        for identity, repository in (("r1", "acme/billing"), ("r2", "acme/payments")):
+            placed = await session.call_tool(
+                "place_in_group",
+                {
+                    "scope": {"project": "one"},
+                    "group_id": "refunds",
+                    "member_type": "requirement",
+                    "member_id": identity,
+                    "repository": repository,
+                },
+            )
+            assert placed.isError is False
+
+        rolled = await session.call_tool(
+            "get_group_rollup",
+            {"scope": {"project": "one"}, "group_ids": ["refunds"]},
+        )
+        found = await session.call_tool(
+            "search_groups",
+            {"scope": {"project": "one"}, "parent_ids": [""]},
+        )
+
+    assert rolled.structuredContent["items"][0]["counts"]["requirement"]["total"] == 2
+    assert [item["id"] for item in found.structuredContent["items"]] == ["refunds"]
+
+
+@pytest.mark.asyncio
+async def test_a_group_is_filed_by_workspace_however_the_call_names_its_scope(tmp_path):
+    """A workspace token rebuilds the scope, and a repository may be in it.
+
+    Filing at whatever came back would put a group written from inside a
+    repository in a different partition from the one a search without that
+    repository reads, and a scope matches by equality. Both calls below name the
+    same group.
+    """
+    requirements = SQLRequirementsRepository(
+        create_engine(f"sqlite:///{tmp_path / 'requirements.db'}"),
+        create_schema=True,
+    )
+    billing = Scope.from_mapping({"workspace": "acme", "repository": "acme/billing"})
+    requirements.put(billing, Requirement("r1", "requirement", "open", "Refund fast"))
+    filing = CheckedGroups(
+        SQLGroupsRepository(
+            create_engine(f"sqlite:///{tmp_path / 'groups.db'}"), create_schema=True
+        ),
+        (GroupableRequirements(requirements),),
+    )
+
+    # What the hosted resolver does: the workspace comes off the token, and a
+    # repository is kept only when the caller named one.
+    def as_hosted(scope: Scope) -> Scope:
+        values = {"workspace": "acme"}
+        if scope.get("repository"):
+            values["repository"] = scope.get("repository")
+        return Scope.from_mapping(values)
+
+    server = create_mcp_server(
+        DefaultContextProvider(requirements=requirements),
+        requirements=requirements,
+        groups=filing,
+        surface=Surface(environment=LOCAL, requirement_scope_resolver=as_hosted),
+    )
+
+    async with create_connected_server_and_client_session(server) as session:
+        made = await session.call_tool(
+            "put_group",
+            {
+                "scope": {"repository": "acme/billing"},
+                "id": "refunds",
+                "name": "Refunds",
+            },
+        )
+        placed = await session.call_tool(
+            "place_in_group",
+            {
+                "scope": {},
+                "group_id": "refunds",
+                "member_type": "requirement",
+                "member_id": "r1",
+                "repository": "acme/billing",
+            },
+        )
+        found = await session.call_tool("search_groups", {"scope": {}})
+        rolled = await session.call_tool(
+            "get_group_rollup", {"scope": {}, "group_ids": ["refunds"]}
+        )
+
+    assert made.isError is False
+    assert placed.isError is False
+    assert [item["id"] for item in found.structuredContent["items"]] == ["refunds"]
+    assert rolled.structuredContent["items"][0]["counts"]["requirement"]["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_rollup_refuses_a_depth_or_a_count_it_will_not_answer(tmp_path):
+    filing = CheckedGroups(
+        SQLGroupsRepository(
+            create_engine(f"sqlite:///{tmp_path / 'groups.db'}"), create_schema=True
+        ),
+        (),
+    )
+    server = create_mcp_server(DefaultContextProvider(), groups=filing)
+
+    async with create_connected_server_and_client_session(server) as session:
+        deep = await session.call_tool(
+            "get_group_rollup",
+            {"scope": {"project": "one"}, "group_ids": ["refunds"], "depth": 5000},
+        )
+        none = await session.call_tool(
+            "get_group_rollup", {"scope": {"project": "one"}, "group_ids": []}
+        )
+
+    assert deep.isError is True
+    assert "depth must be between 1 and 20" in deep.content[0].text
+    assert none.isError is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_refuses_to_group_something_nobody_owns(tmp_path):
+    filing = CheckedGroups(
+        SQLGroupsRepository(
+            create_engine(f"sqlite:///{tmp_path / 'groups.db'}"), create_schema=True
+        ),
+        (),
+    )
+    server = create_mcp_server(DefaultContextProvider(), groups=filing)
+
+    async with create_connected_server_and_client_session(server) as session:
+        await session.call_tool(
+            "put_group",
+            {"scope": {"project": "one"}, "id": "refunds", "name": "Refunds"},
+        )
+        refused = await session.call_tool(
+            "place_in_group",
+            {
+                "scope": {"project": "one"},
+                "group_id": "refunds",
+                "member_type": "invoice",
+                "member_id": "i1",
+            },
+        )
+
+    assert refused.isError is True
 
 
 @pytest.mark.asyncio

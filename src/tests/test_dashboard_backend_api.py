@@ -8,9 +8,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
-from src.api.routes import artifacts, requirements, topology, usage
+from src.api.routes import artifacts, groups, requirements, topology, usage
 from src.core.knowledge import InMemoryKnowledgeRepository
+from src.core.groups import CheckedGroups, SQLGroupsRepository
 from src.core.requirements import KnowledgeBackedRequirements, SQLRequirementsRepository
+from src.core.requirements.grouping import GroupableRequirements
 from src.core.scope import Scope
 from src.core.storage import FileSystemArtifactStore
 from src.core.topology import SQLTopologyRepository
@@ -27,16 +29,23 @@ def api(tmp_path, monkeypatch):
         SQLRequirementsRepository(engine, create_schema=True), knowledge
     )
     graph = SQLTopologyRepository(engine, create_schema=True)
+    filing = CheckedGroups(
+        SQLGroupsRepository(engine, create_schema=True),
+        (GroupableRequirements(store),),
+    )
     TokenUsageRecord.__table__.create(engine, checkfirst=True)
     app = FastAPI()
     for name, module in (
         ("requirements", requirements),
+        ("groups", groups),
         ("artifacts", artifacts),
         ("topology", topology),
         ("usage", usage),
     ):
         app.include_router(module.router, prefix=f"/api/{name}")
     app.dependency_overrides[requirements.get_requirements] = lambda: store
+    app.dependency_overrides[groups.get_groups] = lambda: filing
+    monkeypatch.setattr(requirements, "grouping", lambda: filing)
     app.dependency_overrides[topology.get_topology_repository] = lambda: graph
     app.dependency_overrides[artifacts.get_artifacts] = lambda: FileSystemArtifactStore(
         tmp_path / "artifacts"
@@ -58,6 +67,219 @@ def api(tmp_path, monkeypatch):
         return {"Authorization": f"Bearer {token}"}
 
     return client, headers, store, engine
+
+
+def test_groups_bucket_requirements_and_roll_up_what_they_hold(api):
+    client, headers, _, _ = api
+    for group in (
+        {
+            "id": "billing-v2",
+            "name": "Billing v2",
+            "type": "project",
+            "status": "open",
+        },
+        {
+            "id": "refunds",
+            "name": "Refunds",
+            "type": "feature",
+            "status": "open",
+            "parent_id": "billing-v2",
+        },
+    ):
+        assert (
+            client.put("/api/groups", json=group, headers=headers()).status_code == 200
+        )
+
+    for identity, repo in (("refund-speed", "acme/app"), ("refund-once", "")):
+        assert (
+            client.put(
+                "/api/requirements",
+                json={
+                    "id": identity,
+                    "kind": "requirement",
+                    "status": "open",
+                    "summary": "Refunds settle within one business day",
+                    "repo": repo,
+                },
+                headers=headers(),
+            ).status_code
+            == 200
+        )
+    assert (
+        client.put(
+            "/api/requirements/links",
+            json={
+                "id": "code",
+                "requirement_id": "refund-speed",
+                "target_kind": "code",
+                "target_id": "refund.py",
+                "repo": "acme/app",
+            },
+            headers=headers(),
+        ).status_code
+        == 200
+    )
+
+    for identity, repo in (("refund-speed", "acme/app"), ("refund-once", "")):
+        assert (
+            client.put(
+                f"/api/groups/refunds/members",
+                json={
+                    "member_type": "requirement",
+                    "member_id": identity,
+                    "repo": repo,
+                },
+                headers=headers(),
+            ).status_code
+            == 200
+        )
+
+    filed = client.get("/api/requirements?groups=refunds", headers=headers()).json()
+    assert sorted(one["id"] for one in filed["data"]) == ["refund-once", "refund-speed"]
+    assert {tuple(one["group_ids"]) for one in filed["data"]} == {("refunds",)}
+    assert (
+        client.get("/api/requirements?groups=disputes", headers=headers()).json()[
+            "data"
+        ]
+        == []
+    )
+
+    outermost = client.get("/api/groups?roots=true", headers=headers()).json()
+    assert [one["id"] for one in outermost["data"]] == ["billing-v2"]
+
+    rolled = client.get("/api/groups/rollup?ids=billing-v2", headers=headers()).json()
+    assert rolled["data"]["items"][0]["counts"]["requirement"] == {
+        "total": 2,
+        "covered": 1,
+        "tested": 0,
+    }
+    assert rolled["data"]["items"][0]["descendants"] == 1
+
+
+def test_a_requirement_every_project_answers_to_sits_in_each_of_them(api):
+    """The case one group per requirement got wrong.
+
+    A speed requirement is not part of one project any more than of the next, so
+    each project counts it and taking it out of one leaves the others holding it.
+    """
+    client, headers, _, _ = api
+    for identity, name in (("billing-v2", "Billing v2"), ("payments", "Payments")):
+        client.put(
+            "/api/groups",
+            json={"id": identity, "name": name, "type": "project", "status": "open"},
+            headers=headers(),
+        )
+    client.put(
+        "/api/requirements",
+        json={
+            "id": "speed",
+            "kind": "requirement",
+            "status": "open",
+            "summary": "Every service answers within a second",
+        },
+        headers=headers(),
+    )
+    for identity in ("billing-v2", "payments"):
+        assert (
+            client.put(
+                f"/api/groups/{identity}/members",
+                json={"member_type": "requirement", "member_id": "speed"},
+                headers=headers(),
+            ).status_code
+            == 200
+        )
+
+    listed = client.get("/api/requirements", headers=headers()).json()["data"]
+    assert sorted(one["group_ids"] for one in listed if one["id"] == "speed") == [
+        ["billing-v2", "payments"]
+    ]
+    rolled = client.get(
+        "/api/groups/rollup?ids=billing-v2&ids=payments", headers=headers()
+    ).json()["data"]["items"]
+    assert [one["counts"]["requirement"]["total"] for one in rolled] == [1, 1]
+
+    client.delete("/api/groups/billing-v2/members/requirement/speed", headers=headers())
+    left = client.get("/api/requirements?groups=payments", headers=headers()).json()
+    assert [one["group_ids"] for one in left["data"]] == [["payments"]]
+
+
+def test_asking_for_a_group_where_grouping_is_unavailable_says_so(api, monkeypatch):
+    """An empty list would read as a group holding nothing."""
+    client, headers, _, _ = api
+    monkeypatch.setattr(requirements, "grouping", lambda: None)
+
+    assert (
+        client.get("/api/requirements?groups=refunds", headers=headers()).status_code
+        == 503
+    )
+    assert client.get("/api/requirements", headers=headers()).status_code == 200
+
+
+def test_a_group_stays_in_its_workspace_and_refuses_a_repository_outside_it(api):
+    client, headers, _, _ = api
+    assert (
+        client.put(
+            "/api/groups",
+            json={
+                "id": "refunds",
+                "name": "Refunds",
+                "type": "feature",
+                "status": "open",
+            },
+            headers=headers(),
+        ).status_code
+        == 200
+    )
+
+    assert client.get("/api/groups", headers=headers()).json()["total"] == 1
+    assert client.get("/api/groups", headers=headers("two")).json()["data"] == []
+    assert (
+        client.put(
+            "/api/groups/refunds/members",
+            json={
+                "member_type": "requirement",
+                "member_id": "anything",
+                "repo": "outside/repo",
+            },
+            headers=headers(),
+        ).status_code
+        == 403
+    )
+
+
+def test_a_group_that_still_holds_something_is_not_deleted(api):
+    client, headers, _, _ = api
+    client.put(
+        "/api/groups",
+        json={"id": "refunds", "name": "Refunds", "type": "feature", "status": "open"},
+        headers=headers(),
+    )
+    client.put(
+        "/api/requirements",
+        json={
+            "id": "refund-speed",
+            "kind": "requirement",
+            "status": "open",
+            "summary": "Refunds settle within one business day",
+        },
+        headers=headers(),
+    )
+    client.put(
+        "/api/groups/refunds/members",
+        json={"member_type": "requirement", "member_id": "refund-speed"},
+        headers=headers(),
+    )
+
+    refused = client.delete("/api/groups/refunds", headers=headers())
+    assert refused.status_code == 422
+    assert "still holds things" in refused.json()["detail"]
+
+    unfiled = client.delete(
+        "/api/groups/refunds/members/requirement/refund-speed", headers=headers()
+    )
+    assert unfiled.json()["data"] == {"unfiled": True}
+    assert client.delete("/api/groups/refunds", headers=headers()).status_code == 200
+    assert client.get("/api/groups", headers=headers()).json()["data"] == []
 
 
 def test_requirements_priority_links_and_workspace_isolation(api):

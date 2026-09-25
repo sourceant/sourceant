@@ -68,6 +68,7 @@ app = FastAPI(
 )
 
 from src.api.routes import requirements, artifacts, usage
+from src.api.routes import groups as group_endpoints
 from src.api.routes import caches as cache_endpoints
 from src.api.routes import code as code_endpoints
 from src.api.routes import architecture as architecture_endpoints
@@ -115,5 +116,6 @@ if mcp_http_app is not None:
 app.include_router(
     requirements.router, prefix="/api/requirements", tags=["requirements"]
 )
+app.include_router(group_endpoints.router, prefix="/api/groups", tags=["groups"])
 app.include_router(artifacts.router, prefix="/api/artifacts", tags=["artifacts"])
 app.include_router(usage.router, prefix="/api/usage", tags=["usage"])

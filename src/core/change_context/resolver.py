@@ -5,8 +5,10 @@ from typing import Protocol, runtime_checkable
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
+from src.core.groups import GroupsReader
 from src.core.knowledge import KnowledgeSelection, KnowledgeSelector
 from src.core.requirements import RequirementSelection, RequirementSelector
+from src.core.requirements.grouping import TYPE as REQUIREMENT
 from src.core.impact import ChangeImpactResolver, ChangeImpactRequest
 
 from .models import ChangeContext, ChangeSet
@@ -36,23 +38,62 @@ class DefaultChangeContextResolver:
         code: CodeIndexReader | None = None,
         knowledge: KnowledgeSelector | None = None,
         requirements: RequirementSelector | None = None,
+        groups: GroupsReader | None = None,
         impact: ChangeImpactResolver | None = None,
     ) -> None:
         self._code = code
         self._knowledge = knowledge
         self._requirements = requirements
+        self._groups = groups
         self._impact = impact
 
     def resolve(self, changes: ChangeSet) -> ChangeContext:
         code, code_truncated = self._code_for(changes)
+        requirements = self._requirements_for(changes)
         return ChangeContext(
             scope=changes.scope,
             code=code,
             knowledge=self._knowledge_for(changes),
-            requirements=self._requirements_for(changes),
+            requirements=requirements,
+            requirement_groups=self._groups_for(changes, requirements),
             impact=self._impact_for(changes),
             truncated=code_truncated,
         )
+
+    def _groups_for(self, changes: ChangeSet, requirements) -> dict[str, str]:
+        """Where each selected requirement is filed, as a path a person reads.
+
+        Groups are filed at the workspace, the things they hold at whichever
+        scope those live in, so the lookup names both. A change with no workspace
+        has nothing wider than its repository and asks there.
+        """
+        if self._groups is None or not requirements:
+            return {}
+        wanted = frozenset(item.id for item in requirements)
+        scopes = changes.requirement_scopes or (changes.scope,)
+        held = next((one for one in scopes if not one.get("repository")), changes.scope)
+        paths: dict[str, str] = {}
+        try:
+            for scope in scopes:
+                for requirement_id, group_ids in self._groups.filed_under(
+                    held, REQUIREMENT, wanted, scope
+                ).items():
+                    if requirement_id in paths:
+                        continue
+                    # Several groups can hold one requirement, so every path
+                    # it sits under is carried.
+                    where = [
+                        " > ".join(
+                            step.name for step in self._groups.ancestry(held, one)
+                        )
+                        for one in group_ids
+                    ]
+                    filled = [one for one in where if one]
+                    if filled:
+                        paths[requirement_id] = "; ".join(filled)
+        except UNAVAILABLE:
+            return {}
+        return paths
 
     def _code_for(self, changes: ChangeSet):
         if self._code is None:

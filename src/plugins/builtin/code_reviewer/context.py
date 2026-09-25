@@ -39,6 +39,7 @@ from src.core.knowledge import (
     KnowledgeSelector,
     LinkedKnowledgeSelector,
 )
+from src.core.grouping import groups
 from src.core.impact import ChangeImpactResolver
 from src.core.requirements import (
     LinkedRequirementSelector,
@@ -71,6 +72,7 @@ def change_context_resolver(
         code=durable_code,
         knowledge=knowledge_selector(services),
         requirements=requirement_selector(services),
+        groups=groups(services),
         impact=impact_preparer(services),
     )
 
@@ -191,7 +193,9 @@ def requirements_section(known) -> Optional[str]:
         "",
     ]
     for item in known.requirements:
-        lines.append(f"- {item.id} ({item.status}): {item.summary}")
+        part_of = (known.requirement_groups or {}).get(item.id, "")
+        where = f" [{part_of}]" if part_of else ""
+        lines.append(f"- {item.id} ({item.status}){where}: {item.summary}")
     lines.append("")
     return "\n".join(lines)
 
