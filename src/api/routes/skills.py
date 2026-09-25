@@ -119,6 +119,7 @@ def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
     listed = {
         "id": skill.id,
         "name": skill.name,
+        "type": skill.type,
         "description": skill.description,
         "origin": skill.origin,
         "path": skill.path,

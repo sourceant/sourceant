@@ -18,7 +18,7 @@ def upgrade():
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column("content", sa.JSON(), nullable=False),
         sa.Column("scope", sa.String(32), nullable=False),
-        sa.Column("kind", sa.String(128), nullable=False),
+        sa.Column("type", sa.String(128), nullable=False),
         sa.Column("automatic", sa.Boolean(), nullable=False),
         sa.Column("paths", sa.JSON(), nullable=False),
         sa.Column("metadata", sa.JSON(), nullable=False),

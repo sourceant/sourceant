@@ -454,15 +454,15 @@ class WorkingTreeReviews:
                     [
                         skill
                         for skill in chosen
-                        if skill.kind
+                        if skill.type
                         not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
                     ],
                 ),
                 skills=tuple(
-                    skill for skill in chosen if skill.kind == SkillType.REVIEW_PASS
+                    skill for skill in chosen if skill.type == SkillType.REVIEW_PASS
                 ),
                 expert_passes="\n".join(
-                    skill.id for skill in chosen if skill.kind == SkillType.REVIEW_PASS
+                    skill.id for skill in chosen if skill.type == SkillType.REVIEW_PASS
                 ),
                 # A checkout is indexed as it is, not as a commit, so the
                 # graph is filed under the repository alone.
@@ -505,11 +505,11 @@ class WorkingTreeReviews:
             [
                 skill
                 for skill in chosen
-                if skill.kind
+                if skill.type
                 not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
             ]
         )
-        focused = [skill for skill in chosen if skill.kind == SkillType.REVIEW_PASS]
+        focused = [skill for skill in chosen if skill.type == SkillType.REVIEW_PASS]
         answer["skills"] = [skill_payload(skill) for skill in (*whole, *focused)]
 
         # Concurrent: asked in turn, five rules is a minute, which is long

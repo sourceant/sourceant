@@ -48,7 +48,7 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             "id": skill.id,
             "name": skill.name,
             "description": skill.description[:2000],
-            "kind": skill.kind,
+            "type": skill.type,
             "origin": skill.origin,
             "automatic": skill.automatic,
             "body": skill.body[:max_characters],
@@ -73,7 +73,7 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
         text: str = "",
         limit: int = 20,
         offset: int = 0,
-        kind: str = "",
+        type: str = "",
         purpose: str = "",
     ) -> dict[str, Any]:
         if not 1 <= limit <= 50 or offset < 0:
@@ -89,7 +89,7 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
                 skill
                 for skill in library.all(workspace, repository)
                 if term in f"{skill.id} {skill.name} {skill.description}".casefold()
-                and (not kind or skill.kind == kind)
+                and (not type or skill.type == type)
                 and (not purpose or skill.applies_to(purpose) is True)
             ),
             key=lambda skill: (skill.id, skill.origin),
@@ -102,7 +102,7 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
                     "description": skill.description[:2000],
                     "origin": skill.origin,
                     "automatic": skill.automatic,
-                    "kind": skill.kind,
+                    "type": skill.type,
                     "applications": {
                         **(
                             {"review": skill.reviews}
@@ -146,7 +146,7 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
         description: str = "",
         content: dict[str, Any] | None = None,
         body: str = "",
-        kind: str = "guidance",
+        type: str = "guidance",
         applications: dict[str, bool] | None = None,
         paths: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
@@ -171,7 +171,7 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             own = extra.get("sourceant", {})
             if not isinstance(own, dict):
                 raise ValueError("SourceAnt metadata must be an object")
-            extra["sourceant"] = {**own, "type": kind}
+            extra["sourceant"] = {**own, "type": type}
             skill = Skill(
                 id,
                 name,
@@ -192,8 +192,8 @@ def add_skill_tools(server, services, resolve_scope, surface, library=None):
             or len(skill.body) > 20000
         ):
             raise ValueError("Skill text exceeds the storage limits")
-        if not kind.strip() or len(skill.kind) > 128 or len(skill.paths) > 100:
-            raise ValueError("Skill kind or paths exceed the storage limits")
+        if not type.strip() or len(skill.type) > 128 or len(skill.paths) > 100:
+            raise ValueError("Skill type or paths exceed the storage limits")
         from dataclasses import asdict
 
         if len(json.dumps(asdict(skill), allow_nan=False).encode()) > 100000:

@@ -667,7 +667,7 @@ class TestConfiguredExpertPasses:
             "\n".join(skill.id for skill in experts),
         )
         assert [
-            skill.id for skill in chosen if skill.kind == SkillType.REVIEW_PASS
+            skill.id for skill in chosen if skill.type == SkillType.REVIEW_PASS
         ] == [skill.id for skill in experts]
         assert guidance in chosen
         assert for_review((*experts, guidance), Change(), "") == (guidance,)
