@@ -6,7 +6,10 @@ from typing import List, Optional, Tuple
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from src.config.settings import POSITIVE_SENTIMENT_THRESHOLD
+from src.config.settings import (
+    POSITIVE_SENTIMENT_THRESHOLD,
+    REVIEW_MISSING_EXISTING_CODE_POLICY,
+)
 from src.models.code_review import CodeSuggestion
 from src.utils.logger import logger
 
@@ -147,7 +150,17 @@ class SuggestionFilter:
             return False, "no suggested code"
 
         if not suggestion.existing_code or not suggestion.existing_code.strip():
-            return False, "missing existing_code"
+            policy = REVIEW_MISSING_EXISTING_CODE_POLICY
+            if policy not in {"drop", "warn", "keep"}:
+                logger.warning(
+                    "Unknown REVIEW_MISSING_EXISTING_CODE_POLICY %r; defaulting to drop",
+                    policy,
+                )
+                policy = "drop"
+            if policy == "drop":
+                return False, "missing existing_code"
+            if policy == "warn":
+                logger.warning("Finding missing existing_code; keeping due to policy.")
 
         if self._is_code_identical(suggestion.existing_code, suggestion.suggested_code):
             return False, "suggested code identical to existing code"

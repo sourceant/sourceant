@@ -155,11 +155,13 @@ def test_informational_neutral_comment_filtered(suggestion_filter):
 
 @pytest.mark.parametrize("existing_code", [None, "", " \n\t"])
 @pytest.mark.parametrize("comment_only", [False, True])
-@pytest.mark.parametrize("legacy_policy", ["drop", "warn", "keep"])
-def test_missing_existing_code_is_always_rejected(
-    suggestion_filter, monkeypatch, existing_code, comment_only, legacy_policy
+@pytest.mark.parametrize("policy", ["drop", "warn", "keep", "invalid"])
+def test_missing_existing_code_follows_policy(
+    suggestion_filter, monkeypatch, existing_code, comment_only, policy
 ):
-    monkeypatch.setenv("REVIEW_MISSING_EXISTING_CODE_POLICY", legacy_policy)
+    monkeypatch.setattr(
+        "src.utils.suggestion_filter.REVIEW_MISSING_EXISTING_CODE_POLICY", policy
+    )
     suggestion = _make_suggestion(
         comment="Fix the bug here",
         existing_code=existing_code,
@@ -167,8 +169,8 @@ def test_missing_existing_code_is_always_rejected(
     )
     suggestion.comment_only = comment_only
     kept, removed = suggestion_filter.filter_suggestions([suggestion])
-    assert len(kept) == 0
-    assert len(removed) == 1
+    assert kept == ([suggestion] if policy in {"warn", "keep"} else [])
+    assert removed == ([] if policy in {"warn", "keep"} else [suggestion])
 
 
 def test_positive_with_actionable_verb_kept(suggestion_filter):
