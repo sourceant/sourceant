@@ -156,6 +156,16 @@ class InitializeInput(BaseModel):
     use_model: bool = False
 
 
+def locally(key: str, fallback: int) -> int:
+    """One number this machine is set to, or the fallback when nothing answers."""
+    from src.core.settings.resolver import resolve
+
+    try:
+        return int(resolve(key, user=LOCAL).value or fallback)
+    except Exception:  # noqa: BLE001 - a store that cannot answer sets nothing
+        return fallback
+
+
 def accept_above() -> float:
     """How sure a proposal has to be to skip a person, or zero for none of them."""
     from src.core.settings.resolver import resolve
@@ -240,10 +250,14 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
             proposals = propose(
                 repository=entry.name,
                 layout=layout,
-                prose=prose,
+                # As much of it as this machine is willing to pay to send.
+                prose=prose[
+                    : locally("initialization.evidence_character_limit", 60_000)
+                ],
                 known=items,
                 ask=provider.generate_text,
                 model=provider.model,
+                limit=locally("initialization.candidate_limit", 35),
             )
         except Exception as error:  # noqa: BLE001 - whatever a provider raises
             raise HTTPException(status_code=502, detail=str(error)) from error

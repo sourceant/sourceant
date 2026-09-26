@@ -55,6 +55,27 @@ class TestLocalSettings(BaseTestCase):
             & keys
         )
 
+    def test_only_what_a_machine_does_not_have_is_left_out(self):
+        body = self.client.get("/api/local/settings").json()
+
+        keys = {item["key"] for item in body["data"]}
+        # Read when this machine finds knowledge, so settable on it.
+        assert "initialization.candidate_limit" in keys
+        assert "initialization.evidence_character_limit" in keys
+        # A pull request, a review cache keyed by one, and a job queue.
+        assert (
+            not {
+                "review.enabled",
+                "review.stop_when_closed",
+                "review.stop_on_new_push",
+                "review.draft_pull_requests",
+                "review.reuse_days",
+                "jobs.per_workspace",
+                "jobs.keep_finished_for",
+            }
+            & keys
+        )
+
     def test_what_the_index_leaves_out_is_a_list(self):
         written = self.client.put(
             "/api/local/settings/initialization.excluded_paths",

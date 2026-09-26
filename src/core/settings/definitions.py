@@ -347,8 +347,8 @@ SETTINGS: tuple[Setting, ...] = (
         default=35,
         minimum=1,
         maximum=50,
-        scopes=(REPOSITORY, ORGANIZATION),
-        group="Initialization",
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        group="Knowledge",
     ),
     Setting(
         key="initialization.evidence_limit",
@@ -370,8 +370,8 @@ SETTINGS: tuple[Setting, ...] = (
         unit="characters",
         minimum=1_000,
         maximum=100_000,
-        scopes=(REPOSITORY, ORGANIZATION),
-        group="Initialization",
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        group="Knowledge",
     ),
     Setting(
         key="initialization.community_limit",
