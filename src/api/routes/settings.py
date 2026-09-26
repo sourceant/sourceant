@@ -109,6 +109,7 @@ def _described(resolved: Resolved) -> dict:
         "maximum": setting.maximum if setting else None,
         "choices": list(setting.choices) if setting else [],
         "group": setting.group if setting else "General",
+        "advanced": bool(setting and setting.advanced),
     }
 
 

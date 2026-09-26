@@ -23,6 +23,20 @@ class TestLocalSettings(BaseTestCase):
         keys = {item["key"] for item in response.json()["data"]}
         assert {"model.name", "model.api_key", "model.base_url"} <= keys
 
+    def test_tuning_is_marked_apart_from_what_a_person_chooses(self):
+        body = self.client.get("/api/local/settings").json()
+
+        assert self.of(body, "model.name")["advanced"] is False
+        assert self.of(body, "model.token_limit")["advanced"] is True
+        plain = [item for item in body["data"] if not item["advanced"]]
+        assert len(plain) == 10
+
+    def test_no_two_settings_are_called_the_same_thing(self):
+        body = self.client.get("/api/local/settings").json()
+
+        labels = [item["label"] for item in body["data"]]
+        assert len(labels) == len(set(labels))
+
     def test_a_model_can_be_chosen_and_read_back(self):
         written = self.client.put(
             "/api/local/settings/model.name",
