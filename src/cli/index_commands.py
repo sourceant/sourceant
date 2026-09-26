@@ -230,4 +230,12 @@ def serve_command(host, port):
     # Deployments run uvicorn directly and leave it off.
     settings.LOCAL_MODE = True
     os.environ["SOURCEANT_LOCAL"] = "true"
+
+    # Before anything imports the app: the first thing it touches is a store,
+    # and a store on an index with no schema is where this used to stop.
+    from src.config.db import get_engine
+    from src.core.local_schema import ensure
+
+    ensure(get_engine(), settings.DATABASE_URL or "")
+
     uvicorn.run("src.api.main:app", host=host, port=port)
