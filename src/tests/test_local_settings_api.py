@@ -76,6 +76,53 @@ class TestLocalSettings(BaseTestCase):
 
         assert self.of(read.json(), "model.name")["value"] == ""
 
+    def test_the_models_that_can_be_named_here_are_offered(self):
+        response = self.client.get("/api/local/settings/models")
+
+        assert response.status_code == 200
+        catalogue = response.json()["data"]
+        assert catalogue, "nothing was offered, so a screen has nothing to show"
+        assert {"provider", "models"} <= set(catalogue[0])
+
+    def test_a_check_with_nothing_named_says_so_rather_than_asking(self):
+        response = self.client.post("/api/local/settings/models/check", json={})
+
+        assert response.status_code == 400
+
+    def test_a_key_already_saved_is_the_one_checked(self, monkeypatch):
+        asked = {}
+
+        def _refused(model, api_key, base_url="", **_):
+            asked.update(model=model, api_key=api_key)
+            return None
+
+        monkeypatch.setattr("src.core.model.catalogue.refused", _refused)
+        self.client.put(
+            "/api/local/settings/model.name", json={"value": "anthropic/one"}
+        )
+        self.client.put("/api/local/settings/model.api_key", json={"value": "sk-here"})
+
+        response = self.client.post("/api/local/settings/models/check", json={})
+
+        assert response.json()["data"] == {"usable": True, "reason": None}
+        assert asked == {"model": "anthropic/one", "api_key": "sk-here"}
+
+    def test_a_key_that_cannot_use_the_model_says_why(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.core.model.catalogue.refused",
+            lambda *args, **kwargs: "That key cannot use that model.",
+        )
+
+        response = self.client.post(
+            "/api/local/settings/models/check",
+            json={"model": "anthropic/one", "api_key": "sk-wrong"},
+        )
+
+        assert response.json()["data"] == {
+            "usable": False,
+            "reason": "That key cannot use that model.",
+        }
+
     def test_a_setting_nobody_declared_is_refused(self):
         response = self.client.put(
             "/api/local/settings/model.favourite_colour", json={"value": "blue"}

@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from src.api.routes.code import require_local
 from src.api.routes.settings import _described, _described_at
@@ -38,6 +38,54 @@ def local_provider():
     if deployment is not None:
         return deployment.provider_for(deployment.workspace_for())
     return SettingsLLMSource(fallback_model="").provider_for(Configuration(user=LOCAL))
+
+
+# Both of these wait on something outside this process, and neither awaits it.
+# Declared without async, they are run on a thread and the loop stays free.
+@router.get("/models", dependencies=[Depends(require_local)])
+def local_models():
+    """Every model that can be named here, by provider.
+
+    Read from the router that would make the call rather than written down, so
+    nobody has to remember how a provider spells its models.
+    """
+    from src.core.model.catalogue import offered
+
+    return success_response(offered())
+
+
+class ModelCheckInput(BaseModel):
+    #: Left out, whatever is set here is used, so a pair already saved can be
+    #: checked without sending the key again.
+    model: str = ""
+    api_key: SecretStr = SecretStr("")
+    base_url: str = ""
+
+
+@router.post("/models/check", dependencies=[Depends(require_local)])
+def check_local_model(body: ModelCheckInput):
+    """Whether this key can use this model, asked of the provider.
+
+    A provider's catalogue says what exists. What an account may use is a
+    subset, and the two only differ when somebody is already waiting.
+    """
+    from src.core.model.catalogue import refused
+
+    configuration = Configuration(user=LOCAL)
+    model = body.model or str(configuration.value("model.name") or "")
+    key = body.api_key.get_secret_value() or str(
+        configuration.value("model.api_key") or ""
+    )
+    base = body.base_url or str(configuration.value("model.base_url") or "")
+    if not model:
+        raise HTTPException(status_code=400, detail="Name a model")
+    if not key:
+        raise HTTPException(
+            status_code=400, detail="No key is set here, and none was sent"
+        )
+
+    why = refused(model, key, base, attribution={"user": LOCAL})
+    return success_response({"usable": why is None, "reason": why})
 
 
 @router.get("", dependencies=[Depends(require_local)])
