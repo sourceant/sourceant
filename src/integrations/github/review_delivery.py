@@ -208,6 +208,14 @@ def deliver(
             or "Review complete. See the overview comment for a summary."
         )
         comments = [comment for comment in comments if comment is not None]
+        if review.summary:
+            github._create_or_update_overview_comment(
+                repository.owner,
+                repository.name,
+                pull_request.number,
+                github._format_summary(review.summary, configuration),
+                headers,
+            )
         needs_fallback = not found and fallback is not None
         if (
             not found
@@ -250,14 +258,6 @@ def deliver(
                 needs_fallback = True
         if needs_fallback:
             post_findings(repository, pull_request, review, headers, marker)
-        if review.summary:
-            github._create_or_update_overview_comment(
-                repository.owner,
-                repository.name,
-                pull_request.number,
-                github._format_summary(review.summary, configuration),
-                headers,
-            )
         return {
             "status": "partial_success" if needs_fallback else "success",
             "message": "Review findings delivered",
