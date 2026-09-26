@@ -568,6 +568,24 @@ class TestSkillsApi(BaseTestCase):
         # The one purpose this product reads, answered from the same map.
         assert read["reviews"] is True
 
+    def test_what_a_skill_can_be_used_for_is_served_rather_than_guessed(self):
+        answered = self.client.get("/api/skills/uses")
+
+        assert answered.status_code == 200
+        offered = answered.json()["data"]
+        assert [use["id"] for use in offered][0] == "review"
+        assert {"id", "label"} == set(offered[0])
+
+    def test_a_skill_only_a_person_may_invoke_stays_that_way_when_saved(self):
+        self.register()
+
+        self.state(id="retry-limit", description="Use when retrying.", automatic=False)
+
+        read = self.client.get(
+            "/api/skills/retry-limit?repository=acme/billing"
+        ).json()["data"]
+        assert read["automatic"] is False
+
     def test_a_kind_of_skill_nobody_defined_is_refused(self):
         self.register()
 

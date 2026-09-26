@@ -30,6 +30,7 @@ from src.core.responses import success_response
 from src.core.skills import (
     NAMESPACE,
     REVIEW,
+    USES,
     Catalogue,
     Skill,
     SkillQuery,
@@ -79,6 +80,9 @@ class SkillInput(BaseModel):
     # The shorthand for applications["review"], kept for callers that only ever
     # had the one purpose.
     reviews: bool | None = Field(default=None)
+    # Whether this product may pick it without being asked. A separate question
+    # from what it is used for, and the spec's own field for it.
+    automatic: bool = Field(default=True)
 
 
 def where(scope: str, repository: str) -> Path:
@@ -143,6 +147,16 @@ def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
     return listed
 
 
+@router.get("/uses")
+def read_uses():
+    """What a skill can be used for: what this product does.
+
+    Served rather than written into each screen, so both of them offer the same
+    list and a use added here appears in them without a change of their own.
+    """
+    return success_response([{"id": use.id, "label": use.label} for use in USES])
+
+
 @router.get("")
 def read_skills(
     repository: str = Query(default=""),
@@ -193,6 +207,7 @@ def record_skill(body: SkillInput):
                 paths=tuple(body.paths),
                 metadata=metadata,
                 applications=applications,
+                automatic=body.automatic,
             ),
             origin=body.scope,
         )
