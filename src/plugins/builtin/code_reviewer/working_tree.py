@@ -330,7 +330,7 @@ class WorkingTreeReviews:
             wanted = set(skills)
             chosen = tuple(skill for skill in everything if skill.id in wanted)
         else:
-            from src.core.skills.selection import for_review
+            from src.core.skills.selection import for_review, named
 
             try:
                 chosen = for_review(
@@ -342,6 +342,8 @@ class WorkingTreeReviews:
                     ),
                     configuration.value("review.expert_passes"),
                     limit=MAX_SKILLS,
+                    never=named(configuration.value("skills.never_in_reviews")),
+                    always=named(configuration.value("skills.always_in_reviews")),
                 )
             except ValueError as error:
                 raise ReviewRefused(400, str(error)) from error

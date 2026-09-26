@@ -19,10 +19,19 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 from .matching import any_match
 from .models import Change, Skill, SkillScope, SkillType
+
+
+def named(value: Any) -> tuple[str, ...]:
+    """Skill ids out of a setting that holds one to a line."""
+    if isinstance(value, (list, tuple)):
+        lines = [str(one) for one in value]
+    else:
+        lines = str(value or "").splitlines()
+    return tuple(dict.fromkeys(line.strip() for line in lines if line.strip()))
 
 
 def for_review(
@@ -30,8 +39,13 @@ def for_review(
     change: Change,
     expert_passes: str = "auto",
     limit: int = 5,
+    never: Sequence[str] = (),
+    always: Sequence[str] = (),
 ) -> tuple[Skill, ...]:
-    selector = PhraseSkillSelector()
+    selector = PhraseSkillSelector(
+        never=frozenset(never),
+        always=frozenset(always),
+    )
     if not isinstance(expert_passes, str) or expert_passes.strip() == "auto":
         return selector.select(skills, change, limit=limit)
     requested = tuple(dict.fromkeys(expert_passes.split()))
@@ -46,7 +60,16 @@ def for_review(
         change,
         limit=limit,
     )
-    return (*guidance, *(experts[identifier] for identifier in requested))
+    # A skill kept out of reviews here is kept out of one it was asked for by
+    # name too: the prohibition is the later word.
+    return (
+        *guidance,
+        *(
+            experts[identifier]
+            for identifier in requested
+            if identifier not in selector.never
+        ),
+    )
 
 
 # Letters rather than ASCII: skills and the prose around code are written
@@ -133,15 +156,24 @@ class PhraseSkillSelector:
     """
 
     minimum: int = MIN_SCORE
+    #: What this machine said, which outranks what the author said. A skill
+    #: somebody else owns cannot be edited here, so this is the only way to
+    #: answer for one.
+    never: frozenset[str] = frozenset()
+    always: frozenset[str] = frozenset()
 
     def wanted(self, skill: Skill, change: Change) -> bool | None:
-        """What the author said about this skill and this change, if anything.
+        """Whether this skill belongs in this review, if anybody has said.
 
-        False where they said it is not for reviews, or that only a person may
-        invoke it. True where they said it is, or wrote globs and the change
-        touches one of the files. None where they said nothing, which is most
-        of them.
+        Read here first, then what the author said: False where they said it is
+        not for reviews, or that only a person may invoke it; True where they
+        said it is, or wrote globs and the change touches one of the files; None
+        where nobody said anything, which is most of them.
         """
+        if skill.id in self.never:
+            return False
+        if skill.id in self.always:
+            return True
         said = skill.reviews
         if said is False:
             return False

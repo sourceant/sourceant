@@ -248,6 +248,20 @@ class TestLocalReview(BaseTestCase):
             "migrations"
         ]
 
+    def test_a_skill_this_machine_keeps_out_is_not_read_against_a_change(self):
+        self.register()
+        self.edit_the_migration()
+        self.client.put(
+            "/api/local/settings/skills.never_in_reviews",
+            json={"value": "migrations"},
+        )
+        try:
+            answered = self.review(use_model=False, title="Edit the charges migration")
+        finally:
+            self.client.delete("/api/local/settings/skills.never_in_reviews")
+
+        assert answered.json()["data"]["review"]["skills"] == []
+
     def test_breaking_a_stated_rule_says_the_work_is_not_ready(self, monkeypatch):
         model = FakeModel(
             {

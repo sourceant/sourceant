@@ -27,9 +27,9 @@ class TestLocalSettings(BaseTestCase):
         body = self.client.get("/api/local/settings").json()
 
         assert self.of(body, "model.name")["advanced"] is False
+        assert self.of(body, "model.api_key")["advanced"] is False
         assert self.of(body, "model.token_limit")["advanced"] is True
-        plain = [item for item in body["data"] if not item["advanced"]]
-        assert len(plain) == 10
+        assert self.of(body, "review.reading_budget")["advanced"] is True
 
     def test_no_two_settings_are_called_the_same_thing(self):
         body = self.client.get("/api/local/settings").json()

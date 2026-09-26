@@ -521,6 +521,42 @@ class TestChoosingWhichSkillsApply:
 
         assert [item.id for item in chosen] == ["house"]
 
+    def test_a_skill_this_machine_keeps_out_is_kept_out(self):
+        # The author said it is for reviews; whoever runs the machine says no,
+        # which is the only answer available for a skill they cannot edit.
+        skills = [
+            Skill(
+                id="pptx",
+                name="pptx",
+                description="Use when a change touches a slide deck.",
+                body="",
+                metadata={"sourceant": {"review": True}},
+            )
+        ]
+
+        chosen = PhraseSkillSelector(never=frozenset({"pptx"})).select(
+            skills, Change(title="Add a slide deck")
+        )
+
+        assert chosen == ()
+
+    def test_a_skill_this_machine_always_wants_is_read_whatever_changed(self):
+        skills = [
+            Skill(
+                id="house",
+                name="house",
+                description="Nothing to do with anything.",
+                body="",
+                automatic=False,
+            )
+        ]
+
+        chosen = PhraseSkillSelector(always=frozenset({"house"})).select(
+            skills, Change(title="Bump a timeout")
+        )
+
+        assert [item.id for item in chosen] == ["house"]
+
     def test_a_skill_only_a_person_may_start_is_not_started_here(self):
         skills = [
             Skill(
@@ -671,6 +707,31 @@ class TestConfiguredExpertPasses:
         ] == [skill.id for skill in experts]
         assert guidance in chosen
         assert for_review((*experts, guidance), Change(), "") == (guidance,)
+
+    def test_a_pass_this_machine_keeps_out_is_not_run_when_asked_for(self):
+        from src.core.skills.selection import for_review
+
+        expert = Skill(
+            id="security",
+            name="Security",
+            description="Specialist",
+            body="Check the change.",
+            metadata={"sourceant": {"type": "review-pass"}},
+        )
+
+        chosen = for_review((expert,), Change(), "security", never=("security",))
+
+        assert chosen == ()
+
+    def test_ids_are_read_one_to_a_line(self):
+        from src.core.skills.selection import named
+
+        assert named(" pptx \n\n synced/a b/xlsx \n pptx ") == (
+            "pptx",
+            "synced/a b/xlsx",
+        )
+        assert named(["pptx", " ", "xlsx"]) == ("pptx", "xlsx")
+        assert named(None) == ()
 
     def test_unknown_pass_is_reported_instead_of_running_other_experts(self):
         import pytest
