@@ -33,6 +33,7 @@ from src.core.skills import (
     Catalogue,
     Skill,
     SkillQuery,
+    SkillType,
     SkillWriteError,
     global_skills,
     remove_skill,
@@ -68,8 +69,15 @@ class SkillInput(BaseModel):
     # Globs naming the files this is about, so it is picked on a statement
     # rather than on how its description happens to be worded.
     paths: list[str] = Field(default_factory=list)
-    # Whether it belongs in a review at all. Null leaves that unsaid, which is
-    # where most skills are and is not the same as saying no.
+    # What the skill is for: a purpose, and whether it applies to it. "review"
+    # is the one this product reads; anything else is there for an agent asking
+    # over MCP. A purpose nobody named is unsaid, which is not a no.
+    applications: dict[str, bool] = Field(default_factory=dict)
+    # How it is read rather than what it is for: prose the reviewer is told, or
+    # a pass of its own. Left empty, it is prose.
+    type: str = Field(default="")
+    # The shorthand for applications["review"], kept for callers that only ever
+    # had the one purpose.
     reviews: bool | None = Field(default=None)
 
 
@@ -125,6 +133,7 @@ def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
         "path": skill.path,
         "paths": list(skill.paths),
         "reviews": skill.reviews,
+        "applications": dict(skill.applications),
         "automatic": skill.automatic,
     }
     if full:
@@ -163,9 +172,16 @@ def read_skills(
 def record_skill(body: SkillInput):
     """Write a skill down, for one repository or for everything."""
     root = where(body.scope, body.repository)
-    # Kept where the format sets a map aside for it, namespaced as the spec
-    # asks, so a skill carrying it stays readable by everything else.
-    metadata = {} if body.reviews is None else {NAMESPACE: {REVIEW: body.reviews}}
+    applications = dict(body.applications)
+    if body.reviews is not None and REVIEW not in applications:
+        applications[REVIEW] = body.reviews
+    kind = body.type.strip()
+    if kind and kind not in {one.value for one in SkillType}:
+        raise HTTPException(status_code=400, detail=f"{kind} is not a kind of skill")
+    # What it is read as goes in the map the format sets aside for a client,
+    # namespaced as the spec asks. What it is for goes in applications, which
+    # the format has its own field for.
+    metadata = {NAMESPACE: {"type": kind}} if kind else {}
     try:
         written = write_skill(
             root,
@@ -176,6 +192,7 @@ def record_skill(body: SkillInput):
                 body=body.body,
                 paths=tuple(body.paths),
                 metadata=metadata,
+                applications=applications,
             ),
             origin=body.scope,
         )

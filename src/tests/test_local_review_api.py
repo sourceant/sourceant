@@ -550,6 +550,44 @@ class TestSkillsApi(BaseTestCase):
         read = self.client.get("/api/skills?repository=acme/other").json()["data"]
         assert "retry-limit" not in [item["id"] for item in read["skills"]]
 
+    def test_what_a_skill_is_for_is_kept_apart_from_how_it_is_read(self):
+        self.register()
+
+        self.state(
+            id="retry-limit",
+            description="Use when retrying a charge.",
+            applications={"review": True, "onboarding": False},
+            type="review-pass",
+        )
+
+        read = self.client.get(
+            "/api/skills/retry-limit?repository=acme/billing"
+        ).json()["data"]
+        assert read["applications"] == {"review": True, "onboarding": False}
+        assert read["type"] == "review-pass"
+        # The one purpose this product reads, answered from the same map.
+        assert read["reviews"] is True
+
+    def test_a_kind_of_skill_nobody_defined_is_refused(self):
+        self.register()
+
+        answered = self.state(
+            id="retry-limit", description="Use when retrying.", type="whatever"
+        )
+
+        assert answered.status_code == 400
+
+    def test_the_old_way_of_saying_it_is_for_reviews_still_works(self):
+        self.register()
+
+        self.state(id="retry-limit", description="Use when retrying.", reviews=False)
+
+        read = self.client.get(
+            "/api/skills/retry-limit?repository=acme/billing"
+        ).json()["data"]
+        assert read["applications"] == {"review": False}
+        assert read["reviews"] is False
+
     def test_a_rule_with_no_line_saying_when_it_applies_is_refused(self):
         self.register()
 
