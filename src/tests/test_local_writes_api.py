@@ -54,21 +54,47 @@ class TestLocalWrites(BaseTestCase):
 
         assert response.status_code == 400
 
-    def test_indexing_reads_the_repository_into_the_graph(self):
+    def test_registering_a_directory_reads_it_into_the_graph(self):
+        registered = self.register()
+        graph = self.client.get(
+            "/api/code/graph", params={"repository": "acme/billing"}
+        )
+
+        assert registered.json()["data"]["reading"] is True
+        assert any(
+            node["path"] == "app/charge.py" for node in graph.json()["data"]["nodes"]
+        )
+
+    def test_the_listing_says_when_a_repository_was_last_read(self):
         self.register()
 
-        indexed = self.client.post(
-            "/api/code/index", json={"repository": "acme/billing"}
+        listed = self.client.get("/api/code/repositories").json()["data"]
+
+        assert listed[0]["indexed_at"] != ""
+        assert listed[0]["reading"] is False
+
+    def test_a_directory_can_be_covered_without_reading_it_yet(self):
+        registered = self.client.post(
+            "/api/code/repositories",
+            json={"path": str(self.source), "name": "acme/billing", "index": False},
         )
         graph = self.client.get(
             "/api/code/graph", params={"repository": "acme/billing"}
         )
 
-        assert indexed.status_code == 200
-        assert indexed.json()["data"][0]["indexed"] == 1
-        assert any(
-            node["path"] == "app/charge.py" for node in graph.json()["data"]["nodes"]
+        assert registered.json()["data"]["indexed_at"] == ""
+        assert registered.json()["data"]["reading"] is False
+        assert graph.json()["data"]["nodes"] == []
+
+    def test_indexing_again_finds_what_it_already_read(self):
+        self.register()
+
+        indexed = self.client.post(
+            "/api/code/index", json={"repository": "acme/billing"}
         )
+
+        assert indexed.status_code == 200
+        assert indexed.json()["data"][0]["unchanged"] == 1
 
     def test_dropping_a_repository_stops_it_being_answered_for(self):
         self.register()

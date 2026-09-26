@@ -4,11 +4,13 @@ import json
 import os
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config.paths import ensure_data_dir
 from src.core.scope import Scope
+from src.utils.moments import utc
 
 REGISTRY_NAME = "repositories.json"
 
@@ -21,6 +23,9 @@ class RegistryError(RuntimeError):
 class RegisteredRepository:
     name: str
     path: str
+    # When it was last read into the graph. Empty means never, which is what a
+    # client needs to tell "nothing here yet" from "nothing has changed".
+    indexed_at: str = ""
 
     @property
     def scope(self) -> Scope:
@@ -45,9 +50,15 @@ def add_repository(path: Path, *, name: str = "") -> RegisteredRepository:
     entry = RegisteredRepository(
         name=name or repository_name(resolved), path=str(resolved)
     )
-    entries = [item for item in list_repositories() if item.path != entry.path]
-    entries.append(entry)
-    _write(entries)
+    entries = list_repositories()
+    # Registering the same folder under the same name again is not a reason to
+    # forget it was read: the graph it filled is still there.
+    for item in entries:
+        if item.path == entry.path and item.name == entry.name:
+            entry = replace(entry, indexed_at=item.indexed_at)
+    kept = [item for item in entries if item.path != entry.path]
+    kept.append(entry)
+    _write(kept)
     return entry
 
 
@@ -79,8 +90,15 @@ def list_repositories() -> list[RegisteredRepository]:
         if not isinstance(item, dict):
             continue
         name, path = item.get("name"), item.get("path")
+        read = item.get("indexed_at")
         if isinstance(name, str) and isinstance(path, str) and name and path:
-            entries.append(RegisteredRepository(name=name, path=path))
+            entries.append(
+                RegisteredRepository(
+                    name=name,
+                    path=path,
+                    indexed_at=read if isinstance(read, str) else "",
+                )
+            )
     return sorted(entries, key=lambda item: item.path)
 
 
@@ -92,9 +110,27 @@ def find_repository(path: Path) -> RegisteredRepository | None:
     return None
 
 
+def mark_indexed(name: str, when: datetime | None = None) -> None:
+    """Record that a repository has just been read.
+
+    By name rather than by path, because two folders may be registered under
+    one name, and one read of either fills the graph they share.
+    """
+    moment = utc(when or datetime.now(timezone.utc)) or ""
+    entries = list_repositories()
+    if not any(entry.name == name for entry in entries):
+        return
+    _write(
+        [
+            replace(entry, indexed_at=moment) if entry.name == name else entry
+            for entry in entries
+        ]
+    )
+
+
 def _write(entries: list[RegisteredRepository]) -> None:
     payload = [
-        {"name": entry.name, "path": entry.path}
+        {"name": entry.name, "path": entry.path, "indexed_at": entry.indexed_at}
         for entry in sorted(entries, key=lambda item: item.path)
     ]
     target = registry_path()

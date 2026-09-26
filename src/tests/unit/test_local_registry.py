@@ -8,6 +8,7 @@ from src.cli.local_index import (
     RegistryError,
     add_repository,
     list_repositories,
+    mark_indexed,
     registry_path,
     remove_repository,
 )
@@ -101,5 +102,47 @@ def test_the_registry_is_valid_json(home):
     add_repository(home / "billing", name="acme/billing")
 
     assert json.loads(registry_path().read_text(encoding="utf-8")) == [
-        {"name": "acme/billing", "path": str((home / "billing").resolve())}
+        {
+            "name": "acme/billing",
+            "path": str((home / "billing").resolve()),
+            "indexed_at": "",
+        }
     ]
+
+
+def test_when_it_was_read_survives_a_restart(home):
+    (home / "billing").mkdir()
+    add_repository(home / "billing", name="acme/billing")
+
+    mark_indexed("acme/billing")
+
+    assert list_repositories()[0].indexed_at.endswith("+00:00")
+
+
+def test_registering_the_same_folder_again_does_not_forget_the_read(home):
+    (home / "billing").mkdir()
+    add_repository(home / "billing", name="acme/billing")
+    mark_indexed("acme/billing")
+
+    again = add_repository(home / "billing", name="acme/billing")
+
+    assert again.indexed_at != ""
+
+
+def test_renaming_a_folder_starts_its_freshness_again(home):
+    (home / "billing").mkdir()
+    add_repository(home / "billing", name="acme/billing")
+    mark_indexed("acme/billing")
+
+    renamed = add_repository(home / "billing", name="acme/renamed")
+
+    assert renamed.indexed_at == ""
+
+
+def test_marking_something_nobody_registered_changes_nothing(home):
+    (home / "billing").mkdir()
+    add_repository(home / "billing", name="acme/billing")
+
+    mark_indexed("acme/nowhere")
+
+    assert list_repositories()[0].indexed_at == ""

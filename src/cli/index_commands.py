@@ -5,10 +5,12 @@ from pathlib import Path
 import click
 
 from src.cli.local_index import (
+    RegisteredRepository,
     RegistryError,
     add_repository,
     find_repository,
     list_repositories,
+    mark_indexed,
     registry_path,
     remove_repository,
     repository_name,
@@ -56,10 +58,14 @@ def repo_group():
 @repo_group.command(name="add")
 @click.argument("path", type=click.Path(exists=True, file_okay=False))
 @click.option("--name", default="", help="Name the graph stores it under.")
-def repo_add_command(path, name):
-    """Register a repository so it is indexed with the others."""
+@click.option("--no-index", is_flag=True, help="Register it without reading it yet.")
+def repo_add_command(path, name, no_index):
+    """Register a repository and read it into the graph."""
     entry = add_repository(Path(path), name=name)
     click.echo(f"{entry.name}  {entry.path}")
+    if no_index:
+        return
+    click.echo(_read(_store(), entry, update=False))
 
 
 @repo_group.command(name="remove")
@@ -100,7 +106,6 @@ def repo_list_command():
 @click.option("--revision", default="", help="Revision to record with a SCIP import.")
 def index_command(path, index_all, update, scip, revision):
     """Read a repository into the local code graph."""
-    from src.core.code_index.indexer import RepositoryIndexer
     from src.core.code_index.scip import ScipJsonImporter
 
     store = _store()
@@ -129,18 +134,25 @@ def index_command(path, index_all, update, scip, revision):
         entry = find_repository(target)
         targets = [entry] if entry else [add_repository(target)]
 
-    indexer = RepositoryIndexer(store)
     for entry in targets:
-        result = indexer.index(
-            entry.scope,
-            Path(entry.path),
-            update=update,
-            excluded_paths=_excluded_paths(entry.name),
-        )
-        click.echo(
-            f"{entry.name}  indexed {result.indexed}  unchanged {result.unchanged}  "
-            f"removed {result.removed}  skipped {result.skipped}"
-        )
+        click.echo(_read(store, entry, update=update))
+
+
+def _read(store, entry: RegisteredRepository, *, update: bool) -> str:
+    """Read one repository, record that it was read, and say what came of it."""
+    from src.core.code_index.indexer import RepositoryIndexer
+
+    result = RepositoryIndexer(store).index(
+        entry.scope,
+        Path(entry.path),
+        update=update,
+        excluded_paths=_excluded_paths(entry.name),
+    )
+    mark_indexed(entry.name)
+    return (
+        f"{entry.name}  indexed {result.indexed}  unchanged {result.unchanged}  "
+        f"removed {result.removed}  skipped {result.skipped}"
+    )
 
 
 def _excluded_paths(repository: str) -> frozenset[str]:

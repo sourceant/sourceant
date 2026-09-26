@@ -77,7 +77,12 @@ class TestCodeApi(BaseTestCase):
 
         assert response.status_code == 200
         assert response.json()["data"] == [
-            {"name": "acme/billing", "path": self.entry.path}
+            {
+                "name": "acme/billing",
+                "path": self.entry.path,
+                "indexed_at": "",
+                "reading": False,
+            }
         ]
 
     def test_focus_depth_and_search_narrow_the_http_graph(self):

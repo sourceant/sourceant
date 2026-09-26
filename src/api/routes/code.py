@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.cli.local_index import (
@@ -26,6 +26,7 @@ from src.cli.local_index import (
     RegistryError,
     add_repository,
     list_repositories,
+    mark_indexed,
     remove_repository,
 )
 from src.config.db import get_engine
@@ -47,6 +48,7 @@ from src.core.code_index.clustering import Modularity, degrees
 from src.core.code_index.relationships import joined
 from src.core.responses import success_response
 from src.core.services import service_registry
+from src.utils.logger import logger
 
 router = APIRouter()
 
@@ -57,6 +59,10 @@ NOT_LOCAL = (
 )
 
 _fallback: Any = None
+
+# What is being read right now. One process serves a machine, so this lives
+# here; anywhere several do, it would have to live where they both see it.
+_reading: set[str] = set()
 
 
 def require_local() -> None:
@@ -135,9 +141,17 @@ def node_payload(node: CodeNode) -> dict[str, Any]:
 @router.get("/repositories")
 def read_repositories():
     """Every repository registered on this machine, for a client drawing all of them."""
-    return success_response(
-        [{"name": item.name, "path": item.path} for item in registered()]
-    )
+    return success_response([repository_payload(item) for item in registered()])
+
+
+def repository_payload(entry: RegisteredRepository) -> dict[str, Any]:
+    """One repository, and whether it has been read."""
+    return {
+        "name": entry.name,
+        "path": entry.path,
+        "indexed_at": entry.indexed_at,
+        "reading": entry.name in _reading,
+    }
 
 
 @router.get("/attention")
@@ -341,6 +355,9 @@ def read_nodes(
 class RepositoryInput(BaseModel):
     path: str
     name: str = ""
+    # Registering a folder nobody reads answers nothing about it, so reading
+    # starts here unless the caller is about to ask for it differently.
+    index: bool = True
 
 
 class IndexInput(BaseModel):
@@ -350,13 +367,60 @@ class IndexInput(BaseModel):
 
 
 @router.post("/repositories", dependencies=[Depends(require_local)])
-def create_repository(body: RepositoryInput):
-    """Cover one more directory, so the next index run reads it too."""
+def create_repository(
+    body: RepositoryInput,
+    background: BackgroundTasks,
+    index: Any = Depends(get_code_index),
+):
+    """Cover one more directory, and start reading it.
+
+    The reading happens behind the answer: a repository of any size takes
+    longer than anybody will hold a modal open for, and the answer says it is
+    being read so a client can show that.
+    """
     try:
         entry = add_repository(Path(body.path), name=body.name)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    return success_response({"name": entry.name, "path": entry.path})
+
+    if body.index and isinstance(index, CodeIndexWriter):
+        # Marked before the answer leaves, so a client that asks straight away
+        # is told it is being read rather than that it never has been.
+        _reading.add(entry.name)
+        background.add_task(read_repository, entry, index, False)
+    return success_response(repository_payload(entry))
+
+
+def read_repository(
+    entry: RegisteredRepository, index: Any, update: bool
+) -> dict[str, Any]:
+    """Read one registered repository, and record that it was read."""
+    from src.cli.index_commands import _excluded_paths
+    from src.core.code_index.indexer import RepositoryIndexer
+
+    _reading.add(entry.name)
+    try:
+        result = RepositoryIndexer(index).index(
+            entry.scope,
+            Path(entry.path),
+            update=update,
+            excluded_paths=_excluded_paths(entry.name),
+        )
+        mark_indexed(entry.name)
+    except Exception as error:  # noqa: BLE001 - whatever a parser raises
+        # Logged as well as raised: behind an answer that has already gone out,
+        # raising tells nobody.
+        logger.warning("Reading %s failed: %s", entry.name, error)
+        raise
+    finally:
+        _reading.discard(entry.name)
+    return {
+        "repository": entry.name,
+        "indexed": result.indexed,
+        "unchanged": result.unchanged,
+        "removed": result.removed,
+        "skipped": result.skipped,
+    }
 
 
 @router.delete("/repositories", dependencies=[Depends(require_local)])
@@ -378,9 +442,6 @@ def run_index(body: IndexInput, index: Any = Depends(get_code_index)):
     It writes through the same store the reads come from. Building its own
     would let a plugin's index be read while core's was the one being filled.
     """
-    from src.cli.index_commands import _excluded_paths
-    from src.core.code_index.indexer import RepositoryIndexer
-
     if not isinstance(index, CodeIndexWriter):
         raise HTTPException(
             status_code=501, detail="The configured index cannot be written to"
@@ -393,22 +454,5 @@ def run_index(body: IndexInput, index: Any = Depends(get_code_index)):
     else:
         targets = [find_repository(body.repository)]
 
-    indexer = RepositoryIndexer(index)
-    done = []
-    for entry in targets:
-        result = indexer.index(
-            entry.scope,
-            Path(entry.path),
-            update=body.update,
-            excluded_paths=_excluded_paths(entry.name),
-        )
-        done.append(
-            {
-                "repository": entry.name,
-                "indexed": result.indexed,
-                "unchanged": result.unchanged,
-                "removed": result.removed,
-                "skipped": result.skipped,
-            }
-        )
+    done = [read_repository(entry, index, body.update) for entry in targets]
     return success_response(done)
