@@ -38,6 +38,7 @@ from src.models.repository_event import RepositoryEvent
 from src.models.review_record import ReviewRecord
 from src.models.code_review import (
     CodeReview,
+    CodeReviewSummary,
     CodeSuggestion,
     Side,
     SuggestionCategory,
@@ -329,6 +330,82 @@ class WebhookDeliveryTests(unittest.TestCase):
 
 
 class FindingsDeliveryTests(unittest.TestCase):
+    def test_overview_precedes_review_and_retries_do_not_duplicate_posts(self):
+        for lost_response in (None, "overview", "review"):
+            with self.subTest(lost_response=lost_response):
+                comments, reviews, order = [], [], []
+                comment = json.loads(
+                    (FIXTURES / "github/review-comment.json").read_text()
+                )
+                native = json.loads(
+                    (FIXTURES / "github/native-review.json").read_text()
+                )
+
+                def response(body):
+                    result = requests.Response()
+                    result.status_code = 200
+                    result._content = json.dumps(body).encode()
+                    return result
+
+                def get(url, **kwargs):
+                    return response(reviews if url.endswith("/reviews") else comments)
+
+                def post(url, **kwargs):
+                    is_review = url.endswith("/reviews")
+                    stage = "review" if is_review else "overview"
+                    if is_review:
+                        self.assertEqual(len(comments), 1)
+                    created = {
+                        **(native if is_review else comment),
+                        "body": kwargs["json"]["body"],
+                    }
+                    (reviews if is_review else comments).append(created)
+                    order.append(stage)
+                    if stage == lost_response:
+                        raise requests.Timeout("Response lost after GitHub accepted it")
+                    return response(created)
+
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "GITHUB_APP_ID": "test-app",
+                        "GITHUB_APP_PRIVATE_KEY_PATH": "unused-test-key.pem",
+                        "GITHUB_APP_CLIENT_ID": "test-client",
+                    },
+                ):
+                    github = GitHub()
+                with (
+                    patch.object(
+                        github,
+                        "get_installation_access_token",
+                        return_value="your-api-key-here",
+                    ),
+                    patch("requests.get", side_effect=get),
+                    patch("requests.post", side_effect=post),
+                    patch("requests.patch") as update,
+                ):
+                    args = (
+                        Repository(owner="sourceant", name="sourceant"),
+                        PullRequest(number=189, head_sha="head"),
+                        CodeReview(
+                            verdict=Verdict.APPROVE,
+                            code_suggestions=[],
+                            summary=CodeReviewSummary(
+                                overview="The change is complete.",
+                                minor_suggestions=[],
+                                critical_issues=[],
+                            ),
+                        ),
+                        LineMapper([]),
+                    )
+                    first = github.post_review(*args)
+                    self.assertEqual(
+                        first["status"], "pending" if lost_response else "success"
+                    )
+                    self.assertEqual(github.post_review(*args)["status"], "success")
+                    self.assertEqual(order, ["overview", "review"])
+                    update.assert_not_called()
+
     def test_authentication_request_failures_keep_retry_information(self):
         captured = json.loads(
             (FIXTURES / "github/review-posting-errors.json").read_text()
