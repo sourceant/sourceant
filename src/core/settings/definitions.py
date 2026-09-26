@@ -198,12 +198,13 @@ SETTINGS: tuple[Setting, ...] = (
             "Set to zero to ask every time."
         ),
         type=ConfigType.INT,
-        scopes=(REPOSITORY, ORGANIZATION),
+        scopes=(USER, REPOSITORY, ORGANIZATION),
         default=1,
         unit="days",
         minimum=0,
         maximum=30,
         group="Review",
+        advanced=True,
     ),
     Setting(
         key="review.analysis_gate_errors",
@@ -290,12 +291,13 @@ SETTINGS: tuple[Setting, ...] = (
             "review context. The complete diff remains available to the review."
         ),
         type=ConfigType.INT,
-        scopes=(REPOSITORY, ORGANIZATION),
+        scopes=(USER, REPOSITORY, ORGANIZATION),
         default=20,
         unit="files",
         minimum=1,
         maximum=100,
         group="Review",
+        advanced=True,
     ),
     Setting(
         key="review.remember_findings",
@@ -397,8 +399,8 @@ SETTINGS: tuple[Setting, ...] = (
         ),
         type=ConfigType.JSON,
         default=(".github", ".codebase-memory"),
-        scopes=(REPOSITORY, ORGANIZATION),
-        group="Initialization",
+        scopes=(USER, REPOSITORY, ORGANIZATION),
+        group="Index",
     ),
     Setting(
         key="initialization.investigation_limit",

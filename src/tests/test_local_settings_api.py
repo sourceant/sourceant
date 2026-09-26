@@ -37,6 +37,39 @@ class TestLocalSettings(BaseTestCase):
         labels = [item["label"] for item in body["data"]]
         assert len(labels) == len(set(labels))
 
+    def test_everything_a_local_review_or_index_reads_can_be_set_here(self):
+        body = self.client.get("/api/local/settings").json()
+
+        keys = {item["key"] for item in body["data"]}
+        # Read on every local index run, and on every local review.
+        assert "initialization.excluded_paths" in keys
+        assert "review.structural_context_file_limit" in keys
+        assert "review.reuse_responses_days" in keys
+        # Pull requests and the job queue are not things a machine has.
+        assert (
+            not {
+                "review.enabled",
+                "review.draft_pull_requests",
+                "jobs.per_workspace",
+            }
+            & keys
+        )
+
+    def test_what_the_index_leaves_out_is_a_list(self):
+        written = self.client.put(
+            "/api/local/settings/initialization.excluded_paths",
+            json={"value": ["node_modules", ".venv"]},
+        )
+        try:
+            read = self.client.get("/api/local/settings").json()
+            assert written.status_code == 200
+            assert self.of(read, "initialization.excluded_paths")["value"] == [
+                "node_modules",
+                ".venv",
+            ]
+        finally:
+            self.client.delete("/api/local/settings/initialization.excluded_paths")
+
     def test_a_model_can_be_chosen_and_read_back(self):
         written = self.client.put(
             "/api/local/settings/model.name",
