@@ -17,9 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - What a skill is used for is its own answer: code review, requirements,
   knowledge, architecture or code search, each on until turned off, apart from
   whether this product may pick the skill without being asked
-- A machine can keep a skill out of its own reviews, or insist on one, which is
-  the only answer available for the folders a coding agent syncs and nothing
-  here may edit
+- What a skill is used for can be answered where it is used, in the same shape
+  the skill's own file carries, which is the only answer available for the
+  folders a coding agent syncs and nothing here may edit
 - Every model this machine can name, and whether the key set here can use one,
   both asked of the provider rather than written down
 - What a local review and a local index read is settable on the machine that

@@ -534,7 +534,7 @@ class TestChoosingWhichSkillsApply:
             )
         ]
 
-        chosen = PhraseSkillSelector(never=frozenset({"pptx"})).select(
+        chosen = PhraseSkillSelector(said={"pptx": {"review": False}}).select(
             skills, Change(title="Add a slide deck")
         )
 
@@ -551,7 +551,7 @@ class TestChoosingWhichSkillsApply:
             )
         ]
 
-        chosen = PhraseSkillSelector(always=frozenset({"house"})).select(
+        chosen = PhraseSkillSelector(said={"house": {"review": True}}).select(
             skills, Change(title="Bump a timeout")
         )
 
@@ -719,7 +719,9 @@ class TestConfiguredExpertPasses:
             metadata={"sourceant": {"type": "review-pass"}},
         )
 
-        chosen = for_review((expert,), Change(), "security", never=("security",))
+        chosen = for_review(
+            (expert,), Change(), "security", said={"security": {"review": False}}
+        )
 
         assert chosen == ()
 
@@ -739,10 +741,32 @@ class TestConfiguredExpertPasses:
             (expert("security"), expert("performance")),
             Change(),
             "performance",
-            always=("security",),
+            said={"security": {"review": True}},
         )
 
         assert {skill.id for skill in chosen} == {"performance", "security"}
+
+    def test_a_use_turned_off_leaves_the_other_uses_alone(self):
+        from src.core.skills.selection import for_purpose
+
+        skill = Skill(
+            id="migrations",
+            name="migrations",
+            description="Use when a change adds a database migration.",
+            body="",
+            metadata={"sourceant": {"review": True}},
+        )
+        said = {"migrations": {"knowledge": False}}
+
+        for_reviews = for_purpose(
+            (skill,), Change(title="Add a migration"), purpose="review", said=said
+        )
+        for_knowledge = for_purpose(
+            (skill,), Change(title="Add a migration"), purpose="knowledge", said=said
+        )
+
+        assert [one.id for one in for_reviews] == ["migrations"]
+        assert for_knowledge == ()
 
     def test_keeping_a_pass_out_beats_insisting_on_it(self):
         from src.core.skills.selection import for_review
@@ -756,20 +780,19 @@ class TestConfiguredExpertPasses:
         )
 
         chosen = for_review(
-            (expert,), Change(), "security", never=("security",), always=("security",)
+            (expert,), Change(), "security", said={"security": {"review": False}}
         )
 
         assert chosen == ()
 
-    def test_ids_are_read_one_to_a_line(self):
-        from src.core.skills.selection import named
+    def test_what_is_said_here_is_read_and_anything_malformed_dropped(self):
+        from src.core.skills.selection import said_here
 
-        assert named(" pptx \n\n synced/a b/xlsx \n pptx ") == (
-            "pptx",
-            "synced/a b/xlsx",
-        )
-        assert named(["pptx", " ", "xlsx"]) == ("pptx", "xlsx")
-        assert named(None) == ()
+        assert said_here({" pptx ": {"review": False}, "x": {"review": "no"}}) == {
+            "pptx": {"review": False}
+        }
+        assert said_here("not a map") == {}
+        assert said_here(None) == {}
 
     def test_unknown_pass_is_reported_instead_of_running_other_experts(self):
         import pytest

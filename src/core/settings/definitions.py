@@ -545,35 +545,23 @@ SETTINGS: tuple[Setting, ...] = (
     # from this product's own. People keep them elsewhere too: in a repository
     # of their own, in a plugin, in a package of a monorepo. Nothing can guess
     # those, so they are named.
-    # What a skill's author said is about the skill. What reviews here are read
-    # against is about this machine, and the two are not the same question:
-    # nobody can edit a skill their coding agent syncs, and a folder of them
-    # arrives with every one a candidate.
+    # A skill's own file says what its author meant it for. This says what the
+    # people here mean it for, and wins, because a skill a coding agent syncs
+    # cannot be edited and a folder of them arrives with every one a candidate.
+    # Same shape as a skill's own applications: an id, then a use to yes or no.
     Setting(
-        key="skills.never_in_reviews",
-        label="Skills to keep out of reviews",
+        key="skills.uses",
+        label="Skill uses set here",
         description=(
-            "One skill id a line. Nothing here is read against a change, "
-            "whoever wrote it."
+            "A skill id to the uses it applies to, as in "
+            '{"pptx": {"review": false}}. What is set here outranks the skill\'s '
+            "own file."
         ),
-        type=ConfigType.STRING,
+        type=ConfigType.JSON,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
-        default="",
+        default={},
         group="Skills",
-        listed=True,
-    ),
-    Setting(
-        key="skills.always_in_reviews",
-        label="Skills always in a review",
-        description=(
-            "One skill id a line. Each of these is read against every change, "
-            "and counts towards the five a review reads."
-        ),
-        type=ConfigType.STRING,
-        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
-        default="",
-        group="Skills",
-        listed=True,
+        advanced=True,
     ),
     Setting(
         key="skills.paths",

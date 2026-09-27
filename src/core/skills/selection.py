@@ -18,34 +18,45 @@ skill is worth reading.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Any, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Sequence
 
 from .matching import any_match
-from .models import Change, Skill, SkillScope, SkillType
+from .models import REVIEW, Change, Skill, SkillScope, SkillType
 
 
-def named(value: Any) -> tuple[str, ...]:
-    """Skill ids out of a setting that holds one to a line."""
-    if isinstance(value, (list, tuple)):
-        lines = [str(one) for one in value]
-    else:
-        lines = str(value or "").splitlines()
-    return tuple(dict.fromkeys(line.strip() for line in lines if line.strip()))
+def said_here(value: Any) -> dict[str, dict[str, bool]]:
+    """What this scope says a skill is for, out of the setting that holds it.
+
+    Anything the wrong shape is dropped rather than raised on: a setting
+    somebody hand-edited badly should not stop a review.
+    """
+    if not isinstance(value, Mapping):
+        return {}
+    said: dict[str, dict[str, bool]] = {}
+    for identifier, uses in value.items():
+        if not isinstance(identifier, str) or not isinstance(uses, Mapping):
+            continue
+        kept = {
+            use: answer
+            for use, answer in uses.items()
+            if isinstance(use, str) and isinstance(answer, bool)
+        }
+        if kept:
+            said[identifier.strip()] = kept
+    return said
 
 
-def for_review(
+def for_purpose(
     skills: Sequence[Skill],
     change: Change,
+    purpose: str = REVIEW,
     expert_passes: str = "auto",
     limit: int = 5,
-    never: Sequence[str] = (),
-    always: Sequence[str] = (),
+    said: Mapping[str, Mapping[str, bool]] | None = None,
 ) -> tuple[Skill, ...]:
-    selector = PhraseSkillSelector(
-        never=frozenset(never),
-        always=frozenset(always),
-    )
+    """The skills to read against this change, for one of the things we do."""
+    selector = PhraseSkillSelector(purpose=purpose, said=said or {})
     if not isinstance(expert_passes, str) or expert_passes.strip() == "auto":
         return selector.select(skills, change, limit=limit)
     requested = tuple(dict.fromkeys(expert_passes.split()))
@@ -60,24 +71,38 @@ def for_review(
         change,
         limit=limit,
     )
+    # A pass somebody asked for by name is run unless it is turned off here, and
+    # one turned on here is run whether or not the list names it. Guidance is
+    # already answered for by the selector; a pass is chosen by name.
     named = tuple(
         experts[identifier]
         for identifier in requested
-        if identifier not in selector.never
+        if selector.answer(experts[identifier]) is not False
     )
-    # A pass this machine insists on is run whether or not the list names it.
-    # Guidance skills are already answered for by the selector; a pass is not,
-    # because passes are chosen by name here.
     insisted = tuple(
         skill
         for identifier, skill in experts.items()
-        if identifier in selector.always
-        and identifier not in selector.never
-        and identifier not in requested
+        if identifier not in requested and selector.answer(skill) is True
     )
-    # A skill kept out of reviews here is kept out of one it was asked for by
-    # name too: the prohibition is the later word.
     return (*guidance, *named, *insisted)
+
+
+def for_review(
+    skills: Sequence[Skill],
+    change: Change,
+    expert_passes: str = "auto",
+    limit: int = 5,
+    said: Mapping[str, Mapping[str, bool]] | None = None,
+) -> tuple[Skill, ...]:
+    """The skills a review reads, which is the one purpose acted on today."""
+    return for_purpose(
+        skills,
+        change,
+        purpose=REVIEW,
+        expert_passes=expert_passes,
+        limit=limit,
+        said=said,
+    )
 
 
 # Letters rather than ASCII: skills and the prose around code are written
@@ -164,25 +189,29 @@ class PhraseSkillSelector:
     """
 
     minimum: int = MIN_SCORE
-    #: What this machine said, which outranks what the author said. A skill
-    #: somebody else owns cannot be edited here, so this is the only way to
-    #: answer for one.
-    never: frozenset[str] = frozenset()
-    always: frozenset[str] = frozenset()
+    #: The thing being done, since a skill can be for several.
+    purpose: str = REVIEW
+    #: What this scope said a skill is for, which outranks what the author said.
+    #: A skill somebody else owns cannot be edited here, so this is the only way
+    #: to answer for one.
+    said: Mapping[str, Mapping[str, bool]] = field(default_factory=dict)
+
+    def answer(self, skill: Skill) -> bool | None:
+        """Whether this skill is for this purpose: here first, then its file."""
+        mine = self.said.get(skill.id, {}).get(self.purpose)
+        if mine is not None:
+            return mine
+        return skill.applies_to(self.purpose)
 
     def wanted(self, skill: Skill, change: Change) -> bool | None:
-        """Whether this skill belongs in this review, if anybody has said.
+        """Whether this skill belongs in this reading, if anybody has said.
 
-        Read here first, then what the author said: False where they said it is
-        not for reviews, or that only a person may invoke it; True where they
-        said it is, or wrote globs and the change touches one of the files; None
-        where nobody said anything, which is most of them.
+        False where it is not for this purpose, or where only a person may
+        invoke it; True where it is, or where globs were written and the change
+        touches one of the files; None where nobody said anything, which is most
+        of them.
         """
-        if skill.id in self.never:
-            return False
-        if skill.id in self.always:
-            return True
-        said = skill.reviews
+        said = self.answer(skill)
         if said is False:
             return False
         if not skill.automatic and said is not True:

@@ -252,13 +252,13 @@ class TestLocalReview(BaseTestCase):
         self.register()
         self.edit_the_migration()
         self.client.put(
-            "/api/local/settings/skills.never_in_reviews",
-            json={"value": "migrations"},
+            "/api/local/settings/skills.uses",
+            json={"value": {"migrations": {"review": False}}},
         )
         try:
             answered = self.review(use_model=False, title="Edit the charges migration")
         finally:
-            self.client.delete("/api/local/settings/skills.never_in_reviews")
+            self.client.delete("/api/local/settings/skills.uses")
 
         assert answered.json()["data"]["review"]["skills"] == []
 
