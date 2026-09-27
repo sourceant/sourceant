@@ -27,10 +27,7 @@ class Use:
     label: str
 
 
-# What a skill can be used for: what this product does, named in one place so
-# every screen offers the same list rather than inventing its own. A skill is
-# for all of them until somebody says otherwise, which is why a purpose nobody
-# mentioned is not a no.
+# What a skill can be used for, named once so every screen offers the same list.
 USES: tuple[Use, ...] = (
     Use(REVIEW, "Code review"),
     Use("requirements", "Requirements"),

@@ -12,8 +12,7 @@ def test_structural_context_file_limit_is_settable_where_a_review_runs():
     assert setting.default == 20
     assert setting.minimum == 1
     assert setting.maximum == 100
-    # A machine reviews its own checkout, so it can say how much structure that
-    # review gathers.
+    # A machine reviews its own checkout, so it can say how much to gather.
     assert setting.scopes == (USER, REPOSITORY, ORGANIZATION)
 
 

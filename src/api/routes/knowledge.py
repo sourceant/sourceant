@@ -250,7 +250,6 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
             proposals = propose(
                 repository=entry.name,
                 layout=layout,
-                # As much of it as this machine is willing to pay to send.
                 prose=prose[
                     : locally("initialization.evidence_character_limit", 60_000)
                 ],

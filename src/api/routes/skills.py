@@ -70,18 +70,13 @@ class SkillInput(BaseModel):
     # Globs naming the files this is about, so it is picked on a statement
     # rather than on how its description happens to be worded.
     paths: list[str] = Field(default_factory=list)
-    # What the skill is for: a purpose, and whether it applies to it. "review"
-    # is the one this product reads; anything else is there for an agent asking
-    # over MCP. A purpose nobody named is unsaid, which is not a no.
+    # A purpose nobody named is unsaid, which is not a no.
     applications: dict[str, bool] = Field(default_factory=dict)
-    # How it is read rather than what it is for: prose the reviewer is told, or
-    # a pass of its own. Left empty, it is prose.
+    # How it is read, not what it is for. Empty is prose.
     type: str = Field(default="")
-    # The shorthand for applications["review"], kept for callers that only ever
-    # had the one purpose.
+    # The shorthand for applications["review"].
     reviews: bool | None = Field(default=None)
-    # Whether this product may pick it without being asked. A separate question
-    # from what it is used for, and the spec's own field for it.
+    # Whether it may be picked without being asked, which is not what it is for.
     automatic: bool = Field(default=True)
 
 
@@ -149,11 +144,7 @@ def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
 
 @router.get("/uses")
 def read_uses():
-    """What a skill can be used for: what this product does.
-
-    Served rather than written into each screen, so both of them offer the same
-    list and a use added here appears in them without a change of their own.
-    """
+    """What a skill can be used for, so every screen offers the same list."""
     return success_response([{"id": use.id, "label": use.label} for use in USES])
 
 
@@ -192,9 +183,7 @@ def record_skill(body: SkillInput):
     kind = body.type.strip()
     if kind and kind not in {one.value for one in SkillType}:
         raise HTTPException(status_code=400, detail=f"{kind} is not a kind of skill")
-    # What it is read as goes in the map the format sets aside for a client,
-    # namespaced as the spec asks. What it is for goes in applications, which
-    # the format has its own field for.
+    # The type goes where the format sets a map aside for a client.
     metadata = {NAMESPACE: {"type": kind}} if kind else {}
     try:
         written = write_skill(

@@ -14,7 +14,12 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.api.routes.code import find_repository, require_local
+from src.api.routes.code import (
+    find_repository,
+    get_code_index,
+    reading_started,
+    require_local,
+)
 from src.config.db import get_engine
 from src.core.review import (
     DONE,
@@ -153,12 +158,17 @@ def start_review(
     background: BackgroundTasks,
     judge: Any = Depends(get_working_tree_reviewer),
     reviews: Any = Depends(get_reviews),
+    index: Any = Depends(get_code_index),
 ):
-    """Ask for a review, and get back where to find it."""
-    # Refused before a record exists, so an unknown checkout is not filed as a
-    # failed review.
-    entry = find_repository(body.repository)
+    """Ask for a review, and get back where to find it.
+
+    A checkout nobody has registered is registered by being reviewed.
+    """
+    # Resolved first, so a path that is nothing is refused rather than filed.
+    entry = find_repository(body.repository, register=True)
     body = body.model_copy(update={"repository": entry.name})
+    if not entry.indexed_at:
+        reading_started(entry, index, background)
 
     identifier = named()
     started = reviews.put(

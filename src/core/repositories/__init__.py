@@ -9,7 +9,13 @@ from src.core.services import ServiceRegistry, service_registry
 class RepositoryRegistry(Protocol):
     def all(self, workspace: str) -> Sequence[Any]: ...
 
-    def named(self, workspace: str, name: str) -> Any: ...
+    def named(self, workspace: str, name: str, *, register: bool = False) -> Any:
+        """One repository by name, or by path where a registry keeps paths.
+
+        ``register`` asks for a path nobody has filed yet to be filed, which
+        only a registry of local folders can honour.
+        """
+        ...
 
     def add(self, workspace: str, path: str, *, name: str = "") -> Any: ...
 

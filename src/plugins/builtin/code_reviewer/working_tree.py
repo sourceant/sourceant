@@ -276,6 +276,13 @@ class WorkingTreeReviews:
             raise ReviewRefused(503, "Nothing here knows where the skills are.")
         return found
 
+    def _entry(self, repository: str):
+        """The folder to review, registering a checkout nobody has filed yet."""
+        folders = self._folders()
+        if repository.startswith(("/", "~", ".")):
+            return folders.named(LOCAL, repository, register=True)
+        return folders.named(LOCAL, repository)
+
     def review(
         self,
         *,
@@ -288,7 +295,8 @@ class WorkingTreeReviews:
         system: str = "",
     ) -> dict[str, Any]:
         """What changed, what applies to it, and what the reviewer made of it."""
-        entry = self._folders().named(LOCAL, repository)
+        entry = self._entry(repository)
+        repository = entry.name
         root = Path(entry.path)
         configuration = Configuration(repository=repository, user=LOCAL)
 

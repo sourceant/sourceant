@@ -23,8 +23,7 @@ class RegistryError(RuntimeError):
 class RegisteredRepository:
     name: str
     path: str
-    # When it was last read into the graph. Empty means never, which is what a
-    # client needs to tell "nothing here yet" from "nothing has changed".
+    # When it was last read into the graph. Empty means never.
     indexed_at: str = ""
 
     @property
@@ -51,8 +50,7 @@ def add_repository(path: Path, *, name: str = "") -> RegisteredRepository:
         name=name or repository_name(resolved), path=str(resolved)
     )
     entries = list_repositories()
-    # Registering the same folder under the same name again is not a reason to
-    # forget it was read: the graph it filled is still there.
+    # Re-registering the same folder under the same name keeps what it read.
     for item in entries:
         if item.path == entry.path and item.name == entry.name:
             entry = replace(entry, indexed_at=item.indexed_at)
@@ -110,12 +108,49 @@ def find_repository(path: Path) -> RegisteredRepository | None:
     return None
 
 
-def mark_indexed(name: str, when: datetime | None = None) -> None:
-    """Record that a repository has just been read.
+def resolve_repository(
+    name: str, *, register: bool = False
+) -> RegisteredRepository | None:
+    """One repository, by the name it was filed under or by its path.
 
-    By name rather than by path, because two folders may be registered under
-    one name, and one read of either fills the graph they share.
+    ``register`` files a checkout nobody has filed yet. The innermost match
+    wins, for a checkout registered inside another one.
     """
+    entries = list_repositories()
+    for entry in entries:
+        if entry.name == name:
+            return entry
+    where = _as_path(name)
+    if where is None:
+        return None
+    found, held = None, ""
+    for entry in entries:
+        kept = Path(entry.path)
+        if (kept == where or where.is_relative_to(kept)) and len(entry.path) > len(
+            held
+        ):
+            found, held = entry, entry.path
+    if found is not None:
+        return found
+    if register:
+        root = checkout_root(where)
+        if root is not None:
+            return add_repository(root)
+    return None
+
+
+def _as_path(name: str) -> Path | None:
+    """The folder a name points at, where it is written as one."""
+    if not name.startswith(("/", "~", ".")):
+        return None
+    try:
+        return Path(name).expanduser().resolve()
+    except OSError:
+        return None
+
+
+def mark_indexed(name: str, when: datetime | None = None) -> None:
+    """Record that a repository has just been read, by the name it shares."""
     moment = utc(when or datetime.now(timezone.utc)) or ""
     entries = list_repositories()
     if not any(entry.name == name for entry in entries):
@@ -146,6 +181,27 @@ def _write(entries: list[RegisteredRepository]) -> None:
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+
+
+def checkout_root(path: Path) -> Path | None:
+    """The checkout a folder is in, or None where it is in none."""
+    if not path.is_dir():
+        return None
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    found = completed.stdout.strip()
+    return Path(found) if found else None
 
 
 def _git_remote(path: Path) -> str:

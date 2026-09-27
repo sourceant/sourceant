@@ -54,9 +54,7 @@ class Setting:
     # one to a line; drawn as a list somebody adds to and removes from, because
     # a box of lines is a text editor pretending to be a list.
     listed: bool = False
-    # Tuning rather than a choice. Every setting on a screen is a question
-    # somebody has to answer, and a screen of twenty asks nineteen questions
-    # that have a right answer already. These are kept out of the way.
+    # Tuning rather than a choice, kept out of the way of the questions.
     advanced: bool = False
 
     def validate(self, value: Any) -> Any:
@@ -541,8 +539,7 @@ SETTINGS: tuple[Setting, ...] = (
         group="Knowledge",
         advanced=True,
     ),
-    # A skill a coding agent syncs cannot be edited, so this is the only place
-    # its uses can be answered for.
+    # The only place a synced skill's uses can be answered for.
     Setting(
         key="skills.uses",
         label="Skill uses set here",

@@ -243,8 +243,7 @@ def serve_command(host, port):
     settings.LOCAL_MODE = True
     os.environ["SOURCEANT_LOCAL"] = "true"
 
-    # Before anything imports the app: the first thing it touches is a store,
-    # and a store on an index with no schema is where this used to stop.
+    # Before the app is imported, because importing it touches a store.
     from src.config.db import get_engine
     from src.core.local_schema import ensure
 

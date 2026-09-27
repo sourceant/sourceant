@@ -28,6 +28,7 @@ from src.cli.local_index import (
     list_repositories,
     mark_indexed,
     remove_repository,
+    resolve_repository,
 )
 from src.config.db import get_engine
 from src.config.settings import LOCAL_MODE
@@ -60,8 +61,7 @@ NOT_LOCAL = (
 
 _fallback: Any = None
 
-# What is being read right now. One process serves a machine, so this lives
-# here; anywhere several do, it would have to live where they both see it.
+# One process serves a machine, so what is being read lives here.
 _reading: set[str] = set()
 
 
@@ -98,31 +98,12 @@ def registered() -> list[RegisteredRepository]:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-def find_repository(name: str) -> RegisteredRepository:
-    """One registered repository, by the name it was filed under or by its path.
-
-    A client is usually standing in the checkout and knows the path, not the
-    name. The innermost match wins, for a checkout registered inside another.
-    """
-    entries = registered()
-    for entry in entries:
-        if entry.name == name:
-            return entry
-    if name.startswith(("/", "~", ".")):
-        try:
-            wanted = Path(name).expanduser().resolve()
-        except OSError:
-            wanted = None
-        if wanted is not None:
-            found, held = None, ""
-            for entry in entries:
-                where = Path(entry.path)
-                if where == wanted or wanted.is_relative_to(where):
-                    if len(entry.path) > len(held):
-                        found, held = entry, entry.path
-            if found is not None:
-                return found
-    if not entries:
+def find_repository(name: str, register: bool = False) -> RegisteredRepository:
+    """One repository, by the name it was filed under or by its path."""
+    found = resolve_repository(name, register=register)
+    if found is not None:
+        return found
+    if not registered():
         raise HTTPException(status_code=404, detail=NO_REPOSITORIES)
     raise HTTPException(
         status_code=404, detail=f"{name} is not registered on this machine"
@@ -374,8 +355,6 @@ def read_nodes(
 class RepositoryInput(BaseModel):
     path: str
     name: str = ""
-    # Registering a folder nobody reads answers nothing about it, so reading
-    # starts here unless the caller is about to ask for it differently.
     index: bool = True
 
 
@@ -391,23 +370,26 @@ def create_repository(
     background: BackgroundTasks,
     index: Any = Depends(get_code_index),
 ):
-    """Cover one more directory, and start reading it.
-
-    The reading happens behind the answer: a repository of any size takes
-    longer than anybody will hold a modal open for, and the answer says it is
-    being read so a client can show that.
-    """
+    """Cover one more directory, and start reading it behind the answer."""
     try:
         entry = add_repository(Path(body.path), name=body.name)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    if body.index and isinstance(index, CodeIndexWriter):
-        # Marked before the answer leaves, so a client that asks straight away
-        # is told it is being read rather than that it never has been.
-        _reading.add(entry.name)
-        background.add_task(read_repository, entry, index, False)
+    if body.index:
+        reading_started(entry, index, background)
     return success_response(repository_payload(entry))
+
+
+def reading_started(
+    entry: RegisteredRepository, index: Any, background: BackgroundTasks
+) -> None:
+    """Start reading a repository behind whatever answer is about to be sent."""
+    if not isinstance(index, CodeIndexWriter):
+        return
+    # Marked before the answer leaves, so a client asking straight away is told.
+    _reading.add(entry.name)
+    background.add_task(read_repository, entry, index, False)
 
 
 def read_repository(
@@ -427,8 +409,7 @@ def read_repository(
         )
         mark_indexed(entry.name)
     except Exception as error:  # noqa: BLE001 - whatever a parser raises
-        # Logged as well as raised: behind an answer that has already gone out,
-        # raising tells nobody.
+        # Behind an answer that has already gone out, raising tells nobody.
         logger.warning("Reading %s failed: %s", entry.name, error)
         raise
     finally:

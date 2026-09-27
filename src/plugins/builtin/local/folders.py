@@ -10,6 +10,7 @@ from src.cli.local_index import (
     add_repository,
     list_repositories,
     remove_repository,
+    resolve_repository,
 )
 
 from .errors import Refused
@@ -28,12 +29,14 @@ class RegisteredFolders:
         except RegistryError as error:
             raise Refused(500, str(error)) from error
 
-    def named(self, workspace: str, name: str) -> Any:
-        entries = self.all(workspace)
-        for entry in entries:
-            if entry.name == name:
-                return entry
-        if not entries:
+    def named(self, workspace: str, name: str, *, register: bool = False) -> Any:
+        try:
+            found = resolve_repository(name, register=register)
+        except (RegistryError, ValueError, OSError) as error:
+            raise Refused(400, str(error)) from error
+        if found is not None:
+            return found
+        if not self.all(workspace):
             raise Refused(404, "No repositories are registered")
         raise Refused(404, f"{name} is not registered")
 

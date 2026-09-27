@@ -40,23 +40,17 @@ def local_provider():
     return SettingsLLMSource(fallback_model="").provider_for(Configuration(user=LOCAL))
 
 
-# Both of these wait on something outside this process, and neither awaits it.
-# Declared without async, they are run on a thread and the loop stays free.
+# Declared without async, so a call that does not await runs on a thread.
 @router.get("/models", dependencies=[Depends(require_local)])
 def local_models():
-    """Every model that can be named here, by provider.
-
-    Read from the router that would make the call rather than written down, so
-    nobody has to remember how a provider spells its models.
-    """
+    """Every model that can be named here, read from the router that calls them."""
     from src.core.model.catalogue import offered
 
     return success_response(offered())
 
 
 class ModelCheckInput(BaseModel):
-    #: Left out, whatever is set here is used, so a pair already saved can be
-    #: checked without sending the key again.
+    #: Left out, whatever is set here is used.
     model: str = ""
     api_key: SecretStr = SecretStr("")
     base_url: str = ""
@@ -64,11 +58,7 @@ class ModelCheckInput(BaseModel):
 
 @router.post("/models/check", dependencies=[Depends(require_local)])
 def check_local_model(body: ModelCheckInput):
-    """Whether this key can use this model, asked of the provider.
-
-    A provider's catalogue says what exists. What an account may use is a
-    subset, and the two only differ when somebody is already waiting.
-    """
+    """Whether this key can use this model, asked of the provider."""
     from src.core.model.catalogue import refused
 
     configuration = Configuration(user=LOCAL)

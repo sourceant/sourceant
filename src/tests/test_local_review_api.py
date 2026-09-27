@@ -400,6 +400,34 @@ class TestLocalReview(BaseTestCase):
 
         assert answered.json()["data"]["repository"] == "acme/billing"
 
+    def test_a_checkout_nobody_registered_is_covered_by_being_reviewed(self):
+        self.edit_the_migration()
+
+        answered = self.review(repository=str(self.source), use_model=False)
+
+        assert answered.status_code == 200
+        assert answered.json()["data"]["repository"] == "billing"
+        listed = self.client.get("/api/code/repositories").json()["data"]
+        assert [item["path"] for item in listed] == [str(self.source)]
+
+    def test_a_path_that_is_nothing_is_still_refused(self):
+        assert self.start(repository=str(self.source / "nowhere")).status_code == 404
+
+    def test_a_folder_that_is_not_a_checkout_is_not_covered(self, tmp_path):
+        # Registering it would leave a folder nothing can ever review.
+        elsewhere = tmp_path / "notes"
+        elsewhere.mkdir()
+
+        assert self.start(repository=str(elsewhere)).status_code == 404
+        assert self.client.get("/api/code/repositories").json()["data"] == []
+
+    def test_a_subdirectory_covers_the_checkout_it_is_in(self):
+        answered = self.review(repository=str(self.source / "db"), use_model=False)
+
+        assert answered.status_code == 200
+        listed = self.client.get("/api/code/repositories").json()["data"]
+        assert [item["path"] for item in listed] == [str(self.source)]
+
     def test_a_repository_nobody_registered_is_not_reviewed(self):
         # Refused when it is asked for, rather than written down as a review
         # that failed: nobody wants a record of a typo.

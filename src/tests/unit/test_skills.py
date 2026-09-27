@@ -548,8 +548,7 @@ class TestChoosingWhichSkillsApply:
         assert [item.id for item in chosen] == ["house"]
 
     def test_a_skill_this_machine_keeps_out_is_kept_out(self):
-        # The author said it is for reviews; whoever runs the machine says no,
-        # which is the only answer available for a skill they cannot edit.
+        # The only answer available for a skill nobody here can edit.
         skills = [
             Skill(
                 id="pptx",

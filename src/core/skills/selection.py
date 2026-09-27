@@ -28,11 +28,7 @@ from .models import REVIEW, Change, Skill, SkillScope, SkillType
 
 
 def said_here(value: Any) -> dict[str, dict[str, bool]]:
-    """What this scope says a skill is for, out of the setting that holds it.
-
-    Anything the wrong shape is dropped rather than raised on: a setting
-    somebody hand-edited badly should not stop a review.
-    """
+    """What this scope says a skill is for, ignoring anything the wrong shape."""
     if not isinstance(value, Mapping):
         return {}
     said: dict[str, dict[str, bool]] = {}
@@ -61,10 +57,8 @@ def for_purpose(
 ) -> tuple[Skill, ...]:
     """The skills to read against this change, for one of the things we do.
 
-    Anything answered for is honoured first and costs nothing to decide. What
-    nobody has answered for is a question about relevance, which a model answers
-    better than shared words do, so it is asked where one is going to be asked
-    anyway. Without a model, or where the call fails, the words decide.
+    What nobody answered for is asked of the model where there is one, and
+    decided on shared words where there is not.
     """
     selector = PhraseSkillSelector(purpose=purpose, said=said or {})
 
@@ -97,8 +91,7 @@ def for_purpose(
         for identifier in requested
         if selector.answer(experts[identifier]) is not False
     )
-    # Only what this scope insisted on: a pass whose own file says it is for
-    # reviews is still one the named list chooses between.
+    # Only what this scope insisted on, not what a pass says about itself.
     insisted = tuple(
         skill
         for identifier, skill in experts.items()
@@ -313,8 +306,7 @@ class PhraseSkillSelector:
         return chosen + self.ranked(maybe, change, limit - len(chosen))
 
 
-# How many skills a model is shown at once. Only each name and description is
-# sent, never a body, so a machine with a hundred of them still fits.
+# How many skills a model is shown at once, as names and descriptions only.
 OFFERED = 200
 
 

@@ -53,7 +53,8 @@ block Settings gives you.
 
 Review the work in a checkout before proposing it to anybody, from the terminal
 or from the Reviews page. It reads what the checkout has that its default branch
-does not, committed or not.
+does not, committed or not. A folder you have not added yet is added by being
+reviewed, and starts being read behind the review.
 
 ~~~bash
 sourceant review
