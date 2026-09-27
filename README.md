@@ -47,9 +47,17 @@ Start SourceAnt and open it in your browser.
 sourceant ui
 ~~~
 
-Add a repository from the Repositories page and it is parsed and kept current.
-Point an MCP client at `http://127.0.0.1:8930/mcp`, or copy the block Settings
-gives you.
+Add a repository from the Repositories page and it is read straight away and
+kept current. Point an MCP client at `http://127.0.0.1:8930/mcp`, or copy the
+block Settings gives you.
+
+Review the work in a checkout before proposing it to anybody, from the terminal
+or from the Reviews page. It reads what the checkout has that its default branch
+does not, committed or not.
+
+~~~bash
+sourceant review
+~~~
 
 Docs: [sourceant.ai/docs](https://sourceant.ai/docs).
 
