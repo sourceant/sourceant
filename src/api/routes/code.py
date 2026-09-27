@@ -101,9 +101,8 @@ def registered() -> list[RegisteredRepository]:
 def find_repository(name: str) -> RegisteredRepository:
     """One registered repository, by the name it was filed under or by its path.
 
-    Both, because whatever is asking is usually standing in the checkout and
-    knows where it is, not what this machine decided to call it. The innermost
-    match wins, for a checkout registered inside another one.
+    A client is usually standing in the checkout and knows the path, not the
+    name. The innermost match wins, for a checkout registered inside another.
     """
     entries = registered()
     for entry in entries:

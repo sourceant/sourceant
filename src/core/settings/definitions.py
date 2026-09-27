@@ -541,14 +541,8 @@ SETTINGS: tuple[Setting, ...] = (
         group="Knowledge",
         advanced=True,
     ),
-    # Skills are read from the folders each coding agent keeps them in, and
-    # from this product's own. People keep them elsewhere too: in a repository
-    # of their own, in a plugin, in a package of a monorepo. Nothing can guess
-    # those, so they are named.
-    # A skill's own file says what its author meant it for. This says what the
-    # people here mean it for, and wins, because a skill a coding agent syncs
-    # cannot be edited and a folder of them arrives with every one a candidate.
-    # Same shape as a skill's own applications: an id, then a use to yes or no.
+    # A skill a coding agent syncs cannot be edited, so this is the only place
+    # its uses can be answered for.
     Setting(
         key="skills.uses",
         label="Skill uses set here",
@@ -563,6 +557,10 @@ SETTINGS: tuple[Setting, ...] = (
         group="Skills",
         advanced=True,
     ),
+    # Skills are read from the folders each coding agent keeps them in, and
+    # from this product's own. People keep them elsewhere too: in a repository
+    # of their own, in a plugin, in a package of a monorepo. Nothing can guess
+    # those, so they are named.
     Setting(
         key="skills.paths",
         label="Extra places to look for skills",

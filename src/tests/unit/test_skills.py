@@ -404,9 +404,6 @@ class TestChoosingWhichSkillsApply:
         assert [item.id for item in chosen] == ["migrations"]
 
     def test_a_path_that_happens_to_share_a_word_picks_nothing(self):
-        # A Go change offers "go", "api", "server", "model" and "type" from its
-        # paths alone. None of them is a reason to read a skill about slide
-        # decks, spreadsheets or customer types.
         skills = [
             Skill(
                 id="survey",
@@ -735,7 +732,6 @@ class TestSkillsAModelPicks:
         )
 
         assert [one.id for one in chosen] == ["migrations"]
-        # What each skill says it is for, and nothing of its body.
         assert "Use when a change edits a database migration." in asked["prompt"]
         assert "Operations" in asked["prompt"]
 

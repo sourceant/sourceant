@@ -386,8 +386,6 @@ class TestLocalReview(BaseTestCase):
         assert "What this team expects of work here" in told
 
     def test_a_checkout_can_be_named_by_its_path(self):
-        # Whatever asks is usually standing in the checkout: an agent over MCP
-        # knows the path, not the name this machine filed it under.
         self.register()
 
         answered = self.review(repository=str(self.source), use_model=False)

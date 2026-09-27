@@ -155,10 +155,8 @@ def start_review(
     reviews: Any = Depends(get_reviews),
 ):
     """Ask for a review, and get back where to find it."""
-    # Checked here, so an unknown repository is refused rather than recorded as
-    # a failed review. Whatever was asked for is answered under the name this
-    # machine filed it as, because a path asked for by an agent and a name
-    # chosen here are two strings for one folder.
+    # Refused before a record exists, so an unknown checkout is not filed as a
+    # failed review.
     entry = find_repository(body.repository)
     body = body.model_copy(update={"repository": entry.name})
 

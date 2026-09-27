@@ -332,9 +332,7 @@ class WorkingTreeReviews:
         else:
             from src.core.skills.selection import for_review, said_here
 
-            # Asked only where this review is going to ask a model anyway: a
-            # read that judges nothing costs nothing, and choosing skills for it
-            # is not worth a call.
+            # No model where nothing is judged, so no call to choose skills either.
             picking = provider_for(configuration) if use_model else None
             try:
                 chosen = for_review(

@@ -92,17 +92,13 @@ def for_purpose(
         tuple(skill for skill in skills if skill.type != SkillType.REVIEW_PASS), change
     )
     guidance = stated[:limit] + fill(maybe, limit - len(stated[:limit]))
-    # A pass somebody asked for by name is run unless it is turned off here, and
-    # one turned on here is run whether or not the list names it. Guidance is
-    # already answered for by the selector; a pass is chosen by name.
     named = tuple(
         experts[identifier]
         for identifier in requested
         if selector.answer(experts[identifier]) is not False
     )
-    # Only what this scope insisted on. A pass whose own file says it is for
-    # reviews is still one the list chooses between: naming passes is how a
-    # repository narrows them.
+    # Only what this scope insisted on: a pass whose own file says it is for
+    # reviews is still one the named list chooses between.
     insisted = tuple(
         skill
         for identifier, skill in experts.items()
@@ -219,9 +215,7 @@ class PhraseSkillSelector:
     minimum: int = MIN_SCORE
     #: The thing being done, since a skill can be for several.
     purpose: str = REVIEW
-    #: What this scope said a skill is for, which outranks what the author said.
-    #: A skill somebody else owns cannot be edited here, so this is the only way
-    #: to answer for one.
+    #: What this scope said a skill is for, which outranks the author.
     said: Mapping[str, Mapping[str, bool]] = field(default_factory=dict)
 
     def answer(self, skill: Skill) -> bool | None:
@@ -319,9 +313,8 @@ class PhraseSkillSelector:
         return chosen + self.ranked(maybe, change, limit - len(chosen))
 
 
-# How many skills a model is shown at once. A machine with a hundred of them
-# still fits, because only the name and the sentence saying when each applies
-# are sent, never the body.
+# How many skills a model is shown at once. Only each name and description is
+# sent, never a body, so a machine with a hundred of them still fits.
 OFFERED = 200
 
 
