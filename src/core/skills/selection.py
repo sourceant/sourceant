@@ -60,16 +60,24 @@ def for_review(
         change,
         limit=limit,
     )
+    named = tuple(
+        experts[identifier]
+        for identifier in requested
+        if identifier not in selector.never
+    )
+    # A pass this machine insists on is run whether or not the list names it.
+    # Guidance skills are already answered for by the selector; a pass is not,
+    # because passes are chosen by name here.
+    insisted = tuple(
+        skill
+        for identifier, skill in experts.items()
+        if identifier in selector.always
+        and identifier not in selector.never
+        and identifier not in requested
+    )
     # A skill kept out of reviews here is kept out of one it was asked for by
     # name too: the prohibition is the later word.
-    return (
-        *guidance,
-        *(
-            experts[identifier]
-            for identifier in requested
-            if identifier not in selector.never
-        ),
-    )
+    return (*guidance, *named, *insisted)
 
 
 # Letters rather than ASCII: skills and the prose around code are written

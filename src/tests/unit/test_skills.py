@@ -723,6 +723,44 @@ class TestConfiguredExpertPasses:
 
         assert chosen == ()
 
+    def test_a_pass_this_machine_insists_on_runs_when_others_are_named(self):
+        from src.core.skills.selection import for_review
+
+        def expert(identifier):
+            return Skill(
+                id=identifier,
+                name=identifier,
+                description="Specialist",
+                body="Check the change.",
+                metadata={"sourceant": {"type": "review-pass"}},
+            )
+
+        chosen = for_review(
+            (expert("security"), expert("performance")),
+            Change(),
+            "performance",
+            always=("security",),
+        )
+
+        assert {skill.id for skill in chosen} == {"performance", "security"}
+
+    def test_keeping_a_pass_out_beats_insisting_on_it(self):
+        from src.core.skills.selection import for_review
+
+        expert = Skill(
+            id="security",
+            name="security",
+            description="Specialist",
+            body="Check the change.",
+            metadata={"sourceant": {"type": "review-pass"}},
+        )
+
+        chosen = for_review(
+            (expert,), Change(), "security", never=("security",), always=("security",)
+        )
+
+        assert chosen == ()
+
     def test_ids_are_read_one_to_a_line(self):
         from src.core.skills.selection import named
 
