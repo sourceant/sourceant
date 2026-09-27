@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A checkout can be named by its path wherever a repository is named, so
+  whatever is standing in it does not have to know what this machine filed it
+  as. Every review asked for by path had failed as unregistered
+- Which skills a review reads is asked of the model that is about to read the
+  change, where one is being asked anyway. Shared words alone chose a skill
+  about slide decks for a change to Go, because a path offers `api`, `model` and
+  the language's own extension
 - The index this machine keeps is migrated before it is served, so a schema
   written by an older build is not read by a newer one
 - A moment the API reports says it is in UTC, where before it carried no

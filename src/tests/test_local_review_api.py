@@ -385,6 +385,23 @@ class TestLocalReview(BaseTestCase):
         assert "Never edit a migration" in told
         assert "What this team expects of work here" in told
 
+    def test_a_checkout_can_be_named_by_its_path(self):
+        # Whatever asks is usually standing in the checkout: an agent over MCP
+        # knows the path, not the name this machine filed it under.
+        self.register()
+
+        answered = self.review(repository=str(self.source), use_model=False)
+
+        assert answered.status_code == 200
+        assert answered.json()["data"]["repository"] == "acme/billing"
+
+    def test_a_path_inside_a_checkout_names_that_checkout(self):
+        self.register()
+
+        answered = self.review(repository=str(self.source / "db"), use_model=False)
+
+        assert answered.json()["data"]["repository"] == "acme/billing"
+
     def test_a_repository_nobody_registered_is_not_reviewed(self):
         # Refused when it is asked for, rather than written down as a review
         # that failed: nobody wants a record of a typo.

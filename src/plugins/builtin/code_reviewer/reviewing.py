@@ -273,6 +273,8 @@ class CodeReviewer:
                 else expert_passes
             ),
             said=said_here(configuration.value("skills.uses")),
+            ask=provider.generate_text,
+            model=provider.model,
         )
         # Most skills are a pointer at the page that holds the rule, and a
         # change judged against a pointer is judged against nothing.

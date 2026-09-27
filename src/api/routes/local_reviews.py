@@ -155,9 +155,12 @@ def start_review(
     reviews: Any = Depends(get_reviews),
 ):
     """Ask for a review, and get back where to find it."""
-    # Checked here, so an unknown repository is refused rather than recorded
-    # as a failed review.
-    find_repository(body.repository)
+    # Checked here, so an unknown repository is refused rather than recorded as
+    # a failed review. Whatever was asked for is answered under the name this
+    # machine filed it as, because a path asked for by an agent and a name
+    # chosen here are two strings for one folder.
+    entry = find_repository(body.repository)
+    body = body.model_copy(update={"repository": entry.name})
 
     identifier = named()
     started = reviews.put(

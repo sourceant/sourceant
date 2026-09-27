@@ -99,10 +99,30 @@ def registered() -> list[RegisteredRepository]:
 
 
 def find_repository(name: str) -> RegisteredRepository:
+    """One registered repository, by the name it was filed under or by its path.
+
+    Both, because whatever is asking is usually standing in the checkout and
+    knows where it is, not what this machine decided to call it. The innermost
+    match wins, for a checkout registered inside another one.
+    """
     entries = registered()
     for entry in entries:
         if entry.name == name:
             return entry
+    if name.startswith(("/", "~", ".")):
+        try:
+            wanted = Path(name).expanduser().resolve()
+        except OSError:
+            wanted = None
+        if wanted is not None:
+            found, held = None, ""
+            for entry in entries:
+                where = Path(entry.path)
+                if where == wanted or wanted.is_relative_to(where):
+                    if len(entry.path) > len(held):
+                        found, held = entry, entry.path
+            if found is not None:
+                return found
     if not entries:
         raise HTTPException(status_code=404, detail=NO_REPOSITORIES)
     raise HTTPException(

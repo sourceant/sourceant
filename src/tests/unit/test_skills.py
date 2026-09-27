@@ -403,6 +403,35 @@ class TestChoosingWhichSkillsApply:
 
         assert [item.id for item in chosen] == ["migrations"]
 
+    def test_a_path_that_happens_to_share_a_word_picks_nothing(self):
+        # A Go change offers "go", "api", "server", "model" and "type" from its
+        # paths alone. None of them is a reason to read a skill about slide
+        # decks, spreadsheets or customer types.
+        skills = [
+            Skill(
+                id="survey",
+                name="survey",
+                description="Use when writing a survey: the question types and the scoring model.",
+                body="",
+            ),
+            Skill(
+                id="signage",
+                name="signage",
+                description="Use when a sign needs new wording for a database of names.",
+                body="",
+            ),
+        ]
+
+        chosen = PhraseSkillSelector().select(
+            skills,
+            Change(
+                title="Migration operations",
+                paths=("internal/api/database_attach.go", "internal/models/type.go"),
+            ),
+        )
+
+        assert chosen == ()
+
     def test_a_change_nothing_was_written_about_picks_nothing(self):
         skills = [skill("frontend", "Use when styling a component or a stylesheet.")]
 
@@ -673,6 +702,89 @@ def test_ascii_words_are_read_exactly_as_before():
 
     assert WORDS.findall("reviewcode2 ab") == ["reviewcode2", "ab"]
     assert WORDS.findall("snake_case") == ["snake", "case"]
+
+
+class TestSkillsAModelPicks:
+    def skills(self):
+        return (
+            Skill(
+                id="migrations",
+                name="migrations",
+                description="Use when a change edits a database migration.",
+                body="",
+            ),
+            Skill(
+                id="survey",
+                name="survey",
+                description="Use when writing a survey: question types and scoring.",
+                body="",
+            ),
+        )
+
+    def test_a_model_decides_what_the_words_cannot(self):
+        from src.core.skills.selection import for_review
+
+        asked = {}
+
+        def ask(prompt, **kwargs):
+            asked["prompt"] = prompt
+            return "migrations\n"
+
+        chosen = for_review(
+            self.skills(), Change(title="Operations"), ask=ask, model="a/model"
+        )
+
+        assert [one.id for one in chosen] == ["migrations"]
+        # What each skill says it is for, and nothing of its body.
+        assert "Use when a change edits a database migration." in asked["prompt"]
+        assert "Operations" in asked["prompt"]
+
+    def test_an_id_nobody_offered_is_dropped(self):
+        from src.core.skills.selection import for_review
+
+        chosen = for_review(
+            self.skills(),
+            Change(title="Operations"),
+            ask=lambda prompt, **kwargs: "invented\nmigrations",
+            model="a/model",
+        )
+
+        assert [one.id for one in chosen] == ["migrations"]
+
+    def test_the_words_decide_when_the_model_cannot_be_asked(self):
+        from src.core.skills.selection import for_review
+
+        def ask(prompt, **kwargs):
+            raise RuntimeError("no credit")
+
+        chosen = for_review(
+            self.skills(),
+            Change(title="Edit the charges migration"),
+            ask=ask,
+            model="a/model",
+        )
+
+        assert [one.id for one in chosen] == ["migrations"]
+
+    def test_what_somebody_answered_for_is_not_put_to_a_model(self):
+        from src.core.skills.selection import for_review
+
+        calls = []
+
+        def ask(prompt, **kwargs):
+            calls.append(prompt)
+            return ""
+
+        chosen = for_review(
+            self.skills(),
+            Change(title="Operations"),
+            said={"survey": {"review": True}, "migrations": {"review": False}},
+            ask=ask,
+            model="a/model",
+        )
+
+        assert [one.id for one in chosen] == ["survey"]
+        assert calls == []
 
 
 class TestConfiguredExpertPasses:

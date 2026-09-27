@@ -332,6 +332,10 @@ class WorkingTreeReviews:
         else:
             from src.core.skills.selection import for_review, said_here
 
+            # Asked only where this review is going to ask a model anyway: a
+            # read that judges nothing costs nothing, and choosing skills for it
+            # is not worth a call.
+            picking = provider_for(configuration) if use_model else None
             try:
                 chosen = for_review(
                     everything,
@@ -343,6 +347,8 @@ class WorkingTreeReviews:
                     configuration.value("review.expert_passes"),
                     limit=MAX_SKILLS,
                     said=said_here(configuration.value("skills.uses")),
+                    ask=picking.generate_text if picking is not None else None,
+                    model=picking.model if picking is not None else "",
                 )
             except ValueError as error:
                 raise ReviewRefused(400, str(error)) from error
