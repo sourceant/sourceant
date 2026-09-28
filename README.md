@@ -41,23 +41,29 @@ curl -fsSL https://raw.githubusercontent.com/sourceant/cli/main/scripts/install.
 sourceant setup
 ~~~
 
-Start SourceAnt and open it in your browser.
-
-~~~bash
-sourceant ui
-~~~
-
-Add a repository from the Repositories page and it is read straight away and
-kept current. Point an MCP client at `http://127.0.0.1:8930/mcp`, or copy the
-block Settings gives you.
-
-Review the work in a checkout before proposing it to anybody, from the terminal
-or from the Reviews page. It reads what the checkout has that its default branch
-does not, committed or not. A folder you have not added yet is added by being
-reviewed, and starts being read behind the review.
+Review the work in a checkout before proposing it to anybody. It reads what the
+checkout has that its default branch does not, committed or not, and a folder
+you have not added yet is added by being reviewed.
 
 ~~~bash
 sourceant review
+~~~
+
+Cover a repository you are not reviewing yet. It is read straight away and
+kept current.
+
+~~~bash
+sourceant repo add .
+~~~
+
+Point an MCP client at `http://127.0.0.1:8930/mcp` and your coding tools read
+the same graph the review reads.
+
+Open it in a browser for the code graph, what a review found line by line, and
+your settings.
+
+~~~bash
+sourceant ui
 ~~~
 
 Docs: [sourceant.ai/docs](https://sourceant.ai/docs).
