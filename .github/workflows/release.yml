@@ -31,7 +31,7 @@ jobs:
             ```bash
             curl -fsSL https://raw.githubusercontent.com/sourceant/cli/main/scripts/install.sh | sh
             sourceant setup
-            sourceant ui
+            sourceant review
             ```
 
             See the [README](README.md) for full setup instructions.
