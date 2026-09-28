@@ -403,6 +403,32 @@ class TestChoosingWhichSkillsApply:
 
         assert [item.id for item in chosen] == ["migrations"]
 
+    def test_a_path_that_happens_to_share_a_word_picks_nothing(self):
+        skills = [
+            Skill(
+                id="survey",
+                name="survey",
+                description="Use when writing a survey: the question types and the scoring model.",
+                body="",
+            ),
+            Skill(
+                id="signage",
+                name="signage",
+                description="Use when a sign needs new wording for a database of names.",
+                body="",
+            ),
+        ]
+
+        chosen = PhraseSkillSelector().select(
+            skills,
+            Change(
+                title="Migration operations",
+                paths=("internal/api/database_attach.go", "internal/models/type.go"),
+            ),
+        )
+
+        assert chosen == ()
+
     def test_a_change_nothing_was_written_about_picks_nothing(self):
         skills = [skill("frontend", "Use when styling a component or a stylesheet.")]
 
@@ -518,6 +544,41 @@ class TestChoosingWhichSkillsApply:
         ]
 
         chosen = PhraseSkillSelector().select(skills, Change(title="Bump a timeout"))
+
+        assert [item.id for item in chosen] == ["house"]
+
+    def test_a_skill_this_machine_keeps_out_is_kept_out(self):
+        # The only answer available for a skill nobody here can edit.
+        skills = [
+            Skill(
+                id="pptx",
+                name="pptx",
+                description="Use when a change touches a slide deck.",
+                body="",
+                metadata={"sourceant": {"review": True}},
+            )
+        ]
+
+        chosen = PhraseSkillSelector(said={"pptx": {"review": False}}).select(
+            skills, Change(title="Add a slide deck")
+        )
+
+        assert chosen == ()
+
+    def test_a_skill_this_machine_always_wants_is_read_whatever_changed(self):
+        skills = [
+            Skill(
+                id="house",
+                name="house",
+                description="Nothing to do with anything.",
+                body="",
+                automatic=False,
+            )
+        ]
+
+        chosen = PhraseSkillSelector(said={"house": {"review": True}}).select(
+            skills, Change(title="Bump a timeout")
+        )
 
         assert [item.id for item in chosen] == ["house"]
 
@@ -639,6 +700,88 @@ def test_ascii_words_are_read_exactly_as_before():
     assert WORDS.findall("snake_case") == ["snake", "case"]
 
 
+class TestSkillsAModelPicks:
+    def skills(self):
+        return (
+            Skill(
+                id="migrations",
+                name="migrations",
+                description="Use when a change edits a database migration.",
+                body="",
+            ),
+            Skill(
+                id="survey",
+                name="survey",
+                description="Use when writing a survey: question types and scoring.",
+                body="",
+            ),
+        )
+
+    def test_a_model_decides_what_the_words_cannot(self):
+        from src.core.skills.selection import for_review
+
+        asked = {}
+
+        def ask(prompt, **kwargs):
+            asked["prompt"] = prompt
+            return "migrations\n"
+
+        chosen = for_review(
+            self.skills(), Change(title="Operations"), ask=ask, model="a/model"
+        )
+
+        assert [one.id for one in chosen] == ["migrations"]
+        assert "Use when a change edits a database migration." in asked["prompt"]
+        assert "Operations" in asked["prompt"]
+
+    def test_an_id_nobody_offered_is_dropped(self):
+        from src.core.skills.selection import for_review
+
+        chosen = for_review(
+            self.skills(),
+            Change(title="Operations"),
+            ask=lambda prompt, **kwargs: "invented\nmigrations",
+            model="a/model",
+        )
+
+        assert [one.id for one in chosen] == ["migrations"]
+
+    def test_the_words_decide_when_the_model_cannot_be_asked(self):
+        from src.core.skills.selection import for_review
+
+        def ask(prompt, **kwargs):
+            raise RuntimeError("no credit")
+
+        chosen = for_review(
+            self.skills(),
+            Change(title="Edit the charges migration"),
+            ask=ask,
+            model="a/model",
+        )
+
+        assert [one.id for one in chosen] == ["migrations"]
+
+    def test_what_somebody_answered_for_is_not_put_to_a_model(self):
+        from src.core.skills.selection import for_review
+
+        calls = []
+
+        def ask(prompt, **kwargs):
+            calls.append(prompt)
+            return ""
+
+        chosen = for_review(
+            self.skills(),
+            Change(title="Operations"),
+            said={"survey": {"review": True}, "migrations": {"review": False}},
+            ask=ask,
+            model="a/model",
+        )
+
+        assert [one.id for one in chosen] == ["survey"]
+        assert calls == []
+
+
 class TestConfiguredExpertPasses:
     def test_explicit_passes_keep_guidance_and_are_not_limited_to_five(self):
         from src.core.skills.models import SkillType
@@ -671,6 +814,92 @@ class TestConfiguredExpertPasses:
         ] == [skill.id for skill in experts]
         assert guidance in chosen
         assert for_review((*experts, guidance), Change(), "") == (guidance,)
+
+    def test_a_pass_this_machine_keeps_out_is_not_run_when_asked_for(self):
+        from src.core.skills.selection import for_review
+
+        expert = Skill(
+            id="security",
+            name="Security",
+            description="Specialist",
+            body="Check the change.",
+            metadata={"sourceant": {"type": "review-pass"}},
+        )
+
+        chosen = for_review(
+            (expert,), Change(), "security", said={"security": {"review": False}}
+        )
+
+        assert chosen == ()
+
+    def test_a_pass_this_machine_insists_on_runs_when_others_are_named(self):
+        from src.core.skills.selection import for_review
+
+        def expert(identifier):
+            return Skill(
+                id=identifier,
+                name=identifier,
+                description="Specialist",
+                body="Check the change.",
+                metadata={"sourceant": {"type": "review-pass"}},
+            )
+
+        chosen = for_review(
+            (expert("security"), expert("performance")),
+            Change(),
+            "performance",
+            said={"security": {"review": True}},
+        )
+
+        assert {skill.id for skill in chosen} == {"performance", "security"}
+
+    def test_a_use_turned_off_leaves_the_other_uses_alone(self):
+        from src.core.skills.selection import for_purpose
+
+        skill = Skill(
+            id="migrations",
+            name="migrations",
+            description="Use when a change adds a database migration.",
+            body="",
+            metadata={"sourceant": {"review": True}},
+        )
+        said = {"migrations": {"knowledge": False}}
+
+        for_reviews = for_purpose(
+            (skill,), Change(title="Add a migration"), purpose="review", said=said
+        )
+        for_knowledge = for_purpose(
+            (skill,), Change(title="Add a migration"), purpose="knowledge", said=said
+        )
+
+        assert [one.id for one in for_reviews] == ["migrations"]
+        assert for_knowledge == ()
+
+    def test_keeping_a_pass_out_beats_insisting_on_it(self):
+        from src.core.skills.selection import for_review
+
+        expert = Skill(
+            id="security",
+            name="security",
+            description="Specialist",
+            body="Check the change.",
+            metadata={"sourceant": {"type": "review-pass"}},
+        )
+
+        chosen = for_review(
+            (expert,), Change(), "security", said={"security": {"review": False}}
+        )
+
+        assert chosen == ()
+
+    def test_what_is_said_here_is_read_and_anything_malformed_dropped(self):
+        from src.core.skills.selection import said_here
+
+        assert said_here({" pptx ": {"review": False}, "x": {"review": "no"}}) == {
+            "pptx": {"review": False}
+        }
+        assert said_here("not a map") == {}
+        assert said_here(None) == {}
 
     def test_unknown_pass_is_reported_instead_of_running_other_experts(self):
         import pytest

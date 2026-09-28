@@ -19,6 +19,24 @@ NAMESPACE = "sourceant"
 REVIEW = "review"
 
 
+@dataclass(frozen=True)
+class Use:
+    """One thing this product does, that a skill can be for."""
+
+    id: str
+    label: str
+
+
+# What a skill can be used for, named once so every screen offers the same list.
+USES: tuple[Use, ...] = (
+    Use(REVIEW, "Code review"),
+    Use("requirements", "Requirements"),
+    Use("knowledge", "Knowledge"),
+    Use("architecture", "Architecture"),
+    Use("search", "Code search"),
+)
+
+
 class SkillType(str, Enum):
     GUIDANCE = "guidance"
     REVIEW_PASS = "review-pass"

@@ -41,15 +41,30 @@ curl -fsSL https://raw.githubusercontent.com/sourceant/cli/main/scripts/install.
 sourceant setup
 ~~~
 
-Start SourceAnt and open it in your browser.
+Read the work in a checkout before anyone else has to. It takes what the
+checkout has that its default branch does not, committed or not, and says
+whether it is ready to propose. A repository you have not added yet is added by
+being reviewed, and read into the graph behind it.
 
 ~~~bash
-sourceant ui
+sourceant review
 ~~~
 
-Add a repository from the Repositories page and it is parsed and kept current.
-Point an MCP client at `http://127.0.0.1:8930/mcp`, or copy the block Settings
-gives you.
+Three commands to a first review. The rest:
+
+| | |
+|---|---|
+| `sourceant repo add <path>` | Add a repository and read it into the graph |
+| `sourceant repos` | What is added, and when each was last read |
+| `sourceant graph <repository>` | What the indexer found in one repository |
+| `sourceant architecture` | Components and what they depend on |
+| `sourceant ui` | Open the graph and the reviews in a browser |
+| `sourceant mcp` | Connect an MCP client over standard input and output |
+| `sourceant status` | Whether the agent and the indexer are running |
+| `sourceant stop` | Stop the agent and its core |
+
+A client that speaks HTTP goes to `http://127.0.0.1:8930/mcp` instead, and reads
+the same graph a review reads.
 
 Docs: [sourceant.ai/docs](https://sourceant.ai/docs).
 

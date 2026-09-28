@@ -248,6 +248,20 @@ class TestLocalReview(BaseTestCase):
             "migrations"
         ]
 
+    def test_a_skill_this_machine_keeps_out_is_not_read_against_a_change(self):
+        self.register()
+        self.edit_the_migration()
+        self.client.put(
+            "/api/local/settings/skills.uses",
+            json={"value": {"migrations": {"review": False}}},
+        )
+        try:
+            answered = self.review(use_model=False, title="Edit the charges migration")
+        finally:
+            self.client.delete("/api/local/settings/skills.uses")
+
+        assert answered.json()["data"]["review"]["skills"] == []
+
     def test_breaking_a_stated_rule_says_the_work_is_not_ready(self, monkeypatch):
         model = FakeModel(
             {
@@ -370,6 +384,49 @@ class TestLocalReview(BaseTestCase):
         told = model.told[0]["knowledge"]
         assert "Never edit a migration" in told
         assert "What this team expects of work here" in told
+
+    def test_a_checkout_can_be_named_by_its_path(self):
+        self.register()
+
+        answered = self.review(repository=str(self.source), use_model=False)
+
+        assert answered.status_code == 200
+        assert answered.json()["data"]["repository"] == "acme/billing"
+
+    def test_a_path_inside_a_checkout_names_that_checkout(self):
+        self.register()
+
+        answered = self.review(repository=str(self.source / "db"), use_model=False)
+
+        assert answered.json()["data"]["repository"] == "acme/billing"
+
+    def test_a_checkout_nobody_registered_is_covered_by_being_reviewed(self):
+        self.edit_the_migration()
+
+        answered = self.review(repository=str(self.source), use_model=False)
+
+        assert answered.status_code == 200
+        assert answered.json()["data"]["repository"] == "billing"
+        listed = self.client.get("/api/code/repositories").json()["data"]
+        assert [item["path"] for item in listed] == [str(self.source)]
+
+    def test_a_path_that_is_nothing_is_still_refused(self):
+        assert self.start(repository=str(self.source / "nowhere")).status_code == 404
+
+    def test_a_folder_that_is_not_a_checkout_is_not_covered(self, tmp_path):
+        # Registering it would leave a folder nothing can ever review.
+        elsewhere = tmp_path / "notes"
+        elsewhere.mkdir()
+
+        assert self.start(repository=str(elsewhere)).status_code == 404
+        assert self.client.get("/api/code/repositories").json()["data"] == []
+
+    def test_a_subdirectory_covers_the_checkout_it_is_in(self):
+        answered = self.review(repository=str(self.source / "db"), use_model=False)
+
+        assert answered.status_code == 200
+        listed = self.client.get("/api/code/repositories").json()["data"]
+        assert [item["path"] for item in listed] == [str(self.source)]
 
     def test_a_repository_nobody_registered_is_not_reviewed(self):
         # Refused when it is asked for, rather than written down as a review
@@ -535,6 +592,62 @@ class TestSkillsApi(BaseTestCase):
 
         read = self.client.get("/api/skills?repository=acme/other").json()["data"]
         assert "retry-limit" not in [item["id"] for item in read["skills"]]
+
+    def test_what_a_skill_is_for_is_kept_apart_from_how_it_is_read(self):
+        self.register()
+
+        self.state(
+            id="retry-limit",
+            description="Use when retrying a charge.",
+            applications={"review": True, "onboarding": False},
+            type="review-pass",
+        )
+
+        read = self.client.get(
+            "/api/skills/retry-limit?repository=acme/billing"
+        ).json()["data"]
+        assert read["applications"] == {"review": True, "onboarding": False}
+        assert read["type"] == "review-pass"
+        # The one purpose this product reads, answered from the same map.
+        assert read["reviews"] is True
+
+    def test_what_a_skill_can_be_used_for_is_served_rather_than_guessed(self):
+        answered = self.client.get("/api/skills/uses")
+
+        assert answered.status_code == 200
+        offered = answered.json()["data"]
+        assert [use["id"] for use in offered][0] == "review"
+        assert {"id", "label"} == set(offered[0])
+
+    def test_a_skill_only_a_person_may_invoke_stays_that_way_when_saved(self):
+        self.register()
+
+        self.state(id="retry-limit", description="Use when retrying.", automatic=False)
+
+        read = self.client.get(
+            "/api/skills/retry-limit?repository=acme/billing"
+        ).json()["data"]
+        assert read["automatic"] is False
+
+    def test_a_kind_of_skill_nobody_defined_is_refused(self):
+        self.register()
+
+        answered = self.state(
+            id="retry-limit", description="Use when retrying.", type="whatever"
+        )
+
+        assert answered.status_code == 400
+
+    def test_the_old_way_of_saying_it_is_for_reviews_still_works(self):
+        self.register()
+
+        self.state(id="retry-limit", description="Use when retrying.", reviews=False)
+
+        read = self.client.get(
+            "/api/skills/retry-limit?repository=acme/billing"
+        ).json()["data"]
+        assert read["applications"] == {"review": False}
+        assert read["reviews"] is False
 
     def test_a_rule_with_no_line_saying_when_it_applies_is_refused(self):
         self.register()

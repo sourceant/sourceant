@@ -4,11 +4,13 @@ import json
 import os
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config.paths import ensure_data_dir
 from src.core.scope import Scope
+from src.utils.moments import utc
 
 REGISTRY_NAME = "repositories.json"
 
@@ -21,6 +23,8 @@ class RegistryError(RuntimeError):
 class RegisteredRepository:
     name: str
     path: str
+    # When it was last read into the graph. Empty means never.
+    indexed_at: str = ""
 
     @property
     def scope(self) -> Scope:
@@ -45,9 +49,14 @@ def add_repository(path: Path, *, name: str = "") -> RegisteredRepository:
     entry = RegisteredRepository(
         name=name or repository_name(resolved), path=str(resolved)
     )
-    entries = [item for item in list_repositories() if item.path != entry.path]
-    entries.append(entry)
-    _write(entries)
+    entries = list_repositories()
+    # Re-registering the same folder under the same name keeps what it read.
+    for item in entries:
+        if item.path == entry.path and item.name == entry.name:
+            entry = replace(entry, indexed_at=item.indexed_at)
+    kept = [item for item in entries if item.path != entry.path]
+    kept.append(entry)
+    _write(kept)
     return entry
 
 
@@ -79,8 +88,15 @@ def list_repositories() -> list[RegisteredRepository]:
         if not isinstance(item, dict):
             continue
         name, path = item.get("name"), item.get("path")
+        read = item.get("indexed_at")
         if isinstance(name, str) and isinstance(path, str) and name and path:
-            entries.append(RegisteredRepository(name=name, path=path))
+            entries.append(
+                RegisteredRepository(
+                    name=name,
+                    path=path,
+                    indexed_at=read if isinstance(read, str) else "",
+                )
+            )
     return sorted(entries, key=lambda item: item.path)
 
 
@@ -92,9 +108,64 @@ def find_repository(path: Path) -> RegisteredRepository | None:
     return None
 
 
+def resolve_repository(
+    name: str, *, register: bool = False
+) -> RegisteredRepository | None:
+    """One repository, by the name it was filed under or by its path.
+
+    ``register`` files a checkout nobody has filed yet. The innermost match
+    wins, for a checkout registered inside another one.
+    """
+    entries = list_repositories()
+    for entry in entries:
+        if entry.name == name:
+            return entry
+    where = _as_path(name)
+    if where is None:
+        return None
+    found, held = None, ""
+    for entry in entries:
+        kept = Path(entry.path)
+        if (kept == where or where.is_relative_to(kept)) and len(entry.path) > len(
+            held
+        ):
+            found, held = entry, entry.path
+    if found is not None:
+        return found
+    if register:
+        root = checkout_root(where)
+        if root is not None:
+            return add_repository(root)
+    return None
+
+
+def _as_path(name: str) -> Path | None:
+    """The folder a name points at, where it is written as one."""
+    if not name.startswith(("/", "~", ".")):
+        return None
+    try:
+        return Path(name).expanduser().resolve()
+    except OSError:
+        return None
+
+
+def mark_indexed(name: str, when: datetime | None = None) -> None:
+    """Record that a repository has just been read, by the name it shares."""
+    moment = utc(when or datetime.now(timezone.utc)) or ""
+    entries = list_repositories()
+    if not any(entry.name == name for entry in entries):
+        return
+    _write(
+        [
+            replace(entry, indexed_at=moment) if entry.name == name else entry
+            for entry in entries
+        ]
+    )
+
+
 def _write(entries: list[RegisteredRepository]) -> None:
     payload = [
-        {"name": entry.name, "path": entry.path}
+        {"name": entry.name, "path": entry.path, "indexed_at": entry.indexed_at}
         for entry in sorted(entries, key=lambda item: item.path)
     ]
     target = registry_path()
@@ -110,6 +181,27 @@ def _write(entries: list[RegisteredRepository]) -> None:
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+
+
+def checkout_root(path: Path) -> Path | None:
+    """The checkout a folder is in, or None where it is in none."""
+    if not path.is_dir():
+        return None
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    found = completed.stdout.strip()
+    return Path(found) if found else None
 
 
 def _git_remote(path: Path) -> str:

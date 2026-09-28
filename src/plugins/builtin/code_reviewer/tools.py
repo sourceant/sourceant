@@ -33,8 +33,10 @@ class ReviewTools:
             description=(
                 "Read the uncommitted and unpushed work in a checkout against "
                 "the skills its team wrote down, and answer with a link a "
-                "person can open to see what it found. The reading happens "
-                "after this answers, so open the link rather than waiting."
+                "person can open to see what it found. Name the repository as "
+                "this machine filed it, or give the path to the checkout. The "
+                "reading happens after this answers, so open the link rather "
+                "than waiting."
             ),
             structured_output=True,
         )

@@ -6,13 +6,14 @@ from src.core.settings.resolver import organization_of
 from src.models.config import ConfigType
 
 
-def test_structural_context_file_limit_is_repository_and_organization_scoped():
+def test_structural_context_file_limit_is_settable_where_a_review_runs():
     setting = definitions.get("review.structural_context_file_limit")
 
     assert setting.default == 20
     assert setting.minimum == 1
     assert setting.maximum == 100
-    assert setting.scopes == (REPOSITORY, ORGANIZATION)
+    # A machine reviews its own checkout, so it can say how much to gather.
+    assert setting.scopes == (USER, REPOSITORY, ORGANIZATION)
 
 
 @pytest.fixture

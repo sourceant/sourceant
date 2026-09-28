@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.cli.local_index import (
@@ -26,7 +26,9 @@ from src.cli.local_index import (
     RegistryError,
     add_repository,
     list_repositories,
+    mark_indexed,
     remove_repository,
+    resolve_repository,
 )
 from src.config.db import get_engine
 from src.config.settings import LOCAL_MODE
@@ -47,6 +49,7 @@ from src.core.code_index.clustering import Modularity, degrees
 from src.core.code_index.relationships import joined
 from src.core.responses import success_response
 from src.core.services import service_registry
+from src.utils.logger import logger
 
 router = APIRouter()
 
@@ -57,6 +60,9 @@ NOT_LOCAL = (
 )
 
 _fallback: Any = None
+
+# One process serves a machine, so what is being read lives here.
+_reading: set[str] = set()
 
 
 def require_local() -> None:
@@ -92,12 +98,12 @@ def registered() -> list[RegisteredRepository]:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-def find_repository(name: str) -> RegisteredRepository:
-    entries = registered()
-    for entry in entries:
-        if entry.name == name:
-            return entry
-    if not entries:
+def find_repository(name: str, register: bool = False) -> RegisteredRepository:
+    """One repository, by the name it was filed under or by its path."""
+    found = resolve_repository(name, register=register)
+    if found is not None:
+        return found
+    if not registered():
         raise HTTPException(status_code=404, detail=NO_REPOSITORIES)
     raise HTTPException(
         status_code=404, detail=f"{name} is not registered on this machine"
@@ -135,9 +141,17 @@ def node_payload(node: CodeNode) -> dict[str, Any]:
 @router.get("/repositories")
 def read_repositories():
     """Every repository registered on this machine, for a client drawing all of them."""
-    return success_response(
-        [{"name": item.name, "path": item.path} for item in registered()]
-    )
+    return success_response([repository_payload(item) for item in registered()])
+
+
+def repository_payload(entry: RegisteredRepository) -> dict[str, Any]:
+    """One repository, and whether it has been read."""
+    return {
+        "name": entry.name,
+        "path": entry.path,
+        "indexed_at": entry.indexed_at,
+        "reading": entry.name in _reading,
+    }
 
 
 @router.get("/attention")
@@ -341,6 +355,7 @@ def read_nodes(
 class RepositoryInput(BaseModel):
     path: str
     name: str = ""
+    index: bool = True
 
 
 class IndexInput(BaseModel):
@@ -350,13 +365,62 @@ class IndexInput(BaseModel):
 
 
 @router.post("/repositories", dependencies=[Depends(require_local)])
-def create_repository(body: RepositoryInput):
-    """Cover one more directory, so the next index run reads it too."""
+def create_repository(
+    body: RepositoryInput,
+    background: BackgroundTasks,
+    index: Any = Depends(get_code_index),
+):
+    """Cover one more directory, and start reading it behind the answer."""
     try:
         entry = add_repository(Path(body.path), name=body.name)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    return success_response({"name": entry.name, "path": entry.path})
+
+    if body.index:
+        reading_started(entry, index, background)
+    return success_response(repository_payload(entry))
+
+
+def reading_started(
+    entry: RegisteredRepository, index: Any, background: BackgroundTasks
+) -> None:
+    """Start reading a repository behind whatever answer is about to be sent."""
+    if not isinstance(index, CodeIndexWriter):
+        return
+    # Marked before the answer leaves, so a client asking straight away is told.
+    _reading.add(entry.name)
+    background.add_task(read_repository, entry, index, False)
+
+
+def read_repository(
+    entry: RegisteredRepository, index: Any, update: bool
+) -> dict[str, Any]:
+    """Read one registered repository, and record that it was read."""
+    from src.cli.index_commands import _excluded_paths
+    from src.core.code_index.indexer import RepositoryIndexer
+
+    _reading.add(entry.name)
+    try:
+        result = RepositoryIndexer(index).index(
+            entry.scope,
+            Path(entry.path),
+            update=update,
+            excluded_paths=_excluded_paths(entry.name),
+        )
+        mark_indexed(entry.name)
+    except Exception as error:  # noqa: BLE001 - whatever a parser raises
+        # Behind an answer that has already gone out, raising tells nobody.
+        logger.warning("Reading %s failed: %s", entry.name, error)
+        raise
+    finally:
+        _reading.discard(entry.name)
+    return {
+        "repository": entry.name,
+        "indexed": result.indexed,
+        "unchanged": result.unchanged,
+        "removed": result.removed,
+        "skipped": result.skipped,
+    }
 
 
 @router.delete("/repositories", dependencies=[Depends(require_local)])
@@ -378,9 +442,6 @@ def run_index(body: IndexInput, index: Any = Depends(get_code_index)):
     It writes through the same store the reads come from. Building its own
     would let a plugin's index be read while core's was the one being filled.
     """
-    from src.cli.index_commands import _excluded_paths
-    from src.core.code_index.indexer import RepositoryIndexer
-
     if not isinstance(index, CodeIndexWriter):
         raise HTTPException(
             status_code=501, detail="The configured index cannot be written to"
@@ -393,22 +454,5 @@ def run_index(body: IndexInput, index: Any = Depends(get_code_index)):
     else:
         targets = [find_repository(body.repository)]
 
-    indexer = RepositoryIndexer(index)
-    done = []
-    for entry in targets:
-        result = indexer.index(
-            entry.scope,
-            Path(entry.path),
-            update=body.update,
-            excluded_paths=_excluded_paths(entry.name),
-        )
-        done.append(
-            {
-                "repository": entry.name,
-                "indexed": result.indexed,
-                "unchanged": result.unchanged,
-                "removed": result.removed,
-                "skipped": result.skipped,
-            }
-        )
+    done = [read_repository(entry, index, body.update) for entry in targets]
     return success_response(done)

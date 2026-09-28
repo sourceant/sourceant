@@ -16,7 +16,7 @@ from rapidfuzz import fuzz
 from src.core.parallel import parallel_map
 from src.core.review.exclusions import review_diff
 from src.core.skills.matching import matches
-from src.core.skills.selection import for_review
+from src.core.skills.selection import for_review, said_here
 from src.core.analysis import Analysis, also_reported
 from src.core.change_context import ChangeSet
 from src.core.code_index import CodeIndexReader
@@ -272,6 +272,9 @@ class CodeReviewer:
                 if expert_passes is None
                 else expert_passes
             ),
+            said=said_here(configuration.value("skills.uses")),
+            ask=provider.generate_text,
+            model=provider.model,
         )
         # Most skills are a pointer at the page that holds the rule, and a
         # change judged against a pointer is judged against nothing.

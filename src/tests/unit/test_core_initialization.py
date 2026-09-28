@@ -252,7 +252,8 @@ def test_initialization_limits_are_exposed_as_settings():
     candidate_limit = get("initialization.candidate_limit")
 
     assert candidate_limit.default == 35
-    assert candidate_limit.scopes == ("repository", "organization")
+    # A machine finds knowledge too, so it can say how much to ask for.
+    assert candidate_limit.scopes == ("user", "repository", "organization")
     assert get("initialization.evidence_limit").maximum == 100
     assert get("initialization.evidence_character_limit").default == 60_000
     assert get("initialization.investigation_limit").minimum == 0

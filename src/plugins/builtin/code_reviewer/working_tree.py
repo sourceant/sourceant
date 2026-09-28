@@ -276,6 +276,13 @@ class WorkingTreeReviews:
             raise ReviewRefused(503, "Nothing here knows where the skills are.")
         return found
 
+    def _entry(self, repository: str):
+        """The folder to review, registering a checkout nobody has filed yet."""
+        folders = self._folders()
+        if repository.startswith(("/", "~", ".")):
+            return folders.named(LOCAL, repository, register=True)
+        return folders.named(LOCAL, repository)
+
     def review(
         self,
         *,
@@ -288,7 +295,8 @@ class WorkingTreeReviews:
         system: str = "",
     ) -> dict[str, Any]:
         """What changed, what applies to it, and what the reviewer made of it."""
-        entry = self._folders().named(LOCAL, repository)
+        entry = self._entry(repository)
+        repository = entry.name
         root = Path(entry.path)
         configuration = Configuration(repository=repository, user=LOCAL)
 
@@ -330,8 +338,10 @@ class WorkingTreeReviews:
             wanted = set(skills)
             chosen = tuple(skill for skill in everything if skill.id in wanted)
         else:
-            from src.core.skills.selection import for_review
+            from src.core.skills.selection import for_review, said_here
 
+            # No model where nothing is judged, so no call to choose skills either.
+            picking = provider_for(configuration) if use_model else None
             try:
                 chosen = for_review(
                     everything,
@@ -342,6 +352,9 @@ class WorkingTreeReviews:
                     ),
                     configuration.value("review.expert_passes"),
                     limit=MAX_SKILLS,
+                    said=said_here(configuration.value("skills.uses")),
+                    ask=picking.generate_text if picking is not None else None,
+                    model=picking.model if picking is not None else "",
                 )
             except ValueError as error:
                 raise ReviewRefused(400, str(error)) from error

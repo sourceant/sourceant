@@ -7,22 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- A moment the API reports says it is in UTC, where before it carried no
-  timezone at all and a reader an hour off UTC saw everything an hour ago
-- A review's summary is compared with the model that wrote the review. It was
-  resolved from the repository alone, so a review answered for a person fell
-  back to the deployment's model and failed for want of a key
+## [1.0.0-beta.5] - 2026-09-27
 
 ### Added
 
+- A folder starts being read the moment it is registered, and carries when it
+  was last read, so a graph answering about last month can be told from one
+  answering about this morning
+- What a skill is used for is its own answer: code review, requirements,
+  knowledge, architecture or code search, each on until turned off, apart from
+  whether this product may pick the skill without being asked
+- What a skill is used for can be answered where it is used, in the same shape
+  the skill's own file carries, which is the only answer available for the
+  folders a coding agent syncs and nothing here may edit
+- Every model this machine can name, and whether the key set here can use one,
+  both asked of the provider rather than written down
+- What a local review and a local index read is settable on the machine that
+  runs them: the paths the index leaves out, how much structure a review
+  gathers, how long a model's answer is reused, and how many proposals a
+  knowledge pass asks for
 - The gateway can ask which workspaces have connected a repository, so a
   delivery can be routed by the repository it names. It asks with a token
   minted for that question alone, which a person's token can never be
 - The connected repositories can be asked about one repository by name, so a
   caller checking whether a workspace holds it reads one row instead of the
   whole list a page at a time
+
+### Fixed
+
+- A checkout can be named by its path wherever a repository is named, so
+  whatever is standing in it does not have to know what this machine filed it
+  as. Every review asked for by path had failed as unregistered
+- Which skills a review reads is asked of the model that is about to read the
+  change, where one is being asked anyway. Shared words alone chose a skill
+  about slide decks for a change to Go, because a path offers `api`, `model` and
+  the language's own extension
+- The index this machine keeps is migrated before it is served, so a schema
+  written by an older build is not read by a newer one
+- A moment the API reports says it is in UTC, where before it carried no
+  timezone at all and a reader an hour off UTC saw everything an hour ago
+- A review's summary is compared with the model that wrote the review. It was
+  resolved from the repository alone, so a review answered for a person fell
+  back to the deployment's model and failed for want of a key
 
 ## [1.0.0-beta.4] - 2026-09-13
 

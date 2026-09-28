@@ -30,9 +30,11 @@ from src.core.responses import success_response
 from src.core.skills import (
     NAMESPACE,
     REVIEW,
+    USES,
     Catalogue,
     Skill,
     SkillQuery,
+    SkillType,
     SkillWriteError,
     global_skills,
     remove_skill,
@@ -68,9 +70,14 @@ class SkillInput(BaseModel):
     # Globs naming the files this is about, so it is picked on a statement
     # rather than on how its description happens to be worded.
     paths: list[str] = Field(default_factory=list)
-    # Whether it belongs in a review at all. Null leaves that unsaid, which is
-    # where most skills are and is not the same as saying no.
+    # A purpose nobody named is unsaid, which is not a no.
+    applications: dict[str, bool] = Field(default_factory=dict)
+    # How it is read, not what it is for. Empty is prose.
+    type: str = Field(default="")
+    # The shorthand for applications["review"].
     reviews: bool | None = Field(default=None)
+    # Whether it may be picked without being asked, which is not what it is for.
+    automatic: bool = Field(default=True)
 
 
 def where(scope: str, repository: str) -> Path:
@@ -125,6 +132,7 @@ def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
         "path": skill.path,
         "paths": list(skill.paths),
         "reviews": skill.reviews,
+        "applications": dict(skill.applications),
         "automatic": skill.automatic,
     }
     if full:
@@ -132,6 +140,12 @@ def payload(skill: Skill, full: bool = False) -> dict[str, Any]:
         listed["metadata"] = dict(skill.metadata)
         listed["properties"] = dict(skill.properties)
     return listed
+
+
+@router.get("/uses")
+def read_uses():
+    """What a skill can be used for, so every screen offers the same list."""
+    return success_response([{"id": use.id, "label": use.label} for use in USES])
 
 
 @router.get("")
@@ -163,9 +177,14 @@ def read_skills(
 def record_skill(body: SkillInput):
     """Write a skill down, for one repository or for everything."""
     root = where(body.scope, body.repository)
-    # Kept where the format sets a map aside for it, namespaced as the spec
-    # asks, so a skill carrying it stays readable by everything else.
-    metadata = {} if body.reviews is None else {NAMESPACE: {REVIEW: body.reviews}}
+    applications = dict(body.applications)
+    if body.reviews is not None and REVIEW not in applications:
+        applications[REVIEW] = body.reviews
+    kind = body.type.strip()
+    if kind and kind not in {one.value for one in SkillType}:
+        raise HTTPException(status_code=400, detail=f"{kind} is not a kind of skill")
+    # The type goes where the format sets a map aside for a client.
+    metadata = {NAMESPACE: {"type": kind}} if kind else {}
     try:
         written = write_skill(
             root,
@@ -176,6 +195,8 @@ def record_skill(body: SkillInput):
                 body=body.body,
                 paths=tuple(body.paths),
                 metadata=metadata,
+                applications=applications,
+                automatic=body.automatic,
             ),
             origin=body.scope,
         )

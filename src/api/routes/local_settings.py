@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from src.api.routes.code import require_local
 from src.api.routes.settings import _described, _described_at
@@ -38,6 +38,44 @@ def local_provider():
     if deployment is not None:
         return deployment.provider_for(deployment.workspace_for())
     return SettingsLLMSource(fallback_model="").provider_for(Configuration(user=LOCAL))
+
+
+# Declared without async, so a call that does not await runs on a thread.
+@router.get("/models", dependencies=[Depends(require_local)])
+def local_models():
+    """Every model that can be named here, read from the router that calls them."""
+    from src.core.model.catalogue import offered
+
+    return success_response(offered())
+
+
+class ModelCheckInput(BaseModel):
+    #: Left out, whatever is set here is used.
+    model: str = ""
+    api_key: SecretStr = SecretStr("")
+    base_url: str = ""
+
+
+@router.post("/models/check", dependencies=[Depends(require_local)])
+def check_local_model(body: ModelCheckInput):
+    """Whether this key can use this model, asked of the provider."""
+    from src.core.model.catalogue import refused
+
+    configuration = Configuration(user=LOCAL)
+    model = body.model or str(configuration.value("model.name") or "")
+    key = body.api_key.get_secret_value() or str(
+        configuration.value("model.api_key") or ""
+    )
+    base = body.base_url or str(configuration.value("model.base_url") or "")
+    if not model:
+        raise HTTPException(status_code=400, detail="Name a model")
+    if not key:
+        raise HTTPException(
+            status_code=400, detail="No key is set here, and none was sent"
+        )
+
+    why = refused(model, key, base, attribution={"user": LOCAL})
+    return success_response({"usable": why is None, "reason": why})
 
 
 @router.get("", dependencies=[Depends(require_local)])

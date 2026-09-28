@@ -18,22 +18,63 @@ skill is worth reading.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Sequence
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Sequence
+
+from src.utils.logger import logger
 
 from .matching import any_match
-from .models import Change, Skill, SkillScope, SkillType
+from .models import REVIEW, Change, Skill, SkillScope, SkillType
 
 
-def for_review(
+def said_here(value: Any) -> dict[str, dict[str, bool]]:
+    """What this scope says a skill is for, ignoring anything the wrong shape."""
+    if not isinstance(value, Mapping):
+        return {}
+    said: dict[str, dict[str, bool]] = {}
+    for identifier, uses in value.items():
+        if not isinstance(identifier, str) or not isinstance(uses, Mapping):
+            continue
+        kept = {
+            use: answer
+            for use, answer in uses.items()
+            if isinstance(use, str) and isinstance(answer, bool)
+        }
+        if kept:
+            said[identifier.strip()] = kept
+    return said
+
+
+def for_purpose(
     skills: Sequence[Skill],
     change: Change,
+    purpose: str = REVIEW,
     expert_passes: str = "auto",
     limit: int = 5,
+    said: Mapping[str, Mapping[str, bool]] | None = None,
+    ask: Any = None,
+    model: str = "",
 ) -> tuple[Skill, ...]:
-    selector = PhraseSkillSelector()
+    """The skills to read against this change, for one of the things we do.
+
+    What nobody answered for is asked of the model where there is one, and
+    decided on shared words where there is not.
+    """
+    selector = PhraseSkillSelector(purpose=purpose, said=said or {})
+
+    def fill(candidates: Sequence[Skill], room: int) -> tuple[Skill, ...]:
+        if room <= 0 or not candidates:
+            return ()
+        if ask is not None:
+            answered = asked_for(candidates, change, ask, model, limit=room)
+            if answered:
+                return answered
+        return selector.ranked(candidates, change, room)
+
     if not isinstance(expert_passes, str) or expert_passes.strip() == "auto":
-        return selector.select(skills, change, limit=limit)
+        stated, maybe = selector.sift(skills, change)
+        chosen = stated[:limit]
+        return chosen + fill(maybe, limit - len(chosen))
     requested = tuple(dict.fromkeys(expert_passes.split()))
     experts = {
         skill.id: skill for skill in skills if skill.type == SkillType.REVIEW_PASS
@@ -41,12 +82,44 @@ def for_review(
     missing = [identifier for identifier in requested if identifier not in experts]
     if missing:
         raise ValueError("Unknown expert review passes: " + ", ".join(missing))
-    guidance = selector.select(
-        tuple(skill for skill in skills if skill.type != SkillType.REVIEW_PASS),
-        change,
-        limit=limit,
+    stated, maybe = selector.sift(
+        tuple(skill for skill in skills if skill.type != SkillType.REVIEW_PASS), change
     )
-    return (*guidance, *(experts[identifier] for identifier in requested))
+    guidance = stated[:limit] + fill(maybe, limit - len(stated[:limit]))
+    named = tuple(
+        experts[identifier]
+        for identifier in requested
+        if selector.answer(experts[identifier]) is not False
+    )
+    # Only what this scope insisted on, not what a pass says about itself.
+    insisted = tuple(
+        skill
+        for identifier, skill in experts.items()
+        if identifier not in requested and selector.demanded(skill) is True
+    )
+    return (*guidance, *named, *insisted)
+
+
+def for_review(
+    skills: Sequence[Skill],
+    change: Change,
+    expert_passes: str = "auto",
+    limit: int = 5,
+    said: Mapping[str, Mapping[str, bool]] | None = None,
+    ask: Any = None,
+    model: str = "",
+) -> tuple[Skill, ...]:
+    """The skills a review reads, which is the one purpose acted on today."""
+    return for_purpose(
+        skills,
+        change,
+        purpose=REVIEW,
+        expert_passes=expert_passes,
+        limit=limit,
+        said=said,
+        ask=ask,
+        model=model,
+    )
 
 
 # Letters rather than ASCII: skills and the prose around code are written
@@ -133,16 +206,31 @@ class PhraseSkillSelector:
     """
 
     minimum: int = MIN_SCORE
+    #: The thing being done, since a skill can be for several.
+    purpose: str = REVIEW
+    #: What this scope said a skill is for, which outranks the author.
+    said: Mapping[str, Mapping[str, bool]] = field(default_factory=dict)
+
+    def answer(self, skill: Skill) -> bool | None:
+        """Whether this skill is for this purpose: here first, then its file."""
+        mine = self.demanded(skill)
+        if mine is not None:
+            return mine
+        return skill.applies_to(self.purpose)
+
+    def demanded(self, skill: Skill) -> bool | None:
+        """What this scope said about it, which is not what its author said."""
+        return self.said.get(skill.id, {}).get(self.purpose)
 
     def wanted(self, skill: Skill, change: Change) -> bool | None:
-        """What the author said about this skill and this change, if anything.
+        """Whether this skill belongs in this reading, if anybody has said.
 
-        False where they said it is not for reviews, or that only a person may
-        invoke it. True where they said it is, or wrote globs and the change
-        touches one of the files. None where they said nothing, which is most
+        False where it is not for this purpose, or where only a person may
+        invoke it; True where it is, or where globs were written and the change
+        touches one of the files; None where nobody said anything, which is most
         of them.
         """
-        said = skill.reviews
+        said = self.answer(skill)
         if said is False:
             return False
         if not skill.automatic and said is not True:
@@ -169,19 +257,14 @@ class PhraseSkillSelector:
         matched = described & subject
         return len(matched), len(matched) / len(described)
 
-    def select(
-        self, skills: Sequence[Skill], change: Change, limit: int = 5
-    ) -> tuple[Skill, ...]:
-        subject = words(
-            " ".join(
-                (
-                    change.title,
-                    change.description,
-                    " ".join(re.split(r"[/\\._-]+", " ".join(change.paths))),
-                )
-            )
-        )
+    def sift(
+        self, skills: Sequence[Skill], change: Change
+    ) -> tuple[tuple[Skill, ...], tuple[Skill, ...]]:
+        """What somebody stated applies, and what nobody has answered for.
 
+        What was stated comes first and is not competed with. What was vetoed is
+        gone. The rest is a question for whoever can answer it.
+        """
         stated: list[Skill] = []
         maybe: list[Skill] = []
         for skill in skills:
@@ -189,23 +272,89 @@ class PhraseSkillSelector:
             if said is False:
                 continue
             (stated if said else maybe).append(skill)
+        stated.sort(
+            key=lambda skill: (skill.origin != SkillScope.SYSTEM.value, skill.id)
+        )
+        return tuple(stated), tuple(maybe)
 
-        # What somebody stated comes first and is not competed with.
-        chosen = sorted(
-            stated,
-            key=lambda skill: (skill.origin != SkillScope.SYSTEM.value, skill.id),
-        )[:limit]
-        room = limit - len(chosen)
-        if room <= 0 or not subject:
-            return tuple(chosen)
+    def ranked(
+        self, skills: Sequence[Skill], change: Change, limit: int
+    ) -> tuple[Skill, ...]:
+        """The ones sharing most with what the change says it is about.
 
+        What it says, not its paths: a path offers `api`, `server`, `model`,
+        `type` and the language's own extension, which is every generic word
+        there is, and one of them matching a skill about spreadsheets is not a
+        reason to read it. A skill that is about files says so with globs.
+        """
+        subject = words(f"{change.title} {change.description}")
+        if limit <= 0 or not subject:
+            return ()
         ranked = sorted(
-            ((self.score(skill, subject), skill) for skill in maybe),
+            ((self.score(skill, subject), skill) for skill in skills),
             key=lambda pair: (-pair[0][0], -pair[0][1], pair[1].id),
         )
-        return (
-            tuple(chosen)
-            + tuple(skill for (matched, _), skill in ranked if matched >= self.minimum)[
-                :room
-            ]
-        )
+        return tuple(
+            skill for (matched, _), skill in ranked if matched >= self.minimum
+        )[:limit]
+
+    def select(
+        self, skills: Sequence[Skill], change: Change, limit: int = 5
+    ) -> tuple[Skill, ...]:
+        stated, maybe = self.sift(skills, change)
+        chosen = stated[:limit]
+        return chosen + self.ranked(maybe, change, limit - len(chosen))
+
+
+# How many skills a model is shown at once, as names and descriptions only.
+OFFERED = 200
+
+
+def asked_for(
+    skills: Sequence[Skill],
+    change: Change,
+    ask: Any,
+    model: str = "",
+    limit: int = 5,
+) -> tuple[Skill, ...]:
+    """The skills a model says bear on this change, or () where it cannot say.
+
+    Wording alone answers badly in both directions: a skill about migrations and
+    a change about migrations find each other, and a skill about slide decks and
+    a change touching a file called `model.go` also find each other. A model is
+    shown what each skill says it is for and asked which of them apply.
+
+    Anything it answers with that was not offered is dropped, so a hallucinated
+    id cannot pull in a skill nobody has.
+    """
+    offered = tuple(skills)[:OFFERED]
+    if not offered or ask is None:
+        return ()
+    listed = "\n".join(
+        f"- {skill.id}: {skill.name}. {skill.description}" for skill in offered
+    )
+    files = "\n".join(f"- {path}" for path in tuple(change.paths)[:60])
+    prompt = (
+        "A change is about to be reviewed. Which of these skills bear on it?\n\n"
+        f"Title: {change.title or '(none given)'}\n"
+        f"Description: {change.description or '(none given)'}\n"
+        f"Files:\n{files or '- (none)'}\n\n"
+        f"Skills:\n{listed}\n\n"
+        f"Answer with the ids of at most {limit} that apply, one a line, and "
+        "nothing else. Answer with nothing at all where none of them applies. "
+        "A skill applies when what it says it is for is what this change is "
+        "about, not because a word appears in both."
+    )
+    try:
+        answered = ask(prompt, purpose="skill-selection") if model else ask(prompt)
+    except Exception as error:  # noqa: BLE001 - whatever a provider raises
+        logger.warning(f"Choosing skills without a model: {error}")
+        return ()
+    held = {skill.id: skill for skill in offered}
+    wanted: list[Skill] = []
+    for line in str(answered or "").splitlines():
+        identifier = line.strip().strip("-*` ").split(":")[0].strip()
+        skill = held.get(identifier)
+        if skill is not None and skill not in wanted:
+            wanted.append(skill)
+    return tuple(wanted[:limit])
