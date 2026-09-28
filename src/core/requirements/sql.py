@@ -41,7 +41,7 @@ requirement_table = Table(
     metadata,
     Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
-    Column("kind", String(255), nullable=False),
+    Column("kind", String(255), key="type", nullable=False),
     Column("status", String(255), nullable=False),
     Column("summary", Text, nullable=False),
     Column("priority", String(255), nullable=False, default=""),
@@ -57,7 +57,7 @@ link_table = Table(
     Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
     Column("requirement_id", String(255), nullable=False),
-    Column("target_kind", String(64), nullable=False),
+    Column("target_kind", String(64), key="target_type", nullable=False),
     Column("target_id", String(500), nullable=False),
     Column("properties", Text, nullable=False),
     Index("ix_requirement_links_scope_requirement", "scope_id", "requirement_id"),
@@ -87,7 +87,7 @@ class SQLRequirementsRepository:
                     requirement_table.insert().values(
                         scope_id=key,
                         id=requirement.id,
-                        kind=requirement.kind,
+                        type=requirement.type,
                         status=requirement.status,
                         summary=requirement.summary,
                         priority=requirement.priority,
@@ -100,14 +100,23 @@ class SQLRequirementsRepository:
         with self._lock:
             with self._engine.begin() as connection:
                 key = scopes.remembered(connection, scope)
-                known = connection.execute(
-                    select(requirement_table.c.id).where(
-                        requirement_table.c.scope_id == key,
-                        requirement_table.c.id == link.requirement_id,
+                known = (
+                    connection.execute(
+                        select(requirement_table).where(
+                            requirement_table.c.scope_id == key,
+                            requirement_table.c.id == link.requirement_id,
+                        )
                     )
-                ).first()
+                    .mappings()
+                    .first()
+                )
                 if known is None:
                     raise ValueError("a link needs a requirement in the same scope")
+                from .scenarios import scenario_link_properties
+
+                properties = scenario_link_properties(
+                    _requirement_from_row(known), link
+                )
                 connection.execute(
                     delete(link_table).where(
                         link_table.c.scope_id == key, link_table.c.id == link.id
@@ -118,9 +127,9 @@ class SQLRequirementsRepository:
                         scope_id=key,
                         id=link.id,
                         requirement_id=link.requirement_id,
-                        target_kind=link.target_kind,
+                        target_type=link.target_type,
                         target_id=link.target_id,
-                        properties=_encode(link.properties),
+                        properties=_encode(properties),
                     )
                 )
 
@@ -158,9 +167,9 @@ class SQLRequirementsRepository:
             statement = statement.where(
                 requirement_table.c.id.in_(sorted(query.ids)),
             )
-        if query.kinds:
+        if query.types:
             statement = statement.where(
-                requirement_table.c.kind.in_(sorted(query.kinds)),
+                requirement_table.c.type.in_(sorted(query.types)),
             )
         if query.statuses:
             statement = statement.where(
@@ -270,14 +279,14 @@ class SQLRequirementsRepository:
                 RequirementCoverage(
                     requirement_id=requirement.id,
                     status=requirement.status,
-                    code_links=sum(1 for link in related if link.target_kind == CODE),
-                    test_links=sum(1 for link in related if link.target_kind == TEST),
+                    code_links=sum(1 for link in related if link.target_type == CODE),
+                    test_links=sum(1 for link in related if link.target_type == TEST),
                     paths=tuple(
                         sorted(
                             {
                                 link.target_id
                                 for link in related
-                                if link.target_kind in (CODE, TEST)
+                                if link.target_type in (CODE, TEST)
                             }
                         )
                     ),
@@ -289,7 +298,7 @@ class SQLRequirementsRepository:
 def _requirement_from_row(row: Mapping[str, Any]) -> Requirement:
     return Requirement(
         id=row["id"],
-        kind=row["kind"],
+        type=row["kind"],
         status=row["status"],
         summary=row["summary"],
         priority=row["priority"],
@@ -302,7 +311,7 @@ def _link_from_row(row: Mapping[str, Any]) -> RequirementLink:
     return RequirementLink(
         id=row["id"],
         requirement_id=row["requirement_id"],
-        target_kind=row["target_kind"],
+        target_type=row["target_kind"],
         target_id=row["target_id"],
         properties=json.loads(row["properties"]),
     )
