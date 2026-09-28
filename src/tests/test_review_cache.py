@@ -55,7 +55,9 @@ class TestReviewCache(BaseTestCase):
         assert review_cache.get_review(REPO, 4, "abc123") is None
 
     def test_a_review_that_has_outlived_its_reuse_is_not_served(self, monkeypatch):
-        monkeypatch.setattr(review_cache, "_ttl_seconds", lambda repo: 1)
+        # Aged by hand rather than by waiting: the database answers the time in
+        # whole seconds, so a one second reuse expires on the next tick.
+        monkeypatch.setattr(review_cache, "_ttl_seconds", lambda repo: 3600)
         review_cache.save_review(REPO, 5, "abc123", REVIEW)
         assert review_cache.get_review(REPO, 5, "abc123") == REVIEW
 
