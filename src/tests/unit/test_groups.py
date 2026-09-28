@@ -55,7 +55,7 @@ def _group(identity="refunds", name="Refunds", type="feature", parent_id=""):
 
 
 def _requirement(identity, summary="Refunds settle within a business day"):
-    return Requirement(id=identity, kind="requirement", status="open", summary=summary)
+    return Requirement(id=identity, type="requirement", status="open", summary=summary)
 
 
 def test_the_membership_key_fits_what_mysql_will_index(store):

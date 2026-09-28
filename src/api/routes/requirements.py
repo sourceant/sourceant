@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlmodel import Session, select
 
 from src.auth import get_current_user
@@ -28,6 +28,15 @@ from src.core.scope import Scope
 from src.core.services import service_registry
 from src.core.workspace import repositories_of
 from src.models.repository import Repository
+
+from src.core.requirements.assurance import (
+    AcceptanceCriterion,
+    EvidenceRecord,
+    CriterionAssessment,
+)
+from src.core.requirements.assurance_sql import SQLAssuranceRepository
+from sqlalchemy import inspect
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 
@@ -84,7 +93,19 @@ def write_scope(user: dict, repo: str) -> Scope:
     return scopes[0]
 
 
-class RequirementInput(BaseModel):
+class RequirementPayload(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def public_types(cls, values):
+        if isinstance(values, dict) and {"kind", "kinds", "target_kind"}.intersection(
+            values
+        ):
+            raise ValueError("Use type, types, and target_type for requirements")
+        return values
+
+
+class RequirementInput(RequirementPayload):
+
     @field_validator("properties", mode="before")
     @classmethod
     def properties_map(cls, value):
@@ -96,7 +117,7 @@ class RequirementInput(BaseModel):
         return "" if value is None else value
 
     id: str = Field(min_length=1, max_length=255)
-    kind: str = Field(min_length=1, max_length=255)
+    type: str = Field(min_length=1, max_length=255)
     status: str = Field(min_length=1, max_length=255)
     summary: str = Field(min_length=1)
     external_ref: str = Field(default="", max_length=500)
@@ -105,7 +126,8 @@ class RequirementInput(BaseModel):
     repo: str = ""
 
 
-class LinkInput(BaseModel):
+class LinkInput(RequirementPayload):
+
     @field_validator("properties", mode="before")
     @classmethod
     def properties_map(cls, value):
@@ -113,8 +135,9 @@ class LinkInput(BaseModel):
 
     id: str = Field(min_length=1, max_length=255)
     requirement_id: str = Field(min_length=1, max_length=255)
-    target_kind: str
+    target_type: str
     target_id: str = Field(min_length=1, max_length=500)
+    relation: str = Field(default="", max_length=64)
     properties: dict[str, Any] = Field(default_factory=dict)
     repo: str = ""
 
@@ -123,10 +146,25 @@ class ImportInput(BaseModel):
     repo: str = Field(pattern=r"^[^/]+/[^/]+$")
 
 
+class ScenarioInput(BaseModel):
+    source: str = Field(min_length=1, max_length=100_000)
+
+
+@router.post("/scenarios/parse")
+def parse_scenarios(payload: ScenarioInput, user: dict = Depends(get_current_user)):
+    from src.core.requirements.scenarios import parse_scenarios as parse
+
+    get_scope(user)
+    try:
+        return success_response(parse(payload.source))
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
 @router.get("")
 def search(
     repo: str = "",
-    kinds: list[str] = Query([], max_length=100),
+    types: list[str] = Query([], max_length=100),
     statuses: list[str] = Query([], max_length=100),
     priorities: list[str] = Query([], max_length=100),
     ids: list[str] = Query([], max_length=100),
@@ -156,7 +194,7 @@ def search(
         result = store.search(
             RequirementQuery(
                 scope=scope,
-                kinds=frozenset(kinds),
+                types=frozenset(types),
                 statuses=frozenset(statuses),
                 priorities=frozenset(priorities),
                 ids=wanted,
@@ -206,13 +244,17 @@ def coverage(
     store=Depends(get_requirements),
 ):
     reports = [
-        store.coverage(CoverageQuery(scope=scope))
+        (scope, store.coverage(CoverageQuery(scope=scope)))
         for scope in request_scopes(user, repo)
     ]
     return success_response(
         {
-            "items": [asdict(item) for report in reports for item in report.items],
-            "truncated": any(report.truncated for report in reports),
+            "items": [
+                {**asdict(item), "repo": scope.get("repository", "")}
+                for scope, report in reports
+                for item in report.items
+            ],
+            "truncated": any(report.truncated for _, report in reports),
         }
     )
 
@@ -225,7 +267,7 @@ def links(
 ):
     return success_response(
         [
-            asdict(link)
+            {**asdict(link), "repo": scope.get("repository", "")}
             for scope in request_scopes(user, repo)
             for link in store.get_links(scope, frozenset())
         ]
@@ -258,7 +300,7 @@ def put_link(
     scope = write_scope(user, payload.repo or repo)
     try:
         link = RequirementLink(**payload.model_dump(exclude={"repo"}))
-        if link.target_kind == "artifact":
+        if link.target_type == "artifact":
             from src.api.routes.artifacts import get_artifacts, key_from_reference
 
             if (
@@ -337,3 +379,113 @@ def remove(
 ):
     store.remove(write_scope(user, repo), identifier)
     return success_response({"deleted": True})
+
+
+def get_assurance():
+    engine = get_engine()
+    if engine is None or not inspect(engine).has_table("requirement_assessments"):
+        raise HTTPException(
+            503, "Acceptance and evidence storage requires the requirements migration"
+        )
+    return SQLAssuranceRepository(engine)
+
+
+class CriterionInput(BaseModel):
+    criterion: AcceptanceCriterion
+    expected_revision: str = ""
+
+
+def assurance_write(action):
+    try:
+        return success_response(action())
+    except IntegrityError:
+        raise HTTPException(
+            409, "A record with this identity or a newer revision already exists"
+        )
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@router.put("/criteria")
+def put_criterion(
+    payload: CriterionInput,
+    repo: str = "",
+    user: dict = Depends(get_current_user),
+    store=Depends(get_assurance),
+):
+    scope = write_scope(user, repo)
+    return assurance_write(
+        lambda: store.put_criterion(
+            scope, payload.criterion, payload.expected_revision, str(user["user_id"])
+        )
+    )
+
+
+@router.post("/evidence")
+def record_evidence(
+    payload: EvidenceRecord,
+    repo: str = "",
+    user: dict = Depends(get_current_user),
+    store=Depends(get_assurance),
+):
+    scope = write_scope(user, repo)
+    return assurance_write(
+        lambda: store.record_evidence(scope, payload, str(user["user_id"]))
+    )
+
+
+@router.get("/evidence")
+def list_evidence(
+    repo: str = "",
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(get_current_user),
+    store=Depends(get_assurance),
+):
+    return success_response(store.evidence(write_scope(user, repo), limit, offset))
+
+
+@router.post("/assessments")
+def assess_criterion(
+    payload: CriterionAssessment,
+    repo: str = "",
+    user: dict = Depends(get_current_user),
+    store=Depends(get_assurance),
+):
+    scope = write_scope(user, repo)
+    return assurance_write(lambda: store.assess(scope, payload, str(user["user_id"])))
+
+
+@router.get("/assurance")
+def requirement_assurance(
+    requirement_id: str,
+    repo: str = "",
+    user: dict = Depends(get_current_user),
+    store=Depends(get_assurance),
+):
+    scope = write_scope(user, repo)
+    return assurance_write(lambda: store.report(scope, requirement_id))
+
+
+@router.get("/assurance/history")
+def assurance_history(
+    requirement_id: str,
+    repo: str = "",
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(get_current_user),
+    store=Depends(get_assurance),
+):
+    scope = write_scope(user, repo)
+    return assurance_write(lambda: store.history(scope, requirement_id, limit, offset))
+
+
+@router.get("/evidence/{evidence_id}")
+def get_evidence_record(
+    evidence_id: str,
+    repo: str = "",
+    user: dict = Depends(get_current_user),
+    store=Depends(get_assurance),
+):
+    scope = write_scope(user, repo)
+    return assurance_write(lambda: store.get_evidence(scope, evidence_id))
