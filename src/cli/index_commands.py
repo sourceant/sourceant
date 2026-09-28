@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import click
 
@@ -222,6 +223,78 @@ def requirements_import_command(repository, labels, dry_run):
     for item in found:
         store.put(scope, item)
     click.echo(f"{repository}  imported {len(found)}")
+
+
+@requirements_group.command(name="validate-scenarios")
+@click.argument("feature", type=click.File("r", encoding="utf-8"))
+def validate_scenarios_command(feature):
+    """Validate a .feature document without running its scenarios."""
+    from src.core.requirements.scenarios import parse_scenarios
+
+    try:
+        result = parse_scenarios(feature.read(100_001))
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(json.dumps(result, ensure_ascii=False))
+
+
+@requirements_group.command(name="import-scenarios")
+@click.argument("repository")
+@click.argument("requirement_id")
+@click.argument("feature", type=click.File("r", encoding="utf-8"))
+def import_scenarios_command(repository, requirement_id, feature):
+    """Attach a .feature document to an existing local requirement."""
+    from dataclasses import replace
+    from src.core.knowledge import SQLKnowledgeRepository
+    from src.core.requirements import (
+        KnowledgeBackedRequirements,
+        RequirementQuery,
+        SQLRequirementsRepository,
+    )
+    from src.core.scope import Scope
+
+    engine = _engine()
+    store = KnowledgeBackedRequirements(
+        SQLRequirementsRepository(engine), SQLKnowledgeRepository(engine)
+    )
+    scope = Scope.from_mapping({"repository": repository})
+    found = store.search(RequirementQuery(scope, ids=frozenset({requirement_id})))
+    if not found.items:
+        raise click.ClickException("Requirement not found")
+    item = found.items[0]
+    try:
+        store.put(
+            scope,
+            replace(
+                item,
+                properties={
+                    **item.properties,
+                    "behavior": {"source": feature.read(100_001)},
+                },
+            ),
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(f"{requirement_id}: scenarios imported")
+
+
+@requirements_group.command(name="export-scenarios")
+@click.argument("repository")
+@click.argument("requirement_id")
+def export_scenarios_command(repository, requirement_id):
+    """Print a requirement's Gherkin document."""
+    from src.core.requirements import RequirementQuery, SQLRequirementsRepository
+    from src.core.scope import Scope
+
+    found = SQLRequirementsRepository(_engine()).search(
+        RequirementQuery(
+            Scope.from_mapping({"repository": repository}),
+            ids=frozenset({requirement_id}),
+        )
+    )
+    if not found.items or not found.items[0].properties.get("behavior"):
+        raise click.ClickException("No scenarios found for this requirement")
+    click.echo(found.items[0].properties["behavior"]["source"], nl=False)
 
 
 @click.command(name="serve")

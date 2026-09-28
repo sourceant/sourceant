@@ -24,3 +24,4 @@ unidiff==1.0.0
 vaderSentiment==3.3.2
 uvicorn==0.52.4
 PyYAML==6.0.3
+gherkin-official==42.0.1

@@ -32,6 +32,12 @@ from src.core.requirements import (
     RequirementQuery,
     RequirementsRepository,
 )
+from src.core.requirements.assurance import (
+    AssuranceRepository,
+    AcceptanceCriterion,
+    EvidenceRecord,
+    CriterionAssessment,
+)
 from src.core.review.findings import FindingQuery
 from src.core.mcp.surface import Surface
 from src.core.scope import Scope
@@ -54,6 +60,7 @@ def create_mcp_server(
     knowledge: KnowledgeRepository | None = None,
     topology: TopologyRepository | None = None,
     requirements: RequirementsRepository | None = None,
+    assurance: AssuranceRepository | None = None,
     groups: GroupsRepository | None = None,
     surface: "Surface | None" = None,
     services: ServiceRegistry = service_registry,
@@ -441,11 +448,20 @@ def create_mcp_server(
         )
         return asdict(result)
 
+    @server.tool(name="parse_requirement_scenarios", structured_output=True)
+    def parse_requirement_scenarios(source: str) -> dict[str, Any]:
+        """Validate Gherkin behavior scenarios without executing them. Save the result
+        in a requirement's properties.behavior using put_requirement. Link optional
+        evidence with properties.scenario_id using link_requirement.
+        """
+        from src.core.requirements.scenarios import parse_scenarios
+
+        return parse_scenarios(source)
+
     @server.tool(
         name="put_requirement",
         description=(
-            "Create or update a scoped requirement. Also stored as knowledge of "
-            "kind requirement, so the knowledge tools find it too."
+            "Create or update a scoped requirement, also discoverable through knowledge tools."
         ),
         structured_output=True,
     )
@@ -453,13 +469,13 @@ def create_mcp_server(
         scope: dict[str, str],
         id: str,
         summary: str,
-        kind: str = "requirement",
+        type: str = "requirement",
         status: str = "open",
         external_ref: str = "",
         properties: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         repository = _require_requirements(requirements)
-        item = Requirement(id, kind, status, summary, external_ref, properties or {})
+        item = Requirement(id, type, status, summary, external_ref, properties or {})
         repository.put(requirement_scope(Scope.from_mapping(scope)), item)
         return asdict(item)
 
@@ -475,26 +491,106 @@ def create_mcp_server(
         scope: dict[str, str],
         id: str,
         requirement_id: str,
-        target_kind: str,
+        target_type: str,
         target_id: str,
         properties: dict[str, Any] | None = None,
+        relation: str = "",
     ) -> dict[str, Any]:
         repository = _require_requirements(requirements)
         link = RequirementLink(
-            id, requirement_id, target_kind, target_id, properties or {}
+            id, requirement_id, target_type, target_id, properties or {}, relation
         )
         repository.put_link(requirement_scope(Scope.from_mapping(scope)), link)
         return asdict(link)
 
+    def assurance_actor():
+        from mcp.server.auth.middleware.auth_context import get_access_token
+
+        token = get_access_token()
+        return str(token.subject or token.client_id) if token else "local"
+
+    def assurance_store():
+        if assurance is None:
+            raise ValueError("Acceptance and evidence storage is unavailable")
+        return assurance
+
+    @server.tool(name="put_acceptance_criterion", structured_output=True)
+    def put_acceptance_criterion(
+        scope: dict[str, str],
+        criterion: AcceptanceCriterion,
+        expected_revision: str = "",
+    ) -> dict[str, Any]:
+        """Define or revise a measurable criterion. Supply the previous revision when editing."""
+        return assurance_store().put_criterion(
+            requirement_scope(Scope.from_mapping(scope)),
+            criterion,
+            expected_revision,
+            assurance_actor(),
+        )
+
+    @server.tool(name="record_requirement_evidence", structured_output=True)
+    def record_requirement_evidence(
+        scope: dict[str, str], evidence: EvidenceRecord
+    ) -> dict[str, Any]:
+        """Record immutable observations or results, reusable across requirements. Never infer results from file links."""
+        return assurance_store().record_evidence(
+            requirement_scope(Scope.from_mapping(scope)), evidence, assurance_actor()
+        )
+
+    @server.tool(name="assess_requirement_criterion", structured_output=True)
+    def assess_requirement_criterion(
+        scope: dict[str, str], assessment: CriterionAssessment
+    ) -> dict[str, Any]:
+        """Record a criterion decision with evidence and rationale. Bind current revisions and supersede the preceding decision explicitly."""
+        return assurance_store().assess(
+            requirement_scope(Scope.from_mapping(scope)), assessment, assurance_actor()
+        )
+
+    @server.tool(name="get_requirement_assurance", structured_output=True)
+    def get_requirement_assurance(
+        scope: dict[str, str], requirement_id: str
+    ) -> dict[str, Any]:
+        """Read acceptance criteria and current assessments. Use the history tool for earlier decisions. References alone never establish satisfaction."""
+        return assurance_store().report(
+            requirement_scope(Scope.from_mapping(scope)), requirement_id
+        )
+
+    @server.tool(name="get_requirement_assessment_history", structured_output=True)
+    def get_requirement_assessment_history(
+        scope: dict[str, str], requirement_id: str, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        """Read paginated criterion revisions and assessment decisions, newest first."""
+        return assurance_store().history(
+            requirement_scope(Scope.from_mapping(scope)), requirement_id, limit, offset
+        )
+
+    @server.tool(name="get_requirement_evidence", structured_output=True)
+    def get_requirement_evidence(
+        scope: dict[str, str], evidence_id: str
+    ) -> dict[str, Any]:
+        """Read the observations and provenance behind an assessment."""
+        return assurance_store().get_evidence(
+            requirement_scope(Scope.from_mapping(scope)), evidence_id
+        )
+
+    @server.tool(name="search_requirement_evidence", structured_output=True)
+    def search_requirement_evidence(
+        scope: dict[str, str], limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        """Browse reusable evidence records in the authorized scope."""
+        return assurance_store().evidence(
+            requirement_scope(Scope.from_mapping(scope)), limit, offset
+        )
+
     @server.tool(
         name="search_requirements",
-        description="Search scoped requirements by identity, kind, status, or origin.",
+        description="Search scoped requirements by identity, type, status, or origin.",
         structured_output=True,
     )
     def search_requirements(
         scope: dict[str, str],
         ids: list[str] | None = None,
-        kinds: list[str] | None = None,
+        types: list[str] | None = None,
         statuses: list[str] | None = None,
         external_refs: list[str] | None = None,
         limit: int = 50,
@@ -505,7 +601,7 @@ def create_mcp_server(
             RequirementQuery(
                 scope=requirement_scope(Scope.from_mapping(scope)),
                 ids=frozenset(ids or ()),
-                kinds=frozenset(kinds or ()),
+                types=frozenset(types or ()),
                 statuses=frozenset(statuses or ()),
                 external_refs=frozenset(external_refs or ()),
                 limit=limit,

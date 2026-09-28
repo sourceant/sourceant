@@ -96,7 +96,7 @@ def test_groups_bucket_requirements_and_roll_up_what_they_hold(api):
                 "/api/requirements",
                 json={
                     "id": identity,
-                    "kind": "requirement",
+                    "type": "requirement",
                     "status": "open",
                     "summary": "Refunds settle within one business day",
                     "repo": repo,
@@ -111,7 +111,7 @@ def test_groups_bucket_requirements_and_roll_up_what_they_hold(api):
             json={
                 "id": "code",
                 "requirement_id": "refund-speed",
-                "target_kind": "code",
+                "target_type": "code",
                 "target_id": "refund.py",
                 "repo": "acme/app",
             },
@@ -173,7 +173,7 @@ def test_a_requirement_every_project_answers_to_sits_in_each_of_them(api):
         "/api/requirements",
         json={
             "id": "speed",
-            "kind": "requirement",
+            "type": "requirement",
             "status": "open",
             "summary": "Every service answers within a second",
         },
@@ -258,7 +258,7 @@ def test_a_group_that_still_holds_something_is_not_deleted(api):
         "/api/requirements",
         json={
             "id": "refund-speed",
-            "kind": "requirement",
+            "type": "requirement",
             "status": "open",
             "summary": "Refunds settle within one business day",
         },
@@ -286,7 +286,7 @@ def test_requirements_priority_links_and_workspace_isolation(api):
     client, headers, store, _ = api
     item = {
         "id": "latency",
-        "kind": "requirement",
+        "type": "requirement",
         "status": "open",
         "summary": "Respond within one second",
         "properties": {"priority": "must"},
@@ -312,7 +312,7 @@ def test_requirements_priority_links_and_workspace_isolation(api):
     link = {
         "id": "code",
         "requirement_id": "latency",
-        "target_kind": "code",
+        "target_type": "code",
         "target_id": "app.py",
     }
     assert (
@@ -502,7 +502,7 @@ async def test_http_writes_are_visible_over_mcp_and_review_selection(api):
     client, headers, store, _ = api
     item = {
         "id": "reviewed",
-        "kind": "requirement",
+        "type": "requirement",
         "status": "open",
         "summary": "Keep the observable behavior",
         "properties": {"priority": "must"},
@@ -513,7 +513,7 @@ async def test_http_writes_are_visible_over_mcp_and_review_selection(api):
         json={
             "id": "trace",
             "requirement_id": "reviewed",
-            "target_kind": "code",
+            "target_type": "code",
             "target_id": "app.py",
         },
         headers=headers(),
@@ -673,3 +673,52 @@ def test_usage_reports_what_a_provider_cache_served(api):
     assert report["total"]["cache_write_tokens"] == 100
     assert report["by_purpose"][0]["cached_input_tokens"] == 900
     assert report["by_organization"][0]["cached_input_tokens"] == 900
+
+
+def test_assessments_use_authenticated_actor_and_keep_workspace_evidence_private(api):
+    from src.core.requirements.assurance_sql import SQLAssuranceRepository
+
+    client, headers, _, engine = api
+    assurance = SQLAssuranceRepository(engine, create_schema=True)
+    client.app.dependency_overrides[requirements.get_assurance] = lambda: assurance
+    payload = {
+        "id": "inspection",
+        "type": "inspection",
+        "title": "Manual inspection",
+        "source_ref": "artifact:inspection",
+        "observed_at": "2026-09-28T10:00:00Z",
+        "result": {"observation": "Access was refused"},
+        "recorded_by": "somebody-else",
+    }
+    missing = client.post("/api/requirements/evidence", json=payload)
+    assert missing.status_code == 422
+    assert missing.json()["detail"][0]["loc"] == ["header", "authorization"]
+    assert (
+        client.post(
+            "/api/requirements/evidence",
+            json=payload,
+            headers={"Authorization": "Bearer invalid"},
+        ).status_code
+        == 401
+    )
+    saved = client.post("/api/requirements/evidence", json=payload, headers=headers())
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["recorded_by"] == "1"
+    assert (
+        client.get("/api/requirements/evidence", headers=headers("two")).json()["data"][
+            "items"
+        ]
+        == []
+    )
+    assert (
+        client.get(
+            "/api/requirements/evidence/inspection", headers=headers("two")
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/api/requirements/evidence?repo=other/repo", headers=headers()
+        ).status_code
+        == 403
+    )

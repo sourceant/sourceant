@@ -12,28 +12,17 @@ from src.core.knowledge.interfaces import KnowledgeRelationshipRemover
 
 from .models import (
     ARTIFACT,
-    CODE,
     KNOWLEDGE,
-    TEST,
-    TOPOLOGY,
     Requirement,
     RequirementLink,
 )
 
 KIND = "requirement"
 
-RELATIONSHIP_TYPES = {
-    ARTIFACT: "described_by",
-    CODE: "implemented_by",
-    TEST: "verified_by",
-    KNOWLEDGE: "relates_to",
-    TOPOLOGY: "delivered_by",
-}
-
 
 def as_knowledge(requirement: Requirement) -> KnowledgeObject:
     properties = dict(requirement.properties)
-    properties["requirement_kind"] = requirement.kind
+    properties["requirement_type"] = requirement.type
     if requirement.external_ref:
         properties["external_ref"] = requirement.external_ref
     return KnowledgeObject(
@@ -50,7 +39,7 @@ def as_knowledge_relationship(link: RequirementLink) -> KnowledgeRelationship:
         id=f"requirement-link:{link.id}",
         source_id=knowledge_id(link.requirement_id),
         target_id=link.target_id,
-        type=RELATIONSHIP_TYPES.get(link.target_kind, "relates_to"),
+        type=link.relation,
         properties=dict(link.properties),
     )
 
@@ -79,7 +68,7 @@ class KnowledgeBackedRequirements:
         self._requirements.put_link(scope, link)
         if isinstance(self._knowledge, KnowledgeRelationshipRemover):
             self._knowledge.remove_relationship(scope, f"requirement-link:{link.id}")
-        if link.target_kind == ARTIFACT:
+        if link.target_type == ARTIFACT:
             self._knowledge.put(
                 scope,
                 KnowledgeObject(
@@ -90,7 +79,7 @@ class KnowledgeBackedRequirements:
                     properties=dict(link.properties),
                 ),
             )
-        if link.target_kind in {KNOWLEDGE, ARTIFACT}:
+        if link.target_type in {KNOWLEDGE, ARTIFACT}:
             self._knowledge.put_relationship(scope, as_knowledge_relationship(link))
 
     def remove_link(self, scope: Scope, link_id: str) -> bool:

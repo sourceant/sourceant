@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -10,13 +11,13 @@ TEST = "test"
 KNOWLEDGE = "knowledge"
 TOPOLOGY = "topology"
 ARTIFACT = "artifact"
-TARGET_KINDS = frozenset({CODE, TEST, KNOWLEDGE, TOPOLOGY, ARTIFACT})
+TARGET_TYPES = frozenset({CODE, TEST, KNOWLEDGE, TOPOLOGY, ARTIFACT})
 
 
 @dataclass(frozen=True)
 class Requirement:
     id: str
-    kind: str
+    type: str
     status: str
     summary: str
     external_ref: str = ""
@@ -25,6 +26,9 @@ class Requirement:
     priority: str = ""
 
     def __post_init__(self) -> None:
+        from .scenarios import scenario_properties
+
+        object.__setattr__(self, "properties", scenario_properties(self.properties))
         priority = self.priority or str(self.properties.get("priority") or "")
         if len(priority) > 255:
             raise ValueError("priority must contain at most 255 characters")
@@ -35,8 +39,8 @@ class Requirement:
             )
         if not self.id:
             raise ValueError("requirement id must not be empty")
-        if not self.kind:
-            raise ValueError("requirement kind must not be empty")
+        if not self.type:
+            raise ValueError("requirement type must not be empty")
         if not self.status:
             raise ValueError("requirement status must not be empty")
 
@@ -45,24 +49,45 @@ class Requirement:
 class RequirementLink:
     id: str
     requirement_id: str
-    target_kind: str
+    target_type: str
     target_id: str
     properties: Mapping[str, Any] = field(default_factory=dict)
+    relation: str = ""
 
     def __post_init__(self) -> None:
         if not self.id or not self.requirement_id or not self.target_id:
             raise ValueError("a link needs an id, a requirement, and a target")
-        if self.target_kind not in TARGET_KINDS:
+        inferred = {
+            CODE: "implemented_by",
+            TEST: "has_test_case",
+            TOPOLOGY: "allocated_to",
+            ARTIFACT: "described_by",
+        }
+        relation = (
+            self.relation
+            or self.properties.get("relation")
+            or inferred.get(self.target_type, "relates_to")
+        )
+        if (
+            not isinstance(relation, str)
+            or not isinstance(self.target_type, str)
+            or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", self.target_type)
+            or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", relation)
+        ):
             raise ValueError(
-                f"target_kind must be one of {', '.join(sorted(TARGET_KINDS))}"
+                "Target type and relationship use lowercase names with underscores or hyphens"
             )
+        object.__setattr__(self, "relation", relation)
+        object.__setattr__(
+            self, "properties", {**self.properties, "relation": relation}
+        )
 
 
 @dataclass(frozen=True)
 class RequirementQuery:
     scope: Scope
     ids: frozenset[str] = field(default_factory=frozenset)
-    kinds: frozenset[str] = field(default_factory=frozenset)
+    types: frozenset[str] = field(default_factory=frozenset)
     statuses: frozenset[str] = field(default_factory=frozenset)
     external_refs: frozenset[str] = field(default_factory=frozenset)
     limit: int = 50
@@ -76,7 +101,7 @@ class RequirementQuery:
             raise ValueError("offset must not be negative")
         for name, values in (
             ("ids", self.ids),
-            ("kinds", self.kinds),
+            ("types", self.types),
             ("statuses", self.statuses),
             ("external_refs", self.external_refs),
             ("priorities", self.priorities),

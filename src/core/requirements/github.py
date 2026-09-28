@@ -54,7 +54,7 @@ def _requirement_from_issue(issue: Mapping[str, Any]) -> Requirement | None:
     )
     return Requirement(
         id=f"issue-{number}",
-        kind="requirement",
+        type="requirement",
         status=MET if issue.get("state") == "closed" else OPEN,
         summary=title,
         external_ref=str(issue.get("html_url") or number),
