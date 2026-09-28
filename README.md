@@ -41,10 +41,9 @@ curl -fsSL https://raw.githubusercontent.com/sourceant/cli/main/scripts/install.
 sourceant setup
 ~~~
 
-Read the work in a checkout before anyone else has to. It takes what the
-checkout has that its default branch does not, committed or not, and says
-whether it is ready to propose. A repository you have not added yet is added by
-being reviewed, and read into the graph behind it.
+Review the current checkout. Prepare your work for review by collaborators,
+improve quality, cut review time, check your work against rules, skills and
+workflows.
 
 ~~~bash
 sourceant review
