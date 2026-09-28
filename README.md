@@ -41,30 +41,30 @@ curl -fsSL https://raw.githubusercontent.com/sourceant/cli/main/scripts/install.
 sourceant setup
 ~~~
 
-Review the work in a checkout before proposing it to anybody. It reads what the
-checkout has that its default branch does not, committed or not, and a folder
-you have not added yet is added by being reviewed.
+Read the work in a checkout before anyone else has to. It takes what the
+checkout has that its default branch does not, committed or not, and says
+whether it is ready to propose. A repository you have not added yet is added by
+being reviewed, and read into the graph behind it.
 
 ~~~bash
 sourceant review
 ~~~
 
-Cover a repository you are not reviewing yet. It is read straight away and
-kept current.
+Three commands to a first review. The rest:
 
-~~~bash
-sourceant repo add .
-~~~
+| | |
+|---|---|
+| `sourceant repo add <path>` | Add a repository and read it into the graph |
+| `sourceant repos` | What is added, and when each was last read |
+| `sourceant graph <repository>` | What the indexer found in one repository |
+| `sourceant architecture` | Components and what they depend on |
+| `sourceant ui` | Open the graph and the reviews in a browser |
+| `sourceant mcp` | Connect an MCP client over standard input and output |
+| `sourceant status` | Whether the agent and the indexer are running |
+| `sourceant stop` | Stop the agent and its core |
 
-Point an MCP client at `http://127.0.0.1:8930/mcp` and your coding tools read
-the same graph the review reads.
-
-Open it in a browser for the code graph, what a review found line by line, and
-your settings.
-
-~~~bash
-sourceant ui
-~~~
+A client that speaks HTTP goes to `http://127.0.0.1:8930/mcp` instead, and reads
+the same graph a review reads.
 
 Docs: [sourceant.ai/docs](https://sourceant.ai/docs).
 
