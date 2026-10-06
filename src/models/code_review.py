@@ -171,6 +171,12 @@ def severity_of(suggestion) -> Severity:
         severity = _softer(severity, 1)
     if certainty is Certainty.CONDITIONAL:
         severity = _softer(severity, 1)
+    if (
+        severity is Severity.NIT
+        and blast is not Blast.NOBODY
+        and impact not in _NOTHING_PERSISTS
+    ):
+        severity = Severity.ADVISORY
     return severity
 
 

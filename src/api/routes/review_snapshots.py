@@ -25,6 +25,8 @@ OPTIONS = {
     "maximum-rejections": "review.maximum_rejections",
     "reading-budget": "review.reading_budget",
     "include-nitpicks": "review.include_nitpicks",
+    "finding-scope": "review.finding_scope",
+    "reuse-responses-days": "review.reuse_responses_days",
 }
 
 

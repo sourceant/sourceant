@@ -148,6 +148,153 @@ def test_failed_review_is_distinct_from_clean_review():
     assert answer.reviews[0].error == "RuntimeError"
 
 
+def test_evaluated_duplicates_merge_across_producers_but_distinct_issues_survive():
+    class Multiple:
+        def review(self, *args, **kwargs):
+            return CodeReview(
+                verdict=Verdict.COMMENT,
+                code_suggestions=[
+                    finding(),
+                    finding().model_copy(
+                        update={"comment": "The same failure needs the same guard."}
+                    ),
+                    finding().model_copy(
+                        update={"comment": "A separate failure leaks a resource."}
+                    ),
+                ],
+            )
+
+    class Challenge:
+        def evaluate(self, request, candidates, *, pass_id):
+            assert len(candidates) == 4
+            return ReviewEvaluation(
+                tuple(
+                    FindingEvaluation(
+                        index,
+                        EvaluationStatus.SUPPORTED,
+                        "Source establishes the cause and fix",
+                        ("app.py:1",),
+                        duplicate_of=(0 if index in {1, 3} else None),
+                    )
+                    for index in range(4)
+                )
+            )
+
+    analysis = Analysis(
+        findings=(
+            AnalyzerFinding(
+                path="app.py",
+                start_line=1,
+                end_line=1,
+                rule="guard",
+                message="The changed behavior fails.",
+                severity="error",
+                tool="lint",
+            ),
+        )
+    )
+    answer = ParallelReviewOrchestrator().review(
+        request(analysis),
+        ParallelReviewPlan(
+            (ReviewParticipant("reader", Multiple(), object()),),
+            (EvaluationParticipant("challenge", Challenge()),),
+            minimum_support=1,
+        ),
+    )
+    assert len(answer.review.code_suggestions) == 2
+    assert answer.analysis.findings == ()
+    assert answer.finding_groups == ((0, 1, 3), (2,))
+    assert len(answer.candidates) == 4
+    assert answer.review.verdict == Verdict.REQUEST_CHANGES
+
+
+@pytest.mark.parametrize("target", [-1, 1, 2, True])
+def test_invalid_duplicate_links_fail_evaluation(target):
+    class Multiple:
+        def review(self, *args, **kwargs):
+            return CodeReview(
+                verdict=Verdict.COMMENT,
+                code_suggestions=[
+                    finding(),
+                    finding().model_copy(update={"comment": "Another claim."}),
+                ],
+            )
+
+    class Challenge:
+        def evaluate(self, request, candidates, *, pass_id):
+            return ReviewEvaluation(
+                (
+                    FindingEvaluation(
+                        0, EvaluationStatus.SUPPORTED, "Source", ("app.py:1",)
+                    ),
+                    FindingEvaluation(
+                        1,
+                        EvaluationStatus.SUPPORTED,
+                        "Source",
+                        ("app.py:1",),
+                        duplicate_of=target,
+                    ),
+                )
+            )
+
+    answer = ParallelReviewOrchestrator().review(
+        request(Analysis()),
+        ParallelReviewPlan(
+            (ReviewParticipant("reader", Multiple(), object()),),
+            (EvaluationParticipant("challenge", Challenge()),),
+            minimum_support=1,
+        ),
+    )
+    assert answer.evaluations[1].error == "ValueError"
+    assert answer.review.code_suggestions == []
+
+
+def test_disagreement_about_duplicate_identity_preserves_both_findings():
+    class Multiple:
+        def review(self, *args, **kwargs):
+            return CodeReview(
+                verdict=Verdict.COMMENT,
+                code_suggestions=[
+                    finding(),
+                    finding().model_copy(update={"comment": "Another claim."}),
+                ],
+            )
+
+    class Challenge:
+        def __init__(self, target):
+            self.target = target
+
+        def evaluate(self, request, candidates, *, pass_id):
+            return ReviewEvaluation(
+                (
+                    FindingEvaluation(
+                        0, EvaluationStatus.SUPPORTED, "Source", ("app.py:1",)
+                    ),
+                    FindingEvaluation(
+                        1,
+                        EvaluationStatus.SUPPORTED,
+                        "Source",
+                        ("app.py:1",),
+                        duplicate_of=self.target,
+                    ),
+                )
+            )
+
+    answer = ParallelReviewOrchestrator().review(
+        request(Analysis()),
+        ParallelReviewPlan(
+            (ReviewParticipant("reader", Multiple(), object()),),
+            (
+                EvaluationParticipant("first", Challenge(0)),
+                EvaluationParticipant("second", Challenge(None)),
+            ),
+            minimum_support=2,
+        ),
+    )
+    assert len(answer.review.code_suggestions) == 2
+    assert answer.finding_groups == ((0,), (1,))
+
+
 def test_rejected_candidate_within_tolerance_does_not_degrade_coverage():
     plan = ParallelReviewPlan(
         (ReviewParticipant("reader", Reader(), object()),),
@@ -272,12 +419,67 @@ def test_model_evaluator_challenges_candidates_with_distinct_passes():
                 }
             )
 
+    from dataclasses import replace
+
+    supplied = request()
+    supplied = replace(
+        supplied,
+        changes=replace(
+            supplied.changes,
+            title="Return the request to its caller",
+            description="The caller installs error handlers on the returned request.",
+        ),
+    )
     model = Model()
     evaluator = ModelReviewEvaluator(model)
     for identity in ("first", "second"):
-        answer = evaluator.evaluate(request(), [finding()], pass_id=identity)
+        answer = evaluator.evaluate(supplied, [finding()], pass_id=identity)
         assert answer.judgments[0].status == EvaluationStatus.UNRESOLVED
     assert model.prompts[0] != model.prompts[1]
+    context = json.loads(model.prompts[0].split("\nReview input:\n", 1)[1])
+    assert context["title"] == supplied.changes.title
+    assert context["description"] == supplied.changes.description
+
+
+def test_model_evaluator_bounds_related_source_and_reports_omissions():
+    import json
+    from dataclasses import replace
+
+    class Model:
+        token_limit = 131072
+        prompt = ""
+
+        def count_tokens(self, value):
+            return len(value)
+
+        def generate_text(self, prompt, *, purpose):
+            self.prompt = prompt
+            return json.dumps(
+                {
+                    "judgments": [
+                        {
+                            "candidate": 0,
+                            "status": "unresolved",
+                            "reason": "Missing additional context",
+                            "evidence": [],
+                        }
+                    ]
+                }
+            )
+
+    model = Model()
+    supplied = replace(
+        request(),
+        source_context={
+            "caller.py": "use(request.query)\n",
+            "oversized.py": "x" * 30000,
+        },
+    )
+    ModelReviewEvaluator(model).evaluate(supplied, [finding()], pass_id="one")
+    context = json.loads(model.prompt.split("\nReview input:\n", 1)[1])
+    assert context["source"]["caller.py"] == supplied.source_context["caller.py"]
+    assert "oversized.py" not in context["source"]
+    assert context["omitted_context"] == ["oversized.py"]
 
 
 def test_model_evaluator_rejects_missing_votes():
@@ -287,6 +489,42 @@ def test_model_evaluator_rejects_missing_votes():
 
     with pytest.raises(ValueError):
         ModelReviewEvaluator(Model()).evaluate(request(), [finding()], pass_id="one")
+
+
+def test_unverified_guard_bypass_cannot_support_a_finding():
+    class Model:
+        def generate_text(self, prompt, *, purpose):
+            return '{"judgments": [{"candidate": 0, "status": "supported", "reason": "A library may bypass the handler", "evidence": ["response.once(error, reject)"], "unverified_assumptions": ["The library bypasses the registered error handler"]}]}'
+
+    result = ModelReviewEvaluator(Model()).evaluate(
+        request(), [finding()], pass_id="one"
+    )
+    assert result.judgments[0].status == EvaluationStatus.UNRESOLVED
+    assert result.judgments[0].duplicate_of is None
+    assert "Unverified assumptions" in result.judgments[0].reason
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_model_evaluator_respects_configured_quality_policy(monkeypatch, enabled):
+    from src.core.settings.configuration import Configuration
+
+    monkeypatch.setattr(Configuration, "value", lambda self, key: enabled)
+
+    class Model:
+        def generate_text(self, prompt, *, purpose):
+            if enabled:
+                assert "these concerns need not demonstrate a runtime failure" in prompt
+                assert "Omit optional type refactors" not in prompt
+            else:
+                assert "Omit optional type refactors" in prompt
+                assert (
+                    "these concerns need not demonstrate a runtime failure"
+                    not in prompt
+                )
+            assert "fixing one leaves the other unfixed" in prompt
+            return '{"judgments": [{"candidate": 0, "status": "unresolved", "reason": "Missing context", "evidence": []}]}'
+
+    ModelReviewEvaluator(Model()).evaluate(request(), [finding()], pass_id="one")
 
 
 def test_deterministic_analyzers_run_in_parallel_and_filter_unchanged_lines(tmp_path):

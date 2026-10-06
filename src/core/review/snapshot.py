@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from src.core.change_context import ChangeSet, ChangedFile
@@ -8,6 +8,7 @@ from src.core.code_index import CodeIndexReader, InMemoryCodeIndex
 from src.core.code_index.emit import emit_file_graph
 from src.core.model import provider_for
 from src.core.review.models import Told
+from src.core.review.source_search import searchable_snapshot
 from src.core.review_coverage import Coverage
 from src.core.scope import Scope
 from src.core.services import ServiceRegistry, service_registry
@@ -63,10 +64,14 @@ def review_snapshot(
     for path, source in files.items():
         emit_file_graph(index, changes.code_scope, path, source)
     services = services.with_service(CodeIndexReader, index, "snapshot")
+    services = searchable_snapshot(services, changes.code_scope, files, files.get)
     model = provider_for(configuration, services, purpose="review")
     if model is None or model.missing_credentials():
         raise ValueError("A configured review model and credentials are required")
-    judge = reviewer(services) or CodeReviewer(services=services)
+    judge = reviewer(services)
+    if isinstance(judge, CodeReviewer):
+        judge = replace(judge, services=services)
+    judge = judge or CodeReviewer(services=services)
     review = judge.review(
         changes,
         provider=model,

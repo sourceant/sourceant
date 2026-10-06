@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, Mapping, TYPE_CHECKING
 
 from src.core.analysis import Analysis
 from src.core.change_context import ChangeSet
@@ -26,6 +26,7 @@ class FindingEvaluation:
     status: EvaluationStatus
     reason: str
     evidence: tuple[str, ...] = ()
+    duplicate_of: int | None = None
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class ReviewInput:
     root: Path | None = None
     analysis: Analysis | None = None
     options: dict[str, Any] = field(default_factory=dict)
+    source_context: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -97,3 +99,4 @@ class ReviewExecution:
     reviews: tuple[ParticipantOutcome, ...]
     evaluations: tuple[ParticipantOutcome, ...]
     analysis: Analysis | None = None
+    finding_groups: tuple[tuple[int, ...], ...] = ()

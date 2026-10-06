@@ -50,7 +50,7 @@ from src.core.skills import (
     SkillType,
     split,
 )
-from src.core.review.fingerprint import of_code, of_words
+from src.core.review.fingerprint import of_words
 from src.core.review.models import Sections, Told
 from src.core.review.execution import ReviewEvaluation
 from src.core.services import ServiceRegistry, service_registry
@@ -220,6 +220,7 @@ class CodeReviewer:
                     else ()
                 ),
                 "producers": execution.producers,
+                "finding_groups": execution.finding_groups,
                 "candidates": [
                     one.model_dump(mode="json") for one in execution.candidates
                 ],
@@ -333,7 +334,7 @@ class CodeReviewer:
                         Told(
                             "Finding scope",
                             "Report correct, actionable, nontrivial issues relevant to "
-                            "the repository, including pre-existing issues and related "
+                            "this change, including pre-existing issues and related "
                             "files outside the diff. Use actual head source paths and "
                             "line numbers. Scope alone is not grounds to omit an issue.",
                         ).rendered(),
@@ -527,10 +528,6 @@ class CodeReviewer:
                 continue
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
             keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
-            if suggestion.suggested_code:
-                keys.add(
-                    (*anchor, of_code(suggestion.file_name, suggestion.suggested_code))
-                )
             if not seen.intersection(keys):
                 unique.append(suggestion)
                 seen.update(keys)

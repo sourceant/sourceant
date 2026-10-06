@@ -5,11 +5,12 @@ class Prompts:
     """
 
     # Reusable prompt components
-    _EXPERT_REVIEWER_INTRO = """You are an **expert code reviewer** specializing in **clean code, security, performance, and best practices**."""
+    _EXPERT_REVIEWER_INTRO = """You are an **expert code reviewer** specializing in **correctness, security, reliability, performance, and maintainability**."""
 
     _REVIEW_CRITERIA = """## Review Criteria
      - **Code Quality & Style** → Naming conventions, formatting, unnecessary complexity.
-     - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks.
+     - **Bugs & Logical Errors** → Edge cases, incorrect assumptions, runtime risks. Check changed API calls against their return, error, resource ownership, and environment contracts.
+     - **Test Correctness** → Tests that fail in supported environments, miss their asserted behavior, or exercise the wrong path. A failing test is a correctness defect, even when the affected file is a test.
      - **Performance** → Inefficiencies, better algorithms, unnecessary computations.
      - **Security** → Injection risks, authentication flaws, unsafe operations.
      - **Readability & Maintainability** → Clarity, modularity, inline documentation.
@@ -23,13 +24,13 @@ class Prompts:
     - **Line Number Source**: Each line in `__new hunk__` is prefixed with its exact file line number. Use these numbers directly as your `start_line` and `end_line`. Do NOT count from hunk headers.
     - **CRITICAL: `existing_code`**: You **MUST** provide the **exact code snippet** from the diff that your suggestion targets. Copy it character-for-character from the diff, excluding the line number prefix, but including the `+` or `-` prefix. This is the primary anchor for placing your comment.
     - **Drop-in Replacement**: When `comment_only` is false, `suggested_code` **MUST** be a drop-in replacement for `existing_code`. It **MUST NOT** include surrounding, unchanged lines of code.
-    - **Only Comment on Changed Lines**: You can ONLY comment on lines that appear in the diff with `+` or `-` prefixes. Context lines (no prefix) cannot receive comments."""
+    - **Finding Scope**: Follow the finding scope supplied with this review. Unless repository scope is supplied, anchor findings to changed lines with `+` or `-` prefixes. Repository scope permits relevant issues in pre-existing code and related files outside the diff; use their actual head file paths and RIGHT-side line numbers."""
 
     _CODE_SUGGESTIONS_RULES = """**CRITICAL**: The `code_suggestions` array is **ONLY for actionable findings with a concrete problem and needed action**.
     - **NEVER** include positive affirmations, praise, or "good job" comments
     - **NEVER** highlight existing good code without suggesting an improvement
     - **NEVER** comment on code just to acknowledge it exists
-    - **NEVER** suggest code that is identical or substantially similar to existing code
+    - **NEVER** suggest code that is identical to existing code
     - **NEVER** include a suggestion if no actionable improvement exists. Omit it entirely
     - **ONLY** include suggestions that identify actual issues and propose fixes
     - For a replacement patch, set `comment_only` to false and provide `suggested_code` that meaningfully fixes the issue.
@@ -47,6 +48,7 @@ class Prompts:
     - Include only evidence needed to act on the finding. Do not narrate your investigation, repeat the code, or add headings, praise, disclaimers, or multiple examples
     - Put replacement code only in `suggested_code`, not again in the comment
     - Report every distinct actionable issue, but explain each issue once
+    - Report independently fixable occurrences separately, even when they share a pattern. Each finding targets one issue at one location; do not bundle defects in separate methods or files into one comment.
     - Answer `trigger`, `blast`, `impact` and `certainty` on every suggestion. They decide how it is ranked
 
     **Remember**: The primary purpose of code review is to find issues, not to praise good code. If you cannot suggest a meaningful improvement, do not comment on that code."""
@@ -167,7 +169,7 @@ class Prompts:
     - **Ensure precision** → Always specify exact `line` numbers from the diff and `side`.
     - **Line Number Accuracy** → Read line numbers directly from the prefixed numbers in `__new hunk__` lines.
     - **Be specific** → Your suggestions should be easy to understand and implement.
-    - **Stay on topic** → Focus only on the provided code diff.
+    - **Stay on topic** → Use the supplied diff, source and related context within the configured finding scope.
 
     **Deliver a precise review containing only findings supported by the available code.**"""
 

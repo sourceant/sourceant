@@ -15,6 +15,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Sequence
 
+from src.models.code_review import summary_from
+
 from src.core.change_context import (
     GitError,
     branch_of,
@@ -311,12 +313,24 @@ class WorkingTreeReviews:
                 raise ReviewRefused(400, "The requested head requires a clean checkout")
         configuration = Configuration(repository=repository, user=LOCAL)
         code_index = None
+        read_content = on_disk(root)
+        services = self.services
         if head:
-            from src.core.code_index import InMemoryCodeIndex
-            from src.core.code_index.indexer import RepositoryIndexer
+            from src.core.code_index import InMemoryCodeIndex, CodeIndexReader
+            from src.core.code_index.emit import emit_file_graph
+            from src.core.review.checkout import checkout_source
+            from src.core.review.source_search import searchable_snapshot
 
+            paths, read_content = checkout_source(root, head)
             code_index = InMemoryCodeIndex()
-            RepositoryIndexer(code_index).index(entry.scope, root)
+            for path in paths:
+                source = read_content(path)
+                if source is not None:
+                    emit_file_graph(code_index, entry.scope, path, source)
+            services = services.with_service(CodeIndexReader, code_index, "checkout")
+            services = searchable_snapshot(
+                services, entry.scope, paths, read_content, revision=head
+            )
 
         try:
             changes = read_change(
@@ -433,7 +447,12 @@ class WorkingTreeReviews:
             answer["note"] = "No skill here bears on what changed."
             return answer
 
-        judge = reviewer(self.services)
+        judge = reviewer(services)
+        if head:
+            from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
+
+            if isinstance(judge, CodeReviewer):
+                judge = replace(judge, services=services)
         if judge is None:
             raise ReviewRefused(
                 503, "Nothing here is able to review. The code reviewer is not loaded."
@@ -490,7 +509,7 @@ class WorkingTreeReviews:
                     configuration=configuration,
                 ),
                 provider=provider,
-                read_content=on_disk(root),
+                read_content=read_content,
                 root=root,
                 **({"code_index": code_index} if code_index is not None else {}),
                 coverage=coverage,
@@ -526,14 +545,23 @@ class WorkingTreeReviews:
             )
             if review is not None:
                 reviewed_summary = review.summary
-                review.summary = summarize_changes(
-                    changes.diff,
-                    provider,
-                    configuration,
-                    {"title": changes.title, "description": changes.description},
-                    review.code_suggestions or (),
-                    services=self.services,
-                )
+                try:
+                    review.summary = summarize_changes(
+                        changes.diff,
+                        provider,
+                        configuration,
+                        {"title": changes.title, "description": changes.description},
+                        review.code_suggestions or (),
+                        services=self.services,
+                    )
+                except Exception as error:  # noqa: BLE001
+                    logger.warning("Review overview failed: %s", type(error).__name__)
+                    answer["note"] = (
+                        "Overview generation failed; evaluated review retained."
+                    )
+                    review.summary = summary_from(
+                        list(review.code_suggestions or ()), reviewed_summary
+                    )
                 if review.execution and reviewed_summary is not None:
                     review.summary.critical_issues = list(
                         dict.fromkeys(

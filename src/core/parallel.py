@@ -41,3 +41,12 @@ class SharedReader:
                     self.pending.pop(path, None)
                 future.set_exception(error)
         return future.result()
+
+    def captured(self):
+        with self.lock:
+            pending = dict(self.pending)
+        return {
+            path: future.result()
+            for path, future in pending.items()
+            if future.done() and isinstance(future.result(), str)
+        }
