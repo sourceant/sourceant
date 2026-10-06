@@ -406,6 +406,69 @@ class FindingsDeliveryTests(unittest.TestCase):
                     self.assertEqual(order, ["overview", "review"])
                     update.assert_not_called()
 
+    def test_static_findings_stay_in_the_overview(self):
+        captured = json.loads(
+            (FIXTURES / "github/static-finding-review.json").read_text()
+        )
+        finding = captured["review"]["body"].split("\n\n<!--")[0]
+        self.assertIn(finding, captured["overview"]["body"])
+        posted = []
+
+        def response(body):
+            result = requests.Response()
+            result.status_code = 200
+            result._content = json.dumps(body).encode()
+            return result
+
+        def post(url, **kwargs):
+            posted.append((url, kwargs["json"]))
+            recorded = (
+                captured["review"] if url.endswith("/reviews") else captured["overview"]
+            )
+            return response({**recorded, "body": kwargs["json"]["body"]})
+
+        with patch.dict(
+            "os.environ",
+            {
+                "GITHUB_APP_ID": "test-app",
+                "GITHUB_APP_PRIVATE_KEY_PATH": "unused-test-key.pem",
+                "GITHUB_APP_CLIENT_ID": "test-client",
+            },
+        ):
+            github = GitHub()
+        with (
+            patch.object(
+                github,
+                "get_installation_access_token",
+                return_value="your-api-key-here",
+            ),
+            patch("requests.get", return_value=response([])),
+            patch("requests.post", side_effect=post),
+        ):
+            result = github.post_review(
+                Repository(owner="sourceant", name="sourceant"),
+                PullRequest(number=201, head_sha=captured["review"]["commit_id"]),
+                CodeReview(
+                    verdict=Verdict.APPROVE,
+                    code_suggestions=[],
+                    summary=CodeReviewSummary(
+                        overview="Reviewed the change.",
+                        critical_issues=[finding],
+                        minor_suggestions=[],
+                    ),
+                ),
+                LineMapper([]),
+                delivery_id="static-finding",
+            )
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(len(posted), 2)
+        self.assertIn(finding, posted[0][1]["body"])
+        self.assertEqual(
+            posted[1][1]["body"],
+            "Review complete. See the overview comment for a summary."
+            "\n\n<!-- SOURCEANT_REVIEW:static-finding -->",
+        )
+
     def test_authentication_request_failures_keep_retry_information(self):
         captured = json.loads(
             (FIXTURES / "github/review-posting-errors.json").read_text()
