@@ -467,7 +467,10 @@ class WorkingTreeReviews:
             if configuration.value("review.plan") == "premium"
             else examine(root, list(changes.paths), self.services)
         )
-        analysis = about_the_change(analysis, touched_lines(parse_diff(changes.diff)))
+        if configuration.value("review.finding_scope") == "changed-lines":
+            analysis = about_the_change(
+                analysis, touched_lines(parse_diff(changes.diff))
+            )
         for name in analysis.ran if analysis is not None else ():
             coverage.record(ANALYSIS, name, answered=True, target=repository)
         for name in analysis.unavailable if analysis is not None else ():

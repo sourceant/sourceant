@@ -83,12 +83,10 @@ class Analysis:
 
         shown = sorted(self.findings, key=worst_first)[:MOST_REPORTED]
         return (
-            "## What Static Analysis Already Found\n"
-            "These were reported by tools run over this change before you read "
-            "it. They are established, not proposed: do not repeat them, do "
-            "not argue with them, and do not spend a finding on anything "
-            "listed below. Say something about these lines only if you have "
-            "something to add that the tool did not say.\n\n"
+            "## Static Analysis Observations\n"
+            "Tools reported these potential issues. Verify them against the source "
+            "and surrounding context; tool reports can be false positives. Avoid "
+            "duplicating a report unless you establish a different issue.\n\n"
             + "\n".join(one.rendered() for one in shown)
         )
 

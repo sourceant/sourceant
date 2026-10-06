@@ -149,6 +149,16 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.finding_scope",
+        label="Finding scope",
+        description="Report findings on changed lines or anywhere in the reviewed repository.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default="changed-lines",
+        choices=("changed-lines", "repository"),
+        group="Review",
+    ),
+    Setting(
         key="review.discovery_passes",
         label="Independent readings per model",
         description="Number of independent discovery readings for each review model.",

@@ -631,9 +631,9 @@ class CodeReviewerPlugin(BasePlugin):
                     analysis_paths,
                 ):
                     analysis = examine(analysis_root, analysis_paths, self.services)
-            # Before the gate, so a repository with history is not stopped for
-            # what was already in it.
-            analysis = about_the_change(analysis, touched_lines(parsed_files))
+            gate_analysis = about_the_change(analysis, touched_lines(parsed_files))
+            if configuration.value("review.finding_scope") == "changed-lines":
+                analysis = gate_analysis
             for name in analysis.ran if analysis is not None else ():
                 coverage.record(ANALYSIS, name, answered=True, target=repo_full_name)
             for name in analysis.unavailable if analysis is not None else ():
@@ -645,10 +645,10 @@ class CodeReviewerPlugin(BasePlugin):
                     reason="could not run over this change",
                 )
 
-            errors = analysis.counted(ERROR) if analysis is not None else 0
+            errors = gate_analysis.counted(ERROR) if gate_analysis is not None else 0
             if gate and errors >= gate:
                 return self._too_broken_to_read(
-                    github, repository, pull_request, analysis, gate, post
+                    github, repository, pull_request, gate_analysis, gate, post
                 )
 
             if not workspace:

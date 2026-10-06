@@ -331,3 +331,21 @@ def test_invalid_plan_is_refused(options):
         ParallelReviewPlan(
             (ReviewParticipant("reader", Reader(), object()),), **options
         )
+
+
+def test_repository_scope_retains_static_findings_outside_changed_lines(monkeypatch):
+    from src.core.settings.configuration import Configuration
+
+    original = Configuration.value
+    monkeypatch.setattr(
+        Configuration,
+        "value",
+        lambda self, key: (
+            "repository" if key == "review.finding_scope" else original(self, key)
+        ),
+    )
+    observed = AnalyzerFinding("app.py", 10, 10, "lint", "Existing error")
+    answer = DeterministicReviewEvaluator().evaluate(
+        request(Analysis(findings=(observed,))), (), pass_id="one"
+    )
+    assert answer.analysis.findings == (observed,)

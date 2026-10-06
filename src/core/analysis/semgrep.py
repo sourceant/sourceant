@@ -1,4 +1,4 @@
-"""Semgrep, read for what it is certain of.
+"""Semgrep observations for independent review.
 
 One tool rather than an aggregator, deliberately. An aggregator runs the real
 linter for each language, which is better output, but it installs that

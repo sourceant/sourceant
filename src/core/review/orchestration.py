@@ -7,6 +7,9 @@ from src.core.parallel import parallel_map
 from src.core.review_coverage.models import Coverage
 from src.models.code_review import (
     CodeReview,
+    CodeSuggestion,
+    Side,
+    SuggestionCategory,
     Severity,
     Verdict,
     severity_of,
@@ -131,6 +134,26 @@ class ParallelReviewOrchestrator:
                     candidates.append(finding)
                     producers.append([identity])
 
+        tool_candidates = {}
+        for observation in analysis.findings:
+            tool_candidates[len(candidates)] = observation
+            candidates.append(
+                CodeSuggestion(
+                    file_name=observation.path,
+                    start_line=observation.start_line,
+                    end_line=observation.end_line,
+                    side=Side.RIGHT,
+                    comment=observation.rendered().lstrip("- "),
+                    category=(
+                        SuggestionCategory.BUG
+                        if observation.severity == ERROR
+                        else SuggestionCategory.IMPROVEMENT
+                    ),
+                    suggested_code="",
+                )
+            )
+            producers.append([f"analysis:{observation.tool}"])
+
         evaluating = replace(request, analysis=analysis)
 
         def evaluate(task):
@@ -179,6 +202,8 @@ class ParallelReviewOrchestrator:
             ),
         )
         retained = []
+        retained_tools = []
+        unresolved = False
         for index, finding in enumerate(candidates):
             votes = [
                 judgment.status
@@ -191,7 +216,13 @@ class ParallelReviewOrchestrator:
                 votes.count(EvaluationStatus.SUPPORTED) >= plan.minimum_support
                 and votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections
             ):
-                retained.append(finding)
+                if index in tool_candidates:
+                    retained_tools.append(tool_candidates[index])
+                else:
+                    retained.append(finding)
+            elif votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections:
+                unresolved = True
+        analysis = replace(analysis, findings=tuple(retained_tools))
         completed = any(isinstance(one.result, CodeReview) for one in reviews)
         review = None
         if completed:
@@ -200,7 +231,7 @@ class ParallelReviewOrchestrator:
                 or any(one.error for one in evaluations)
                 or bool(analysis is not None and analysis.unavailable)
                 or bool(analysis is not None and analysis.unchecked)
-                or bool(candidates and not retained)
+                or unresolved
             )
             verdict = (
                 Verdict.REQUEST_CHANGES

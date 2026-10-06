@@ -33,12 +33,7 @@ class AnalyzerReport:
 
 @dataclass(frozen=True)
 class AnalyzerFinding:
-    """One thing a tool is certain about.
-
-    Certain is the point. This is the half of a review that does not need a
-    model to agree with it, so it carries where it is and what rule it broke
-    and nothing that would need interpreting.
-    """
+    """A tool observation with its source location and rule."""
 
     path: str
     start_line: int
