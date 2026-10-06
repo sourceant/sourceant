@@ -1,7 +1,6 @@
 # src/utils/suggestion_filter.py
 
 import re
-from difflib import SequenceMatcher
 from typing import List, Optional, Tuple
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -189,35 +188,7 @@ class SuggestionFilter:
         if not existing or not suggested:
             return False
 
-        normalized_existing = self._normalize_code(existing)
-        normalized_suggested = self._normalize_code(suggested)
-
-        if normalized_existing == normalized_suggested:
-            return True
-
-        similarity = SequenceMatcher(
-            None, normalized_existing, normalized_suggested
-        ).ratio()
-        return similarity > 0.95
-
-    def _normalize_code(self, code: str) -> str:
-        """Normalize code for comparison by removing insignificant differences."""
-        lines = code.strip().splitlines()
-        normalized_lines = []
-        for line in lines:
-            line = self._strip_diff_prefix(line)
-            normalized = " ".join(line.split())
-            if normalized:
-                normalized_lines.append(normalized)
-        return "\n".join(normalized_lines)
-
-    def _strip_diff_prefix(self, line: str) -> str:
-        """Strip leading diff markers from a single line."""
-        if not line:
-            return line
-        if line[0] in {"+", "-"}:
-            return line[1:]
-        return line
+        return existing == suggested
 
     def _has_negative_indicators(self, comment: str) -> bool:
         """Check if a comment contains any negative/actionable indicators."""

@@ -96,6 +96,38 @@ def test_identical_code_filtered(suggestion_filter):
     assert len(removed) == 1
 
 
+@pytest.mark.parametrize(
+    "existing,suggested",
+    [
+        ("if index > len(values): return None", "if index >= len(values): return None"),
+        (
+            "if (index > values.length) return null;",
+            "if (index >= values.length) return null;",
+        ),
+        (
+            "if index > len(values) { return 0, false }",
+            "if index >= len(values) { return 0, false }",
+        ),
+        (
+            "try { return reader.read(); } finally { reader.close(); }",
+            "try { return await reader.read(); } finally { reader.close(); }",
+        ),
+        (
+            "if permitted:\n    audit()\nreturn data",
+            "if permitted:\n    audit()\n    return data",
+        ),
+        ('return "a  b"', 'return "a b"'),
+    ],
+)
+def test_small_semantic_changes_survive_filtering(
+    suggestion_filter, existing, suggested
+):
+    candidate = _make_suggestion(existing_code=existing, suggested_code=suggested)
+    kept, removed = suggestion_filter.filter_suggestions([candidate])
+    assert kept == [candidate]
+    assert removed == []
+
+
 def test_comment_only_is_an_explicit_choice(suggestion_filter):
     suggestion = _make_suggestion(
         comment="This loses pending jobs during shutdown. Drain them before exiting.",

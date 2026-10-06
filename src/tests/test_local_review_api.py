@@ -130,6 +130,7 @@ class TestLocalReview(BaseTestCase):
 
         engine = create_engine(f"sqlite:///{tmp_path / 'store.db'}")
         services = ServiceRegistry()
+        self.services = services
         app.dependency_overrides[get_code_index] = lambda: SQLCodeIndexRepository(
             engine, create_schema=True
         )
@@ -153,6 +154,13 @@ class TestLocalReview(BaseTestCase):
         )
         services.register(Reviewer, CodeReviewer(services=services), "test")
         yield
+        for key in (
+            "review.plan",
+            "review.discovery_passes",
+            "review.evaluation_passes",
+            "review.finding_scope",
+        ):
+            self.client.delete(f"/api/local/settings/{key}")
         app.dependency_overrides.clear()
 
     def git(self, *arguments):
@@ -186,6 +194,182 @@ class TestLocalReview(BaseTestCase):
         if started.status_code != 200:
             return started
         return self.client.get(f"/api/local/reviews/{started.json()['data']['id']}")
+
+    @pytest.mark.parametrize("status", ["supported", "rejected", "unresolved"])
+    def test_premium_static_findings_require_evaluation_over_http(
+        self, monkeypatch, status
+    ):
+        from src.core.analysis import Analyzer, AnalyzerFinding, ERROR
+
+        class Linter:
+            name = "lint"
+
+            def available(self):
+                return True
+
+            def examine(self, root, paths):
+                return (
+                    AnalyzerFinding(
+                        "db/0001_charges.py",
+                        2,
+                        2,
+                        "test-rule",
+                        "Potential failure",
+                        ERROR,
+                        "lint",
+                    ),
+                )
+
+        class Model(FakeModel):
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose != "review-evaluation":
+                    return super().generate_text(prompt, purpose=purpose)
+                payload = json.loads(prompt.split("\nReview input:\n", 1)[1])
+                assert (
+                    payload["source"]["db/0001_charges.py"]
+                    == "def up():\n    return 1\n"
+                )
+                assert len(payload["candidates"]) == 1
+                return json.dumps(
+                    {
+                        "judgments": [
+                            {
+                                "candidate": 0,
+                                "status": status,
+                                "reason": "Inspect the migration return value",
+                                "evidence": (
+                                    ["return 1"] if status != "unresolved" else []
+                                ),
+                            }
+                        ]
+                    }
+                )
+
+        self.services.contribute(Analyzer, Linter(), "lint")
+        model = Model({"findings": []}, review=_review(Verdict.APPROVE, []))
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        self.register()
+        for key, value in {
+            "review.plan": "premium",
+            "review.discovery_passes": 1,
+            "review.evaluation_passes": 1,
+        }.items():
+            response = self.client.put(
+                f"/api/local/settings/{key}", json={"value": value}
+            )
+            assert response.status_code == 200
+        self.edit_the_migration()
+        response = self.review()
+        assert response.status_code == 200
+        review = response.json()["data"]["review"]
+        execution = review["review"]["execution"]
+        assert len(execution["candidates"]) == 1
+        assert execution["producers"] == [["analysis:lint"]]
+        assert execution["evaluations"][1]["judgments"][0]["status"] == status
+        assert len(execution["analysis_findings"]) == (
+            1 if status == "supported" else 0
+        )
+        assert bool(review["review"]["summary"]["critical_issues"]) == (
+            status == "supported"
+        )
+        assert (review["review"]["verdict"] == "REQUEST_CHANGES") == (
+            status == "supported"
+        )
+
+    @pytest.mark.parametrize(
+        "path,source,line",
+        [
+            (
+                "context.py",
+                "def element(values, index):\n    if index < 0 or index > len(values):\n        return None\n    return values[index]\n",
+                4,
+            ),
+            (
+                "context.ts",
+                "export function element(values: number[], index: number): number {\n    if (index < 0 || index > values.length) return 0;\n    return values[index];\n}\n",
+                3,
+            ),
+            (
+                "context.go",
+                "package context\nfunc element(values []int, index int) int {\n    if index < 0 || index > len(values) { return 0 }\n    return values[index]\n}\n",
+                4,
+            ),
+            (
+                "Context.java",
+                "class Context {\n    static int element(int[] values, int index) {\n        if (index < 0 || index > values.length) return 0;\n        return values[index];\n    }\n}\n",
+                4,
+            ),
+            (
+                "context.rs",
+                "fn element(values: &[i32], index: usize) -> Option<i32> {\n    if index > values.len() { return None; }\n    Some(values[index])\n}\n",
+                3,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "scope,expected", [("changed-lines", 0), ("repository", 1)]
+    )
+    def test_off_diff_comment_survives_repository_scope_over_http(
+        self, monkeypatch, scope, expected, path, source, line
+    ):
+        (self.source / path).write_text(source)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "feat: Add context")
+        candidate = CodeSuggestion(
+            file_name=path,
+            start_line=line,
+            end_line=line,
+            side=Side.RIGHT,
+            category=SuggestionCategory.BUG,
+            comment="Reject an index equal to the collection length before reading its element.",
+            existing_code=source.splitlines()[line - 1],
+            suggested_code=None,
+            comment_only=True,
+        )
+
+        class Model(FakeModel):
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose != "review-evaluation":
+                    return super().generate_text(prompt, purpose=purpose)
+                payload = json.loads(prompt.split("\nReview input:\n", 1)[1])
+                assert payload["source"][path] == source
+                assert payload["candidates"][0]["finding"]["start_line"] == line
+                return json.dumps(
+                    {
+                        "judgments": [
+                            {
+                                "candidate": 0,
+                                "status": "supported",
+                                "reason": "The guard allows an index equal to the collection length.",
+                                "evidence": [source.splitlines()[line - 1]],
+                            }
+                        ]
+                    }
+                )
+
+        model = Model({"findings": []}, review=_review(Verdict.COMMENT, [candidate]))
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        self.register()
+        for key, value in {
+            "review.plan": "premium",
+            "review.discovery_passes": 1,
+            "review.finding_scope": scope,
+        }.items():
+            assert (
+                self.client.put(
+                    f"/api/local/settings/{key}", json={"value": value}
+                ).status_code
+                == 200
+            )
+        self.edit_the_migration()
+        response = self.review()
+        assert response.status_code == 200
+        review = response.json()["data"]["review"]
+        assert len(review["review"]["suggestions"]) == expected
+        if expected:
+            assert review["review"]["suggestions"][0]["path"] == path
+            assert review["review"]["execution"]["candidates"][0]["position"] is None
+            assert not review["review"]["execution"]["evaluations"][1]["error"]
 
     @pytest.mark.parametrize("committed", [False, True])
     def test_premium_http_review_runs_redundancy_and_returns_coverage(
@@ -318,7 +502,14 @@ class TestLocalReview(BaseTestCase):
             "files": {
                 "db/0001_charges.py": (self.source / "db/0001_charges.py").read_text()
             },
-            "configuration": {"discovery-passes": "3", "evaluation-passes": "2"},
+            "configuration": {
+                "discovery-passes": "3",
+                "evaluation-passes": "2",
+                "finding-scope": "repository",
+                "reuse-responses-days": "0",
+                "max-output-tokens": "16384",
+                "reasoning-effort": "low",
+            },
         }
         unauthenticated = self.client.post("/api/reviews/snapshots", json=body)
         assert unauthenticated.status_code == 422
@@ -330,6 +521,10 @@ class TestLocalReview(BaseTestCase):
         assert response.status_code == 200, response.text
         answer = response.json()["data"]
         assert answer["snapshot"]["head"] == body["head"]
+        assert answer["configuration"]["finding-scope"] == "repository"
+        assert answer["configuration"]["reuse-responses-days"] == "0"
+        assert answer["configuration"]["max-output-tokens"] == "16384"
+        assert answer["configuration"]["reasoning-effort"] == "low"
         execution = answer["review"]["review"]["execution"]
         assert len(execution["reviews"]) == 3
         assert all(not one["error"] for one in execution["reviews"])
@@ -352,6 +547,169 @@ class TestLocalReview(BaseTestCase):
             headers={"Authorization": "Bearer " + token},
         )
         assert invalid.status_code == 422
+
+    @pytest.mark.parametrize(
+        "path,guard",
+        [
+            ("bounds.py", "if index > len(values): return None"),
+            ("bounds.ts", "if (index > values.length) return null;"),
+            ("bounds.go", "if index > len(values) { return 0, false }"),
+        ],
+    )
+    def test_http_review_keeps_one_character_bounds_fixes(
+        self, monkeypatch, path, guard
+    ):
+        safe = guard.replace(" > ", " >= ")
+        prefix, suffix = {
+            "bounds.py": ("def item(values, index):\n", "    return values[index]\n"),
+            "bounds.ts": (
+                "export function item(values: number[], index: number): number | null {\n",
+                "    return values[index];\n}\n",
+            ),
+            "bounds.go": (
+                "package fixture\n\nfunc Item(values []int, index int) (int, bool) {\n",
+                "    return values[index], true\n}\n",
+            ),
+        }[path]
+        (self.source / path).write_text(prefix + "    " + safe + "\n" + suffix)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "test: Establish bounds guard")
+        candidate = CodeSuggestion(
+            file_name=path,
+            start_line=prefix.count("\n") + 1,
+            end_line=prefix.count("\n") + 1,
+            side=Side.RIGHT,
+            category=SuggestionCategory.BUG,
+            comment="The guard permits index equal to the collection length, causing an invalid access. Use >= to reject that index.",
+            existing_code=guard,
+            suggested_code=safe,
+        )
+
+        class BoundsModel(FakeModel):
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose == "review-evaluation":
+                    candidates = json.loads(prompt.split("Review input:\n", 1)[1])[
+                        "candidates"
+                    ]
+                    return json.dumps(
+                        {
+                            "judgments": [
+                                {
+                                    "candidate": index,
+                                    "status": "supported",
+                                    "reason": "Both comments identify the guard allowing an index equal to length.",
+                                    "evidence": [guard],
+                                    "duplicate_of": 0 if index else None,
+                                }
+                                for index in range(len(candidates))
+                            ]
+                        }
+                    )
+                return super().generate_text(prompt, purpose=purpose)
+
+        repeated = candidate.model_copy(
+            update={
+                "comment": "The guard fails to reject index equal to length, allowing invalid access. Reject that boundary.",
+                "suggested_code": {
+                    "bounds.py": "if index > len(values) or index == len(values): return None",
+                    "bounds.ts": "if (index > values.length || index === values.length) return null;",
+                    "bounds.go": "if index > len(values) || index == len(values) { return 0, false }",
+                }[path],
+            }
+        )
+        model = BoundsModel(
+            {"findings": []}, review=_review(Verdict.COMMENT, [candidate, repeated])
+        )
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        self.register()
+        for key, value in {
+            "review.plan": "premium",
+            "review.discovery_passes": 1,
+        }.items():
+            assert (
+                self.client.put(
+                    f"/api/local/settings/{key}", json={"value": value}
+                ).status_code
+                == 200
+            )
+        (self.source / path).write_text(prefix + "    " + guard + "\n" + suffix)
+        response = self.review()
+        assert response.status_code == 200
+        suggestions = response.json()["data"]["review"]["review"]["suggestions"]
+        assert len(suggestions) == 1
+        assert suggestions[0]["suggested_code"] == safe
+        assert response.json()["data"]["review"]["review"]["execution"][
+            "finding_groups"
+        ] == [[0, 1]]
+
+    def test_http_evaluation_receives_the_source_read_by_discovery(self, monkeypatch):
+        caller = "export const locale = request.query.language;\n"
+        (self.source / "caller.ts").write_text(caller)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "test: Establish related caller")
+        candidate = CodeSuggestion(
+            file_name="db/0001_charges.py",
+            start_line=2,
+            end_line=2,
+            side=Side.RIGHT,
+            category=SuggestionCategory.BUG,
+            comment="Add a new migration instead.",
+            existing_code="    return 1\n",
+            suggested_code="    pass\n",
+        )
+
+        class ContextModel(FakeModel):
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose == "review-evaluation":
+                    supplied = json.loads(prompt.split("Review input:\n", 1)[1])
+                    assert supplied["source"]["caller.ts"] == caller
+                return super().generate_text(prompt, purpose=purpose)
+
+        model = ContextModel(
+            {"findings": []}, review=_review(Verdict.COMMENT, [candidate])
+        )
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+
+        def read_related(self, changes, *, read_content, **options):
+            from src.core.search import Searcher, SearchQuery
+
+            found = self.services.resolve(Searcher).search(
+                SearchQuery(changes.code_scope, ("locale",))
+            )
+            assert any(
+                one.path == "caller.ts" and caller.strip() in one.text
+                for one in found.matches
+            )
+            assert read_content("caller.ts") == caller
+            return model.review
+
+        monkeypatch.setattr(CodeReviewer, "_review_once", read_related)
+        self.register()
+        for key, value in {
+            "review.plan": "premium",
+            "review.discovery_passes": 3,
+        }.items():
+            assert (
+                self.client.put(
+                    f"/api/local/settings/{key}", json={"value": value}
+                ).status_code
+                == 200
+            )
+        base = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        self.edit_the_migration()
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "test: Change the migration")
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        response = self.review(against=base, head=head)
+        assert response.status_code == 200
+        execution = response.json()["data"]["review"]["review"]["execution"]
+        assert len(execution["reviews"]) == 3
+        assert not execution["evaluations"][1]["error"]
+        assert execution["evaluations"][1]["judgments"][0]["status"] == "supported"
 
     def test_a_checkout_with_nothing_changed_is_ready(self):
         self.register()
@@ -553,6 +911,57 @@ class TestLocalReview(BaseTestCase):
         assert answered["review"]["suggestions"][0]["suggested_code"]
         # A verdict of change-this is not ready, whatever the skills said.
         assert answered["ready"] is False
+
+    @pytest.mark.parametrize("overview_fails", [False, True])
+    def test_conditional_defects_survive_nitpick_filter_and_overview_failure(
+        self, monkeypatch, overview_fails
+    ):
+        from src.models.code_review import Blast, Certainty, Impact, Trigger
+
+        candidate = CodeSuggestion(
+            file_name="db/0001_charges.py",
+            start_line=2,
+            end_line=2,
+            side=Side.RIGHT,
+            comment="Add a new migration instead.",
+            category=SuggestionCategory.BUG,
+            existing_code="    return 1\n",
+            suggested_code="    pass\n",
+            trigger=Trigger.ANYONE,
+            blast=Blast.ONE,
+            impact=Impact.CRASH,
+            certainty=Certainty.CONDITIONAL,
+        )
+
+        class Model(FakeModel):
+            def generate_summary(self, suggestions, **kwargs):
+                if overview_fails:
+                    raise ValueError("Invalid structured summary output")
+                return super().generate_summary(suggestions, **kwargs)
+
+        model = Model({"passed": True}, review=_review(suggestions=[candidate]))
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        self.register()
+        assert (
+            self.client.put(
+                "/api/local/settings/review.plan", json={"value": "premium"}
+            ).status_code
+            == 200
+        )
+        self.edit_the_migration()
+        response = self.review()
+        assert response.status_code == 200
+        answer = response.json()["data"]
+        assert answer["status"] == "done"
+        review = answer["review"]
+        assert len(review["review"]["suggestions"]) == 1
+        assert review["review"]["suggestions"][0]["comment"] == candidate.comment
+        assert review["review"]["execution"]["candidates"]
+        assert review["review"]["summary"]["overview"]
+        if overview_fails:
+            assert review["note"] == (
+                "Overview generation failed; evaluated review retained."
+            )
 
     def test_the_reviewer_is_told_what_the_team_wrote_down(self, monkeypatch):
         model = FakeModel({"passed": True})

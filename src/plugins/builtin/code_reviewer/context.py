@@ -514,9 +514,7 @@ def related_code_section(
             )
 
     repositories = searchable_repositories(reached, here)
-    at = changes.code_scope.extend(
-        {"revision": changes.base_revision or changes.revision}
-    )
+    at = code_scope or changes.code_scope
 
     def scope_for(repository: str) -> Scope:
         if repository == here:

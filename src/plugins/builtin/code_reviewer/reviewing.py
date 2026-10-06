@@ -10,6 +10,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, List, Sequence
+from pathlib import PurePosixPath
 
 from rapidfuzz import fuzz
 
@@ -49,7 +50,7 @@ from src.core.skills import (
     SkillType,
     split,
 )
-from src.core.review.fingerprint import of_code, of_words
+from src.core.review.fingerprint import of_words
 from src.core.review.models import Sections, Told
 from src.core.review.execution import ReviewEvaluation
 from src.core.services import ServiceRegistry, service_registry
@@ -219,6 +220,7 @@ class CodeReviewer:
                     else ()
                 ),
                 "producers": execution.producers,
+                "finding_groups": execution.finding_groups,
                 "candidates": [
                     one.model_dump(mode="json") for one in execution.candidates
                 ],
@@ -323,6 +325,22 @@ class CodeReviewer:
             analysis=analysis.rendered() if analysis else None,
         )
 
+        if configuration.value("review.finding_scope") == "repository":
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        Told(
+                            "Finding scope",
+                            "Report correct, actionable, nontrivial issues relevant to "
+                            "this change, including pre-existing issues and related "
+                            "files outside the diff. Use actual head source paths and "
+                            "line numbers. Scope alone is not grounds to omit an issue.",
+                        ).rendered(),
+                    ]
+                ),
+            )
         if not include_nitpicks:
             sections = replace(
                 sections,
@@ -333,7 +351,7 @@ class CodeReviewer:
                             "Finding policy",
                             "Nitpicks are disabled. Report only concrete bugs, security "
                             "issues, or material performance problems supported by the "
-                            "changed code. Omit style, naming, clarity, documentation, "
+                            "reviewed code. Omit style, naming, clarity, documentation, "
                             "refactoring, and optional improvements from findings and "
                             "overview sections. Do not relabel cosmetic advice as a bug "
                             "or performance issue. State the failing scenario and its "
@@ -510,10 +528,6 @@ class CodeReviewer:
                 continue
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
             keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
-            if suggestion.suggested_code:
-                keys.add(
-                    (*anchor, of_code(suggestion.file_name, suggestion.suggested_code))
-                )
             if not seen.intersection(keys):
                 unique.append(suggestion)
                 seen.update(keys)
@@ -728,6 +742,12 @@ class CodeReviewer:
                 line_mapper,
                 evidence=evidence,
                 evidence_rejections=rejections,
+                read_content=(
+                    read_content
+                    if changes.configuration.value("review.finding_scope")
+                    == "repository"
+                    else None
+                ),
             )
 
         verdict = verdict_from(suggestions)
@@ -813,6 +833,12 @@ class CodeReviewer:
                         line_mapper,
                         evidence=evidence,
                         evidence_rejections=rejections,
+                        read_content=(
+                            read_content
+                            if changes.configuration.value("review.finding_scope")
+                            == "repository"
+                            else None
+                        ),
                     )
                 )
 
@@ -835,6 +861,7 @@ class CodeReviewer:
         line_mapper: LineMapper,
         evidence: ChangedFileEvidenceReader | None = None,
         evidence_rejections: List[str] | None = None,
+        read_content: Callable[[str], str | None] | None = None,
     ) -> List:
         """Filter and map suggestions to valid diff positions."""
         result = []
@@ -851,7 +878,20 @@ class CodeReviewer:
             mapped_result = line_mapper.validate_and_map_suggestion(
                 suggestion, strict_mode=True
             )
-            if suggestion.comment_only and not mapped_result:
+            outside_diff = False
+            if read_content is not None and not mapped_result:
+                path = PurePosixPath(suggestion.file_name)
+                if not path.is_absolute() and ".." not in path.parts:
+                    content = read_content(suggestion.file_name)
+                    outside_diff = (
+                        isinstance(content, str)
+                        and suggestion.side == Side.RIGHT
+                        and 1
+                        <= suggestion.start_line
+                        <= suggestion.end_line
+                        <= len(content.splitlines())
+                    )
+            if suggestion.comment_only and not mapped_result and not outside_diff:
                 logger.info(
                     "Filtered comment-only finding without a valid diff anchor for %s",
                     suggestion.file_name,

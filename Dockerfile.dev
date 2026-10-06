@@ -3,7 +3,7 @@ FROM python:3.10-slim-bookworm
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    libpq-dev gcc python3-dev sqlite3 git curl && \
+    libpq-dev gcc python3-dev sqlite3 git curl ripgrep && \
     rm -rf /var/lib/apt/lists/*
 
 # Semgrep is shelled out to, never imported, so it is kept in an environment of

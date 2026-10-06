@@ -99,6 +99,15 @@ def test_a_defect_on_a_line_nothing_reaches_is_a_nitpick():
 
 
 @pytest.mark.parametrize(
+    "impact", [Impact.CRASH, Impact.WRONG_ANSWER, Impact.DEGRADED, Impact.DISCLOSURE]
+)
+def test_a_concrete_failure_affecting_one_caller_is_not_a_nitpick(impact):
+    defect = ranked(Trigger.ANYONE, Blast.ONE, impact, certainty=Certainty.CONDITIONAL)
+    assert severity_of(defect) is Severity.ADVISORY
+    assert not is_nitpick(defect)
+
+
+@pytest.mark.parametrize(
     "unattended",
     [Trigger.AUTOMATION, Trigger.EVENT, Trigger.SERVICE, Trigger.ENVIRONMENT],
 )

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter, field_validator
 
 
@@ -21,6 +23,10 @@ class ModelProfile(ModelEndpoint):
     base_url: str = ""
     token_limit: int = Field(default=8192, ge=1)
     cache_prompts: bool = True
+    max_output_tokens: int | None = Field(default=None, ge=0)
+    reasoning_effort: (
+        Literal["", "none", "minimal", "low", "medium", "high", "xhigh", "max"] | None
+    ) = None
 
 
 class ProfileCredential(ModelEndpoint):

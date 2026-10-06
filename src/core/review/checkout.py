@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
@@ -12,6 +12,7 @@ from src.core.model import provider_for
 from src.core.parallel import SharedReader
 from src.core.review_coverage import Coverage
 from src.core.review.models import Told
+from src.core.review.source_search import searchable_snapshot
 from src.core.scope import Scope
 from src.core.services import ServiceRegistry
 from src.core.settings.configuration import Configuration
@@ -40,6 +41,33 @@ def git(root: Path, *arguments: str) -> bytes:
     if completed.returncode:
         raise ValueError("The requested Git snapshot is unavailable")
     return completed.stdout
+
+
+def checkout_source(root: Path, head: str):
+    entries = {}
+    for entry in git(root, "ls-tree", "-r", "-z", head).split(b"\0"):
+        if not entry:
+            continue
+        info, path = entry.split(b"\t", 1)
+        mode, kind, object_id = info.split(b" ")
+        if kind == b"blob" and mode in (b"100644", b"100755"):
+            entries[path.decode("utf-8")] = object_id.decode("ascii")
+
+    def content(path: str) -> str | None:
+        relative = PurePosixPath(path)
+        if relative.is_absolute() or ".." in relative.parts or path not in entries:
+            return None
+        if int(git(root, "cat-file", "-s", entries[path])) > 1_000_000:
+            return None
+        raw = git(root, "cat-file", "blob", entries[path])
+        if b"\0" in raw:
+            return None
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    return tuple(entries), SharedReader(content)
 
 
 def read_checkout(
@@ -93,41 +121,22 @@ def read_checkout(
         description=description,
         configuration=configuration,
     )
-    entries = {}
-    for entry in git(root, "ls-tree", "-r", "-z", head).split(b"\0"):
-        if not entry:
-            continue
-        info, path = entry.split(b"\t", 1)
-        mode, kind, object_id = info.split(b" ")
-        if kind == b"blob" and mode in (b"100644", b"100755"):
-            entries[path.decode("utf-8")] = object_id.decode("ascii")
-
-    def content(path: str) -> str | None:
-        relative = PurePosixPath(path)
-        if relative.is_absolute() or ".." in relative.parts or path not in entries:
-            return None
-        if int(git(root, "cat-file", "-s", entries[path])) > 1_000_000:
-            return None
-        raw = git(root, "cat-file", "blob", entries[path])
-        if b"\0" in raw:
-            return None
-        try:
-            return raw.decode("utf-8")
-        except UnicodeDecodeError:
-            return None
-
-    read_content = SharedReader(content)
+    entries, read_content = checkout_source(root, head)
     services = services or ServiceRegistry()
     index = InMemoryCodeIndex()
     for path in entries:
-        source = content(path)
+        source = read_content(path)
         if source is not None:
             emit_file_graph(index, changes.code_scope, path, source)
     services = services.with_service(CodeIndexReader, index, "checkout")
+    services = searchable_snapshot(services, changes.code_scope, entries, read_content)
     model = provider_for(configuration, services, purpose="review")
     if model is None or model.missing_credentials():
         raise ValueError("A configured review model and credentials are required")
-    judge = reviewer(services) or CodeReviewer(services=services)
+    judge = reviewer(services)
+    if isinstance(judge, CodeReviewer):
+        judge = replace(judge, services=services)
+    judge = judge or CodeReviewer(services=services)
     review = judge.review(
         changes,
         provider=model,

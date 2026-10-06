@@ -3,10 +3,13 @@ from __future__ import annotations
 from dataclasses import replace
 
 from src.core.analysis import ERROR, Analysis, also_reported
-from src.core.parallel import parallel_map
+from src.core.parallel import SharedReader, parallel_map
 from src.core.review_coverage.models import Coverage
 from src.models.code_review import (
     CodeReview,
+    CodeSuggestion,
+    Side,
+    SuggestionCategory,
     Severity,
     Verdict,
     severity_of,
@@ -39,6 +42,10 @@ class ParallelReviewOrchestrator:
             plan.minimum_support,
             plan.maximum_rejections,
         )
+
+        reader = SharedReader(request.read_content) if request.read_content else None
+        if reader is not None:
+            request = replace(request, read_content=reader)
 
         def read(task):
             participant, repetition = task
@@ -101,6 +108,11 @@ class ParallelReviewOrchestrator:
             return read(task)
 
         outcomes = parallel_map(discover, [*tasks, None], plan.concurrency)
+        if reader is not None:
+            request = replace(
+                request,
+                source_context={**request.source_context, **reader.captured()},
+            )
         coverage = request.options.get("coverage")
         if isinstance(coverage, Coverage):
             for collected in coverage_by_pass.values():
@@ -131,6 +143,26 @@ class ParallelReviewOrchestrator:
                     candidates.append(finding)
                     producers.append([identity])
 
+        tool_candidates = {}
+        for observation in analysis.findings:
+            tool_candidates[len(candidates)] = observation
+            candidates.append(
+                CodeSuggestion(
+                    file_name=observation.path,
+                    start_line=observation.start_line,
+                    end_line=observation.end_line,
+                    side=Side.RIGHT,
+                    comment=observation.rendered().lstrip("- "),
+                    category=(
+                        SuggestionCategory.BUG
+                        if observation.severity == ERROR
+                        else SuggestionCategory.IMPROVEMENT
+                    ),
+                    suggested_code="",
+                )
+            )
+            producers.append([f"analysis:{observation.tool}"])
+
         evaluating = replace(request, analysis=analysis)
 
         def evaluate(task):
@@ -160,6 +192,18 @@ class ParallelReviewOrchestrator:
                     raise ValueError(
                         "An evaluator returned a judgment without evidence"
                     )
+                if any(
+                    one.duplicate_of is not None
+                    and (
+                        type(one.duplicate_of) is not int
+                        or one.status != EvaluationStatus.SUPPORTED
+                        or not 0 <= one.duplicate_of < one.candidate
+                        or candidates[one.duplicate_of].file_name
+                        != candidates[one.candidate].file_name
+                    )
+                    for one in result.judgments
+                ):
+                    raise ValueError("An evaluator returned an invalid duplicate")
                 return ParticipantOutcome(participant.name, repetition, result)
             except Exception as error:
                 return ParticipantOutcome(
@@ -178,20 +222,72 @@ class ParallelReviewOrchestrator:
                 plan.concurrency,
             ),
         )
-        retained = []
+        accepted = []
+        judgments = {}
+        unresolved = False
         for index, finding in enumerate(candidates):
-            votes = [
-                judgment.status
+            valid_location = 1 <= finding.start_line <= finding.end_line
+            if (
+                valid_location
+                and finding.side == Side.RIGHT
+                and request.read_content is not None
+            ):
+                try:
+                    content = request.read_content(finding.file_name)
+                    valid_location = isinstance(
+                        content, str
+                    ) and finding.end_line <= len(content.splitlines())
+                except Exception:
+                    valid_location = False
+            judgments[index] = [
+                judgment
                 for outcome in evaluations
                 if isinstance(outcome.result, ReviewEvaluation)
                 for judgment in outcome.result.judgments
                 if judgment.candidate == index
             ]
+            votes = [one.status for one in judgments[index]]
+            if not valid_location:
+                unresolved = True
+                continue
             if (
                 votes.count(EvaluationStatus.SUPPORTED) >= plan.minimum_support
                 and votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections
             ):
-                retained.append(finding)
+                accepted.append(index)
+            elif votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections and (
+                not votes or EvaluationStatus.UNRESOLVED in votes
+            ):
+                unresolved = True
+        grouped = {}
+        canonical = {}
+        for index in accepted:
+            links = [
+                one.duplicate_of
+                for one in judgments[index]
+                if one.status == EvaluationStatus.SUPPORTED
+            ]
+            target = index
+            if (
+                len(links) >= max(1, plan.minimum_support)
+                and links[0] in canonical
+                and all(one == links[0] for one in links)
+            ):
+                target = canonical[links[0]]
+            canonical[index] = target
+            grouped.setdefault(target, []).append(index)
+        retained = [
+            candidates[index] for index in grouped if index not in tool_candidates
+        ]
+        retained_tools = [
+            tool_candidates[index] for index in grouped if index in tool_candidates
+        ]
+        blocking = any(
+            severity_of(candidates[index]) == Severity.BLOCKING
+            or (index in tool_candidates and tool_candidates[index].severity == ERROR)
+            for index in accepted
+        )
+        analysis = replace(analysis, findings=tuple(retained_tools))
         completed = any(isinstance(one.result, CodeReview) for one in reviews)
         review = None
         if completed:
@@ -200,14 +296,11 @@ class ParallelReviewOrchestrator:
                 or any(one.error for one in evaluations)
                 or bool(analysis is not None and analysis.unavailable)
                 or bool(analysis is not None and analysis.unchecked)
-                or bool(candidates and not retained)
+                or unresolved
             )
             verdict = (
                 Verdict.REQUEST_CHANGES
-                if (
-                    any(severity_of(one) == Severity.BLOCKING for one in retained)
-                    or (analysis is not None and analysis.counted(ERROR) > 0)
-                )
+                if blocking
                 else Verdict.COMMENT if retained or incomplete else Verdict.APPROVE
             )
             review = also_reported(
@@ -229,4 +322,5 @@ class ParallelReviewOrchestrator:
             reviews,
             tuple(evaluations),
             analysis,
+            tuple(tuple(one) for one in grouped.values()),
         )
