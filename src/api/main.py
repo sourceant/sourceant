@@ -79,6 +79,7 @@ from src.api.routes import local_settings as local_settings_endpoints
 from src.api.routes import repos as repo_endpoints
 from src.api.routes import routing as routing_endpoints
 from src.api.routes import reviews as review_endpoints
+from src.api.routes import review_snapshots as snapshot_endpoints
 from src.api.routes import settings as settings_endpoints
 from src.api.routes import skills as skill_endpoints
 from src.api.routes import topology as topology_endpoints
@@ -90,6 +91,9 @@ app.include_router(pr_endpoints.router, prefix="/api/prs", tags=["pull_requests"
 app.include_router(repo_endpoints.router, prefix="/api/repos", tags=["repositories"])
 app.include_router(routing_endpoints.router, prefix="/api/routing", tags=["routing"])
 app.include_router(review_endpoints.router, prefix="/api/reviews", tags=["reviews"])
+app.include_router(
+    snapshot_endpoints.router, prefix="/api/reviews/snapshots", tags=["reviews"]
+)
 app.include_router(triage_endpoints.router, prefix="/api/triage", tags=["triage"])
 app.include_router(cache_endpoints.router, prefix="/api/caches", tags=["caches"])
 app.include_router(settings_endpoints.router, prefix="/api/settings", tags=["settings"])

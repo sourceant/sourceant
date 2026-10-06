@@ -387,6 +387,7 @@ class CodeReviewSummary(CodeReviewOverview):
 
 
 class CodeReview(BaseModel):
+    execution: Optional[dict] = None
     """Represents a comprehensive code review with various feedback categories."""
 
     code_quality: Optional[str] = Field(

@@ -22,7 +22,25 @@ from .interfaces import (
     Reviewer,
     ReviewStore,
     WorkingTreeReviewer,
+    ReviewEvaluator,
+    ReviewOrchestrator,
+    ReviewPlan,
+    ReviewPlanSource,
 )
+from .execution import (
+    EvaluationParticipant,
+    EvaluationStatus,
+    FindingEvaluation,
+    ParallelReviewPlan,
+    ParticipantOutcome,
+    ReviewEvaluation,
+    ReviewExecution,
+    ReviewInput,
+    ReviewParticipant,
+)
+from .evaluation import DeterministicReviewEvaluator, ModelReviewEvaluator
+from .orchestration import ParallelReviewOrchestrator
+from .planning import SettingsReviewPlanSource
 from .models import Sections, Told
 from .records import DONE, FAILED, RUNNING, ReviewRecord, named, now
 from .sql import SQLReviewStore
@@ -34,6 +52,24 @@ def reviewer(services: ServiceRegistry = service_registry) -> Optional[Reviewer]
         return services.resolve(Reviewer)
     except LookupError:
         return None
+
+
+def review_orchestrator(
+    services: ServiceRegistry = service_registry,
+) -> ReviewOrchestrator:
+    try:
+        return services.resolve(ReviewOrchestrator)
+    except LookupError:
+        return ParallelReviewOrchestrator(DeterministicReviewEvaluator(services))
+
+
+def review_plan_source(
+    services: ServiceRegistry = service_registry,
+) -> ReviewPlanSource:
+    try:
+        return services.resolve(ReviewPlanSource)
+    except LookupError:
+        return SettingsReviewPlanSource(services)
 
 
 def working_tree_reviewer(
@@ -67,6 +103,25 @@ def review_store(services: ServiceRegistry = service_registry):
 
 
 __all__ = [
+    "ReviewEvaluator",
+    "ReviewOrchestrator",
+    "ReviewPlan",
+    "review_orchestrator",
+    "ReviewPlanSource",
+    "SettingsReviewPlanSource",
+    "review_plan_source",
+    "EvaluationParticipant",
+    "EvaluationStatus",
+    "FindingEvaluation",
+    "ParallelReviewPlan",
+    "ParticipantOutcome",
+    "ReviewEvaluation",
+    "ReviewExecution",
+    "ReviewInput",
+    "ReviewParticipant",
+    "DeterministicReviewEvaluator",
+    "ModelReviewEvaluator",
+    "ParallelReviewOrchestrator",
     "DISMISSED",
     "DONE",
     "FAILED",

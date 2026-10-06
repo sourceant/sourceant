@@ -4,10 +4,27 @@ from src.core.services import ServiceRegistry, service_registry
 from src.core.settings.configuration import Configuration
 from src.llms.llm_interface import LLMInterface
 
-from .interfaces import LLMSource
+from .interfaces import LLMSource, ModelRouter
 from .settings import LLMConfig, SettingsLLMSource
 
 _core = SettingsLLMSource()
+
+
+def providers_for(
+    configuration: Configuration,
+    purpose: str,
+    services: ServiceRegistry = service_registry,
+) -> tuple[LLMInterface, ...]:
+    try:
+        source = services.resolve(ModelRouter)
+    except LookupError:
+        source = llm_source(services)
+    if isinstance(source, ModelRouter):
+        return source.providers_for(configuration, purpose)
+    if (configuration.value("model.purposes") or {}).get(purpose):
+        raise ValueError("The model source does not support purpose-specific profiles")
+    provider = source.provider_for(configuration)
+    return (provider,) if provider is not None else ()
 
 
 def llm_source(services: ServiceRegistry = service_registry) -> LLMSource:
@@ -30,8 +47,13 @@ def config_for(
 def provider_for(
     configuration: Configuration,
     services: ServiceRegistry = service_registry,
+    *,
+    purpose: str = "",
 ) -> LLMInterface | None:
     """The model for this configuration, or None where no scope in it names one."""
+    if purpose:
+        selected = providers_for(configuration, purpose, services)
+        return selected[0] if selected else None
     return llm_source(services).provider_for(configuration)
 
 
@@ -42,4 +64,6 @@ __all__ = [
     "SettingsLLMSource",
     "llm_source",
     "provider_for",
+    "providers_for",
+    "ModelRouter",
 ]

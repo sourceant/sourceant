@@ -92,6 +92,10 @@ class Coverage:
         """The repositories the walk said this change reaches."""
         self._reached = tuple(sorted(set(repositories)))
 
+    def merge(self, other: Coverage) -> None:
+        self._attempts.extend(other.attempts)
+        self._reached = tuple(sorted(set((*self._reached, *other.reached))))
+
     @property
     def attempts(self) -> tuple[Attempt, ...]:
         return tuple(self._attempts)

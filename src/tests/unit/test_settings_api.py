@@ -15,6 +15,52 @@ from src.models.config import ConfigType
 TEST_JWT_SECRET = "settings-api-test-secret"
 
 
+def test_model_profiles_and_credentials_use_http_and_hide_secrets(settings_client):
+    profile = {"reviewer": {"name": "openai/review-model"}}
+    credentials = {
+        "reviewer": {"model": "openai/review-model", "api_key": "your-api-key-here"}
+    }
+    for key, value in (
+        ("model.profiles", profile),
+        ("model.profile_credentials", credentials),
+    ):
+        written = settings_client.put(
+            f"/api/settings/user/42/{key}",
+            headers=_headers(),
+            json={"value": value},
+        )
+        assert written.status_code == 200
+        if key == "model.profiles":
+            assert written.json()["data"]["value"] == profile
+        else:
+            assert "your-api-key-here" not in written.text
+            assert written.json()["data"]["is_set"] is True
+    read = settings_client.get("/api/settings/user/42", headers=_headers())
+    assert read.status_code == 200
+    assert "your-api-key-here" not in read.text
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    (
+        ("model.profiles", []),
+        ("model.profiles", {"reviewer": {"token_limit": 0}}),
+        ("model.purposes", {"review": []}),
+        ("model.profile_credentials", {"reviewer": {"api_key": "your-api-key-here"}}),
+    ),
+)
+def test_invalid_model_profile_settings_are_rejected_over_http(
+    settings_client, key, value
+):
+    written = settings_client.put(
+        f"/api/settings/user/42/{key}",
+        headers=_headers(),
+        json={"value": value},
+    )
+    assert written.status_code == 422
+    assert "your-api-key-here" not in written.text
+
+
 def _token(
     user_id: str = "42",
     repository_names: tuple[str, ...] = ("acme/web",),

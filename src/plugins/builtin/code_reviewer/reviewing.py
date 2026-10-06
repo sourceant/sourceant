@@ -51,6 +51,7 @@ from src.core.skills import (
 )
 from src.core.review.fingerprint import of_code, of_words
 from src.core.review.models import Sections, Told
+from src.core.review.execution import ReviewEvaluation
 from src.core.services import ServiceRegistry, service_registry
 from src.core.settings.configuration import Configuration
 from src.models.code_review import (
@@ -137,6 +138,94 @@ class CodeReviewer:
     services: ServiceRegistry = field(default=service_registry)
 
     def review(
+        self, changes: ChangeSet, *, provider: Any, **options
+    ) -> CodeReview | None:
+        from types import SimpleNamespace
+        from src.core.review import ReviewInput, review_orchestrator, review_plan_source
+
+        if _stopped(changes, options.get("metadata"), options.get("revision", "")):
+            return None
+        request = ReviewInput(
+            changes,
+            read_content=options.get("read_content"),
+            root=options.get("root"),
+            analysis=options.get("analysis"),
+            options={
+                key: value
+                for key, value in options.items()
+                if key not in {"read_content", "analysis", "root"}
+            },
+        )
+        plan = review_plan_source(self.services).plan_for(
+            request, SimpleNamespace(review=self._review_once), provider
+        )
+        if plan is None:
+            return self._review_once(
+                changes,
+                provider=provider,
+                **{key: value for key, value in options.items() if key != "root"},
+            )
+        execution = review_orchestrator(self.services).review(request, plan)
+        if _stopped(changes, options.get("metadata"), options.get("revision", "")):
+            return None
+        if execution.review is None and any(one.error for one in execution.reviews):
+            failures = ", ".join(
+                sorted({one.error for one in execution.reviews if one.error})
+            )
+            raise RuntimeError(f"Premium discovery failed: {failures}")
+        if execution.review is not None:
+            from dataclasses import asdict
+
+            execution.review.execution = {
+                "reviews": [
+                    {
+                        "participant": one.participant,
+                        "repetition": one.repetition,
+                        "error": one.error,
+                    }
+                    for one in execution.reviews
+                ],
+                "evaluations": [
+                    {
+                        "participant": one.participant,
+                        "repetition": one.repetition,
+                        "error": one.error,
+                        "judgments": (
+                            [asdict(judgment) for judgment in one.result.judgments]
+                            if isinstance(one.result, ReviewEvaluation)
+                            else []
+                        ),
+                    }
+                    for one in execution.evaluations
+                ],
+                "analysis_coverage": (
+                    [asdict(one) for one in execution.analysis.coverage]
+                    if execution.analysis is not None
+                    else []
+                ),
+                "analysis_findings": (
+                    [asdict(one) for one in execution.analysis.findings]
+                    if execution.analysis is not None
+                    else []
+                ),
+                "file_languages": (
+                    dict(execution.analysis.file_languages)
+                    if execution.analysis is not None
+                    else {}
+                ),
+                "unchecked": (
+                    execution.analysis.unchecked
+                    if execution.analysis is not None
+                    else ()
+                ),
+                "producers": execution.producers,
+                "candidates": [
+                    one.model_dump(mode="json") for one in execution.candidates
+                ],
+            }
+        return execution.review
+
+    def _review_once(
         self,
         changes: ChangeSet,
         *,
@@ -152,6 +241,7 @@ class CodeReviewer:
         coverage: Coverage | None = None,
         analysis: Analysis | None = None,
         revision: str = "",
+        code_index=None,
     ) -> CodeReview | None:
         """The review, or None where there was nothing to read.
 
@@ -210,7 +300,7 @@ class CodeReviewer:
         )
 
         durable_code, local_code = self._indexes(
-            changes, readable, read_content, file_limit, code_scope
+            changes, readable, read_content, file_limit, code_scope, code_index
         )
         known = known_for(changes, self.services, durable_code, coverage)
 
@@ -540,10 +630,14 @@ class CodeReviewer:
 
     # ---------------------------------------------------------------- parts --
 
-    def _indexes(self, changes, readable, read_content, file_limit, code_scope):
+    def _indexes(
+        self, changes, readable, read_content, file_limit, code_scope, code_index=None
+    ):
         """The stored index, and one built over the changed files."""
         scope = code_scope or changes.code_scope
-        durable_code = durable_index(self.services)
+        durable_code = (
+            code_index if code_index is not None else durable_index(self.services)
+        )
         local_code = None
         if read_content is not None and readable:
             local_code = LazyChangedFileCodeIndex(

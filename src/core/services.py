@@ -17,6 +17,17 @@ class ServiceRegistry:
         self._registrations: dict[type[object], ServiceRegistration[object]] = {}
         self._contributions: dict[type[object], list[ServiceRegistration[object]]] = {}
 
+    def with_service(
+        self, interface: type[T], service: T, provider: str
+    ) -> ServiceRegistry:
+        result = ServiceRegistry()
+        result._registrations = dict(self._registrations)
+        result._contributions = {
+            key: list(values) for key, values in self._contributions.items()
+        }
+        result._registrations[interface] = ServiceRegistration(service, provider)
+        return result
+
     def contribute(self, interface: type[T], service: T, provider: str) -> None:
         """Add one of many, where the interface is additive rather than a choice.
 

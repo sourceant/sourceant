@@ -18,10 +18,19 @@ from pathlib import Path
 from typing import Sequence
 
 from src.core.services import ServiceRegistry, service_registry
+from src.core.parallel import parallel_map
 from src.utils.logger import logger
 
 from .interfaces import Analyzer
-from .models import ERROR, NOTE, SEVERITIES, WARNING, AnalyzerFinding
+from .models import (
+    ERROR,
+    NOTE,
+    SEVERITIES,
+    WARNING,
+    AnalyzerFinding,
+    AnalyzerCoverage,
+    AnalyzerReport,
+)
 from .semgrep import SemgrepAnalyzer
 
 # The most findings worth carrying into a prompt. Past this the list stops
@@ -38,6 +47,14 @@ class Analysis:
     #: nothing wrong in it.
     ran: tuple[str, ...] = ()
     unavailable: tuple[str, ...] = ()
+    coverage: tuple[AnalyzerCoverage, ...] = ()
+    requested: tuple[str, ...] = ()
+    file_languages: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def unchecked(self) -> tuple[str, ...]:
+        checked = {path for one in self.coverage for path in one.paths}
+        return tuple(path for path in self.requested if path not in checked)
 
     def __bool__(self) -> bool:
         return bool(self.findings)
@@ -148,7 +165,6 @@ def also_reported(review, analysis: "Analysis | None"):
 
 
 def analyzers(services: ServiceRegistry = service_registry) -> list[Analyzer]:
-    """Every tool contributed, else the one core ships."""
     contributed = list(services.contributions(Analyzer))
     return contributed or [SemgrepAnalyzer()]
 
@@ -164,22 +180,97 @@ def examine(
     rather than as having found nothing. The difference is the whole value of
     the answer: one of them means the change is clean.
     """
-    found: list[AnalyzerFinding] = []
-    ran: list[str] = []
-    unavailable: list[str] = []
-    for analyzer in analyzers(services):
+
+    def run(analyzer):
         name = getattr(analyzer, "name", type(analyzer).__name__)
+        supports = getattr(analyzer, "supports", None)
+        try:
+            applicable = tuple(
+                path for path in paths if supports is None or supports(path)
+            )
+        except Exception:
+            return (), (), (name,), AnalyzerCoverage(name, unavailable=tuple(paths))
+        unsupported = tuple(path for path in paths if path not in applicable)
+        languages = tuple(getattr(analyzer, "languages", ()))
+        checks = tuple(getattr(analyzer, "checks", ()))
+        if not applicable:
+            return (
+                (),
+                (),
+                (),
+                AnalyzerCoverage(
+                    name, unsupported=unsupported, languages=languages, checks=checks
+                ),
+            )
         try:
             if not analyzer.available():
-                unavailable.append(name)
-                continue
-            found.extend(analyzer.examine(root, paths))
-            ran.append(name)
+                return (
+                    (),
+                    (),
+                    (name,),
+                    AnalyzerCoverage(
+                        name,
+                        unsupported=unsupported,
+                        unavailable=applicable,
+                        languages=languages,
+                        checks=checks,
+                    ),
+                )
+            inspect = getattr(analyzer, "inspect", None)
+            if inspect is not None:
+                report = inspect(root, applicable)
+                if not isinstance(report, AnalyzerReport):
+                    raise ValueError("An analyzer must return AnalyzerReport")
+                return (
+                    report.findings,
+                    (name,),
+                    (),
+                    replace(
+                        report.coverage,
+                        unsupported=(*unsupported, *report.coverage.unsupported),
+                    ),
+                )
+            findings = tuple(analyzer.examine(root, applicable))
+            return (
+                findings,
+                (name,),
+                (),
+                AnalyzerCoverage(
+                    name,
+                    paths=applicable if supports is not None else (),
+                    unsupported=unsupported if supports is not None else tuple(paths),
+                    languages=languages,
+                    checks=checks,
+                ),
+            )
         except Exception:
             logger.warning("%s could not read this change", name, exc_info=True)
-            unavailable.append(name)
+            return (
+                (),
+                (),
+                (name,),
+                AnalyzerCoverage(
+                    name,
+                    unsupported=unsupported,
+                    unavailable=applicable,
+                    languages=languages,
+                    checks=checks,
+                ),
+            )
+
+    outcomes = parallel_map(run, analyzers(services))
+    from src.core.language_pack import detect_language
+
+    file_languages = tuple((path, detect_language(path) or "unknown") for path in paths)
     return Analysis(
-        findings=tuple(found), ran=tuple(ran), unavailable=tuple(unavailable)
+        findings=tuple(one for found, _, _, _ in outcomes for one in found),
+        ran=tuple(one for _, ran, _, _ in outcomes for one in ran),
+        unavailable=tuple(
+            one for _, _, unavailable, _ in outcomes for one in unavailable
+        ),
+        coverage=tuple(coverage for _, _, _, coverage in outcomes),
+        requested=tuple(paths),
+        file_languages=file_languages,
     )
 
 
@@ -193,6 +284,8 @@ __all__ = [
     "Analyzer",
     "AnalyzerFinding",
     "SemgrepAnalyzer",
+    "AnalyzerCoverage",
+    "AnalyzerReport",
     "about_the_change",
     "also_reported",
     "analyzers",

@@ -17,3 +17,10 @@ class LLMSource(Protocol):
     def provider_for(self, configuration: Configuration) -> LLMInterface | None: ...
 
     def config_for(self, configuration: Configuration) -> Any: ...
+
+
+@runtime_checkable
+class ModelRouter(Protocol):
+    def providers_for(
+        self, configuration: Configuration, purpose: str
+    ) -> tuple[LLMInterface, ...]: ...

@@ -552,7 +552,7 @@ class CodeReviewerPlugin(BasePlugin):
                     "message": "All changed files are excluded from review.",
                     "excluded_files": list(omitted),
                 }
-            llm_instance = provider_for(configuration)
+            llm_instance = provider_for(configuration, self.services, purpose="review")
             if llm_instance is None:
                 return {
                     "status": "error",
@@ -623,17 +623,20 @@ class CodeReviewerPlugin(BasePlugin):
 
             # A tool needs files on a disk and this path never clones one, so
             # the changed files are written out as they stand after the change.
-            with written_out([one.path for one in changed], read_changed_file) as (
-                analysis_root,
-                analysis_paths,
-            ):
-                analysis = examine(analysis_root, analysis_paths, self.services)
+            gate = int(configuration.value("review.analysis_gate_errors") or 0)
+            analysis = None
+            if configuration.value("review.plan") != "premium" or gate:
+                with written_out([one.path for one in changed], read_changed_file) as (
+                    analysis_root,
+                    analysis_paths,
+                ):
+                    analysis = examine(analysis_root, analysis_paths, self.services)
             # Before the gate, so a repository with history is not stopped for
             # what was already in it.
             analysis = about_the_change(analysis, touched_lines(parsed_files))
-            for name in analysis.ran:
+            for name in analysis.ran if analysis is not None else ():
                 coverage.record(ANALYSIS, name, answered=True, target=repo_full_name)
-            for name in analysis.unavailable:
+            for name in analysis.unavailable if analysis is not None else ():
                 coverage.record(
                     ANALYSIS,
                     name,
@@ -642,8 +645,7 @@ class CodeReviewerPlugin(BasePlugin):
                     reason="could not run over this change",
                 )
 
-            gate = int(configuration.value("review.analysis_gate_errors") or 0)
-            errors = analysis.counted(ERROR)
+            errors = analysis.counted(ERROR) if analysis is not None else 0
             if gate and errors >= gate:
                 return self._too_broken_to_read(
                     github, repository, pull_request, analysis, gate, post
@@ -670,6 +672,7 @@ class CodeReviewerPlugin(BasePlugin):
                     llm_instance,
                     configuration,
                     pr_metadata,
+                    services=self.services,
                 )
                 final_review = CodeReviewer(services=self.services).review(
                     ChangeSet(
@@ -729,11 +732,32 @@ class CodeReviewerPlugin(BasePlugin):
                     logger.info(
                         f"Filtered {removed} duplicate suggestion(s) already posted on PR"
                     )
-                    final_review.verdict = verdict_from(final_review.code_suggestions)
+                    if not final_review.execution:
+                        final_review.verdict = verdict_from(
+                            final_review.code_suggestions
+                        )
 
+            reviewed_summary = final_review.summary
             final_review.summary = summary_from(
                 final_review.code_suggestions or (), written_overview
             )
+            if final_review.execution and reviewed_summary is not None:
+                final_review.summary.critical_issues = list(
+                    dict.fromkeys(
+                        [
+                            *final_review.summary.critical_issues,
+                            *reviewed_summary.critical_issues,
+                        ]
+                    )
+                )
+                final_review.summary.minor_suggestions = list(
+                    dict.fromkeys(
+                        [
+                            *final_review.summary.minor_suggestions,
+                            *reviewed_summary.minor_suggestions,
+                        ]
+                    )
+                )
             also_reported(final_review, analysis)
             if final_review.summary is not None:
                 final_review.summary.systems = systems_read(
