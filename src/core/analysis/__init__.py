@@ -140,6 +140,8 @@ def also_reported(review, analysis: "Analysis | None"):
     """
     if review is None or not analysis or not analysis.findings:
         return review
+    if getattr(review, "execution", None):
+        return review
     if getattr(review, "summary", None) is None:
         return review
     errors = [one for one in analysis.findings if one.severity == ERROR]

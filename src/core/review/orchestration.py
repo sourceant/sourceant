@@ -220,7 +220,9 @@ class ParallelReviewOrchestrator:
                     retained_tools.append(tool_candidates[index])
                 else:
                     retained.append(finding)
-            elif votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections:
+            elif votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections and (
+                not votes or EvaluationStatus.UNRESOLVED in votes
+            ):
                 unresolved = True
         analysis = replace(analysis, findings=tuple(retained_tools))
         completed = any(isinstance(one.result, CodeReview) for one in reviews)

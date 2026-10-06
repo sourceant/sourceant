@@ -148,6 +148,32 @@ def test_failed_review_is_distinct_from_clean_review():
     assert answer.reviews[0].error == "RuntimeError"
 
 
+def test_rejected_candidate_within_tolerance_does_not_degrade_coverage():
+    plan = ParallelReviewPlan(
+        (ReviewParticipant("reader", Reader(), object()),),
+        (EvaluationParticipant("challenge", Evaluator(EvaluationStatus.REJECTED)),),
+        maximum_rejections=1,
+        minimum_support=1,
+    )
+    answer = ParallelReviewOrchestrator().review(request(Analysis()), plan)
+    assert answer.review.code_suggestions == []
+    assert answer.review.verdict == Verdict.APPROVE
+    assert answer.review.summary.minor_suggestions == []
+
+
+def test_unresolved_candidate_within_tolerance_degrades_coverage():
+    plan = ParallelReviewPlan(
+        (ReviewParticipant("reader", Reader(), object()),),
+        (EvaluationParticipant("challenge", Evaluator(EvaluationStatus.UNRESOLVED)),),
+        maximum_rejections=1,
+        minimum_support=1,
+    )
+    answer = ParallelReviewOrchestrator().review(request(Analysis()), plan)
+    assert answer.review.code_suggestions == []
+    assert answer.review.verdict == Verdict.COMMENT
+    assert any("incomplete" in one for one in answer.review.summary.minor_suggestions)
+
+
 def test_evaluator_failure_is_not_support():
     class Broken:
         def evaluate(self, *args, **kwargs):

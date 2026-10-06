@@ -444,6 +444,17 @@ class TestWhatTheToolFoundReachesTheReader:
         assert reviewed.summary.critical_issues == []
         assert reviewed.summary.minor_suggestions == []
 
+    def test_raw_findings_cannot_be_added_after_evaluation(self):
+        from src.core.analysis import also_reported
+
+        review = _a_review()
+        review.execution = {"evaluations": []}
+        review.summary.minor_suggestions = ["An accepted observation."]
+        also_reported(review, Analysis(findings=(_finding(severity=ERROR),)))
+
+        assert review.summary.critical_issues == []
+        assert review.summary.minor_suggestions == ["An accepted observation."]
+
 
 class TestSurvivingTheSummaryBeingRewritten:
     """A review's summary is written once and then replaced by another.
