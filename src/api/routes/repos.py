@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import hashlib
 from typing import Optional
 
 import httpx
@@ -7,6 +8,7 @@ from src.utils.provider_pages import fetch_all
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from sqlalchemy import func, text
 
 from src.auth import get_current_user
 from src.config.db import get_session
@@ -39,6 +41,7 @@ class ConnectRepoRequest(BaseModel):
     owner: str
     owner_type: str = "User"
     url: str
+    only_if_unconnected: bool = False
 
 
 @router.get("")
@@ -166,8 +169,21 @@ async def connect_repo(
     """Connect a GitHub repository for the current user."""
     workspace = workspace_of(user)
 
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        lock = int.from_bytes(
+            hashlib.sha256(data.full_name.lower().encode()).digest()[:8],
+            "big",
+            signed=True,
+        )
+        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock})
+    elif dialect == "sqlite":
+        session.execute(text("BEGIN IMMEDIATE"))
+
     repo = session.exec(
-        select(Repository).where(Repository.full_name == data.full_name)
+        select(Repository).where(
+            func.lower(Repository.full_name) == data.full_name.lower()
+        )
     ).first()
 
     if not repo:
@@ -186,7 +202,7 @@ async def connect_repo(
             default_branch=data.default_branch,
         )
         session.add(repo)
-        session.commit()
+        session.flush()
         session.refresh(repo)
 
     existing = connection_of(session, workspace, repo.id)
@@ -195,6 +211,16 @@ async def connect_repo(
         return success_response(
             data={"id": repo.id}, message="Repository already connected"
         )
+
+    if (
+        data.only_if_unconnected
+        and session.exec(
+            select(ConnectedRepository).where(
+                ConnectedRepository.repository_id == repo.id
+            )
+        ).first()
+    ):
+        raise HTTPException(status_code=409, detail="Repository already connected")
 
     # The workspace has to exist before anything can belong to it, and what
     # belongs to it points at the row rather than at the name on the token.

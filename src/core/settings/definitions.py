@@ -61,6 +61,10 @@ class Setting:
     def validate(self, value: Any) -> Any:
         """Return the value coerced to this setting's type, or raise ValueError."""
         coerced = _coerce(value, self.type)
+        if self.key == "routing.policy":
+            from src.core.repository_routing import RepositoryRoutingPolicy
+
+            coerced = RepositoryRoutingPolicy.model_validate(coerced).model_dump()
         if self.key in {
             "model.profiles",
             "model.profile_credentials",
@@ -110,6 +114,20 @@ def _coerce(value: Any, type_: str) -> Any:
 
 
 SETTINGS: tuple[Setting, ...] = (
+    Setting(
+        key="routing.policy",
+        label="Repository routing",
+        description="Default workspace and automatic registration rules for repositories from your linked installations. Existing connections take precedence.",
+        type=ConfigType.JSON,
+        scopes=(USER,),
+        default={
+            "default_workspace_id": None,
+            "accept_unconnected": False,
+            "match_organization": False,
+            "organization_rules": [],
+        },
+        group="Routing",
+    ),
     Setting(
         key="model.profiles",
         label="Model profiles",
