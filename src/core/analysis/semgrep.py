@@ -1,4 +1,4 @@
-"""Semgrep observations for independent review.
+"""Semgrep inspects source without installing each language's toolchain.
 
 One tool rather than an aggregator, deliberately. An aggregator runs the real
 linter for each language, which is better output, but it installs that

@@ -33,7 +33,7 @@ class AnalyzerReport:
 
 @dataclass(frozen=True)
 class AnalyzerFinding:
-    """A tool observation with its source location and rule."""
+    """Tool output can be a false positive even when the analyzer ran successfully."""
 
     path: str
     start_line: int
