@@ -5,7 +5,7 @@ from pathlib import PurePosixPath
 from typing import Sequence
 import json
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.core.analysis import Analysis, about_the_change, examine, touched_lines
 from src.core.analysis.checkout import written_out
@@ -155,26 +155,38 @@ class ModelReviewEvaluator:
             + "\nReview input:\n"
             + json.dumps(payload)
         )
-        answered = _EvaluationAnswer.model_validate_json(
-            self.provider.generate_text(prompt, purpose="review-evaluation")
+
+        class CompleteEvaluationAnswer(_EvaluationAnswer):
+            @model_validator(mode="after")
+            def complete(self):
+                if sorted(one.candidate for one in self.judgments) != list(
+                    range(len(candidates))
+                ):
+                    raise ValueError(
+                        "An evaluation must cover every candidate exactly once"
+                    )
+                if any(
+                    one.duplicate_of is not None
+                    and (
+                        one.status != EvaluationStatus.SUPPORTED
+                        or one.duplicate_of >= one.candidate
+                        or candidates[one.duplicate_of].file_name
+                        != candidates[one.candidate].file_name
+                    )
+                    for one in self.judgments
+                ):
+                    raise ValueError(
+                        "A duplicate must reference an earlier finding in the same file"
+                    )
+                return self
+
+        structured = getattr(self.provider, "generate_structured", None)
+        written = (
+            structured(prompt, CompleteEvaluationAnswer, purpose="review-evaluation")
+            if structured is not None
+            else self.provider.generate_text(prompt, purpose="review-evaluation")
         )
-        if sorted(one.candidate for one in answered.judgments) != list(
-            range(len(candidates))
-        ):
-            raise ValueError("An evaluation must cover every candidate exactly once")
-        if any(
-            one.duplicate_of is not None
-            and (
-                one.status != EvaluationStatus.SUPPORTED
-                or one.duplicate_of >= one.candidate
-                or candidates[one.duplicate_of].file_name
-                != candidates[one.candidate].file_name
-            )
-            for one in answered.judgments
-        ):
-            raise ValueError(
-                "A duplicate must reference an earlier finding in the same file"
-            )
+        answered = CompleteEvaluationAnswer.model_validate_json(written)
         return ReviewEvaluation(
             tuple(
                 FindingEvaluation(

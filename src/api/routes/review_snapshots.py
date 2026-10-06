@@ -24,6 +24,8 @@ OPTIONS = {
     "minimum-support": "review.minimum_support",
     "maximum-rejections": "review.maximum_rejections",
     "reading-budget": "review.reading_budget",
+    "max-output-tokens": "model.max_output_tokens",
+    "reasoning-effort": "model.reasoning_effort",
     "include-nitpicks": "review.include_nitpicks",
     "finding-scope": "review.finding_scope",
     "reuse-responses-days": "review.reuse_responses_days",

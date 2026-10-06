@@ -613,3 +613,25 @@ def test_repository_scope_retains_static_findings_outside_changed_lines(monkeypa
         request(Analysis(findings=(observed,))), (), pass_id="one"
     )
     assert answer.analysis.findings == (observed,)
+
+
+def test_captured_reversed_range_is_retained_as_unresolved_execution_detail():
+    import json
+    from pathlib import Path
+
+    sample = Path(__file__).parents[1] / "fixtures/deepseek/reversed-finding-range.json"
+    candidate = CodeSuggestion.model_validate(json.loads(sample.read_text()))
+
+    class CapturedReader:
+        def review(self, changes, **options):
+            return CodeReview(verdict=Verdict.COMMENT, code_suggestions=[candidate])
+
+    plan = ParallelReviewPlan(
+        (ReviewParticipant("reader", CapturedReader(), object()),),
+        (EvaluationParticipant("check", Evaluator(EvaluationStatus.SUPPORTED)),),
+    )
+    answer = ParallelReviewOrchestrator().review(request(Analysis()), plan)
+    assert answer.candidates == (candidate,)
+    assert not answer.review.code_suggestions
+    assert answer.review.verdict == Verdict.COMMENT
+    assert any("incomplete" in note for note in answer.review.summary.minor_suggestions)

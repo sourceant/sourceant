@@ -64,6 +64,8 @@ class LiteLLMProvider(LLMInterface):
         api_base: Optional[str] = None,
         attribution: Optional[dict] = None,
         cache_prompts: bool = True,
+        max_output_tokens: int = 0,
+        reasoning_effort: str = "",
     ):
         self.model = model
         self._token_limit = token_limit
@@ -77,12 +79,36 @@ class LiteLLMProvider(LLMInterface):
         # Who the call is on behalf of. Known where the model was chosen and
         # nowhere after it, so it is carried rather than looked up again.
         self._attribution = attribution or {}
+        self._max_output_tokens = max_output_tokens
+        self._reasoning_effort = reasoning_effort
         self._schema_refused = False
         self._tool_choice_refused = False
 
     def _completion(self, **kwargs):
         from src.core.parallel import model_slots
 
+        if self._max_output_tokens or self._reasoning_effort:
+            supported = litellm.get_supported_openai_params(model=self.model) or []
+            if self._max_output_tokens:
+                parameter = (
+                    "max_tokens"
+                    if "max_tokens" in supported
+                    else "max_completion_tokens"
+                )
+                if parameter not in supported:
+                    raise ValueError(
+                        "This model does not support an output token limit"
+                    )
+                kwargs.setdefault(parameter, self._max_output_tokens)
+            if self._reasoning_effort:
+                if "reasoning_effort" not in supported:
+                    raise ValueError("This model does not support reasoning effort")
+                kwargs.setdefault("reasoning_effort", self._reasoning_effort)
+                if self.model.startswith("deepseek/"):
+                    kwargs["extra_body"] = {
+                        **kwargs.get("extra_body", {}),
+                        "reasoning_effort": self._reasoning_effort,
+                    }
         with model_slots:
             return litellm.completion(**kwargs)
 
@@ -281,6 +307,16 @@ class LiteLLMProvider(LLMInterface):
             purpose,
             self.model,
             *(
+                [f"max_output_tokens={self._max_output_tokens}"]
+                if self._max_output_tokens
+                else []
+            ),
+            *(
+                [f"reasoning_effort={self._reasoning_effort}"]
+                if self._reasoning_effort
+                else []
+            ),
+            *(
                 f"{named}={value}"
                 for named, value in sorted(self._attribution.items())
                 if value
@@ -314,6 +350,11 @@ class LiteLLMProvider(LLMInterface):
                 schema.model_validate_json(written)
             except ValidationError as invalid:
                 failure = invalid
+                if response.choices[0].finish_reason == "length":
+                    raise LLMError.wrapping(
+                        f"{purpose} output budget exhausted before a valid response",
+                        invalid,
+                    ) from invalid
                 if not attempt:
                     logger.warning(
                         "Invalid structured %s output from %s; retrying once",
@@ -665,6 +706,29 @@ class LiteLLMProvider(LLMInterface):
             return json.loads(answered)
         except (TypeError, ValueError):
             return {"content": "", "tool_calls": []}
+
+    def generate_structured(self, prompt: str, schema, *, purpose: str = "text") -> str:
+        question = json.dumps(
+            {"prompt": prompt, "schema": schema.model_json_schema()}, sort_keys=True
+        )
+        return self._asked_once(
+            purpose,
+            question,
+            lambda: self._validated_response(
+                lambda: self._structured([{"role": "user", "content": prompt}], schema),
+                schema,
+                purpose,
+            ),
+            usable=lambda written: self._matches_schema(written, schema),
+        )
+
+    @staticmethod
+    def _matches_schema(written: str, schema) -> bool:
+        try:
+            schema.model_validate_json(written)
+        except (ValidationError, TypeError, ValueError):
+            return False
+        return True
 
     def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         def say() -> str:

@@ -226,6 +226,19 @@ class ParallelReviewOrchestrator:
         judgments = {}
         unresolved = False
         for index, finding in enumerate(candidates):
+            valid_location = 1 <= finding.start_line <= finding.end_line
+            if (
+                valid_location
+                and finding.side == Side.RIGHT
+                and request.read_content is not None
+            ):
+                try:
+                    content = request.read_content(finding.file_name)
+                    valid_location = isinstance(
+                        content, str
+                    ) and finding.end_line <= len(content.splitlines())
+                except Exception:
+                    valid_location = False
             judgments[index] = [
                 judgment
                 for outcome in evaluations
@@ -234,6 +247,9 @@ class ParallelReviewOrchestrator:
                 if judgment.candidate == index
             ]
             votes = [one.status for one in judgments[index]]
+            if not valid_location:
+                unresolved = True
+                continue
             if (
                 votes.count(EvaluationStatus.SUPPORTED) >= plan.minimum_support
                 and votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections

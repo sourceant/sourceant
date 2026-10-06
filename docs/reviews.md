@@ -102,3 +102,9 @@ Reuse is best effort: when Redis is unavailable the review is simply generated a
 - [Lens](lens.md): read a change by risk instead of by diff, in SourceAnt Cloud.
 - [Repo Management](repo-management.md): duplicate detection and labelling for pull requests and issues.
 - [Configuration](configuration.md): every setting in one place.
+
+### Source search
+
+Fixed-revision and uploaded snapshot reviews scan included source in memory up to 256 KB and use ripgrep (`rg`) for larger snapshots. Searches use literal, case-insensitive terms and return original source excerpts with head-revision line numbers. Prepared source is reused within the review. Hidden and ignored files remain searchable when included in the snapshot.
+
+The runtime images include ripgrep. Manual installations must install it before running source search. Missing ripgrep or a failed search is reported as unavailable coverage.

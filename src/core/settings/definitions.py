@@ -601,6 +601,28 @@ SETTINGS: tuple[Setting, ...] = (
         advanced=True,
     ),
     Setting(
+        key="model.max_output_tokens",
+        label="Maximum output tokens",
+        description="Maximum generated tokens per model call, including reasoning. Zero uses the provider default.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE),
+        default=0,
+        minimum=0,
+        group="Model",
+        advanced=True,
+    ),
+    Setting(
+        key="model.reasoning_effort",
+        label="Reasoning effort",
+        description="Reasoning effort for supported models. Leave empty to use the provider default.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE),
+        default="",
+        choices=("", "none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        group="Model",
+        advanced=True,
+    ),
+    Setting(
         key="model.token_limit",
         label="Model's context window",
         description=(

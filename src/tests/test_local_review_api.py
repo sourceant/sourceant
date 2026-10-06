@@ -507,6 +507,8 @@ class TestLocalReview(BaseTestCase):
                 "evaluation-passes": "2",
                 "finding-scope": "repository",
                 "reuse-responses-days": "0",
+                "max-output-tokens": "16384",
+                "reasoning-effort": "low",
             },
         }
         unauthenticated = self.client.post("/api/reviews/snapshots", json=body)
@@ -521,6 +523,8 @@ class TestLocalReview(BaseTestCase):
         assert answer["snapshot"]["head"] == body["head"]
         assert answer["configuration"]["finding-scope"] == "repository"
         assert answer["configuration"]["reuse-responses-days"] == "0"
+        assert answer["configuration"]["max-output-tokens"] == "16384"
+        assert answer["configuration"]["reasoning-effort"] == "low"
         execution = answer["review"]["review"]["execution"]
         assert len(execution["reviews"]) == 3
         assert all(not one["error"] for one in execution["reviews"])

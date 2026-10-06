@@ -1,0 +1,17 @@
+{
+  "file_name": "src/plugins/builtin/code_reviewer/plugin.py",
+  "position": 14,
+  "start_line": 648,
+  "end_line": 646,
+  "side": "RIGHT",
+  "comment": "`errors` now counts from `gate_analysis`, which is always narrowed to touched lines by `about_the_change`. Under repository scope `analysis` may exceed the gate from pre-existing findings, but the gate path still uses `gate_analysis`, so a repository-scope review can no longer be stopped by a blocking tool error outside the diff. This is the opposite of the removed comment's intent; verify that is deliberate.",
+  "category": "BUG",
+  "trigger": "automation",
+  "blast": "one",
+  "impact": "wrong_answer",
+  "certainty": "conditional",
+  "comment_only": true,
+  "suggested_code": null,
+  "existing_code": "            errors = gate_analysis.counted(ERROR) if gate_analysis is not None else 0\n            if gate and errors >= gate:\n                return self._too_broken_to_read(\n                    github, repository, pull_request, gate_analysis, gate, post\n                )",
+  "claims": []
+}

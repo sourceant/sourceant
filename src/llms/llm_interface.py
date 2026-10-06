@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from pydantic import BaseModel
 from typing import List, Optional, Union
 from src.models.code_review import CodeReview, CodeSuggestion, CodeReviewSummary
 from src.utils.diff_parser import ParsedDiff
@@ -44,6 +45,13 @@ class LLMInterface(ABC):
     @abstractmethod
     def generate_text(self, prompt: str, *, purpose: str = "text") -> str:
         pass
+
+    def generate_structured(
+        self, prompt: str, schema: type[BaseModel], *, purpose: str = "text"
+    ) -> str:
+        written = self.generate_text(prompt, purpose=purpose)
+        schema.model_validate_json(written)
+        return written
 
     @abstractmethod
     def is_summary_different(self, summary_a: str, summary_b: str) -> bool:

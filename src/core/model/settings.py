@@ -20,6 +20,8 @@ class LLMConfig:
     base_url: str = ""
     token_limit: int = DEFAULT_TOKEN_LIMIT
     cache_prompts: bool = True
+    max_output_tokens: int = 0
+    reasoning_effort: str = ""
 
     def credentials(self) -> dict:
         """What litellm needs beyond the name, left out when nothing is set.
@@ -82,6 +84,16 @@ class SettingsLLMSource:
                     api_base=profile.base_url,
                     token_limit=profile.token_limit,
                     cache_prompts=profile.cache_prompts,
+                    max_output_tokens=(
+                        profile.max_output_tokens
+                        if profile.max_output_tokens is not None
+                        else int(configuration.value("model.max_output_tokens") or 0)
+                    ),
+                    reasoning_effort=(
+                        profile.reasoning_effort
+                        if profile.reasoning_effort is not None
+                        else str(configuration.value("model.reasoning_effort") or "")
+                    ),
                     attribution=configuration.attribution(),
                 )
             )
@@ -100,6 +112,8 @@ class SettingsLLMSource:
             api_base=config.base_url,
             attribution=configuration.attribution(),
             cache_prompts=config.cache_prompts,
+            max_output_tokens=config.max_output_tokens,
+            reasoning_effort=config.reasoning_effort,
         )
 
     def config_for(self, configuration: Configuration) -> LLMConfig | None:
@@ -116,12 +130,20 @@ class SettingsLLMSource:
                 base_url=named("model.base_url"),
                 token_limit=self._limit(configuration),
                 cache_prompts=bool(configuration.value("model.cache_prompts")),
+                max_output_tokens=int(
+                    configuration.value("model.max_output_tokens") or 0
+                ),
+                reasoning_effort=named("model.reasoning_effort"),
             )
         if self.fallback_model:
             return LLMConfig(
                 name=self.fallback_model,
                 token_limit=self.fallback_token_limit,
                 cache_prompts=bool(configuration.value("model.cache_prompts")),
+                max_output_tokens=int(
+                    configuration.value("model.max_output_tokens") or 0
+                ),
+                reasoning_effort=named("model.reasoning_effort"),
             )
         return None
 

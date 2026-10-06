@@ -23,6 +23,32 @@ class TestLocalSettings(BaseTestCase):
         keys = {item["key"] for item in response.json()["data"]}
         assert {"model.name", "model.api_key", "model.base_url"} <= keys
 
+    def test_model_budgets_are_configured_through_the_local_api(self):
+        for key, value in [
+            ("model.max_output_tokens", 16384),
+            ("model.reasoning_effort", "low"),
+        ]:
+            written = self.client.put(
+                "/api/local/settings/" + key, json={"value": value}
+            )
+            try:
+                assert written.status_code == 200
+                body = self.client.get("/api/local/settings").json()
+                assert self.of(body, key)["value"] == value
+                assert self.of(body, key)["advanced"] is True
+            finally:
+                self.client.delete("/api/local/settings/" + key)
+        for key, value in [
+            ("model.max_output_tokens", -1),
+            ("model.reasoning_effort", "invalid"),
+        ]:
+            assert (
+                self.client.put(
+                    "/api/local/settings/" + key, json={"value": value}
+                ).status_code
+                == 400
+            )
+
     def test_tuning_is_marked_apart_from_what_a_person_chooses(self):
         body = self.client.get("/api/local/settings").json()
 
