@@ -179,6 +179,7 @@ def reviewed(review) -> dict[str, Any]:
         return {}
     summary = review.summary
     return {
+        "execution": review.execution,
         "verdict": review.verdict.value if review.verdict else "",
         "summary": {
             "overview": summary.overview if summary else "",
@@ -293,12 +294,29 @@ class WorkingTreeReviews:
         skills: Sequence[str] = (),
         use_model: bool = True,
         system: str = "",
+        head: str = "",
     ) -> dict[str, Any]:
         """What changed, what applies to it, and what the reviewer made of it."""
         entry = self._entry(repository)
         repository = entry.name
         root = Path(entry.path)
+        if head:
+            from src.core.change_context.git import _git
+
+            if not against or _git(root, "rev-parse", "HEAD").strip() != head:
+                raise ReviewRefused(
+                    400, "The checkout does not match the requested head"
+                )
+            if _git(root, "status", "--porcelain", "--untracked-files=all"):
+                raise ReviewRefused(400, "The requested head requires a clean checkout")
         configuration = Configuration(repository=repository, user=LOCAL)
+        code_index = None
+        if head:
+            from src.core.code_index import InMemoryCodeIndex
+            from src.core.code_index.indexer import RepositoryIndexer
+
+            code_index = InMemoryCodeIndex()
+            RepositoryIndexer(code_index).index(entry.scope, root)
 
         try:
             changes = read_change(
@@ -307,6 +325,7 @@ class WorkingTreeReviews:
                 against=against,
                 title=title,
                 description=description,
+                complete_diff=bool(head),
                 impact_scope=(
                     Scope.from_mapping({"workspace": system}) if system else None
                 ),
@@ -341,7 +360,11 @@ class WorkingTreeReviews:
             from src.core.skills.selection import for_review, said_here
 
             # No model where nothing is judged, so no call to choose skills either.
-            picking = provider_for(configuration) if use_model else None
+            picking = (
+                provider_for(configuration, self.services, purpose="review")
+                if use_model
+                else None
+            )
             try:
                 chosen = for_review(
                     everything,
@@ -398,7 +421,7 @@ class WorkingTreeReviews:
             )
             return answer
 
-        provider = provider_for(configuration)
+        provider = provider_for(configuration, self.services, purpose="review")
         if provider is None:
             raise ReviewRefused(
                 400,
@@ -406,7 +429,7 @@ class WorkingTreeReviews:
                 "Settings, or ask for what changed without judging it.",
             )
 
-        if not chosen:
+        if not chosen and configuration.value("review.plan") != "premium":
             answer["note"] = "No skill here bears on what changed."
             return answer
 
@@ -439,11 +462,15 @@ class WorkingTreeReviews:
         )
 
         # This path has a real checkout, so the tools read it where it sits.
-        analysis = examine(root, list(changes.paths), self.services)
+        analysis = (
+            None
+            if configuration.value("review.plan") == "premium"
+            else examine(root, list(changes.paths), self.services)
+        )
         analysis = about_the_change(analysis, touched_lines(parse_diff(changes.diff)))
-        for name in analysis.ran:
+        for name in analysis.ran if analysis is not None else ():
             coverage.record(ANALYSIS, name, answered=True, target=repository)
-        for name in analysis.unavailable:
+        for name in analysis.unavailable if analysis is not None else ():
             coverage.record(
                 ANALYSIS,
                 name,
@@ -461,6 +488,8 @@ class WorkingTreeReviews:
                 ),
                 provider=provider,
                 read_content=on_disk(root),
+                root=root,
+                **({"code_index": code_index} if code_index is not None else {}),
                 coverage=coverage,
                 told=told(
                     recorded,
@@ -470,6 +499,16 @@ class WorkingTreeReviews:
                         if skill.type
                         not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
                     ],
+                )
+                + (
+                    (
+                        Told(
+                            "Finding locations",
+                            "Use RIGHT-side line numbers from the head checkout. Anchor removed guards to the surviving code whose behavior is affected.",
+                        ),
+                    )
+                    if head
+                    else ()
                 ),
                 skills=tuple(
                     skill for skill in chosen if skill.type == SkillType.REVIEW_PASS
@@ -483,13 +522,32 @@ class WorkingTreeReviews:
                 analysis=analysis,
             )
             if review is not None:
+                reviewed_summary = review.summary
                 review.summary = summarize_changes(
                     changes.diff,
                     provider,
                     configuration,
                     {"title": changes.title, "description": changes.description},
                     review.code_suggestions or (),
+                    services=self.services,
                 )
+                if review.execution and reviewed_summary is not None:
+                    review.summary.critical_issues = list(
+                        dict.fromkeys(
+                            [
+                                *review.summary.critical_issues,
+                                *reviewed_summary.critical_issues,
+                            ]
+                        )
+                    )
+                    review.summary.minor_suggestions = list(
+                        dict.fromkeys(
+                            [
+                                *review.summary.minor_suggestions,
+                                *reviewed_summary.minor_suggestions,
+                            ]
+                        )
+                    )
                 also_reported(review, analysis)
         except ReviewRefused:
             raise
@@ -544,6 +602,11 @@ class WorkingTreeReviews:
             for finding in verdict.findings
         )
         answer["ready"] = (
-            not blocked and answer["review"].get("verdict") != "REQUEST_CHANGES"
+            not blocked
+            and answer["review"].get("verdict") != "REQUEST_CHANGES"
+            and (
+                not answer["review"].get("execution")
+                or answer["review"].get("verdict") == "APPROVE"
+            )
         )
         return answer

@@ -45,6 +45,48 @@ class SettingsLLMSource:
     fallback_model: str = LLM_MODEL
     fallback_token_limit: int = LLM_TOKEN_LIMIT
 
+    def providers_for(
+        self, configuration: Configuration, purpose: str
+    ) -> tuple[LLMInterface, ...]:
+        from .profiles import ModelProfile, ProfileCredential
+
+        configuration = configuration.with_workspace()
+        purposes = configuration.value("model.purposes") or {}
+        selected = purposes.get(purpose)
+        if selected is None:
+            provider = self.provider_for(configuration)
+            return (provider,) if provider is not None else ()
+        profiles = configuration.value("model.profiles") or {}
+        credentials = configuration.value("model.profile_credentials") or {}
+        providers = []
+        for name in selected:
+            if name not in profiles:
+                raise ValueError(
+                    f"No model profile is configured for {purpose}: {name}"
+                )
+            profile = ModelProfile.model_validate(profiles[name])
+            credential = (
+                ProfileCredential.model_validate(credentials[name])
+                if name in credentials
+                else None
+            )
+            if credential and (
+                credential.model != profile.name
+                or credential.base_url != profile.base_url
+            ):
+                raise ValueError(f"Credentials do not match model profile {name}")
+            providers.append(
+                LiteLLMProvider(
+                    model=profile.name,
+                    api_key=credential.api_key if credential else None,
+                    api_base=profile.base_url,
+                    token_limit=profile.token_limit,
+                    cache_prompts=profile.cache_prompts,
+                    attribution=configuration.attribution(),
+                )
+            )
+        return tuple(providers)
+
     def provider_for(self, configuration: Configuration) -> LLMInterface | None:
         configuration = configuration.with_workspace()
         config = self.config_for(configuration)

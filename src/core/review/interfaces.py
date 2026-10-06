@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from typing import Any, Callable, Protocol, Sequence, runtime_checkable
+from pathlib import Path
 
+from src.core.analysis import Analysis
+from src.core.review_coverage import Coverage
 from src.core.change_context import ChangeSet
+from src.core.code_index import CodeIndexReader
 from src.core.scope import Scope
 from src.core.skills.models import Skill
 from src.models.code_review import CodeReview
@@ -10,6 +14,46 @@ from src.models.code_review import CodeReview
 from .findings import FindingQuery, FindingResult, ReviewFinding
 from .models import Told
 from .records import ReviewRecord
+from .execution import (
+    EvaluationParticipant,
+    ReviewEvaluation,
+    ReviewExecution,
+    ReviewInput,
+    ReviewParticipant,
+)
+from src.models.code_review import CodeSuggestion
+
+
+@runtime_checkable
+class ReviewPlan(Protocol):
+    reviewers: Sequence[ReviewParticipant]
+    evaluators: Sequence[EvaluationParticipant]
+    concurrency: int
+    minimum_support: int
+    maximum_rejections: int
+
+
+@runtime_checkable
+class ReviewEvaluator(Protocol):
+    def evaluate(
+        self,
+        request: ReviewInput,
+        candidates: Sequence[CodeSuggestion],
+        *,
+        pass_id: str,
+    ) -> ReviewEvaluation: ...
+
+
+@runtime_checkable
+class ReviewOrchestrator(Protocol):
+    def review(self, request: ReviewInput, plan: ReviewPlan) -> ReviewExecution: ...
+
+
+@runtime_checkable
+class ReviewPlanSource(Protocol):
+    def plan_for(
+        self, request: ReviewInput, reviewer: Reviewer, provider: Any
+    ) -> ReviewPlan | None: ...
 
 
 @runtime_checkable
@@ -39,6 +83,11 @@ class Reviewer(Protocol):
         expert_passes: str | None = None,
         code_scope: Scope | None = None,
         metadata: dict | None = None,
+        coverage: Coverage | None = None,
+        analysis: Analysis | None = None,
+        revision: str = "",
+        root: Path | None = None,
+        code_index: CodeIndexReader | None = None,
     ) -> CodeReview | None: ...
 
 
@@ -58,6 +107,7 @@ class WorkingTreeReviewer(Protocol):
         description: str = "",
         skills: Sequence[str] = (),
         use_model: bool = True,
+        head: str = "",
     ) -> dict: ...
 
 

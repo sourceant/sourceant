@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping
+import os
 
 from src.config.settings import DEFAULT_TOKEN_LIMIT, REVIEW_DRAFT_PRS
 from src.models.config import ConfigType
@@ -60,6 +61,31 @@ class Setting:
     def validate(self, value: Any) -> Any:
         """Return the value coerced to this setting's type, or raise ValueError."""
         coerced = _coerce(value, self.type)
+        if self.key in {
+            "model.profiles",
+            "model.profile_credentials",
+            "model.purposes",
+        }:
+            from src.core.model.profiles import ModelProfile, ProfileCredential
+
+            if not isinstance(coerced, dict):
+                raise ValueError(f"{self.key} must be an object")
+            for name, entry in coerced.items():
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError("Profile and purpose names must be nonempty")
+                try:
+                    if self.key == "model.profiles":
+                        ModelProfile.model_validate(entry)
+                    elif self.key == "model.profile_credentials":
+                        ProfileCredential.model_validate(entry)
+                    elif (
+                        not isinstance(entry, list)
+                        or not entry
+                        or any(not isinstance(one, str) or not one for one in entry)
+                    ):
+                        raise ValueError("A purpose requires a list of profile names")
+                except ValueError:
+                    raise ValueError(f"Invalid entry in {self.key}") from None
         if self.choices and str(coerced) not in self.choices:
             raise ValueError(f"{self.key} must be one of {', '.join(self.choices)}")
         if self.minimum is not None and coerced < self.minimum:
@@ -84,6 +110,99 @@ def _coerce(value: Any, type_: str) -> Any:
 
 
 SETTINGS: tuple[Setting, ...] = (
+    Setting(
+        key="model.profiles",
+        label="Model profiles",
+        description="Named models, endpoints and token limits for specialist tasks.",
+        type=ConfigType.JSON,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default={},
+        group="Model",
+    ),
+    Setting(
+        key="model.profile_credentials",
+        label="Profile credentials",
+        description="Credentials bound to each profile's model and endpoint.",
+        type=ConfigType.JSON,
+        scopes=(USER, WORKSPACE),
+        default={},
+        secret=True,
+        group="Model",
+    ),
+    Setting(
+        key="model.purposes",
+        label="Models by purpose",
+        description="Profile names to use for review, review-evaluation and review-overview.",
+        type=ConfigType.JSON,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default={},
+        group="Model",
+    ),
+    Setting(
+        key="review.plan",
+        label="Review plan",
+        description="Standard uses one reviewer. Premium runs independent reviews and evaluations in parallel.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=os.getenv("SOURCEANT_REVIEW_PLAN", "standard"),
+        choices=("standard", "premium"),
+        group="Review",
+    ),
+    Setting(
+        key="review.discovery_passes",
+        label="Independent readings per model",
+        description="Number of independent discovery readings for each review model.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=3,
+        minimum=1,
+        maximum=10,
+        group="Review",
+    ),
+    Setting(
+        key="review.evaluation_passes",
+        label="Evaluations per model",
+        description="Number of independent challenges for each evaluator model.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=1,
+        minimum=0,
+        maximum=10,
+        group="Review",
+    ),
+    Setting(
+        key="review.concurrency",
+        label="Parallel review participants",
+        description="Maximum concurrent participants in each review stage.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=6,
+        minimum=1,
+        maximum=32,
+        group="Review",
+    ),
+    Setting(
+        key="review.minimum_support",
+        label="Required supporting evaluations",
+        description="Minimum supported judgments required to retain a model finding.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=1,
+        minimum=0,
+        maximum=100,
+        group="Review",
+    ),
+    Setting(
+        key="review.maximum_rejections",
+        label="Allowed rejecting evaluations",
+        description="Maximum rejecting judgments allowed for a retained model finding.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=0,
+        minimum=0,
+        maximum=100,
+        group="Review",
+    ),
     Setting(
         key="review.enabled",
         label="Review pull requests",

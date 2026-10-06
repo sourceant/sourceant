@@ -71,6 +71,7 @@ class ReviewInput(BaseModel):
     repository: str = Field(...)
     # Empty means the checkout's remote head, which beats assuming "main".
     against: str = Field(default="")
+    head: str = Field(default="", pattern=r"^$|^[a-f0-9]{40}$")
     title: str = Field(default="")
     description: str = Field(default="")
     # Empty lets the change decide which skills apply.
@@ -126,6 +127,7 @@ def run(identifier: str, body: ReviewInput, judge: Any, reviews: Any) -> None:
             skills=body.skills,
             use_model=body.use_model,
             system=body.system,
+            **({"head": body.head} if body.head else {}),
         )
     except Exception as error:  # noqa: BLE001 - what went wrong is the answer
         reviews.put(

@@ -270,6 +270,7 @@ def read_change(
     title: str = "",
     description: str = "",
     impact_scope: Scope | None = None,
+    complete_diff: bool = False,
 ) -> ChangeSet | None:
     """This checkout's work, as the same change set a hosted review is given.
 
@@ -296,7 +297,7 @@ def read_change(
         if len(diff) > MAX_DIFF:
             break
         diff += _differ(root, "--no-index", "--", os.devnull, path)
-    if len(diff) > MAX_DIFF:
+    if len(diff) > MAX_DIFF and not complete_diff:
         diff = diff[:MAX_DIFF] + "\n… the rest of the diff was left out\n"
 
     # Each file carries its own piece, so a screen can show somebody what

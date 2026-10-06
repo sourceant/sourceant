@@ -1,0 +1,128 @@
+{
+  "review": {
+    "id": 5429771914,
+    "node_id": "PRR_kwDONwNvGc8AAAABQ6O-ig",
+    "user": {
+      "login": "sourceant[bot]",
+      "id": 201232575,
+      "node_id": "BOT_kgDOC_6Qvw",
+      "avatar_url": "https://avatars.githubusercontent.com/in/1161781?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/sourceant%5Bbot%5D",
+      "html_url": "https://github.com/apps/sourceant",
+      "followers_url": "https://api.github.com/users/sourceant%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/sourceant%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/sourceant%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/sourceant%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/sourceant%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/sourceant%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/sourceant%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/sourceant%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/sourceant%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "[error] src/tests/test_local_review_api.py:293-301 (semgrep jwt-python-hardcoded-secret): Hardcoded JWT secret or private key is used. This is a Insufficiently Protected Credentials weakness: https://cwe.mitre.org/data/definitions/522.html Consider using an appropriate security mechanism to protect the credentials (e.g. keeping secrets in environment variables)\n\n<!-- SOURCEANT_REVIEW:a9c125fa21454567b27b3dec8f364571 -->",
+    "state": "APPROVED",
+    "html_url": "https://github.com/sourceant/sourceant/pull/201#pullrequestreview-5429771914",
+    "pull_request_url": "https://api.github.com/repos/sourceant/sourceant/pulls/201",
+    "author_association": "NONE",
+    "_links": {
+      "html": {
+        "href": "https://github.com/sourceant/sourceant/pull/201#pullrequestreview-5429771914"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/sourceant/sourceant/pulls/201"
+      }
+    },
+    "submitted_at": "2026-10-06T14:18:18Z",
+    "commit_id": "cf9b4b9a9f79de8e69b4202fbd60a4f7b9c66d5a"
+  },
+  "overview": {
+    "url": "https://api.github.com/repos/sourceant/sourceant/issues/comments/6018269567",
+    "html_url": "https://github.com/sourceant/sourceant/pull/201#issuecomment-6018269567",
+    "issue_url": "https://api.github.com/repos/sourceant/sourceant/issues/201",
+    "id": 6018269567,
+    "node_id": "IC_kwDONwNvGc8AAAABZreBfw",
+    "user": {
+      "login": "sourceant[bot]",
+      "id": 201232575,
+      "node_id": "BOT_kgDOC_6Qvw",
+      "avatar_url": "https://avatars.githubusercontent.com/in/1161781?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/sourceant%5Bbot%5D",
+      "html_url": "https://github.com/apps/sourceant",
+      "followers_url": "https://api.github.com/users/sourceant%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/sourceant%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/sourceant%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/sourceant%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/sourceant%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/sourceant%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/sourceant%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/sourceant%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/sourceant%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "created_at": "2026-10-06T14:18:20Z",
+    "updated_at": "2026-10-06T14:18:20Z",
+    "body": "# Code Review Summary\n\nAdds configurable review plans: standard runs a single reviewer, while premium runs parallel independent discovery passes and model evaluations gated by support and rejection thresholds. Checkout and snapshot reviews share one plan and contracts, verify the requested head commit, and aggregate candidates, evaluations, and analysis into a single execution result with evidence and per-analyzer tool coverage. A new `/api/reviews/snapshots` endpoint and settings for model profiles, credentials, purposes, pass counts, and concurrency support this.\n\n### \ud83d\udea8 Critical Issues\n- [error] src/tests/test_local_review_api.py:293-301 (semgrep jwt-python-hardcoded-secret): Hardcoded JWT secret or private key is used. This is a Insufficiently Protected Credentials weakness: https://cwe.mitre.org/data/definitions/522.html Consider using an appropriate security mechanism to protect the credentials (e.g. keeping secrets in environment variables)\n\n\n\n<!-- SOURCEANT_REVIEW_SUMMARY -->",
+    "author_association": "NONE",
+    "reactions": {
+      "url": "https://api.github.com/repos/sourceant/sourceant/issues/comments/6018269567/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "performed_via_github_app": {
+      "id": 1161781,
+      "client_id": "Iv23liOAxRuzM88Sqy97",
+      "slug": "sourceant",
+      "node_id": "A_kwHOC7iHfc4AEbo1",
+      "owner": {
+        "login": "sourceant",
+        "id": 196642685,
+        "node_id": "O_kgDOC7iHfQ",
+        "avatar_url": "https://avatars.githubusercontent.com/u/196642685?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/sourceant",
+        "html_url": "https://github.com/sourceant",
+        "followers_url": "https://api.github.com/users/sourceant/followers",
+        "following_url": "https://api.github.com/users/sourceant/following{/other_user}",
+        "gists_url": "https://api.github.com/users/sourceant/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/sourceant/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/sourceant/subscriptions",
+        "organizations_url": "https://api.github.com/users/sourceant/orgs",
+        "repos_url": "https://api.github.com/users/sourceant/repos",
+        "events_url": "https://api.github.com/users/sourceant/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/sourceant/received_events",
+        "type": "Organization",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "name": "Sourceant",
+      "description": "# Understand What Your Agents Are Changing\r\n\r\nAI can write code faster than your team can understand it. SourceAnt helps you keep up.\r\n\r\nConnect your repositories and SourceAnt builds a living picture of your software: the code, architecture, decisions, constraints, and requirements that explain how it is supposed to work.\r\n\r\n* **Understand your system**\r\n  See how repositories, services, datastores, files, and symbols fit together.\r\n\r\n* **Keep the why behind your code**\r\n  Capture decisions, constraints, conventions, and requirements so they survive beyond the PR, discussion, or coding session where they were discovered.\r\n\r\n* **Give your agents the missing context**\r\n  Serve relevant knowledge to Claude Code, Cursor, Codex, VS Code, and other MCP clients before they make a change.\r\n\r\n* **Review changes against the real system**\r\n  Check changes against existing decisions, constraints, dependencies, and their wider blast radius, not just the diff.\r\n\r\n* **Keep humans in control**\r\n  Review, edit, approve, or reject what SourceAnt learns before it becomes trusted knowledge.\r\n\r\n* **Run it your way**\r\n  Self-host the open-source core or use SourceAnt Cloud. Bring your own model keys if you want.\r\n\r\n## See SourceAnt in Action\r\n\r\n![SourceAnt in action](https://sourceant.ai/_astro/inbox-dark.Brj06kXS_2oVOye.webp)\r\n",
+      "external_url": "https://github.com/sourceant/sourceant",
+      "html_url": "https://github.com/apps/sourceant",
+      "created_at": "2025-02-28T12:49:29Z",
+      "updated_at": "2026-09-10T18:56:39Z",
+      "permissions": {
+        "contents": "read",
+        "metadata": "read",
+        "pull_requests": "write"
+      },
+      "events": [
+        "pull_request"
+      ]
+    },
+    "minimized": null
+  }
+}

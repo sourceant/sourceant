@@ -49,6 +49,7 @@ class FakeModel(LLMInterface):
         self.answer = answer
         self.review = review if review is not None else _review()
         self.asked = []
+        self.asked_purposes = []
         self.told = []
         self.model = "a-model"
 
@@ -59,8 +60,22 @@ class FakeModel(LLMInterface):
     def count_tokens(self, text):
         return len(text)
 
-    def generate_text(self, prompt):
+    def generate_text(self, prompt, *, purpose=None):
         self.asked.append(prompt)
+        self.asked_purposes.append(purpose)
+        if purpose == "review-evaluation":
+            return json.dumps(
+                {
+                    "judgments": [
+                        {
+                            "candidate": 0,
+                            "status": "supported",
+                            "reason": "The migration changes an existing applied operation.",
+                            "evidence": ["db/0001_charges.py: return 1"],
+                        }
+                    ]
+                }
+            )
         return json.dumps(self.answer)
 
     def generate_code_review(self, **called):
@@ -171,6 +186,172 @@ class TestLocalReview(BaseTestCase):
         if started.status_code != 200:
             return started
         return self.client.get(f"/api/local/reviews/{started.json()['data']['id']}")
+
+    @pytest.mark.parametrize("committed", [False, True])
+    def test_premium_http_review_runs_redundancy_and_returns_coverage(
+        self, monkeypatch, committed
+    ):
+        from src.core.settings.configuration import Configuration
+
+        candidate = CodeSuggestion(
+            file_name="db/0001_charges.py",
+            start_line=2,
+            end_line=2,
+            side=Side.RIGHT,
+            category=SuggestionCategory.BUG,
+            comment="Add a new migration instead.",
+            existing_code="    return 1\n",
+            suggested_code="    pass\n",
+        )
+        model = FakeModel(
+            {"findings": []}, review=_review(Verdict.COMMENT, [candidate])
+        )
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        original = Configuration.value
+        configured = {
+            "review.plan": "premium",
+            "review.discovery_passes": 3,
+            "review.evaluation_passes": 2,
+            "review.minimum_support": 1,
+        }
+        monkeypatch.setattr(
+            Configuration,
+            "value",
+            lambda self, key: (
+                configured[key] if key in configured else original(self, key)
+            ),
+        )
+        self.register()
+        base = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        self.edit_the_migration()
+        options = {}
+        if committed:
+            self.git("add", "-A")
+            self.git("commit", "-q", "-m", "feat: Change the migration")
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+            ).strip()
+            options = {"against": base, "head": head}
+        response = self.review(**options)
+        assert response.status_code == 200
+        answered = response.json()["data"]["review"]
+        execution = answered["review"].get("execution")
+        assert execution is not None, response.text
+        assert len(execution["reviews"]) == 3
+        assert all(not one["error"] for one in execution["reviews"]), execution[
+            "reviews"
+        ]
+        assert len(execution["evaluations"]) == 3
+        assert len(model.told) == 3
+        evaluations = [
+            one
+            for one in execution["evaluations"]
+            if one["participant"] != "deterministic"
+        ]
+        assert all(not one["error"] for one in evaluations), evaluations
+        assert all(one["judgments"][0]["status"] == "supported" for one in evaluations)
+        assert len(answered["review"]["suggestions"]) == 1
+        assert "db/0001_charges.py" in execution["unchecked"]
+        assert answered["ready"] is False
+
+    def test_requested_head_rejects_a_different_checkout(self):
+        self.register()
+        response = self.review(against="main", head="a" * 40, use_model=False)
+        assert response.json()["data"]["status"] == "failed"
+        assert "does not match" in response.json()["data"]["error"]
+
+    def test_premium_snapshot_http_runs_the_same_plan(self, monkeypatch):
+        import time
+        import jwt
+        from src.core.settings.configuration import Configuration
+        from src.core.settings.definitions import get
+        from src.core.review import snapshot
+
+        monkeypatch.setenv("JWT_SECRET", "test-signing-secret-for-review")
+        monkeypatch.setattr(Configuration, "value", lambda self, key: get(key).default)
+        model = FakeModel(
+            {"findings": []},
+            review=_review(
+                Verdict.COMMENT,
+                [
+                    CodeSuggestion(
+                        file_name="db/0001_charges.py",
+                        start_line=2,
+                        end_line=2,
+                        side=Side.RIGHT,
+                        category=SuggestionCategory.BUG,
+                        comment="Add a new migration instead.",
+                        existing_code="    return 1\n",
+                        suggested_code="    pass\n",
+                    )
+                ],
+            ),
+        )
+        monkeypatch.setattr(snapshot, "provider_for", lambda *_, **__: model)
+        token = jwt.encode(
+            {
+                "sub": "reviewer",
+                "exp": int(time.time()) + 60,
+                "scope": {"workspace_id": "benchmark"},
+            },
+            "test-signing-secret-for-review",
+            algorithm="HS256",
+        )
+        base = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        self.edit_the_migration()
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "feat: Change the migration")
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        body = {
+            "repository": "acme/billing",
+            "base": base,
+            "head": head,
+            "diff": subprocess.check_output(
+                ["git", "diff", base + "..." + head], cwd=self.source, text=True
+            ),
+            "files": {
+                "db/0001_charges.py": (self.source / "db/0001_charges.py").read_text()
+            },
+            "configuration": {"discovery-passes": "3", "evaluation-passes": "2"},
+        }
+        unauthenticated = self.client.post("/api/reviews/snapshots", json=body)
+        assert unauthenticated.status_code == 422
+        response = self.client.post(
+            "/api/reviews/snapshots",
+            json=body,
+            headers={"Authorization": "Bearer " + token},
+        )
+        assert response.status_code == 200, response.text
+        answer = response.json()["data"]
+        assert answer["snapshot"]["head"] == body["head"]
+        execution = answer["review"]["review"]["execution"]
+        assert len(execution["reviews"]) == 3
+        assert all(not one["error"] for one in execution["reviews"])
+        assert (
+            len(
+                [
+                    one
+                    for one in execution["evaluations"]
+                    if one["participant"] != "deterministic"
+                ]
+            )
+            == 2
+        )
+        assert len(answer["review"]["review"]["suggestions"]) == 1
+
+        body["files"] = {"../escape.py": "pass\n"}
+        invalid = self.client.post(
+            "/api/reviews/snapshots",
+            json=body,
+            headers={"Authorization": "Bearer " + token},
+        )
+        assert invalid.status_code == 422
 
     def test_a_checkout_with_nothing_changed_is_ready(self):
         self.register()
@@ -292,7 +473,11 @@ class TestLocalReview(BaseTestCase):
         assert answered["ready"] is False
         assert answered["verdicts"][0]["skill"] == "migrations"
         assert answered["verdicts"][0]["findings"][0]["severity"] == "blocking"
-        assert "Never edit a migration" in model.asked[0]
+        assert any(
+            "Never edit a migration" in prompt
+            for purpose, prompt in zip(model.asked_purposes, model.asked)
+            if purpose is None
+        )
 
     def test_advice_alone_does_not_stop_the_work(self, monkeypatch):
         model = FakeModel(

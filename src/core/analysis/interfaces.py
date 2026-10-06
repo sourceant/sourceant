@@ -26,6 +26,10 @@ class Analyzer(Protocol):
     """
 
     name: str
+    languages: Sequence[str]
+    checks: Sequence[str]
+
+    def supports(self, path: str) -> bool: ...
 
     def available(self) -> bool:
         """Whether this can run at all here.

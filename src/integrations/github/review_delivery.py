@@ -202,9 +202,7 @@ def deliver(
             }
         )
         body = (
-            "\n".join(
-                finding_sections(repository, pull_request, unanchored) + tool_findings
-            )
+            "\n".join(finding_sections(repository, pull_request, unanchored))
             or "Review complete. See the overview comment for a summary."
         )
         comments = [comment for comment in comments if comment is not None]
@@ -230,7 +228,16 @@ def deliver(
             attempts = [(comments, body)]
             if comments:
                 attempts.append(
-                    ([], "\n".join(finding_sections(repository, pull_request, review)))
+                    (
+                        [],
+                        "\n".join(
+                            finding_sections(
+                                repository,
+                                pull_request,
+                                review.model_copy(update={"summary": None}),
+                            )
+                        ),
+                    )
                 )
             for inline, review_body in attempts:
                 try:

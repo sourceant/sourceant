@@ -8,8 +8,8 @@ MODEL_CONCURRENCY = whole_number("REVIEW_MODEL_CONCURRENCY", 6)
 model_slots = BoundedSemaphore(MODEL_CONCURRENCY)
 
 
-def submit(pool, call, *args):
-    return pool.submit(copy_context().run, call, *args)
+def submit(pool, call, *args, **kwargs):
+    return pool.submit(copy_context().run, call, *args, **kwargs)
 
 
 def parallel_map(call, items, workers=6):

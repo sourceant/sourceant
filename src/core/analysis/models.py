@@ -15,6 +15,23 @@ SEVERITIES = (ERROR, WARNING, NOTE)
 
 
 @dataclass(frozen=True)
+class AnalyzerCoverage:
+    tool: str
+    paths: tuple[str, ...] = ()
+    unsupported: tuple[str, ...] = ()
+    unavailable: tuple[str, ...] = ()
+    languages: tuple[str, ...] = ()
+    checks: tuple[str, ...] = ()
+    skipped: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class AnalyzerReport:
+    findings: tuple[AnalyzerFinding, ...]
+    coverage: AnalyzerCoverage
+
+
+@dataclass(frozen=True)
 class AnalyzerFinding:
     """One thing a tool is certain about.
 

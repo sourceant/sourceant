@@ -4,6 +4,7 @@ from src.core.parallel import parallel_map
 from src.core.review.exclusions import review_diff
 
 from src.core.settings.configuration import Configuration
+from src.core.services import service_registry
 from src.plugins.builtin.code_reviewer.reviewing import (
     CodeReviewer,
     MAX_AT_ONCE,
@@ -14,8 +15,21 @@ from src.models.code_review import CodeReviewSummary, summary_from
 
 
 def summarize_changes(
-    diff, provider, configuration: Configuration, metadata=None, suggestions=()
+    diff,
+    provider,
+    configuration: Configuration,
+    metadata=None,
+    suggestions=(),
+    *,
+    services=service_registry,
 ):
+    from src.core.model import provider_for
+
+    choices = configuration.value("model.purposes") or {}
+    if isinstance(choices, dict) and "review-overview" in choices:
+        provider = provider_for(configuration, services, purpose="review-overview")
+        if provider is None:
+            raise ValueError("No model is configured for review overviews")
     diff, omitted = review_diff(diff, configuration)
     if omitted and not diff.strip():
         return CodeReviewSummary(

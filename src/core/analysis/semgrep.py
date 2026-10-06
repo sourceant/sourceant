@@ -16,7 +16,14 @@ from pathlib import Path
 from typing import Sequence
 
 from .interfaces import AnalyzerFailed
-from .models import ERROR, NOTE, WARNING, AnalyzerFinding
+from .models import (
+    ERROR,
+    NOTE,
+    WARNING,
+    AnalyzerFinding,
+    AnalyzerReport,
+    AnalyzerCoverage,
+)
 
 # Long enough for a large change, short enough that a tool which has stopped
 # answering does not hold the review behind it.
@@ -31,6 +38,11 @@ AS_SEVERITY = {
 
 class SemgrepAnalyzer:
     name = "semgrep"
+    languages = ()
+    checks = ("static-analysis",)
+
+    def supports(self, path: str) -> bool:
+        return bool(path)
 
     def __init__(self, config: str = "p/default", timeout: int = TIMEOUT) -> None:
         # Which rules to read by. A registry pack is fetched once and kept by
@@ -42,10 +54,44 @@ class SemgrepAnalyzer:
         return shutil.which("semgrep") is not None
 
     def examine(self, root: Path, paths: Sequence[str]) -> Sequence[AnalyzerFinding]:
+        return self.inspect(root, paths).findings
+
+    def inspect(self, root: Path, paths: Sequence[str]) -> AnalyzerReport:
         readable = [one for one in paths if (root / one).is_file()]
         if not readable:
-            return ()
-        return tuple(self._read(self._run(root, readable)))
+            return AnalyzerReport(
+                (),
+                AnalyzerCoverage(
+                    self.name, unsupported=tuple(paths), checks=self.checks
+                ),
+            )
+        answered = self._run(root, readable)
+        errors = answered.get("errors") or ()
+        failed = {str(one["path"]) for one in errors if one.get("path")}
+        if any(not one.get("path") for one in errors):
+            failed.update(readable)
+        scanned = (answered.get("paths") or {}).get("scanned") or ()
+        checked = tuple(
+            path for path in readable if path in scanned and path not in failed
+        )
+        skipped = tuple(
+            (str(one.get("path") or ""), str(one.get("reason") or "skipped"))
+            for one in (answered.get("paths") or {}).get("skipped") or ()
+            if one.get("path") in paths
+        )
+        return AnalyzerReport(
+            tuple(self._read(answered)),
+            AnalyzerCoverage(
+                self.name,
+                paths=checked,
+                unsupported=tuple(
+                    path for path in paths if path not in checked and path not in failed
+                ),
+                unavailable=tuple(path for path in paths if path in failed),
+                checks=self.checks,
+                skipped=skipped,
+            ),
+        )
 
     def _run(self, root: Path, paths: Sequence[str]) -> dict:
         """Ask semgrep, tolerating the exit code it uses to mean it found things.
