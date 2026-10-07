@@ -15,6 +15,107 @@ from src.models.config import ConfigType
 TEST_JWT_SECRET = "settings-api-test-secret"
 
 
+def test_repository_routing_policy_round_trips_as_a_user_setting(settings_client):
+    defaults = settings_client.get("/api/settings/user/42", headers=_headers())
+    policy = next(
+        one for one in defaults.json()["data"] if one["key"] == "routing.policy"
+    )
+    assert policy["value"]["accept_unconnected"] is False
+    assert policy["value"]["default_workspace_id"] is None
+    written = settings_client.put(
+        "/api/settings/user/42/routing.policy",
+        headers=_headers(),
+        json={
+            "value": {
+                "default_workspace_id": 7,
+                "accept_unconnected": True,
+                "organization_rules": [{"pattern": "SourceAnt/*", "workspace_id": 8}],
+            }
+        },
+    )
+    assert written.status_code == 200
+    expected = {
+        "default_workspace_id": 7,
+        "accept_unconnected": True,
+        "match_organization": False,
+        "organization_rules": [{"pattern": "sourceant/*", "workspace_id": 8}],
+    }
+    assert written.json()["data"]["value"] == expected
+    read = settings_client.get("/api/settings/user/42", headers=_headers())
+    assert (
+        next(
+            one["value"]
+            for one in read.json()["data"]
+            if one["key"] == "routing.policy"
+        )
+        == expected
+    )
+    assert (
+        settings_client.put(
+            "/api/settings/user/43/routing.policy",
+            headers=_headers(),
+            json={"value": expected},
+        ).status_code
+        == 403
+    )
+    assert (
+        settings_client.put(
+            "/api/settings/workspace/workspace-1/routing.policy",
+            headers=_headers(),
+            json={"value": expected},
+        ).status_code
+        == 422
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"default_workspace_id": 0},
+        {"default_workspace_id": "7"},
+        {"accept_unconnected": "false"},
+        {"organization_rules": [{"pattern": "*/repo", "workspace_id": 7}]},
+        {"organization_rules": [{"pattern": "sourceant/*", "workspace_id": -1}]},
+        {
+            "organization_rules": [
+                {"pattern": "sourceant/*", "workspace_id": 7},
+                {"pattern": "SourceAnt/*", "workspace_id": 8},
+            ]
+        },
+        {"unknown": True},
+        [],
+    ],
+)
+def test_invalid_repository_routing_policy_is_rejected_atomically(
+    settings_client, value
+):
+    assert (
+        settings_client.put(
+            "/api/settings/user/42/routing.policy",
+            headers=_headers(),
+            json={"value": {"default_workspace_id": 7}},
+        ).status_code
+        == 200
+    )
+    assert (
+        settings_client.put(
+            "/api/settings/user/42/routing.policy",
+            headers=_headers(),
+            json={"value": value},
+        ).status_code
+        == 422
+    )
+    read = settings_client.get("/api/settings/user/42", headers=_headers())
+    assert (
+        next(
+            one["value"]
+            for one in read.json()["data"]
+            if one["key"] == "routing.policy"
+        )["default_workspace_id"]
+        == 7
+    )
+
+
 def test_model_profiles_and_credentials_use_http_and_hide_secrets(settings_client):
     profile = {"reviewer": {"name": "openai/review-model"}}
     credentials = {

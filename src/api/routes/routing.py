@@ -3,8 +3,33 @@ from fastapi import APIRouter, Depends, Query
 from src.auth import gateway_routing
 from src.core.responses import success_response
 from src.core.workspace import workspaces_holding
+from src.config.db import get_session
+from src.models.repository import Repository
+from src.models.workspace import Workspace
+from src.models.connected_repository import ConnectedRepository
+from sqlalchemy import func
+from sqlmodel import Session, select
 
 router = APIRouter(dependencies=[Depends(gateway_routing)])
+
+
+@router.get("/organization")
+async def workspaces_for_organization(
+    owner: str = Query(..., min_length=1, max_length=39),
+    session: Session = Depends(get_session),
+):
+    matches = session.exec(
+        select(Workspace.external_ref)
+        .join(ConnectedRepository, ConnectedRepository.workspace_id == Workspace.id)
+        .join(Repository, Repository.id == ConnectedRepository.repository_id)
+        .where(
+            Repository.provider == "github",
+            Repository.owner_type == "Organization",
+            func.lower(Repository.owner) == owner.lower(),
+        )
+        .distinct()
+    ).all()
+    return success_response(data={"workspaces": list(matches)})
 
 
 @router.get("/repository")

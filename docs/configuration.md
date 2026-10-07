@@ -4,6 +4,21 @@ SourceAnt reads its configuration from environment variables. Copy `.env.example
 
 Settings that make sense per repository are set through the API instead, and override the environment. See [API](api.md#settings).
 
+### Repository routing
+
+The user setting `routing.policy` selects a default workspace and controls automatic registration for unconnected repositories from linked installations:
+
+```json
+{
+  "default_workspace_id": 7,
+  "accept_unconnected": false,
+  "match_organization": false,
+  "organization_rules": []
+}
+```
+
+Selecting a default does not enable automatic registration. Existing repository connections take precedence. Organization rules select a workspace before organization matching and the default. Ambiguous organization matches require manual connection. The gateway checks installation ownership and limits destinations to workspaces owned by the user. Ordinary API requests still require their explicit workspace.
+
 ### LLM provider
 
 Required. SourceAnt reaches its models through LiteLLM, so any of its [100+ providers](https://docs.litellm.ai/docs/providers) works. Set the model, and the key its provider reads:
