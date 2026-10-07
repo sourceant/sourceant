@@ -72,4 +72,7 @@ def _upgrade(database_url: str) -> None:
     config.set_main_option("script_location", str(migrations_root()))
     config.set_main_option("version_locations", " ".join(resolve_version_locations()))
     config.set_main_option("sqlalchemy.url", database_url)
-    command.upgrade(config, "heads")
+    from src.utils.compiled_migrations import compiled_migrations
+
+    with compiled_migrations():
+        command.upgrade(config, "heads")

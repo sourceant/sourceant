@@ -54,12 +54,47 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable=${{ steps.release.outputs.latest == 'true' }}
 
-      - name: Build and push
+      - name: Build runtime
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
+          push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Audit runtime image layers
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: python scripts/audit_image.py "$(printf '%s\n' "$IMAGE_TAGS" | head -n 1)"
+
+      - name: Build native test environment
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: test
+          load: true
+          tags: sourceant-native-tests:local
+          cache-from: type=gha
+
+      - name: Test compiled runtime
+        run: |
+          docker run --rm --entrypoint python \
+            -v "$PWD/src/tests:/app/src/tests:ro" \
+            -v "$PWD:/source-contract:ro" \
+            -e SOURCEANT_SOURCE_TEST_ROOT=/source-contract \
+            -e SOURCEANT_EXPECT_NATIVE=true \
+            -e TEST_DATABASE_URL=sqlite:////tmp/native-tests.db \
+            -e DEBUG=false -e LOG_LEVEL=WARNING \
+            sourceant-native-tests:local \
+            -m pytest src/tests -q --tb=short -p no:cacheprovider
+
+      - name: Publish audited image
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          while IFS= read -r image; do
+            docker push "$image"
+          done <<< "$IMAGE_TAGS"

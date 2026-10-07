@@ -1,4 +1,5 @@
 import jwt
+import builtins
 import re
 import time
 import requests
@@ -45,7 +46,7 @@ class GitHub(ProviderAdapter):
     def generate_jwt(self) -> str:
         """Generate a JWT token for GitHub App authentication."""
         try:
-            with open(self.app_private_key_path, "r") as f:
+            with builtins.open(self.app_private_key_path, "r") as f:
                 private_key = f.read()
 
             payload = {

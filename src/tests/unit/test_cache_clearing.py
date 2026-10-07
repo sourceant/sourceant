@@ -53,14 +53,18 @@ def test_what_belongs_to_a_call_is_the_narrowest_thing_it_names():
 def test_every_clearable_namespace_is_one_something_writes():
     """A button for a namespace nothing writes clears nothing for ever."""
     import subprocess
+    import os
+    from pathlib import Path
+
+    source = Path(os.environ.get("SOURCEANT_SOURCE_TEST_ROOT", "."))
 
     written = subprocess.run(
         [
             "grep",
             "-rhoE",
             r'"(model-response|topology\.reading|review\.[a-z]+)"',
-            "src/core",
-            "src/llms",
+            str(source / "src/core"),
+            str(source / "src/llms"),
         ],
         capture_output=True,
         text=True,
