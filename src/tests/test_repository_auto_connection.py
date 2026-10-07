@@ -33,10 +33,12 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(workspaces, "get_engine", lambda: engine)
     monkeypatch.setattr(workspaces, "STATELESS_MODE", False)
 
-    def headers(workspace=None):
+    def headers(workspace=None, registration=True):
         claims = {"sub": "1", "exp": int(time.time()) + 300}
         if workspace:
             claims["scope"] = {"workspace_id": workspace}
+            if registration:
+                claims["scope"]["repository_registration"] = True
         else:
             claims["aud"] = ROUTING_AUDIENCE
         return {
@@ -151,4 +153,40 @@ def test_case_changes_cannot_bypass_existing_connection(api):
             json=connection("SourceAnt/Core"),
         ).status_code
         == 409
+    )
+
+
+def test_user_tokens_cannot_probe_other_workspace_connections(api):
+    client, headers, _ = api
+    for name in ["sourceant/core", "sourceant/unconnected"]:
+        assert (
+            client.post(
+                "/api/repos/connect",
+                headers=headers("two", registration=False),
+                json=connection(name),
+            ).status_code
+            == 403
+        )
+    assert (
+        client.post(
+            "/api/repos/connect", headers=headers("one"), json=connection()
+        ).status_code
+        == 201
+    )
+    for name in ["sourceant/core", "sourceant/unconnected"]:
+        assert (
+            client.post(
+                "/api/repos/connect",
+                headers=headers("two", registration=False),
+                json=connection(name),
+            ).status_code
+            == 403
+        )
+    assert (
+        client.post(
+            "/api/repos/connect",
+            headers=headers("two", registration=False),
+            json=connection(automatic=False),
+        ).status_code
+        == 201
     )

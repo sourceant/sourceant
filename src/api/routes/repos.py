@@ -167,6 +167,13 @@ async def connect_repo(
     user: dict = Depends(get_current_user),
 ):
     """Connect a GitHub repository for the current user."""
+    if (
+        data.only_if_unconnected
+        and user.get("scope", {}).get("repository_registration") is not True
+    ):
+        raise HTTPException(
+            status_code=403, detail="Gateway registration permission required"
+        )
     workspace = workspace_of(user)
 
     dialect = session.get_bind().dialect.name
