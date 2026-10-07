@@ -29,3 +29,14 @@ Dependent images must use a compiled Core image as their base and retain the
 same Python version and platform. Publish Core first, then update dependent
 images to its immutable reference. Source-mounted development environments
 continue to use ordinary Python modules.
+
+Builds can select a custom policy with `--policy module:factory`. The factory
+returns a `src.build.policy.BuildPolicy` subclass. Its `module_source` method
+receives the module name and Python source after compatibility adjustments.
+Its `resource_source` method receives the package name, resource bytes, and
+migration module names. It returns a module exposing `resources()` and
+`MIGRATIONS`.
+
+Policies run in the builder before Cython compilation. The default policy
+preserves Python source and compresses resources. Private distributions can
+override either method without changing the default Core build.

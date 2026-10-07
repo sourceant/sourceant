@@ -4,13 +4,13 @@ import argparse
 import ast
 import csv
 import hashlib
-import json
 import base64
 import re
 import shutil
 import tempfile
-import zlib
 from pathlib import Path
+
+from src.build.policy import BuildPolicy, load_policy
 
 
 def model_compatibility(text):
@@ -89,13 +89,20 @@ def model_compatibility(text):
     return ast.unparse(ast.fix_missing_locations(tree)) + "\n"
 
 
-def compile_package(source: Path, output: Path, package: str, jobs: int = 2):
+def compile_package(
+    source: Path,
+    output: Path,
+    package: str,
+    jobs: int = 2,
+    policy: BuildPolicy | None = None,
+):
     from Cython.Build import cythonize
     from setuptools import Distribution, Extension
     from setuptools.command.build_ext import build_ext
 
     source = source.resolve()
     output = output.resolve()
+    policy = policy or BuildPolicy()
     if output.exists() and any(output.iterdir()):
         raise ValueError("Compilation output must be empty")
     assets = {}
@@ -121,7 +128,7 @@ def compile_package(source: Path, output: Path, package: str, jobs: int = 2):
                     ".ini",
                     ".txt",
                 }:
-                    assets[relative.as_posix()] = original.read_bytes().hex()
+                    assets[relative.as_posix()] = original.read_bytes()
                 continue
             text = model_compatibility(original.read_text(encoding="utf-8"))
             module_path = relative.with_suffix("")
@@ -169,16 +176,12 @@ def compile_package(source: Path, output: Path, package: str, jobs: int = 2):
                     )
             destination = stage / package / module_path.with_suffix(".py")
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(text, encoding="utf-8")
+            destination.write_text(policy.module_source(name, text), encoding="utf-8")
             modules.append((name, destination))
-        packed = zlib.compress(json.dumps(assets, sort_keys=True).encode(), level=9)
         resources = stage / package / "_compiled_resources.py"
         resources.parent.mkdir(parents=True, exist_ok=True)
         resources.write_text(
-            "import json\nimport zlib\n"
-            + f"_PAYLOAD = {packed!r}\n"
-            + "def resources():\n    return {name: bytes.fromhex(value) for name, value in json.loads(zlib.decompress(_PAYLOAD)).items()}\n"
-            + f"MIGRATIONS = {tuple(revisions)!r}\n",
+            policy.resource_source(package, assets, tuple(revisions)),
             encoding="utf-8",
         )
         modules.append((package + "._compiled_resources", resources))
@@ -295,10 +298,13 @@ def main():
     parser.add_argument("--package", required=True)
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--metadata", type=Path)
+    parser.add_argument("--policy")
     args = parser.parse_args()
     if not all(part.isidentifier() for part in args.package.split(".")):
         parser.error("Package must be a Python module name")
-    compile_package(args.source, args.output, args.package, args.jobs)
+    compile_package(
+        args.source, args.output, args.package, args.jobs, load_policy(args.policy)
+    )
     if args.metadata is not None:
         copy_metadata(args.metadata, args.output)
 

@@ -9,7 +9,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
 RUN pip install --no-cache-dir Cython==3.3.0 setuptools==80.9.0 wheel==0.45.1
 COPY src /app/src
 COPY scripts/cache_tree_sitter_languages.py /app/cache_tree_sitter_languages.py
-RUN python src/build/compile.py --source /app/src --output /compiled --package src
+RUN python -m src.build.compile --source /app/src --output /compiled --package src
 
 FROM python:3.10-slim-bookworm AS runtime
 
