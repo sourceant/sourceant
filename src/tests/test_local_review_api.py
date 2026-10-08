@@ -375,8 +375,10 @@ class TestLocalReview(BaseTestCase):
     def test_premium_http_review_runs_redundancy_and_returns_coverage(
         self, monkeypatch, committed
     ):
+        from src.core.analysis import SemgrepAnalyzer
         from src.core.settings.configuration import Configuration
 
+        monkeypatch.setattr(SemgrepAnalyzer, "available", lambda self: False)
         candidate = CodeSuggestion(
             file_name="db/0001_charges.py",
             start_line=2,

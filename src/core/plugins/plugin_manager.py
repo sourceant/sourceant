@@ -6,6 +6,7 @@ import os
 import sys
 import importlib
 import importlib.util
+from importlib.machinery import EXTENSION_SUFFIXES
 from pathlib import Path
 from typing import Dict, List, Optional, Type, Any
 import asyncio
@@ -148,13 +149,13 @@ class PluginManager:
                 continue
 
             # Check if this directory is a plugin package
-            plugin_file = item / "plugin.py"
-            init_file = item / "__init__.py"
+            plugin_file = self._module_file(item, "plugin")
+            init_file = self._module_file(item, "__init__")
 
-            if plugin_file.exists():
+            if plugin_file is not None:
                 plugin_path = plugin_file
                 module_name = item.name
-            elif init_file.exists():
+            elif init_file is not None:
                 plugin_path = init_file
                 module_name = item.name
             else:
@@ -174,17 +175,25 @@ class PluginManager:
                 logger.warning(f"Error discovering plugin in {plugin_path}: {e}")
 
     @staticmethod
+    def _module_file(directory: Path, name: str) -> Optional[Path]:
+        for suffix in [".py", *EXTENSION_SUFFIXES]:
+            candidate = directory / (name + suffix)
+            if candidate.is_file():
+                return candidate
+        return None
+
+    @staticmethod
     def _resolve_dotted_package(package_dir: Path) -> Optional[str]:
         """Walk up from package_dir building a dotted path until no __init__.py is found."""
         parts = []
         current = package_dir
-        while (current / "__init__.py").exists() or not parts:
+        while PluginManager._module_file(current, "__init__") is not None or not parts:
             parts.append(current.name)
             parent = current.parent
             if parent == current:
                 break
             current = parent
-            if not (current / "__init__.py").exists():
+            if PluginManager._module_file(current, "__init__") is None:
                 break
 
         if not parts:
@@ -213,20 +222,26 @@ class PluginManager:
             dotted_package = self._resolve_dotted_package(package_dir)
 
             if dotted_package and dotted_package not in sys.modules:
-                pkg_spec = importlib.util.spec_from_file_location(
-                    dotted_package,
-                    package_dir / "__init__.py",
-                    submodule_search_locations=[str(package_dir)],
-                )
+                initializer = self._module_file(package_dir, "__init__")
+                if initializer is None:
+                    pkg_spec = importlib.util.spec_from_loader(
+                        dotted_package, loader=None, is_package=True
+                    )
+                else:
+                    pkg_spec = importlib.util.spec_from_file_location(
+                        dotted_package,
+                        initializer,
+                        submodule_search_locations=[str(package_dir)],
+                    )
                 if pkg_spec:
                     pkg_module = importlib.util.module_from_spec(pkg_spec)
                     pkg_module.__path__ = [str(package_dir)]
                     sys.modules[dotted_package] = pkg_module
-                    if pkg_spec.loader and (package_dir / "__init__.py").exists():
+                    if pkg_spec.loader:
                         pkg_spec.loader.exec_module(pkg_module)
 
             qualified_name = (
-                f"{dotted_package}.{plugin_path.stem}"
+                f"{dotted_package}.{plugin_path.name.split('.')[0]}"
                 if dotted_package
                 else module_name
             )

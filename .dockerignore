@@ -20,3 +20,4 @@ node_modules/
 docs/
 *.md
 !README.md
+!LICENSE.md

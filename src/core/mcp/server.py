@@ -4,6 +4,7 @@ from dataclasses import asdict
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from src.utils.native_callables import NativeFastMCP
 
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
 from src.core.context import ContextProvider, ContextRequest
@@ -59,7 +60,7 @@ def create_mcp_server(
     services: ServiceRegistry = service_registry,
     skills: SkillLibrary | None = None,
 ) -> FastMCP:
-    server = FastMCP(
+    server = NativeFastMCP(
         name="SourceAnt",
         instructions=(
             "An indexed graph of this codebase and the engineering knowledge "

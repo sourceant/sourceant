@@ -12,6 +12,17 @@ os.environ["DATABASE_URL"] = os.environ.get(
 import pytest
 from unittest.mock import patch
 
+
+def pytest_sessionstart(session):
+    if os.environ.get("SOURCEANT_EXPECT_NATIVE") != "true":
+        return
+    import src
+    from src.cli import main
+
+    assert src.__file__.endswith(".so"), src.__file__
+    assert main.__file__.endswith(".so"), main.__file__
+
+
 # Every variable a provider reads a key from. A machine that holds one made
 # the suite pass where CI, holding none, did not.
 PROVIDER_KEYS = (

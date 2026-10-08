@@ -25,6 +25,7 @@ from src.events.review_posting import ReviewPosting
 from src.models.config import Config
 from src.models.repository_event import RepositoryEvent
 from src.models.review_record import ReviewRecord
+from src.models.code_review import CodeReviewFindings, CodeReviewOverview
 from src.plugins.builtin.code_reviewer.plugin import CodeReviewerPlugin
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -41,6 +42,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
             "fallback",
             "summary_retry",
             "summary_invalid",
+            "schema_rejected",
+            "output_budget",
         )
     ]
     + [
@@ -137,13 +140,25 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
         name: ModelResponse(
             **json.loads((FIXTURES / f"deepseek/{name}.json").read_text())
         )
-        for name in ("review", "overview")
+        for name in ("review", "overview", "output-budget-exhausted")
     }
 
     summaries = 0
 
     def answer(**kwargs):
         nonlocal summaries
+        if failure == "schema_rejected":
+            if kwargs["response_format"] is CodeReviewFindings:
+                rejection = json.loads(
+                    (FIXTURES / "groq/schema-rejections.json").read_text()
+                )[0]
+                raise BadRequestError(
+                    message=json.dumps(rejection),
+                    model="qwen/qwen3.8-27b",
+                    llm_provider="groq",
+                )
+            if kwargs["response_format"] is CodeReviewOverview:
+                return captures["overview"]
         if failure == "generation":
             raise BadRequestError(
                 message=(FIXTURES / "deepseek/unsupported-format.json").read_text(),
@@ -158,12 +173,16 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
                 failure == "summary_retry" and summaries == 1
             ):
                 return captures["review"]
+        elif failure == "output_budget":
+            return captures["output-budget-exhausted"]
         return captures[
             "review" if '"CodeReviewFindings"' in instruction else "overview"
         ]
 
     completion = Mock(side_effect=answer)
     monkeypatch.setattr("litellm.completion", completion)
+    if failure == "schema_rejected":
+        monkeypatch.setattr("litellm.supports_response_schema", lambda **_: True)
     app = FastAPI()
     app.include_router(pr.router, prefix="/api/prs")
     app.include_router(settings.router, prefix="/api/settings")
@@ -177,7 +196,14 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
     }
     with TestClient(app) as client:
         for key, value in (
-            ("model.name", "deepseek/deepseek-v4-flash"),
+            (
+                "model.name",
+                (
+                    "groq/qwen/qwen3.8-27b"
+                    if failure == "schema_rejected"
+                    else "deepseek/deepseek-v4-flash"
+                ),
+            ),
             ("model.api_key", "your-api-key-here"),
         ):
             result = client.put(f"/api/settings/user/1/{key}", json={"value": value})
@@ -225,25 +251,31 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
             [90, 120] if expected_calls == 3 else [90] if failure == "cancelled" else []
         )
         return
-    if failure in ("generation", "posting", "summary_invalid"):
+    if failure in ("generation", "posting", "summary_invalid", "output_budget"):
         assert job["state"] == ("failed" if failure == "posting" else "dead"), job
         expected = (
             "response_format" if failure == "generation" else "Review posting failed"
         )
         if failure == "summary_invalid":
             expected = "Invalid summary output after one retry"
+        elif failure == "output_budget":
+            expected = "output budget exhausted"
         assert expected in job["error"]
         assert not records
     else:
         assert job["state"] == "succeeded", job["error"]
         assert len(records) == 1
-    if failure in ("generation", "summary_invalid"):
+    if failure in ("generation", "summary_invalid", "output_budget"):
         github.post_review.assert_not_called()
         if failure == "generation":
             assert completion.call_count <= 2
+        elif failure == "output_budget":
+            assert completion.call_count == 2
     else:
         github.post_review.assert_called_once()
 
     if failure in ("summary_retry", "summary_invalid"):
         assert summaries == 2
+        assert completion.call_count == 3
+    elif failure == "schema_rejected":
         assert completion.call_count == 3

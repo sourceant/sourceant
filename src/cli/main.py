@@ -51,11 +51,14 @@ def db_command(ctx):
     cfg.set_main_option("script_location", str(migrations_root()))
     cfg.set_main_option("version_locations", " ".join(resolve_version_locations()))
     fn, positional, kwarg = options.cmd
-    fn(
-        cfg,
-        *[getattr(options, k) for k in positional],
-        **{k: getattr(options, k) for k in kwarg},
-    )
+    from src.utils.compiled_migrations import compiled_migrations
+
+    with compiled_migrations():
+        fn(
+            cfg,
+            *[getattr(options, k) for k in positional],
+            **{k: getattr(options, k) for k in kwarg},
+        )
     # Leave immediately rather than waiting on whatever the migration environment
     # started. A plugin that keeps a thread alive would otherwise hold this command
     # open forever, and everything that waits for migrations to finish with it.

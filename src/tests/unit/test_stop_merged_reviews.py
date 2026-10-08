@@ -140,9 +140,17 @@ def test_the_setting_is_on_unless_somebody_turns_it_off(key):
 
 
 def test_the_reviewer_is_told_when_a_pull_request_closes():
+    import os
+    from pathlib import Path
     from src.plugins.builtin.code_reviewer import plugin
 
-    source = open(plugin.__file__).read()
+    root = os.environ.get("SOURCEANT_SOURCE_TEST_ROOT")
+    path = (
+        Path(root) / "src/plugins/builtin/code_reviewer/plugin.py"
+        if root
+        else Path(plugin.__file__)
+    )
+    source = path.read_text()
 
     assert '"pull_request.closed"' in source
 
