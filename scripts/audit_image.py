@@ -9,8 +9,13 @@ from pathlib import PurePosixPath
 
 def first_party(name):
     name = name.lstrip("./")
+    if name == "usr/local/bin/sourceant-asyncapi-parser":
+        return True
+    if name.startswith("opt/sourceant/asyncapi-parser/"):
+        return "/node_modules/" not in name
     return (
-        name.startswith("app/src/")
+        name.startswith("opt/sourceant/bin/")
+        or name.startswith("app/src/")
         or name.startswith("app/scripts/")
         or name.startswith(("build/memory/", "build/onboarding/", "build/entrypoint/"))
         or name.startswith(("app/reviewbench", "app/entrypoint"))
@@ -26,6 +31,17 @@ def forbidden(name):
     if path.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "NOTICE")):
         return False
     return path.suffix in {
+        ".sh",
+        ".js",
+        ".cjs",
+        ".mjs",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".map",
+        ".h",
+        ".hpp",
+        ".go",
         ".py",
         ".pyc",
         ".pyo",
@@ -53,8 +69,15 @@ def scan_layer(layer, failures):
         if first_party(name):
             if forbidden(name):
                 failures.append(name)
-            elif name.endswith(".so"):
-                binaries += 1
+            elif (
+                name.endswith((".so", ".node"))
+                or name == "usr/local/bin/sourceant-asyncapi-parser"
+                or name.startswith("opt/sourceant/bin/")
+            ):
+                if layer.extractfile(member).read(4) != b"\x7fELF":
+                    failures.append(name)
+                else:
+                    binaries += 1
         if name.endswith(".whl"):
             with zipfile.ZipFile(io.BytesIO(layer.extractfile(member).read())) as wheel:
                 for item in wheel.namelist():
