@@ -391,6 +391,8 @@ class LiteLLMProvider(LLMInterface):
                             "unavailable",
                             "not supported",
                             "unsupported",
+                            "invalid json schema",
+                            "invalid schema",
                         )
                     )
                 ):

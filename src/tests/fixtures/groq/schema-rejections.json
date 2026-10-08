@@ -1,0 +1,36 @@
+[
+  {
+    "error": {
+      "message": "invalid JSON schema for response_format: 'CodeReviewFindings': /$defs/CodeSuggestion/properties/impact/anyOf: anyOf branches must be disambiguated via a required discriminator (const/enum) or by key-set exclusion with additionalProperties:false",
+      "type": "invalid_request_error",
+      "param": "response_format",
+      "schema_path": "/$defs/CodeSuggestion/properties/impact/anyOf",
+      "schema_path_segments": [
+        "$",
+        "$defs",
+        "CodeSuggestion",
+        "properties",
+        "impact",
+        "anyOf"
+      ],
+      "schema_kind": "anyOf"
+    }
+  },
+  {
+    "error": {
+      "message": "invalid JSON schema for response_format: 'CodeReviewFindings': /$defs/CodeSuggestion/properties/certainty/anyOf: anyOf branches must be disambiguated via a required discriminator (const/enum) or by key-set exclusion with additionalProperties:false",
+      "type": "invalid_request_error",
+      "param": "response_format",
+      "schema_path": "/$defs/CodeSuggestion/properties/certainty/anyOf",
+      "schema_path_segments": [
+        "$",
+        "$defs",
+        "CodeSuggestion",
+        "properties",
+        "certainty",
+        "anyOf"
+      ],
+      "schema_kind": "anyOf"
+    }
+  }
+]

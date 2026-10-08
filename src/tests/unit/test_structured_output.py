@@ -75,6 +75,27 @@ def test_failed_fallback_is_not_retried(completion):
     assert completion.call_count == 2
 
 
+@pytest.mark.parametrize(
+    "rejection",
+    json.loads((FIXTURES.parent / "groq/schema-rejections.json").read_text()),
+)
+def test_rejected_schema_falls_back_and_is_remembered(completion, rejection):
+    failure = BadRequestError(
+        message=json.dumps(rejection),
+        model="qwen/qwen3.8-27b",
+        llm_provider="groq",
+    )
+    completion.side_effect = [failure, response(), response()]
+    provider = model("groq/qwen/qwen3.8-27b")
+    first = provider.generate_code_review("+ first change")
+    second = provider.generate_code_review("+ second change")
+    assert first.verdict == second.verdict
+    assert completion.call_count == 3
+    assert completion.call_args_list[0].kwargs["response_format"] is CodeReviewFindings
+    for call in completion.call_args_list[1:]:
+        assert call.kwargs["response_format"] == {"type": "json_object"}
+
+
 @pytest.mark.parametrize("failure", [TimeoutError(), ConnectionError()])
 def test_transport_failures_do_not_trigger_format_fallback(completion, failure):
     completion.side_effect = failure
