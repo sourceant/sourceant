@@ -5,7 +5,7 @@ fastapi==0.141.1
 fastapi-pagination==0.15.16
 google-genai==2.19.0
 httpx==0.28.1
-litellm==1.96.0
+litellm==1.104.2
 Mako==1.4.1
 mcp==1.28.1
 psycopg2-binary==2.9.12
