@@ -68,7 +68,7 @@ def test_profile_can_override_or_inherit_the_output_budget():
 
 
 def test_unsupported_reasoning_fails_before_calling_the_provider():
-    provider = LiteLLMProvider("openai/gpt-4.1", 131072, reasoning_effort="low")
+    provider = LiteLLMProvider("cohere/command-r", 131072, reasoning_effort="low")
     with patch("src.llms.litellm_provider.litellm.completion") as completion:
         with pytest.raises(ValueError, match="does not support reasoning effort"):
             provider._completion(model=provider.model, messages=[])
