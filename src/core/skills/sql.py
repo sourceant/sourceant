@@ -5,11 +5,11 @@ from dataclasses import asdict, replace
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     Column,
     DateTime,
-    JSON,
     ForeignKeyConstraint,
     Index,
     MetaData,
@@ -66,7 +66,11 @@ class SQLSkillLibrary:
             metadata.create_all(engine)
 
     @staticmethod
-    def scope(workspace, scope, repository=""):
+    def scope(workspace, scope, repository="", organization=""):
+        if scope == SkillScope.ORGANIZATION:
+            if not organization:
+                raise SkillWriteError("An organization is required")
+            return Scope.from_mapping({"organization": organization})
         if not workspace:
             raise SkillWriteError("A workspace is required")
         if scope == SkillScope.WORKSPACE:
@@ -77,8 +81,10 @@ class SQLSkillLibrary:
             )
         raise SkillWriteError("Choose a workspace or repository skill scope")
 
-    def entries(self, workspace, *, scope, repository="", identifier=None):
-        target = self.scope(workspace, scope, repository)
+    def entries(
+        self, workspace, *, scope, repository="", identifier=None, organization=""
+    ):
+        target = self.scope(workspace, scope, repository, organization)
         with self.engine.connect() as connection:
             key = scopes.known(connection, target)
             if key is None:
@@ -193,8 +199,8 @@ class SQLSkillLibrary:
                     ],
                 )
 
-    def write(self, workspace, skill, *, scope, repository=""):
-        target = self.scope(workspace, scope, repository)
+    def write(self, workspace, skill, *, scope, repository="", organization=""):
+        target = self.scope(workspace, scope, repository, organization)
         kept = replace(
             skill, id=_checked(skill.id), path="", origin=SkillScope(scope).value
         )
@@ -244,9 +250,9 @@ class SQLSkillLibrary:
         )
         return replace(kept, content=content, applications=applications)
 
-    def hide(self, workspace, identifier, *, scope, repository=""):
+    def hide(self, workspace, identifier, *, scope, repository="", organization=""):
         self._put(
-            self.scope(workspace, scope, repository),
+            self.scope(workspace, scope, repository, organization),
             _checked(identifier),
             {
                 "name": "",
@@ -262,12 +268,20 @@ class SQLSkillLibrary:
             },
         )
 
-    def forget(self, workspace, identifier, *, scope, repository=""):
+    def forget(self, workspace, identifier, *, scope, repository="", organization=""):
         identifier = _checked(identifier)
         if (
-            self.entries(workspace, scope=scope, repository=repository).get(identifier)
+            self.entries(
+                workspace, scope=scope, repository=repository, organization=organization
+            ).get(identifier)
             is None
         ):
             return False
-        self.hide(workspace, identifier, scope=scope, repository=repository)
+        self.hide(
+            workspace,
+            identifier,
+            scope=scope,
+            repository=repository,
+            organization=organization,
+        )
         return True

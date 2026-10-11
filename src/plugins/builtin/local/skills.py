@@ -69,7 +69,13 @@ class SkillsOnDisk:
         return None
 
     def write(
-        self, workspace: str, skill: Skill, *, scope: str, repository: str = ""
+        self,
+        workspace: str,
+        skill: Skill,
+        *,
+        scope: str,
+        repository: str = "",
+        organization: str = "",
     ) -> Skill:
         try:
             return write_skill(self._store(workspace, scope, repository), skill)
@@ -77,7 +83,13 @@ class SkillsOnDisk:
             raise Refused(400, str(error)) from error
 
     def forget(
-        self, workspace: str, identifier: str, *, scope: str, repository: str = ""
+        self,
+        workspace: str,
+        identifier: str,
+        *,
+        scope: str,
+        repository: str = "",
+        organization: str = "",
     ) -> bool:
         try:
             return remove_skill(self._store(workspace, scope, repository), identifier)

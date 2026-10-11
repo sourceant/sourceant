@@ -130,18 +130,23 @@ class DefaultChangeContextResolver:
     def _knowledge_for(self, changes: ChangeSet):
         if self._knowledge is None:
             return ()
-        try:
-            return self._knowledge.select(
-                KnowledgeSelection(
-                    scope=changes.scope,
-                    paths=changes.paths,
-                    title=changes.title,
-                    description=changes.description,
-                    diff=changes.diff,
+        found = {}
+        for scope in changes.knowledge_scopes or (changes.scope,):
+            try:
+                selected = self._knowledge.select(
+                    KnowledgeSelection(
+                        scope=scope,
+                        paths=changes.paths,
+                        title=changes.title,
+                        description=changes.description,
+                        diff=changes.diff,
+                    )
                 )
-            )
-        except UNAVAILABLE:
-            return ()
+            except UNAVAILABLE:
+                continue
+            for knowledge in selected:
+                found.setdefault(knowledge.id, knowledge)
+        return tuple(found.values())
 
     def _requirements_for(self, changes: ChangeSet):
         if self._requirements is None:

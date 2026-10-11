@@ -48,6 +48,7 @@ class SkillType(str, Enum):
 
 class SkillScope(str, Enum):
     SYSTEM = "system"
+    ORGANIZATION = "organization"
     WORKSPACE = "workspace"
     REPOSITORY = "repository"
 

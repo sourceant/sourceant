@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence, runtime_checkable
+from collections.abc import Sequence
+from typing import Protocol, runtime_checkable
 
 from .models import Change, Skill, SkillQuery, SkillResult, SkillVerdict
 
@@ -57,9 +58,21 @@ class SkillLibrary(Protocol):
     ) -> Skill | None: ...
 
     def write(
-        self, workspace: str, skill: Skill, *, scope: str, repository: str = ""
+        self,
+        workspace: str,
+        skill: Skill,
+        *,
+        scope: str,
+        repository: str = "",
+        organization: str = "",
     ) -> Skill: ...
 
     def forget(
-        self, workspace: str, identifier: str, *, scope: str, repository: str = ""
+        self,
+        workspace: str,
+        identifier: str,
+        *,
+        scope: str,
+        repository: str = "",
+        organization: str = "",
     ) -> bool: ...
