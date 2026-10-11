@@ -42,6 +42,7 @@ class ChangeSet:
     #: `scope`, which also files code in the index and so carries nothing
     #: wider than the repository.
     configuration: Configuration = field(default_factory=Configuration)
+    knowledge_scopes: tuple[Scope, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.files:

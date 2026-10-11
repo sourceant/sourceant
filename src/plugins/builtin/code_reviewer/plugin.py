@@ -678,6 +678,14 @@ class CodeReviewerPlugin(BasePlugin):
                     ChangeSet(
                         scope=Scope.from_mapping({"repository": repo_full_name}),
                         configuration=configuration,
+                        knowledge_scopes=(
+                            (
+                                Scope.from_mapping({"repository": repo_full_name}),
+                                Scope.from_mapping({"workspace": workspace}),
+                            )
+                            if workspace
+                            else ()
+                        ),
                         requirement_scopes=(
                             (
                                 Scope.from_mapping(
