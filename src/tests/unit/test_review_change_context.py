@@ -90,7 +90,7 @@ def _requirements(tmp_path, *, linked_path="test.py", tested=False):
         SCOPE,
         Requirement(
             id="r1",
-            kind="requirement",
+            type="requirement",
             status="open",
             summary="Loading retries on a transient failure",
         ),
@@ -98,7 +98,7 @@ def _requirements(tmp_path, *, linked_path="test.py", tested=False):
     store.put_link(
         SCOPE,
         RequirementLink(
-            id="l1", requirement_id="r1", target_kind=CODE, target_id=linked_path
+            id="l1", requirement_id="r1", target_type=CODE, target_id=linked_path
         ),
     )
     return store
@@ -320,7 +320,7 @@ class _IntentSelector:
         return (
             Requirement(
                 id="r9",
-                kind="requirement",
+                type="requirement",
                 status="open",
                 summary="Nothing links this to the change",
             ),
