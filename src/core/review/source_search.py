@@ -8,6 +8,7 @@ from src.core.search.source_text import SourceTextSearch
 from src.core.scope import Scope
 from src.core.search import Searcher, SearchQuery, SearchMatch, SearchResult
 from src.core.services import ServiceRegistry
+from src.core.review_performance import shared
 
 
 @dataclass
@@ -23,6 +24,16 @@ class SnapshotSearcher:
         self._text = SourceTextSearch(self.paths, self.read_content)
 
     def search(self, query: SearchQuery) -> SearchResult:
+        if query.scope.get("repository") != self.scope.get(
+            "repository"
+        ) or not query.scope.get("revision"):
+            return self._search(query)
+        return shared(
+            ("snapshot-search", id(self), str(query.scope), query.terms, query.limit),
+            lambda: self._search(query),
+        )
+
+    def _search(self, query: SearchQuery) -> SearchResult:
         if query.scope.get("repository") != self.scope.get(
             "repository"
         ) or query.scope.get("revision") not in {

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from src.plugins.builtin.code_reviewer.overview import summarize_changes
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Sequence
@@ -26,7 +25,9 @@ from src.core.change_context import (
     read_change,
 )
 from src.core.knowledge import KnowledgeQuery
-from src.core.model import provider_for
+from src.core.model import provider_for, purpose_provider
+from src.core.parallel import MODEL_CONCURRENCY, parallel_map
+from src.core.review_performance import review_session, background, stage
 from src.core.settings.configuration import Configuration
 from src.core.review import Told, reviewer
 from src.core.analysis import (
@@ -286,6 +287,7 @@ class WorkingTreeReviews:
             return folders.named(LOCAL, repository, register=True)
         return folders.named(LOCAL, repository)
 
+    @review_session
     def review(
         self,
         *,
@@ -366,6 +368,19 @@ class WorkingTreeReviews:
                 "note": "Nothing has changed in this checkout.",
             }
 
+        from src.core.review.exclusions import review_diff
+
+        filtered_diff, omitted = review_diff(changes.diff, configuration)
+        analysis_task = None
+        if use_model and filtered_diff.strip():
+            paths = [path for path in changes.paths if path not in omitted]
+
+            def analyze():
+                with stage("static-analysis-preparation", files=len(paths)):
+                    return examine(root, paths, self.services)
+
+            analysis_task = background(analyze)
+
         everything = self._library().all(LOCAL, repository)
         if skills:
             wanted = set(skills)
@@ -379,6 +394,10 @@ class WorkingTreeReviews:
                 if use_model
                 else None
             )
+            if picking is not None:
+                picking = purpose_provider(
+                    configuration, self.services, "skill-selection", picking
+                )
             try:
                 chosen = for_review(
                     everything,
@@ -458,10 +477,8 @@ class WorkingTreeReviews:
                 503, "Nothing here is able to review. The code reviewer is not loaded."
             )
 
-        from src.core.review.exclusions import review_diff
-
         coverage = Coverage()
-        diff, omitted = review_diff(changes.diff, configuration)
+        diff = filtered_diff
         for path in omitted:
             coverage.record(
                 "changed file",
@@ -480,11 +497,51 @@ class WorkingTreeReviews:
             files=tuple(f for f in changes.files if f.path not in omitted),
         )
 
+        from src.plugins.builtin.code_reviewer.overview import prepare_overview
+
+        prepared_overview = None
+        try:
+            prepared_overview = prepare_overview(
+                changes.diff,
+                provider,
+                configuration,
+                {"title": changes.title, "description": changes.description},
+                services=services,
+            )
+        except Exception as error:
+            logger.warning("Overview preparation failed: %s", type(error).__name__)
+
+        whole = split(
+            [
+                skill
+                for skill in chosen
+                if skill.type
+                not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
+            ]
+        )
+        subject = Change(
+            title=changes.title,
+            description=changes.description,
+            paths=changes.paths,
+            diff=changes.diff,
+        )
+        checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
+
+        def check_skills():
+            with stage("skill-checks", count=len(whole)):
+                return parallel_map(
+                    lambda skill: checker.check(skill, subject),
+                    whole,
+                    MODEL_CONCURRENCY,
+                )
+
+        checked_skills = background(check_skills) if whole else None
+
         # This path has a real checkout, so the tools read it where it sits.
         analysis = (
             None
             if configuration.value("review.plan") == "premium"
-            else examine(root, list(changes.paths), self.services)
+            else analysis_task.result()
         )
         if configuration.value("review.finding_scope") == "changed-lines":
             analysis = about_the_change(
@@ -542,6 +599,7 @@ class WorkingTreeReviews:
                 # graph is filed under the repository alone.
                 code_scope=entry.scope,
                 analysis=analysis,
+                analysis_task=analysis_task,
             )
             if review is not None:
                 reviewed_summary = review.summary
@@ -553,6 +611,7 @@ class WorkingTreeReviews:
                         {"title": changes.title, "description": changes.description},
                         review.code_suggestions or (),
                         services=self.services,
+                        prepared=prepared_overview,
                     )
                 except Exception as error:  # noqa: BLE001
                     logger.warning("Review overview failed: %s", type(error).__name__)
@@ -595,22 +654,6 @@ class WorkingTreeReviews:
         answer["review"] = reviewed(review)
         remember(review, entry.scope, self.services, configuration)
 
-        subject = Change(
-            title=changes.title,
-            description=changes.description,
-            paths=changes.paths,
-            diff=changes.diff,
-        )
-        checker = LLMSkillChecker(ask=provider.generate_text, model=provider.model)
-
-        whole = split(
-            [
-                skill
-                for skill in chosen
-                if skill.type
-                not in {SkillType.REVIEW_PASS, SkillType.INITIALIZATION_PASS}
-            ]
-        )
         focused = [skill for skill in chosen if skill.type == SkillType.REVIEW_PASS]
         answer["skills"] = [skill_payload(skill) for skill in (*whole, *focused)]
 
@@ -618,11 +661,8 @@ class WorkingTreeReviews:
         # enough for something in between to time out.
         try:
             verdicts = []
-            if whole:
-                with ThreadPoolExecutor(max_workers=len(whole)) as pool:
-                    verdicts = list(
-                        pool.map(lambda skill: checker.check(skill, subject), whole)
-                    )
+            if checked_skills is not None:
+                verdicts = checked_skills.result()
         except Exception as error:  # noqa: BLE001 - whatever a provider raises
             raise ReviewRefused(502, str(error)) from error
 

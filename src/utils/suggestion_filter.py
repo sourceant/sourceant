@@ -1,7 +1,7 @@
 # src/utils/suggestion_filter.py
 
 import re
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -101,7 +101,9 @@ class SuggestionFilter:
         self._sentiment_analyzer = SentimentIntensityAnalyzer()
 
     def filter_suggestions(
-        self, suggestions: List[CodeSuggestion]
+        self,
+        suggestions: List[CodeSuggestion],
+        on_rejected: Callable[[CodeSuggestion, str], None] | None = None,
     ) -> Tuple[List[CodeSuggestion], List[CodeSuggestion]]:
         """
         Filter suggestions, returning (kept, removed) tuples.
@@ -120,6 +122,8 @@ class SuggestionFilter:
             if is_valid:
                 kept.append(suggestion)
             else:
+                if on_rejected is not None:
+                    on_rejected(suggestion, reason)
                 logger.info(
                     f"Filtered out suggestion for "
                     f"{suggestion.file_name}:{suggestion.start_line} - {reason}"

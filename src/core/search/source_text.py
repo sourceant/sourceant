@@ -22,10 +22,13 @@ class SourceTextSearch:
 
     def matching_lines(self, terms):
         executable = shutil.which("rg")
-        if executable is None:
-            raise RuntimeError("ripgrep is required for source text search")
-        self._prepare()
-        if self._directory is None:
+        self._prepare(use_ripgrep=executable is not None)
+        if self._directory is None or executable is None:
+            if not self._folded:
+                self._folded = {
+                    path: tuple(line.casefold() for line in source)
+                    for path, source in self._lines.items()
+                }
             wanted = tuple(term.casefold() for term in terms)
             return [
                 (path, number, self._lines[path][number - 1])
@@ -35,7 +38,7 @@ class SourceTextSearch:
             ]
         return self._ripgrep(executable, terms)
 
-    def _prepare(self):
+    def _prepare(self, *, use_ripgrep=True):
         with self._lock:
             if self._prepared:
                 return
@@ -47,7 +50,7 @@ class SourceTextSearch:
                     contents[path] = content
                     size += len(content.encode("utf-8"))
             lines = {path: content.splitlines() for path, content in contents.items()}
-            if size <= SMALL_SOURCE_BYTES:
+            if size <= SMALL_SOURCE_BYTES or not use_ripgrep:
                 self._folded = {
                     path: tuple(line.casefold() for line in source)
                     for path, source in lines.items()

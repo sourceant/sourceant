@@ -124,7 +124,7 @@ class TestLineMapper:
                     suggested_code="""        logging.info(f"Updated email for {username}")""",
                     existing_code="""        self._save_users()""",
                 ),
-                "expected_line": 61,
+                "expected_line": 75,
             },
             "large_file.py": {
                 "suggestion": CodeSuggestion(

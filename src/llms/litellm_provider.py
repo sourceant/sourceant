@@ -1,4 +1,5 @@
 import json
+from contextvars import ContextVar
 from typing import Optional, List, Union
 
 import litellm
@@ -10,6 +11,14 @@ from src.llms.llm_interface import LLMInterface
 from src.prompts.prompts import Prompts
 from src.utils.diff_parser import ParsedDiff
 from src.utils.logger import logger
+from src.core.review_performance import model_request, shared, session_id
+from src.core.review_trace import (
+    exchange as trace_exchange,
+    request as trace_request,
+    emit as trace_emit,
+    TraceKind,
+)
+from src.core.review_performance import call_purpose
 from src.models.code_review import (
     CodeReview,
     CodeReviewFindings,
@@ -33,6 +42,17 @@ RESPONSES = "model-response"
 # would not accept. Matched on the words because the exception a provider
 # raises for it is its own, and there is one of those for every provider.
 CACHE_REFUSALS = ("cache", "cached_content", "cachedcontents", "ephemeral")
+_output_budget = ContextVar("model_output_budget", default=0)
+
+
+def _escape_json_controls(written: str) -> str:
+    try:
+        json.loads(written)
+    except json.JSONDecodeError as error:
+        if not error.msg.startswith("Invalid control character"):
+            raise
+        return json.dumps(json.loads(written, strict=False), ensure_ascii=False)
+    return written
 
 
 def _is_a_round(written: str) -> bool:
@@ -85,11 +105,12 @@ class LiteLLMProvider(LLMInterface):
         self._tool_choice_refused = False
 
     def _completion(self, **kwargs):
-        from src.core.parallel import model_slots
+        from src.core.parallel import model_call
 
-        if self._max_output_tokens or self._reasoning_effort:
+        output_limit = max(self._max_output_tokens, _output_budget.get())
+        if output_limit or self._reasoning_effort:
             supported = litellm.get_supported_openai_params(model=self.model) or []
-            if self._max_output_tokens:
+            if output_limit:
                 parameter = (
                     "max_tokens"
                     if "max_tokens" in supported
@@ -99,7 +120,7 @@ class LiteLLMProvider(LLMInterface):
                     raise ValueError(
                         "This model does not support an output token limit"
                     )
-                kwargs.setdefault(parameter, self._max_output_tokens)
+                kwargs.setdefault(parameter, output_limit)
             if self._reasoning_effort:
                 if "reasoning_effort" not in supported:
                     raise ValueError("This model does not support reasoning effort")
@@ -109,8 +130,18 @@ class LiteLLMProvider(LLMInterface):
                         **kwargs.get("extra_body", {}),
                         "reasoning_effort": self._reasoning_effort,
                     }
-        with model_slots:
-            return litellm.completion(**kwargs)
+        with model_call(self.model):
+            trace_request(kwargs, call_purpose.get())
+            try:
+                return litellm.completion(**kwargs)
+            except Exception as error:
+                trace_emit(
+                    TraceKind.EXCHANGE,
+                    call_purpose.get(),
+                    "failed",
+                    reason=type(error).__name__,
+                )
+                raise
 
     def _spent(self, response, purpose: str) -> None:
         """Keep what the provider says the call consumed.
@@ -121,8 +152,24 @@ class LiteLLMProvider(LLMInterface):
         """
         from src.core.usage import record_completion
 
+        trace_exchange(response, purpose)
+
         record_completion(
             response, model=self.model, purpose=purpose, **self._attribution
+        )
+        usage = getattr(response, "usage", None)
+        counts = {
+            name: value if isinstance(value, (int, float)) else 0
+            for name in ("prompt_tokens", "completion_tokens")
+            for value in (getattr(usage, name, 0),)
+        }
+        logger.info(
+            "model_usage session=%s purpose=%s model=%s input_tokens=%s output_tokens=%s",
+            session_id(),
+            purpose,
+            self.model,
+            counts["prompt_tokens"],
+            counts["completion_tokens"],
         )
 
     def _credentials(self) -> dict:
@@ -273,6 +320,7 @@ class LiteLLMProvider(LLMInterface):
 
         return "\n".join(parts) + "\n"
 
+    @model_request
     def _asked_once(
         self, purpose: str, question: str, ask, usable=None
     ) -> Optional[str]:
@@ -298,7 +346,7 @@ class LiteLLMProvider(LLMInterface):
         except Exception:
             days = 0
         ttl = days * SECONDS_PER_DAY
-        if ttl <= 0:
+        if ttl <= 0 and purpose != "skill-selection":
             return ask()
         # The model and the account are in the key: two models answer the same
         # question differently, and two accounts must never read each other's
@@ -323,43 +371,86 @@ class LiteLLMProvider(LLMInterface):
             ),
             question,
         )
-        kept = cache().get(RESPONSES, key)
-        if kept is not None:
-            if usable is None or usable(kept):
-                logger.info(f"Reusing what {self.model} already answered for {purpose}")
-                return kept
-            # Kept before anything checked it could be read. Left there it
-            # would be served until it expired, so the run that finds it is
-            # the run that clears it.
-            logger.warning(f"Discarding an unreadable {purpose} answer that was kept")
-            cache().forget(RESPONSES, key)
-        answered = ask()
-        if answered and (usable is None or usable(answered)):
-            cache().set(
-                RESPONSES, key, answered, ttl=ttl, scope=owner(self._attribution)
-            )
-        return answered
+
+        def read():
+            kept = cache().get(RESPONSES, key) if ttl > 0 else None
+            if kept is not None:
+                if usable is None or usable(kept):
+                    logger.info(
+                        "model_cache_hit session=%s model=%s purpose=%s",
+                        session_id(),
+                        self.model,
+                        purpose,
+                    )
+                    return kept
+                logger.warning(
+                    "Discarding an unreadable %s answer that was kept", purpose
+                )
+                cache().forget(RESPONSES, key)
+            answered = ask()
+            if answered and (usable is None or usable(answered)) and ttl > 0:
+                cache().set(
+                    RESPONSES, key, answered, ttl=ttl, scope=owner(self._attribution)
+                )
+            return answered
+
+        if purpose == "skill-selection":
+            return shared((RESPONSES, key, self._api_key, self._api_base), read)
+        return read()
 
     def _validated_response(self, ask, schema, purpose: str) -> str:
         failure: ValidationError | None = None
+        budget = self._max_output_tokens
         for attempt in range(2):
-            response = ask()
+            token = _output_budget.set(budget)
+            try:
+                response = ask()
+            finally:
+                _output_budget.reset(token)
             self._spent(response, purpose)
             written = response.choices[0].message.content
+            if getattr(response.choices[0], "finish_reason", None) == "length":
+                if not attempt and budget:
+                    trace_exchange(response, purpose, action="retry-truncated")
+                    budget *= 2
+                    logger.warning(
+                        "%s output budget exhausted; retrying with %s tokens",
+                        purpose,
+                        budget,
+                    )
+                    continue
+                raise LLMError.wrapping(
+                    f"{purpose} output budget exhausted before a valid response",
+                    ValueError("Truncated model response"),
+                )
             try:
                 schema.model_validate_json(written)
             except ValidationError as invalid:
+                trace_exchange(response, purpose, action="invalid-structure")
                 failure = invalid
-                if response.choices[0].finish_reason == "length":
-                    raise LLMError.wrapping(
-                        f"{purpose} output budget exhausted before a valid response",
-                        invalid,
-                    ) from invalid
+                if any(one["type"] == "json_invalid" for one in invalid.errors()):
+                    try:
+                        escaped = _escape_json_controls(written)
+                        schema.model_validate_json(escaped)
+                    except (ValueError, TypeError):
+                        pass
+                    else:
+                        logger.info(
+                            "Escaped control characters in structured %s output from %s",
+                            purpose,
+                            self.model,
+                        )
+                        return escaped
                 if not attempt:
                     logger.warning(
-                        "Invalid structured %s output from %s; retrying once",
+                        "Invalid structured %s output from %s; retrying once; validation=%s",
                         purpose,
                         self.model,
+                        invalid.errors(
+                            include_input=False,
+                            include_context=False,
+                            include_url=False,
+                        ),
                     )
             else:
                 return written
@@ -499,7 +590,16 @@ class LiteLLMProvider(LLMInterface):
         try:
             logger.info(f"Generating code review from model: {self.model}...")
             written = self._asked_once(
-                "review", settled + changing, read, usable=readable
+                "review",
+                json.dumps(
+                    {
+                        "prompt": settled + changing,
+                        "schema": CodeReviewFindings.model_json_schema(),
+                    },
+                    sort_keys=True,
+                ),
+                read,
+                usable=readable,
             )
             if written is None:
                 raise ValueError("The model returned no review")

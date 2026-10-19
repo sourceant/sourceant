@@ -57,6 +57,16 @@ def provider_for(
     return llm_source(services).provider_for(configuration)
 
 
+def purpose_provider(configuration, services, purpose, fallback):
+    choices = configuration.value("model.purposes")
+    if not isinstance(choices, dict) or purpose not in choices:
+        return fallback
+    selected = provider_for(configuration, services, purpose=purpose)
+    if selected is None:
+        raise ValueError(f"No model is configured for {purpose}")
+    return selected
+
+
 __all__ = [
     "LLMConfig",
     "config_for",
