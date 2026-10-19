@@ -120,6 +120,21 @@ def _drop_queued(repository: str, number: int) -> None:
             logger.warning("Could not cancel job %s", job.id, exc_info=True)
 
 
+def _with_severity(review) -> dict | None:
+    """The review as sent to a reader, each finding carrying the severity
+    policy gave it, so no reader has to decide it again."""
+    if review is None:
+        return None
+    from src.models.code_review import severity_of
+
+    dumped = review.model_dump(mode="json")
+    for written, suggestion in zip(
+        dumped.get("code_suggestions") or [], review.code_suggestions or []
+    ):
+        written["severity"] = severity_of(suggestion).value
+    return dumped
+
+
 def unreachable_model(model: str, missing, chosen: str) -> dict:
     """Why a review stopped before reading, in terms that name the model.
 
@@ -868,9 +883,7 @@ class CodeReviewerPlugin(BasePlugin):
             return {
                 "status": "success",
                 "review_posted": post_result,
-                "review": (
-                    final_review.model_dump(mode="json") if final_review else None
-                ),
+                "review": _with_severity(final_review),
                 "suggestions_count": (
                     len(final_review.code_suggestions)
                     if final_review.code_suggestions

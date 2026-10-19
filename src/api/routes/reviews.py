@@ -111,6 +111,69 @@ async def rerun_review(
     return success_response({**result, "cached": False})
 
 
+@router.get("/impact")
+async def review_impact(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    number: int = Query(..., description="Pull request number"),
+    user: dict = Depends(get_current_user),
+):
+    """What a pull request reaches in its repository, read without a model."""
+    from src.api.routes.requirements import connected_names
+    from src.core.review.impact import impact
+    from src.core.search import Searcher
+    from src.core.services import service_registry
+    from src.core.workspace import workspace_of
+    from src.integrations.github.github import GitHub
+    from src.plugins.builtin.code_reviewer.context import durable_index
+
+    workspace = workspace_of(user)
+    if repo not in connected_names(user):
+        raise HTTPException(403, "Repository is outside this workspace")
+    async with httpx.AsyncClient(timeout=15) as client:
+        pr = await _fetch_pull_request(client, repo, number, user.get("github_token"))
+    if pr is None:
+        raise HTTPException(status_code=502, detail="Could not load the pull request")
+    head_sha = (pr.get("head") or {}).get("sha")
+    base_sha = (pr.get("base") or {}).get("sha")
+    # Kept beside the review of the same revision, under its own name.
+    kept_as = f"{head_sha}:impact" if head_sha else None
+    cached = get_cached_review(repo, number, kept_as, workspace=workspace)
+    if cached:
+        return success_response(cached)
+
+    owner, _, name = repo.partition("/")
+    github = GitHub()
+    contents: dict[str, str | None] = {}
+
+    def read_content(path: str) -> str | None:
+        if path not in contents:
+            contents[path] = github.get_file_content(owner, name, path, head_sha)
+        return contents[path]
+
+    def measure() -> dict:
+        diff = github.get_diff(
+            owner, name, number, base_sha=base_sha, head_sha=head_sha
+        )
+        if not diff:
+            raise HTTPException(status_code=502, detail="Could not load the diff")
+        try:
+            searcher = service_registry.resolve(Searcher)
+        except LookupError:
+            searcher = None
+        return impact(
+            diff,
+            repo,
+            read_content,
+            revision=head_sha or "",
+            reader=durable_index(),
+            searcher=searcher,
+        )
+
+    measured = await asyncio.to_thread(measure)
+    save_cached_review(repo, number, kept_as, measured, workspace=workspace)
+    return success_response(measured)
+
+
 async def _fetch_pull_request(
     client: httpx.AsyncClient, repo: str, number: int, token: str | None
 ) -> dict | None:

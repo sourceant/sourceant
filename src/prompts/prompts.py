@@ -232,6 +232,15 @@ The diff below uses a decoupled format where removed and added code are shown in
     The JSON object should have the following structure:
     ```json
     {{
+        "intent": "<The problem this change solves, one sentence.>",
+        "behaviors": [
+            {{
+                "subject": "<What behaves differently.>",
+                "before": "<What happened before, empty if new.>",
+                "after": "<What happens now, empty if removed.>",
+                "locations": ["<path:line on the new side of the diff>"]
+            }}
+        ],
         "overview": "<One short paragraph describing the main behavioral changes.>",
         "key_improvements": [
             "<An improvement, can reference a file path.>"
@@ -241,6 +250,13 @@ The diff below uses a decoupled format where removed and added code are shown in
         ]
     }}
     ```
+
+    A behavior is something a user, caller or operator can observe: a
+    response, a stored value, a message, a decision, a failure. Internal
+    restructuring that nobody outside the code can observe is not a behavior.
+    Each behavior names where the diff makes it, as `path:line` taken from the
+    diff; one you cannot place is left out. `before` and `after` are plain text,
+    not Markdown.
 
     Leave a list empty when you judge nothing belongs in it. Naming an
     improvement to fill the list is worse than leaving it empty. Where the

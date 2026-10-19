@@ -44,6 +44,7 @@ Pass `page` and `size` as query parameters.
 | `GET /api/reviews?repo=owner/name` | Reviews SourceAnt has generated, with live pull request state |
 | `GET /api/reviews/pulls?repo=owner/name` | Open pull requests across the given repositories |
 | `GET /api/reviews/detail?repo=owner/name&number=1` | One pull request with the reviews and comments on it |
+| `GET /api/reviews/impact?repo=owner/name&number=1` | What a pull request reaches, read without a model: changed definitions, their callers and callees, tests touched |
 | `POST /api/reviews/rerun` | Generate a review for a pull request |
 
 `repo` may be repeated to work across several repositories.
