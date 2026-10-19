@@ -198,3 +198,58 @@ def test_empty_overview_cannot_replace_the_standing_overview():
             provider,
             Configuration(repository="sourceant/sourceant"),
         )
+
+
+def test_http_preview_reviews_with_the_model_its_reader_chose(api, monkeypatch):
+    client, headers, _, engine = api
+    Config.__table__.create(engine, checkfirst=True)
+    monkeypatch.setattr("src.config.db.engine", engine)
+    for name in ("DEEPSEEK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    client.app.include_router(settings.router, prefix="/api/settings")
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    chosen = client.put(
+        "/api/settings/user/1/model.name",
+        headers=headers(),
+        json={"value": "deepseek/deepseek-chat"},
+    )
+    assert chosen.status_code == 200, chosen.text
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    monkeypatch.setattr(
+        plugin_registry, "get_plugin", lambda name: reviewer_plugin.CodeReviewerPlugin()
+    )
+    github = MagicMock()
+    github.get_diff.return_value = (FIXTURES / "full.diff").read_text()
+    monkeypatch.setattr(reviewer_plugin, "GitHub", lambda: github)
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "test-placeholder"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+
+    response = client.post(
+        "/api/reviews/rerun",
+        headers=credentials,
+        json={"repo": "sourceant/sourceant", "number": metadata["number"]},
+    )
+
+    assert response.status_code == 200, response.text
+    message = response.json()["data"]["message"]
+    assert message.startswith(
+        "No credentials are configured for deepseek/deepseek-chat"
+    )
+    assert "Nothing here names a model" not in message

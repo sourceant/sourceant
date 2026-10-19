@@ -102,6 +102,7 @@ async def rerun_review(
         repository_full_name=data.repo,
         post=data.post,
         workspace=workspace,
+        user=str(user["user_id"]),
     )
     if result.get("status") == "success":
         save_cached_review(
