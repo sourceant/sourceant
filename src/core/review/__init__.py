@@ -26,6 +26,9 @@ from .interfaces import (
     ReviewOrchestrator,
     ReviewPlan,
     ReviewPlanSource,
+    ReviewContextProvider,
+    ReviewInvestigationSource,
+    ReviewTraceSink,
 )
 from .execution import (
     EvaluationParticipant,
@@ -37,10 +40,14 @@ from .execution import (
     ReviewExecution,
     ReviewInput,
     ReviewParticipant,
+    ReviewSourceContext,
+    ReviewInvestigation,
+    ReviewTarget,
 )
 from .evaluation import DeterministicReviewEvaluator, ModelReviewEvaluator
 from .orchestration import ParallelReviewOrchestrator
 from .planning import SettingsReviewPlanSource
+from .contracts import DefaultReviewContextProvider, review_context_provider
 from .models import Sections, Told
 from .records import DONE, FAILED, RUNNING, ReviewRecord, named, now
 from .sql import SQLReviewStore
@@ -103,6 +110,14 @@ def review_store(services: ServiceRegistry = service_registry):
 
 
 __all__ = [
+    "ReviewInvestigationSource",
+    "ReviewInvestigation",
+    "ReviewTarget",
+    "ReviewContextProvider",
+    "ReviewTraceSink",
+    "ReviewSourceContext",
+    "DefaultReviewContextProvider",
+    "review_context_provider",
     "ReviewEvaluator",
     "ReviewOrchestrator",
     "ReviewPlan",

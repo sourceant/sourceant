@@ -8,6 +8,7 @@ from src.core.review_coverage import Coverage
 from src.core.change_context import ChangeSet
 from src.core.code_index import CodeIndexReader
 from src.core.scope import Scope
+from src.core.review_trace import ReviewTraceSink
 from src.core.skills.models import Skill
 from src.models.code_review import CodeReview
 
@@ -20,6 +21,8 @@ from .execution import (
     ReviewExecution,
     ReviewInput,
     ReviewParticipant,
+    ReviewSourceContext,
+    ReviewInvestigation,
 )
 from src.models.code_review import CodeSuggestion
 
@@ -45,6 +48,13 @@ class ReviewEvaluator(Protocol):
 
 
 @runtime_checkable
+class ReviewContextProvider(Protocol):
+    def prepare(
+        self, request: ReviewInput, paths: Sequence[str]
+    ) -> ReviewSourceContext: ...
+
+
+@runtime_checkable
 class ReviewOrchestrator(Protocol):
     def review(self, request: ReviewInput, plan: ReviewPlan) -> ReviewExecution: ...
 
@@ -54,6 +64,13 @@ class ReviewPlanSource(Protocol):
     def plan_for(
         self, request: ReviewInput, reviewer: Reviewer, provider: Any
     ) -> ReviewPlan | None: ...
+
+
+@runtime_checkable
+class ReviewInvestigationSource(Protocol):
+    def investigations_for(
+        self, request: ReviewInput, limit: int
+    ) -> Sequence[ReviewInvestigation]: ...
 
 
 @runtime_checkable
@@ -81,6 +98,9 @@ class Reviewer(Protocol):
         told: Sequence[Told] = (),
         skills: Sequence[Skill] = (),
         expert_passes: str | None = None,
+        include_experts: bool = True,
+        investigation: ReviewInvestigation | None = None,
+        require_complete_discovery: bool = False,
         code_scope: Scope | None = None,
         metadata: dict | None = None,
         coverage: Coverage | None = None,
