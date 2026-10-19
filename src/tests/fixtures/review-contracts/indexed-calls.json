@@ -1,0 +1,106 @@
+{
+  "source": "Nodes and edges read from a code index of this repository",
+  "nodes": [
+    {
+      "id": "src.core.review.stopping.__file__",
+      "labels": [
+        "File"
+      ],
+      "properties": {
+        "name": "stopping.py",
+        "file_path": "src/core/review/stopping.py",
+        "start_line": 0,
+        "end_line": 0
+      }
+    },
+    {
+      "id": "src.core.review.stopping._key",
+      "labels": [
+        "Function"
+      ],
+      "properties": {
+        "name": "_key",
+        "file_path": "src/core/review/stopping.py",
+        "start_line": 15,
+        "end_line": 16
+      }
+    },
+    {
+      "id": "src.core.review.stopping.abandon",
+      "labels": [
+        "Function"
+      ],
+      "properties": {
+        "name": "abandon",
+        "file_path": "src/core/review/stopping.py",
+        "start_line": 19,
+        "end_line": 32
+      }
+    },
+    {
+      "id": "src.core.review.stopping.resume",
+      "labels": [
+        "Function"
+      ],
+      "properties": {
+        "name": "resume",
+        "file_path": "src/core/review/stopping.py",
+        "start_line": 35,
+        "end_line": 42
+      }
+    },
+    {
+      "id": "src.core.review.stopping.supersede",
+      "labels": [
+        "Function"
+      ],
+      "properties": {
+        "name": "supersede",
+        "file_path": "src/core/review/stopping.py",
+        "start_line": 45,
+        "end_line": 58
+      }
+    },
+    {
+      "id": "src.core.review.stopping.abandoned",
+      "labels": [
+        "Function"
+      ],
+      "properties": {
+        "name": "abandoned",
+        "file_path": "src/core/review/stopping.py",
+        "start_line": 61,
+        "end_line": 78
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "src.core.review.stopping.__file__",
+      "target": "src.core.review.stopping._key",
+      "type": "DEFINES"
+    },
+    {
+      "source": "src.core.review.stopping.abandon",
+      "target": "src.core.review.stopping._key",
+      "type": "CALLS"
+    },
+    {
+      "source": "src.core.review.stopping.resume",
+      "target": "src.core.review.stopping._key",
+      "type": "CALLS"
+    },
+    {
+      "source": "src.core.review.stopping.supersede",
+      "target": "src.core.review.stopping._key",
+      "type": "CALLS"
+    },
+    {
+      "source": "src.core.review.stopping.abandoned",
+      "target": "src.core.review.stopping._key",
+      "type": "CALLS"
+    }
+  ],
+  "path": "src/core/review/stopping.py",
+  "content": "\"\"\"Marks a pull request whose review is no longer wanted.\"\"\"\n\nfrom __future__ import annotations\n\nfrom src.config.settings import whole_number\nfrom src.core.cache import Owner, cache, keyed\nfrom src.utils.logger import logger\n\nNAMESPACE = \"review.abandoned\"\nCURRENT = \"review.revision\"\n\nKEPT_FOR = whole_number(\"REVIEW_ABANDONED_SECONDS\", 6 * 60 * 60)\n\n\ndef _key(repository: str, number: int) -> str:\n    return keyed(repository, str(number))\n\n\ndef abandon(repository: str, number: int) -> None:\n    \"\"\"Mark this pull request as no longer worth reviewing.\"\"\"\n    if not repository or not number:\n        return\n    try:\n        cache().set(\n            NAMESPACE,\n            _key(repository, number),\n            \"abandoned\",\n            ttl=KEPT_FOR,\n            scope=Owner(\"repository\", repository),\n        )\n    except Exception:  # noqa: BLE001\n        logger.warning(\"Could not abandon %s#%s\", repository, number, exc_info=True)\n\n\ndef resume(repository: str, number: int) -> None:\n    \"\"\"Forget that this pull request was abandoned.\"\"\"\n    if not repository or not number:\n        return\n    try:\n        cache().forget(NAMESPACE, _key(repository, number))\n    except Exception:  # noqa: BLE001\n        logger.warning(\"Could not resume %s#%s\", repository, number, exc_info=True)\n\n\ndef supersede(repository: str, number: int, revision: str) -> None:\n    \"\"\"Record the revision now being reviewed.\"\"\"\n    if not repository or not number or not revision:\n        return\n    try:\n        cache().set(\n            CURRENT,\n            _key(repository, number),\n            revision,\n            ttl=KEPT_FOR,\n            scope=Owner(\"repository\", repository),\n        )\n    except Exception:  # noqa: BLE001\n        logger.warning(\"Could not supersede %s#%s\", repository, number, exc_info=True)\n\n\ndef abandoned(repository: str, number: int, revision: str = \"\") -> bool:\n    \"\"\"Whether this review is no longer wanted. False if it cannot be read.\n\n    A review is no longer wanted once its pull request is closed, or once a\n    revision other than the one it is reading becomes the current one.\n    \"\"\"\n    if not repository or not number:\n        return False\n    try:\n        if cache().get(NAMESPACE, _key(repository, number)):\n            return True\n        if not revision:\n            return False\n        current = cache().get(CURRENT, _key(repository, number))\n        return bool(current) and current != revision\n    except Exception:  # noqa: BLE001\n        logger.warning(\"Could not ask about %s#%s\", repository, number, exc_info=True)\n        return False\n"
+}

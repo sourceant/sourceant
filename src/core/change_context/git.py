@@ -329,4 +329,9 @@ def read_change(
         # leave it, so reaching anywhere else takes a scope from whoever
         # drew the system.
         impact_scope=impact_scope,
+        repository_paths=lambda: tuple(
+            _git(
+                root, "ls-files", "--cached", "--others", "--exclude-standard"
+            ).splitlines()
+        ),
     )

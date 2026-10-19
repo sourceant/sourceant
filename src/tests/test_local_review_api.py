@@ -276,6 +276,529 @@ class TestLocalReview(BaseTestCase):
             status == "supported"
         )
 
+    @pytest.mark.parametrize("status", ["supported", "rejected", "unresolved"])
+    def test_doubtful_findings_are_published_only_after_evaluation_over_http(
+        self, monkeypatch, status
+    ):
+        sure = CodeSuggestion(
+            file_name="db/0001_charges.py",
+            start_line=2,
+            end_line=2,
+            side=Side.RIGHT,
+            category=SuggestionCategory.BUG,
+            comment="Add a new migration instead of editing one that already ran.",
+            existing_code="    return 1\n",
+            suggested_code="    pass\n",
+        )
+        doubted = sure.model_copy(
+            update={
+                "comment": "Return None here; a runner can treat 1 as a failure code.",
+                "suggested_code": "    return None\n",
+                "doubt": "The runner may ignore the return value of up().",
+            }
+        )
+        evaluated = []
+
+        class Model(FakeModel):
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose != "review-evaluation":
+                    return super().generate_text(prompt, purpose=purpose)
+                evaluated.append(prompt)
+                payload = json.loads(prompt.split("\nReview input:\n", 1)[1])
+                return json.dumps(
+                    {
+                        "judgments": [
+                            {
+                                "candidate": one["candidate"],
+                                "status": (
+                                    status if "doubt" in one["finding"] else "supported"
+                                ),
+                                "reason": "Inspect the migration return value",
+                                "evidence": (
+                                    ["return 1"]
+                                    if "doubt" not in one["finding"]
+                                    or status != "unresolved"
+                                    else []
+                                ),
+                            }
+                            for one in payload["candidates"]
+                        ]
+                    }
+                )
+
+        model = Model(
+            {"findings": []}, review=_review(Verdict.COMMENT, [sure, doubted])
+        )
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        self.register()
+        for key, value in {
+            "review.plan": "premium",
+            "review.discovery_passes": 1,
+            "review.evaluation_passes": 1,
+            "review.discovery_doubts": True,
+        }.items():
+            response = self.client.put(
+                f"/api/local/settings/{key}", json={"value": value}
+            )
+            assert response.status_code == 200, response.text
+        try:
+            self.edit_the_migration()
+            response = self.review()
+        finally:
+            self.client.delete("/api/local/settings/review.discovery_doubts")
+        assert response.status_code == 200, response.text
+        published = [
+            one["comment"]
+            for one in response.json()["data"]["review"]["review"]["suggestions"]
+        ]
+        assert "Doubtful concerns" in (model.told[0]["knowledge"] or "")
+        payload = json.loads(evaluated[0].split("\nReview input:\n", 1)[1])
+        findings = {
+            one["finding"]["comment"]: one["finding"] for one in payload["candidates"]
+        }
+        assert findings[doubted.comment]["doubt"] == doubted.doubt
+        assert "doubt" not in findings[sure.comment]
+        assert "neither support nor rejection, and it is never evidence" in evaluated[0]
+        assert sorted(published) == sorted(
+            [sure.comment, doubted.comment] if status == "supported" else [sure.comment]
+        )
+
+    @pytest.mark.parametrize(
+        "premises,published,verdict",
+        [
+            (("anyone", "everyone", "crash", "always"), True, "REQUEST_CHANGES"),
+            (("operator", "one", "crash", "conditional"), True, "COMMENT"),
+            (("anyone", "everyone", "crash", "possible"), False, "COMMENT"),
+            (None, False, "COMMENT"),
+        ],
+    )
+    def test_supported_findings_are_ranked_by_verified_premises_over_http(
+        self, monkeypatch, premises, published, verdict
+    ):
+        stated = CodeSuggestion(
+            file_name="db/0001_charges.py",
+            start_line=2,
+            end_line=2,
+            side=Side.RIGHT,
+            category=SuggestionCategory.BUG,
+            comment="Add a new migration instead of editing one that already ran.",
+            existing_code="    return 1\n",
+            suggested_code="    pass\n",
+            trigger="anyone",
+            blast="everyone",
+            impact="crash",
+            certainty="always",
+        )
+        evaluated = []
+
+        class Model(FakeModel):
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose != "review-evaluation":
+                    return super().generate_text(prompt, purpose=purpose)
+                evaluated.append(prompt)
+                payload = json.loads(prompt.split("\nReview input:\n", 1)[1])
+                return json.dumps(
+                    {
+                        "judgments": [
+                            {
+                                "candidate": one["candidate"],
+                                "status": "supported",
+                                "reason": "The edited migration already ran",
+                                "evidence": ["return 1"],
+                                **(
+                                    {
+                                        "premises": dict(
+                                            zip(
+                                                (
+                                                    "trigger",
+                                                    "blast",
+                                                    "impact",
+                                                    "certainty",
+                                                ),
+                                                premises,
+                                            )
+                                        )
+                                    }
+                                    if premises
+                                    else {}
+                                ),
+                            }
+                            for one in payload["candidates"]
+                        ]
+                    }
+                )
+
+        model = Model({"findings": []}, review=_review(Verdict.COMMENT, [stated]))
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        self.register()
+        settings = {
+            "review.plan": "premium",
+            "review.discovery_passes": 1,
+            "review.evaluation_passes": 1,
+            "review.evaluation_policy": "premises",
+            "review.include_nitpicks": False,
+        }
+        for key, value in settings.items():
+            response = self.client.put(
+                f"/api/local/settings/{key}", json={"value": value}
+            )
+            assert response.status_code == 200, response.text
+        try:
+            self.edit_the_migration()
+            response = self.review()
+        finally:
+            for key in settings:
+                self.client.delete(f"/api/local/settings/{key}")
+        assert response.status_code == 200, response.text
+        review = response.json()["data"]["review"]["review"]
+        assert [one["comment"] for one in review["suggestions"]] == (
+            [stated.comment] if published else []
+        )
+        assert review["verdict"] == verdict
+        judgment = review["execution"]["evaluations"][1]["judgments"][0]
+        assert judgment["premises"] == (
+            dict(zip(("trigger", "blast", "impact", "certainty"), premises))
+            if premises
+            else None
+        )
+        assert judgment["status"] == ("supported" if premises else "unresolved")
+        assert "Judge each finding by what it claims" in evaluated[0]
+        assert "Security claims need a concrete exploitable flow" not in evaluated[0]
+        assert '"premises"' in evaluated[0].split("\nReview input:\n", 1)[0]
+
+    @pytest.mark.parametrize("remedy", [False, True])
+    def test_fix_assumptions_do_not_block_an_established_defect_over_http(
+        self, monkeypatch, remedy
+    ):
+        from pathlib import Path
+
+        captured = json.loads(
+            (
+                Path(__file__).parent
+                / "fixtures/review-contracts/node-remedy-assumption-judgments.json"
+            ).read_text()
+        )
+        stated = CodeSuggestion(
+            file_name="db/0001_charges.py",
+            start_line=2,
+            end_line=2,
+            side=Side.RIGHT,
+            category=SuggestionCategory.BUG,
+            comment="Add a new migration instead of editing one that already ran.",
+            existing_code="    return 1\n",
+            suggested_code="    pass\n",
+        )
+        evaluated = []
+
+        class Model(FakeModel):
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose != "review-evaluation":
+                    return super().generate_text(prompt, purpose=purpose)
+                judgment = dict(captured["judgments"][len(evaluated)])
+                evaluated.append(prompt)
+                if remedy:
+                    judgment["remedy_assumptions"] = judgment.pop(
+                        "unverified_assumptions"
+                    )
+                payload = json.loads(prompt.split("\nReview input:\n", 1)[1])
+                return json.dumps(
+                    {
+                        "judgments": [
+                            {**judgment, "candidate": one["candidate"]}
+                            for one in payload["candidates"]
+                        ]
+                    }
+                )
+
+        model = Model({"findings": []}, review=_review(Verdict.COMMENT, [stated]))
+        monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
+        self.register()
+        settings = {
+            "review.plan": "premium",
+            "review.discovery_passes": 1,
+            "review.evaluation_passes": 2,
+            "review.evaluation_policy": "premises",
+            "review.include_nitpicks": True,
+        }
+        for key, value in settings.items():
+            response = self.client.put(
+                f"/api/local/settings/{key}", json={"value": value}
+            )
+            assert response.status_code == 200, response.text
+        try:
+            self.edit_the_migration()
+            response = self.review()
+        finally:
+            for key in settings:
+                self.client.delete(f"/api/local/settings/{key}")
+        assert response.status_code == 200, response.text
+        review = response.json()["data"]["review"]["review"]
+        assert [one["comment"] for one in review["suggestions"]] == (
+            [stated.comment] if remedy else []
+        )
+        judgments = [
+            evaluation["judgments"][0]
+            for evaluation in review["execution"]["evaluations"][1:]
+        ]
+        assert [one["status"] for one in judgments] == (
+            ["supported"] * 2 if remedy else ["unresolved"] * 2
+        )
+        assert all(
+            ("Fix assumptions: " in one["reason"]) is remedy for one in judgments
+        )
+        schema = evaluated[0].split("\nReview input:\n", 1)[0]
+        assert '"remedy_assumptions"' in schema
+        assert "an uncertain fix does not make an established defect uncertain" in (
+            schema
+        )
+
+    @pytest.mark.parametrize(
+        "strategy,budget,limit,digest",
+        [
+            ("independent", 15000, None, False),
+            ("investigations", 15000, None, False),
+            ("investigations", 2000, None, False),
+            ("investigations", 2000, None, True),
+            ("investigations", 2000, 2, False),
+        ],
+    )
+    def test_snapshot_http_supplies_captured_finding_dependency(
+        self, monkeypatch, strategy, budget, limit, digest
+    ):
+        from pathlib import Path
+        import time
+        import jwt
+        from src.core.settings.configuration import Configuration
+        from src.core.settings.definitions import get
+        from src.core.review import snapshot
+
+        captured = json.loads(
+            (
+                Path(__file__).parent
+                / "fixtures/review-contracts/node-cited-evidence.json"
+            ).read_text()
+        )
+        candidate = captured["candidates"][3]
+        expected = captured["snapshot"]["files"]["packages/pg/lib/query.js"]
+        checked = []
+
+        class CapturedModel(FakeModel):
+            def count_tokens(self, text):
+                return len(text) // 4
+
+            def generate_text(self, prompt, *, purpose=None):
+                if purpose == "review-evaluation" and budget == 2000:
+                    return captured["evaluation_response"]
+                if purpose == "review-evaluation":
+                    supplied = json.loads(prompt.split("Review input:\n", 1)[1])
+                    assert (
+                        supplied["source"].get("packages/pg/lib/query.js") == expected
+                    ), list(supplied["source"])
+                    assert not set(supplied["source"]) & set(
+                        supplied["omitted_context"]
+                    )
+                    checked.append(supplied)
+                    return captured["evaluation_response"]
+                return super().generate_text(prompt, purpose=purpose)
+
+        model = CapturedModel(
+            {"findings": []},
+            review=CodeReview(
+                verdict=Verdict.COMMENT, code_suggestions=captured["candidates"]
+            ),
+        )
+        monkeypatch.setenv("JWT_SECRET", "test-signing-secret-for-review")
+        monkeypatch.setattr(Configuration, "value", lambda self, key: get(key).default)
+        monkeypatch.setattr(snapshot, "provider_for", lambda *_, **__: model)
+        token = jwt.encode(
+            {
+                "sub": "reviewer",
+                "exp": int(time.time()) + 60,
+                "scope": {"workspace_id": "benchmark"},
+            },
+            "test-signing-secret-for-review",
+            algorithm="HS256",
+        )
+        captured["snapshot"]["configuration"]["discovery-strategy"] = strategy
+        captured["snapshot"]["configuration"]["reading-budget"] = str(budget)
+        if budget == 2000:
+            captured["snapshot"]["configuration"]["discovery-passes"] = "1"
+        if limit:
+            captured["snapshot"]["configuration"]["investigation-limit"] = str(limit)
+        if digest:
+            captured["snapshot"]["configuration"]["change-digest"] = "true"
+        response = self.client.post(
+            "/api/reviews/snapshots",
+            json=captured["snapshot"],
+            headers={"Authorization": "Bearer " + token},
+        )
+        if limit:
+            assert response.status_code == 422, response.text
+            assert "investigations to fit the reading budget" in response.text
+            assert not model.told
+            return
+        if budget == 2000:
+            assert response.status_code == 200, response.text
+            tasks = response.json()["data"]["review"]["review"]["execution"][
+                "investigations"
+            ]
+            assert len(model.told) == len(tasks) > 1
+            for call in model.told:
+                files = call["parsed_files"]
+                assert (
+                    len(files) == 1
+                    or sum(len(one.diff_text) // 4 for one in files) <= budget
+                )
+                own = {one.file_path for one in files}
+                assert ("Review change digest" in call["requirements"]) is digest
+                assert ("Review change inventory" in call["requirements"]) is not digest
+                if digest:
+                    directory, current, foreign = "", None, []
+                    for row in call["requirements"].splitlines():
+                        if row.startswith("packages/") and row.endswith("/"):
+                            directory = row
+                        elif row.startswith("  ") and not row.startswith("    "):
+                            current = directory + row.strip()
+                        elif row.startswith("    ") and current not in own:
+                            foreign.append(row)
+                    assert foreign
+            from src.utils.diff_parser import parse_diff
+            from src.core.review.exclusions import review_diff
+            from src.core.review.snapshot import SnapshotConfiguration
+
+            diff, _ = review_diff(captured["snapshot"]["diff"], SnapshotConfiguration())
+            assert sorted(
+                target["path"] for task in tasks for target in task["targets"]
+            ) == sorted(
+                one.file_path for one in parse_diff(diff) if not one.is_binary_file
+            )
+            return
+        assert response.status_code == 200, response.text
+        assert len(checked) == 2
+        assert any(
+            one["finding"]["comment"] == candidate["comment"]
+            for one in checked[0]["candidates"]
+        )
+        if strategy == "investigations":
+            execution = response.json()["data"]["review"]["review"]["execution"]
+            assert len(model.told) == len(execution["investigations"]) == 3
+            assigned = {
+                target["path"]
+                for task in execution["investigations"]
+                for target in task["targets"]
+            }
+            from src.utils.diff_parser import parse_diff
+            from src.core.review.exclusions import review_diff
+            from src.core.review.snapshot import SnapshotConfiguration
+
+            diff, _ = review_diff(captured["snapshot"]["diff"], SnapshotConfiguration())
+            assert assigned == {
+                one.file_path for one in parse_diff(diff) if not one.is_binary_file
+            }
+            for call in model.told:
+                assert "follow the value or operation" in call["knowledge"]
+                assert "Investigation head source:" in call["related_code"]
+                assert len(call["parsed_files"]) < len(assigned)
+
+    @pytest.mark.parametrize("included", [False, True])
+    def test_snapshot_http_supplies_callers_and_callees(self, monkeypatch, included):
+        from pathlib import Path
+        import time
+        import jwt
+        from src.core.review import snapshot
+
+        captured = json.loads(
+            (
+                Path(__file__).parent
+                / "fixtures/review-contracts/node-cited-evidence.json"
+            ).read_text()
+        )
+        model = FakeModel(
+            {"findings": []},
+            review=CodeReview(verdict=Verdict.COMMENT, code_suggestions=[]),
+        )
+        monkeypatch.setenv("JWT_SECRET", "test-signing-secret-for-review")
+        monkeypatch.setattr(snapshot, "provider_for", lambda *_, **__: model)
+        token = jwt.encode(
+            {
+                "sub": "reviewer",
+                "exp": int(time.time()) + 60,
+                "scope": {"workspace_id": "benchmark"},
+            },
+            "test-signing-secret-for-review",
+            algorithm="HS256",
+        )
+        captured["snapshot"]["configuration"]["include-callers-and-callees"] = (
+            "true" if included else "false"
+        )
+        response = self.client.post(
+            "/api/reviews/snapshots",
+            json=captured["snapshot"],
+            headers={"Authorization": "Bearer " + token},
+        )
+        assert response.status_code == 200, response.text
+        related = "\n".join(call["related_code"] or "" for call in model.told)
+        caller = (
+            "packages/pg/lib/diagnostics.js:27 shouldTrace called by connect at "
+            "packages/pg/lib/client.js:211 (matched by name; 2 definitions share "
+            "the name)"
+        )
+        callee = (
+            "packages/pg-pool/index.js:173 _remove calls shouldTrace at "
+            "packages/pg-pool/diagnostics.js:31 (matched by name)"
+        )
+        assert (caller in related) is included
+        assert (callee in related) is included
+
+    @pytest.mark.parametrize("included", [False, True])
+    def test_snapshot_http_discovers_documentation_by_format(
+        self, monkeypatch, included
+    ):
+        from pathlib import Path
+        import time
+        import jwt
+        from src.core.review import snapshot
+
+        captured = json.loads(
+            (
+                Path(__file__).parent
+                / "fixtures/review-contracts/node-cited-evidence.json"
+            ).read_text()
+        )
+        document = "docs/pages/announcements.mdx"
+        assert document in captured["snapshot"]["files"]
+        assert document not in captured["snapshot"]["diff"]
+        model = FakeModel(
+            {"findings": []},
+            review=CodeReview(verdict=Verdict.COMMENT, code_suggestions=[]),
+        )
+        monkeypatch.setenv("JWT_SECRET", "test-signing-secret-for-review")
+        monkeypatch.setattr(snapshot, "provider_for", lambda *_, **__: model)
+        token = jwt.encode(
+            {
+                "sub": "reviewer",
+                "exp": int(time.time()) + 60,
+                "scope": {"workspace_id": "benchmark"},
+            },
+            "test-signing-secret-for-review",
+            algorithm="HS256",
+        )
+        captured["snapshot"]["configuration"]["include-documentation-files"] = (
+            "true" if included else "false"
+        )
+        response = self.client.post(
+            "/api/reviews/snapshots",
+            json=captured["snapshot"],
+            headers={"Authorization": "Bearer " + token},
+        )
+        assert response.status_code == 200, response.text
+        assert model.told
+        assert all(
+            (f"Repository contract source: {document}" in (call["related_code"] or ""))
+            is included
+            for call in model.told
+        )
+
     @pytest.mark.parametrize(
         "path,source,line",
         [
@@ -448,12 +971,86 @@ class TestLocalReview(BaseTestCase):
         assert response.json()["data"]["status"] == "failed"
         assert "does not match" in response.json()["data"]["error"]
 
-    def test_premium_snapshot_http_runs_the_same_plan(self, monkeypatch):
+    @pytest.mark.parametrize("trace_failure", [False, True])
+    @pytest.mark.parametrize("discovery_failure", [False, True])
+    @pytest.mark.parametrize(
+        "strategy,expert_readings,expert_execution",
+        [
+            ("independent", 0, "passes"),
+            ("independent", 1, "passes"),
+            ("independent", 0, "guidance"),
+            ("investigations", 0, "passes"),
+        ],
+    )
+    def test_premium_snapshot_http_runs_the_same_plan(
+        self,
+        monkeypatch,
+        trace_failure,
+        discovery_failure,
+        strategy,
+        expert_readings,
+        expert_execution,
+    ):
         import time
         import jwt
         from src.core.settings.configuration import Configuration
         from src.core.settings.definitions import get
         from src.core.review import snapshot
+        from functools import partial
+        from src.api.routes import review_snapshots
+        from src.core.review_trace import ReviewTraceSink, TraceKind
+        from src.core.skills.interfaces import SkillSource
+        from src.core.skills.models import Skill
+
+        events = []
+
+        class Trace:
+            def record(self, event):
+                events.append(event)
+                if trace_failure:
+                    raise RuntimeError("Trace destination unavailable")
+
+        services = snapshot.service_registry.with_service(
+            ReviewTraceSink, Trace(), "test-trace"
+        )
+
+        class Experts:
+            def read(self):
+                return tuple(
+                    Skill(
+                        id=name,
+                        name=name,
+                        description="Inspect changed behavior.",
+                        body="Check the changed migration against existing callers.",
+                        metadata={"sourceant": {"type": "review-pass"}},
+                        applications={"review": True},
+                    )
+                    for name in ("contracts", "failures")
+                )
+
+        services.contribute(SkillSource, Experts(), "test-experts")
+        if discovery_failure:
+            original = CodeReviewer._review_once
+
+            def failing_reading(self, changes, **options):
+                if any(
+                    (
+                        "Reading review-0:1."
+                        if strategy == "investigations"
+                        else "Reading review-0:2."
+                    )
+                    in one.body
+                    for one in options.get("told", ())
+                ):
+                    raise RuntimeError("Discovery unavailable")
+                return original(self, changes, **options)
+
+            monkeypatch.setattr(CodeReviewer, "_review_once", failing_reading)
+        monkeypatch.setattr(
+            review_snapshots,
+            "review_snapshot",
+            partial(snapshot.review_snapshot, services=services),
+        )
 
         monkeypatch.setenv("JWT_SECRET", "test-signing-secret-for-review")
         monkeypatch.setattr(Configuration, "value", lambda self, key: get(key).default)
@@ -506,6 +1103,9 @@ class TestLocalReview(BaseTestCase):
             },
             "configuration": {
                 "discovery-passes": "3",
+                "discovery-strategy": strategy,
+                "expert-readings": str(expert_readings),
+                "expert-execution": expert_execution,
                 "evaluation-passes": "2",
                 "finding-scope": "repository",
                 "reuse-responses-days": "0",
@@ -520,6 +1120,10 @@ class TestLocalReview(BaseTestCase):
             json=body,
             headers={"Authorization": "Bearer " + token},
         )
+        if discovery_failure:
+            assert response.status_code == 502, response.text
+            assert "review-evaluation" not in model.asked_purposes
+            return
         assert response.status_code == 200, response.text
         answer = response.json()["data"]
         assert answer["snapshot"]["head"] == body["head"]
@@ -527,8 +1131,9 @@ class TestLocalReview(BaseTestCase):
         assert answer["configuration"]["reuse-responses-days"] == "0"
         assert answer["configuration"]["max-output-tokens"] == "16384"
         assert answer["configuration"]["reasoning-effort"] == "low"
+        assert answer["configuration"]["expert-readings"] == str(expert_readings)
         execution = answer["review"]["review"]["execution"]
-        assert len(execution["reviews"]) == 3
+        assert len(execution["reviews"]) == (1 if strategy == "investigations" else 3)
         assert all(not one["error"] for one in execution["reviews"])
         assert (
             len(
@@ -541,6 +1146,33 @@ class TestLocalReview(BaseTestCase):
             == 2
         )
         assert len(answer["review"]["review"]["suggestions"]) == 1
+        raw = [
+            event
+            for event in events
+            if event.kind == TraceKind.FINDING and event.action == "raw"
+        ]
+        expected_calls = (
+            1
+            if strategy == "investigations"
+            else 3 if expert_execution == "guidance" else 5 if expert_readings else 9
+        )
+        assert len(model.told) == expected_calls
+        assert len(raw) == expected_calls
+        assert len({event.participant for event in raw}) == (
+            1 if strategy == "investigations" else 3
+        )
+        if strategy == "investigations" or expert_execution == "guidance":
+            assert (
+                "Check the changed migration against existing callers."
+                in model.told[0]["knowledge"]
+            )
+        assert len({event.session for event in events}) == 1
+        assert all(event.finding_id not in response.text for event in raw)
+        decided = [event for event in events if event.stage == "acceptance"]
+        assert len(decided) == len(execution["candidates"])
+        assert len([event for event in decided if event.action == "accepted"]) >= len(
+            answer["review"]["review"]["suggestions"]
+        )
 
         body["files"] = {"../escape.py": "pass\n"}
         invalid = self.client.post(

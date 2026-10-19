@@ -150,7 +150,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         key="model.purposes",
         label="Models by purpose",
-        description="Profile names to use for review, review-evaluation and review-overview.",
+        description="Profile names for review, review-evaluation, review-overview, review-search and skill-selection.",
         type=ConfigType.JSON,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
         default={},
@@ -188,6 +188,47 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.discovery_strategy",
+        label="Discovery strategy",
+        description="Use independent whole-change readings or bounded investigations of assigned changed behavior.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default="independent",
+        choices=("independent", "investigations"),
+        group="Review",
+    ),
+    Setting(
+        key="review.change_digest",
+        label="Tell each investigation what the rest of the change touched",
+        description=(
+            "Each investigation receives, in place of the list of changed files, "
+            "the changed files with the definitions their changed lines fall in, "
+            "so a definition changed in another investigation's files is visible."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=False,
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.investigation_limit",
+        label="Most investigations per review",
+        description=(
+            "The largest number of investigations one review may plan. A change "
+            "is split into at least as many investigations as independent "
+            "readings, and into more when its parts would not fit the reading "
+            "budget. A change that needs more than this is refused before any "
+            "investigation runs."
+        ),
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=64,
+        minimum=1,
+        maximum=200,
+        group="Review",
+    ),
+    Setting(
         key="review.evaluation_passes",
         label="Evaluations per model",
         description="Number of independent challenges for each evaluator model.",
@@ -196,6 +237,27 @@ SETTINGS: tuple[Setting, ...] = (
         default=1,
         minimum=0,
         maximum=10,
+        group="Review",
+    ),
+    Setting(
+        key="review.expert_readings",
+        label="Readings that execute experts",
+        description="Limit expert execution to the first readings per model. Zero runs experts in every reading.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=0,
+        minimum=0,
+        maximum=10,
+        group="Review",
+    ),
+    Setting(
+        key="review.expert_execution",
+        label="Expert execution",
+        description="Run selected expert skills as separate passes or include their guidance in each discovery reading. Investigations always include guidance without additional passes.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default="passes",
+        choices=("passes", "guidance"),
         group="Review",
     ),
     Setting(
@@ -208,6 +270,104 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=1,
         maximum=32,
         group="Review",
+    ),
+    Setting(
+        key="review.investigation_allocation",
+        label="Investigation task allocation",
+        description="Group changed files by diff size or keep related implementations and tests together.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default="balanced",
+        choices=("balanced", "dependencies"),
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.context_strategy",
+        label="Dependency context order",
+        description="Choose legacy traversal or direct dependencies before transitive dependencies.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default="legacy",
+        choices=("legacy", "direct"),
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.evaluation_policy",
+        label="Finding evaluation policy",
+        description="Choose the existing evaluation policy, assess behavioral harm independently of documented intent, or also verify each finding's stated premises and rank it by the verified ones.",
+        type=ConfigType.STRING,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default="legacy",
+        choices=("legacy", "behavioral", "premises"),
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.discovery_doubts",
+        label="Evaluate doubtful concerns",
+        description="Premium discovery reports concerns it is unsure about instead of omitting them, and evaluation decides whether they are retained.",
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=False,
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.include_documentation_files",
+        label="Include documentation files",
+        description=(
+            "Include the repository's documentation and instruction files "
+            "(AGENTS.md, CLAUDE.md, CONVENTIONS.md, CONTRIBUTING.md, "
+            "ARCHITECTURE.md, README.md) in every reading and evaluation, and "
+            "list the rules they state, so findings can be checked against them."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=False,
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.include_callers_and_callees",
+        label="Include callers and callees",
+        description=(
+            "Include the functions that call each changed definition and the "
+            "functions it calls, from the code index where it knows them and "
+            "otherwise matched by name in the source, each labelled with how it "
+            "was found."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=False,
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.include_imported_files",
+        label="Include imported files",
+        description=(
+            "Include the package manifests and the source files the changed files "
+            "import in every reading and evaluation, within the reading budget."
+        ),
+        type=ConfigType.BOOL,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=False,
+        group="Review",
+        advanced=True,
+    ),
+    Setting(
+        key="review.evaluation_batch_size",
+        label="Candidates per evaluation batch",
+        description="Target candidates per evaluation call. Findings in the same file stay together with the full review context.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=16,
+        minimum=1,
+        maximum=100,
+        group="Review",
+        advanced=True,
     ),
     Setting(
         key="review.minimum_support",
@@ -416,8 +576,8 @@ SETTINGS: tuple[Setting, ...] = (
         description=(
             "How much of a change is read in one go, in tokens. A larger "
             "change is read in parts of this size and the parts are put "
-            "together. This is not how much the model can accept: it is where "
-            "a review stops finding things, which is far below that."
+            "together. Dependency context has a separate allowance derived "
+            "from this value. Files that exceed it are reported as omitted."
         ),
         type=ConfigType.INT,
         scopes=(USER, REPOSITORY, ORGANIZATION),

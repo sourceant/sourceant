@@ -1,0 +1,24 @@
+{
+  "file_name": "src/server/handlers.ts",
+  "position": 17,
+  "start_line": 442,
+  "end_line": 442,
+  "side": "RIGHT",
+  "comment": "This new error returns the raw `path` to the client. CLAUDE.md #129/#190 require client-facing error messages to use `getRelativePath()` instead of leaking absolute filesystem paths. Route `path` through `getRelativePath()` here (and in the sibling `File not found` message) before building the error.",
+  "category": "SECURITY",
+  "trigger": "anyone",
+  "blast": "one",
+  "impact": "none",
+  "certainty": "possible",
+  "doubt": "`path` is supplied by the same client, so echoing it back may not be an actual disclosure.",
+  "comment_only": true,
+  "suggested_code": null,
+  "existing_code": "    if (!stats) {\n      throw new McpError(\n        ErrorCode.InvalidParams,\n        `Could not read file stats for: ${path}`\n      );\n    }",
+  "claims": [
+    {
+      "subject": "getFileStats",
+      "predicate": "DEFINED",
+      "expected": true
+    }
+  ]
+}

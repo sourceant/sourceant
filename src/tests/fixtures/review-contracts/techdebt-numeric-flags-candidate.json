@@ -1,0 +1,22 @@
+{
+  "file_name": "src/core/customRulesEngine.ts",
+  "start_line": 266,
+  "end_line": 268,
+  "side": "RIGHT",
+  "comment": "`pattern.flags` is typed `string`, but `.techdebtrc.json` values are untyped JSON, so `isCustomPatternShape` passes a numeric `flags` straight through. `.replace` then throws a `TypeError` outside the `try/catch`, turning `validate_config` into an internal error instead of a validation report. Guard with a `typeof pattern.flags === 'string'` check.",
+  "category": "BUG",
+  "trigger": "anyone",
+  "blast": "one",
+  "impact": "crash",
+  "certainty": "conditional",
+  "comment_only": false,
+  "suggested_code": "        const stripped = typeof pattern.flags === 'string'\n          ? pattern.flags.replace(/[^gimsuy]/g, '')\n          : 'g';",
+  "existing_code": "        const stripped = pattern.flags !== undefined\n          ? pattern.flags.replace(/[^gimsuy]/g, '')\n          : 'g';",
+  "claims": [
+    {
+      "subject": "CustomRulesEngine.validatePattern",
+      "predicate": "DEFINED",
+      "expected": true
+    }
+  ]
+}

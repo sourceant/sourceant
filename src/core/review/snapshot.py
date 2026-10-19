@@ -59,6 +59,7 @@ def review_snapshot(
         description=description,
         diff=diff,
         configuration=configuration,
+        repository_paths=lambda: tuple(files),
     )
     index = InMemoryCodeIndex()
     for path, source in files.items():
@@ -75,6 +76,7 @@ def review_snapshot(
     review = judge.review(
         changes,
         provider=model,
+        require_complete_discovery=True,
         read_content=files.get,
         code_scope=changes.code_scope,
         code_index=index,

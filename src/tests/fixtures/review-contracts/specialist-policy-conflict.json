@@ -1,0 +1,13 @@
+{
+  "capture": "Discovery response captured from a review of PierreJanineh/TechDebtMCP pull request 135",
+  "checklists": [
+    {
+      "specialty": "Contract consistency review",
+      "checklist": "Trace each changed contract from the code that produces a value to the code that uses it.\n\n1. Read both sides. Compare accepted inputs, returned fields, error handling, and access checks. Use graph relationships to find consumers, then read their code.\n2. Check the whole diff for consumer updates and compatibility handling. A rename is not a bug when all affected consumers change with it.\n3. Follow the path a user calls. Check whether it still runs the shared validation, authorization, and formatting it needs.\n4. Report a mismatch only when you can show the triggering input, the changed code, and the resulting failure. Cite both sides of the contract.\n\nRead external contracts from the supplied dependency source or captured responses. A function name or an assumed API shape is not evidence. If either side is unavailable, do not report the mismatch as confirmed.\n\nUse the existing review output format. Quote the changed code for each finding. Prefer fixing the existing validator or formatter when it already owns the behavior."
+    },
+    {
+      "specialty": "Duplicate implementation review",
+      "checklist": "Compare newly added behavior with existing code that serves the same purpose.\n\n1. Read the supplied search matches and graph relationships. Open the relevant implementations and their callers.\n2. Compare inputs, outputs, side effects, and access checks. Similar names or syntax alone do not make two implementations duplicates.\n3. Read the whole diff. Check whether the old code is reused, replaced, removed, or kept for a different purpose.\n4. Report a duplicate only when the new code causes a concrete problem, such as bypassing a required check or returning conflicting results. Name the existing implementation and explain the affected call.\n\nDo not request reuse just to reduce repeated code. Different callers may need different behavior. Do not claim that an implementation is missing when search was unavailable or incomplete.\n\nUse the existing review output format. Anchor each finding to added or modified code and quote that code. State the failure and the smallest change that fixes it."
+    }
+  ]
+}

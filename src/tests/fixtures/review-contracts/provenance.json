@@ -1,0 +1,82 @@
+{
+  "repositories": {
+    "techdebt-final": {
+      "repository": "PierreJanineh/TechDebtMCP",
+      "pull_request": 135,
+      "head": "16a54f0f85a9091f220418850eac6b4122782be5",
+      "license": {
+        "spdx": "MIT",
+        "text": "licenses/TechDebtMCP-LICENSE"
+      }
+    },
+    "node-postgres-controlled": {
+      "repository": "brianc/node-postgres",
+      "pull_request": 3650,
+      "head": "b922f0ddfa3914cc7b05387cd12fc606bc658dc4",
+      "license": {
+        "spdx": "MIT",
+        "text": "licenses/node-postgres-LICENSE"
+      }
+    }
+  },
+  "source_files": {
+    "techdebt-final/package.json": "5b50bc5df0733d5b605702f6df537f51ba961c45bb6a973a4c4b733f76c2c648",
+    "techdebt-final/ARCHITECTURE.md": "9d4fdd3e545fba49a61a2e3a1e964275fa4d5d162e31d0a4db57b6c328f7dca9",
+    "techdebt-final/src/utils/fileUtils.ts": "e83a344865252b8d1fee64a6daf6a609f13efe588b90cdc4946bc1e6d6a472aa",
+    "techdebt-final/src/core/customRulesEngine.ts": "612897c9bc83a152edc4cd719ad013c09c46d46950f5ab5fbbd02e091f18c834",
+    "techdebt-final/src/server/handlers.ts": "f93333ddd954d75fcfacf0bb2ab16423862c9d8da8c96512acc61d815fc3ac56",
+    "techdebt-final/src/server/__tests__/handlers.test.ts": "e1b36cfb61aa53c1bea563f0ab9b0b9d8449bc2ca0a92628cf3a78e9f6c9b61e",
+    "techdebt-final/src/core/__tests__/customRulesEngine.test.ts": "7defd5b36b3ac7330ae53265715674e8600b407917748cf67f353cbbcc123bcb",
+    "node-postgres-controlled/package.json": "3162048c25e2505ca649933a7fbd702268174dff8440920f6b52a9e055d62338",
+    "node-postgres-controlled/packages/pg/package.json": "d9f570c05ac21e7328f2a14dbf6e1b68e76a52e57b8d2029e8d8111019c1deed",
+    "node-postgres-controlled/packages/pg-pool/package.json": "22545391d090ed03e679fdec693dc872889a0728723490745107840f16aceab1",
+    "node-postgres-controlled/packages/pg-pool/index.js": "dfc8d48c6392df76e54032346ba68ada82a6b130b4d279beb7f2ea64bf432389",
+    "node-postgres-controlled/packages/pg-pool/diagnostics.js": "909268420465995061f50aaf6dd14b8dc9b6e080f623a66f8a80c3165fac9ca2",
+    "node-postgres-controlled/packages/pg-cursor/index.js": "85705de56c98d52682df1b609d3a5cd7bfc131c4212a331062dda0960b2c407b",
+    "node-postgres-controlled/packages/pg-pool/test/diagnostics.js": "76cc12078dd68682b77612498fa2027faa433cae012f013f523e2514b626465d",
+    "node-postgres-controlled/packages/pg/lib/utils.js": "a109ef3b3a7572e8523b937ae0c100be72d4f36d1d3d4c7032e1ef0abaf92e38",
+    "node-postgres-controlled/packages/pg/lib/stream.js": "0bd4001775301604ddf7c94152e05f6f30a9354876717bdae2ab636d00eb12ba",
+    "node-postgres-controlled/packages/pg/lib/client.js": "ca7e984a3ea035b943bad0eaeb3885f2c3a78448c692cf6ac106245a2bd300a5",
+    "node-postgres-controlled/packages/pg/lib/type-overrides.js": "47cb7f7bc6a6e1b1d4dc7c92bacacb436f12e99242b77da8391fd5b71991d2a5",
+    "node-postgres-controlled/packages/pg/lib/connection-parameters.js": "12495010b781a1ac75e561ccfe0f71fda9872cb3c663931f541ddcfc0d907e2a",
+    "node-postgres-controlled/packages/pg/lib/defaults.js": "a1f91cc76d2f045a6a44297373249acc1d6afd734020073b8a147fe1a1446d9a",
+    "node-postgres-controlled/packages/pg/lib/index.js": "3fad6e6d3d976edbabe0cbc9e1d39f4340bcb719bbbb186a0d3a24f3dbd4a94c",
+    "node-postgres-controlled/packages/pg/lib/connection.js": "d9cd0c7e3b1dfb19a05fd1e763aa02a70578b07e78441fa33a563c538b83fcf4",
+    "node-postgres-controlled/packages/pg/lib/diagnostics.js": "8982eedb5637a4ae24621d9e548d30e6300631d2f53b228e8d6735165e5ef3b0",
+    "node-postgres-controlled/packages/pg/lib/query.js": "dea8044d70531cd16e514ecddbe44cdd65b4315a02287958d5ecfd0ebcd70ded",
+    "node-postgres-controlled/packages/pg/lib/result.js": "2e9dfbbb89c84cfdb1977a1503f2ddd265ed2f943f8dc3957dc0db193ee81488",
+    "node-postgres-controlled/packages/pg/test/suite.js": "40af0db0b0fc840d91c0bd3d0015840fdd9d4392a6ee8f2b3b159c0da50236bd",
+    "node-postgres-controlled/packages/pg/test/cli.js": "cc8a52ceeb824a26faf5a9f5f73c4bf9c3e3b480885ce2ca2dc8d056438fbd3d",
+    "node-postgres-controlled/packages/pg/test/test-helper.js": "f23158fb09c6c03f625ba881c7cf50edc5123ed7a0e32452ebebf0496c1c68c0",
+    "node-postgres-controlled/packages/pg/test/unit/test-helper.js": "c9e4270648c01fcf866df33242579f8c4419947329ed77148aca689d8e2809d5",
+    "node-postgres-controlled/packages/pg/test/unit/client/diagnostics-tests.js": "b06d6eb5db757312cd6f4f5fa523a5d765022b697eb419f3e3eaf0fc684491db",
+    "node-postgres-controlled/packages/pg/test/unit/client/test-helper.js": "bdb981bb6785414a458f22b116dd415fd5eb90f956ca319550d27eb979e8930d",
+    "node-postgres-controlled/packages/pg/lib/crypto/utils.js": "a7d537da58f9ebc65dee84789ed5fa4175c6961c5be4a4dbb62b67d99c9c1213",
+    "node-postgres-controlled/packages/pg/lib/crypto/utils-legacy.js": "f453cc172ad7e9dbb6e09b3cb48d267113e5128d834e6ae2519d7e2d9fde0fa6",
+    "node-postgres-controlled/packages/pg/lib/crypto/cert-signatures.js": "206ec95c51012b73fe15d549b24db2acab969271e971940a0b79cfdcf830755b",
+    "node-postgres-controlled/packages/pg/lib/crypto/utils-webcrypto.js": "a849cfe22d7590d79ddee76c8d7a058e2b67360a0d76683275d34133e5637117",
+    "node-postgres-controlled/packages/pg/lib/crypto/sasl.js": "37206f4af85a0bf9973089c06ce54456938c3c74c9d4e65507053b8afd468889",
+    "node-postgres-controlled/packages/pg/lib/native/client.js": "192e710e6fcf5e158e059ce88af323a7533180718ce66fcf9c28b5f592593477",
+    "node-postgres-controlled/packages/pg/lib/native/index.js": "99fb61cb78a6d78b7a5fc0b9ac264ad58272af48be4bc50bfdb948b1342e3292",
+    "node-postgres-controlled/packages/pg/lib/native/query.js": "e17221776993847901de73de28690aebc1e5ed1151b115bc8d84cc10cddf4ae4",
+    "techdebt-final/CLAUDE.md": "ebc82be35b1417e818ece2bf3131dfd31e7c8178eb1678adc10b23b1d8a4cace",
+    "techdebt-final/src/server/configValidator.ts": "3590c9a11fb8cc44632df4653b53b7aa70a71ef0dac3f48c32a21811adde1397",
+    "techdebt-final/CHANGELOG.md": "71e1520116b05bbddd5d7549a73c3258fe203b97cf3029f22aa142dc3edf43f9",
+    "techdebt-final/CONTRIBUTING.md": "5b48561e665daa03d1d543675db6431c30e4a8d609ba1b0490d4bf26ee076c98",
+    "techdebt-final/src/types/index.ts": "c0ae91e8accc651dbc2a2722cf484c8729ac4d0328ad2c979a2312c1df0cae23",
+    "techdebt-final/src/core/analysisEngine.ts": "00442450d2249031373f3003fef9646e5c1047d7c1fb580d6e6514fc6632dd18",
+    "techdebt-final/src/analyzers/index.ts": "87fc2090de3a7f1b8869bd6cde1013ac0347c3e7aa8751ac29ceaaeb20e4aff0"
+  },
+  "responses": "Captured evaluator responses; no inferred response fixtures",
+  "evaluation_batches": {
+    "request_ids": [
+      423,
+      425
+    ],
+    "response_ids": [
+      423,
+      424
+    ],
+    "inputs": "Captured evaluator batch inputs and responses"
+  }
+}

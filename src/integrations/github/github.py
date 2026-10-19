@@ -1106,6 +1106,37 @@ class GitHub(ProviderAdapter):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+    def list_paths(self, owner: str, repo: str, sha: str) -> List[str]:
+        """Every file in the repository at a commit, from one request.
+
+        GitHub stops listing very large trees and says so; what it did list
+        is still returned.
+        """
+        try:
+            access_token = self.get_installation_access_token(owner, repo)
+            response = requests.get(
+                f"https://api.github.com/repos/{owner}/{repo}/git/trees/{sha}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                params={"recursive": "1"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except (requests.exceptions.RequestException, ValueError) as error:
+            logger.warning(f"Could not list {owner}/{repo} at {sha}: {error}")
+            return []
+        if data.get("truncated"):
+            logger.warning(f"GitHub listed only part of {owner}/{repo} at {sha}")
+        return [
+            entry["path"]
+            for entry in data.get("tree", ())
+            if entry.get("type") == "blob" and entry.get("path")
+        ]
+
     def get_file_content(
         self, owner: str, repo: str, file_path: str, sha: str
     ) -> Optional[str]:
