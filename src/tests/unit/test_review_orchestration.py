@@ -496,6 +496,7 @@ def test_model_evaluator_challenges_candidates_with_distinct_passes():
 def test_model_evaluator_bounds_related_source_and_reports_omissions():
     import json
     from dataclasses import replace
+    from src.core.settings.definitions import get
 
     class Model:
         token_limit = 131072
@@ -524,7 +525,7 @@ def test_model_evaluator_bounds_related_source_and_reports_omissions():
         request(),
         source_context={
             "caller.py": "use(request.query)\n",
-            "oversized.py": "x" * 30000,
+            "oversized.py": "x" * (get("review.reading_budget").default + 1),
         },
     )
     ModelReviewEvaluator(model).evaluate(supplied, [finding()], pass_id="one")

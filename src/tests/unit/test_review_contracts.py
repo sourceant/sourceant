@@ -403,6 +403,8 @@ def test_evaluation_batch_uses_captured_source_and_dependency_contracts(case, fu
             overrides={
                 "review.include_documentation_files": True,
                 "review.include_imported_files": True,
+                # The cases below need a budget tight enough to rank under.
+                "review.reading_budget": 15_000,
             }
         ),
     )
@@ -437,6 +439,8 @@ def test_captured_handler_task_retains_changed_parser_dependency(strategy, prese
                 "review.context_strategy": strategy,
                 "review.include_documentation_files": True,
                 "review.include_imported_files": True,
+                # The cases below need a budget tight enough to rank under.
+                "review.reading_budget": 15_000,
             }
         ),
     )
@@ -504,6 +508,8 @@ def test_captured_evaluator_prioritizes_dependency_over_generic_search(
                 "review.context_strategy": strategy,
                 "review.include_documentation_files": True,
                 "review.include_imported_files": True,
+                # The cases below need a budget tight enough to rank under.
+                "review.reading_budget": 15_000,
             }
         ),
     )

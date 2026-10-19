@@ -581,7 +581,7 @@ SETTINGS: tuple[Setting, ...] = (
         ),
         type=ConfigType.INT,
         scopes=(USER, REPOSITORY, ORGANIZATION),
-        default=15_000,
+        default=50_000,
         unit="tokens",
         minimum=2_000,
         maximum=200_000,

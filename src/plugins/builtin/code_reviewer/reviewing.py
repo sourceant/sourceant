@@ -113,7 +113,7 @@ def _says_the_same(said: str, reported: str) -> bool:
 DEFAULT_FILE_LIMIT = 20
 
 # How much is worth reading in one go, which is not how much fits.
-DEFAULT_READING_BUDGET = 15_000
+DEFAULT_READING_BUDGET = 50_000
 
 # Short enough a wait, without asking a provider for everything at once.
 MAX_AT_ONCE = MODEL_CONCURRENCY
