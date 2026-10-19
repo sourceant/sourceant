@@ -436,7 +436,7 @@ def test_captured_handler_task_retains_changed_parser_dependency(strategy, prese
         tuple(ChangedFile(path) for path in captured["changed_paths"]),
         configuration=CheckoutConfiguration(
             overrides={
-                "review.context_strategy": strategy,
+                "review.direct_dependencies_first": strategy == "direct",
                 "review.include_documentation_files": True,
                 "review.include_imported_files": True,
                 # The cases below need a budget tight enough to rank under.
@@ -505,7 +505,7 @@ def test_captured_evaluator_prioritizes_dependency_over_generic_search(
         diff=original["diff"],
         configuration=CheckoutConfiguration(
             overrides={
-                "review.context_strategy": strategy,
+                "review.direct_dependencies_first": strategy == "direct",
                 "review.include_documentation_files": True,
                 "review.include_imported_files": True,
                 # The cases below need a budget tight enough to rank under.

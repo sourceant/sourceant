@@ -126,8 +126,8 @@ class DefaultReviewContextProvider:
             )
             * 4,
             prioritize_dependencies=(
-                request.changes.configuration.value("review.context_strategy")
-                == "direct"
+                request.changes.configuration.value("review.direct_dependencies_first")
+                is True
             ),
             changed_paths=request.changes.paths,
             guidance=guidance,

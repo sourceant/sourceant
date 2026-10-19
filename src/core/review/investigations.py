@@ -48,7 +48,7 @@ class ChangedBehaviorInvestigationSource:
             len(files),
             max(min(configuration.value("review.discovery_passes"), limit), needed),
         )
-        if configuration.value("review.investigation_allocation") == "dependencies":
+        if configuration.value("review.group_related_files") is True:
             groups = related_groups(files, request, count)
         else:
             groups = balanced_groups(files, count)

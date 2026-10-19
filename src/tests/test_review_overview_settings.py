@@ -245,7 +245,7 @@ def test_doubtful_findings_are_not_published_without_evaluation(tmp_path):
             patch.object(reviewer, "_in_one_pass", return_value=answer) as reading,
         ):
             response = client.put(
-                "/api/settings/workspace/one/review.discovery_doubts",
+                "/api/settings/workspace/one/review.evaluate_uncertain_findings",
                 json={"value": True},
             )
             assert response.status_code == 200, response.text

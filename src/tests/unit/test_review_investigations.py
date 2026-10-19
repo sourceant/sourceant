@@ -95,9 +95,9 @@ def test_registered_source_receives_pinned_request_and_cannot_expand_budget():
     values.update(
         {
             "review.plan": "premium",
-            "review.discovery_strategy": "investigations",
+            "review.split_large_changes": True,
             "review.discovery_passes": 1,
-            "review.investigation_limit": 1,
+            "review.maximum_parts": 1,
             "review.evaluation_passes": 0,
             "review.minimum_support": 0,
             "review.expert_readings": 10,
@@ -174,7 +174,7 @@ def test_dependency_allocation_keeps_captured_implementations_with_their_tests()
             tuple(ChangedFile(path) for path in captured["changed_paths"]),
             diff=diff,
             configuration=SnapshotConfiguration(
-                overrides={"review.investigation_allocation": "dependencies"}
+                overrides={"review.group_related_files": True}
             ),
         ),
         read_content=captured["files"].get,

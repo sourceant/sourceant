@@ -66,14 +66,14 @@ class SettingsReviewPlanSource:
         if support > len(evaluation) * repetitions:
             raise ValueError("Required support exceeds the configured evaluations")
         investigations = ()
-        if configuration.value("review.discovery_strategy") == "investigations":
+        if configuration.value("review.split_large_changes") is True:
             try:
                 source = self.services.resolve(ReviewInvestigationSource)
             except LookupError:
                 source = ChangedBehaviorInvestigationSource(
                     getattr(provider, "count_tokens", None)
                 )
-            limit = configuration.value("review.investigation_limit")
+            limit = configuration.value("review.maximum_parts")
             investigations = tuple(source.investigations_for(request, limit))
             if len(investigations) > limit:
                 raise ValueError(

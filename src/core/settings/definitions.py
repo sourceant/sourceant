@@ -188,22 +188,24 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
-        key="review.discovery_strategy",
-        label="Discovery strategy",
-        description="Use independent whole-change readings or bounded investigations of assigned changed behavior.",
-        type=ConfigType.STRING,
+        key="review.split_large_changes",
+        label="Split large changes",
+        description=(
+            "Split a change into parts that each fit the reading budget, each "
+            "read once, instead of reading the whole change several times."
+        ),
+        type=ConfigType.BOOL,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
-        default="independent",
-        choices=("independent", "investigations"),
+        default=False,
         group="Review",
     ),
     Setting(
-        key="review.change_digest",
-        label="Tell each investigation what the rest of the change touched",
+        key="review.include_change_digest",
+        label="Include change digest",
         description=(
-            "Each investigation receives, in place of the list of changed files, "
-            "the changed files with the definitions their changed lines fall in, "
-            "so a definition changed in another investigation's files is visible."
+            "When a change is split, give each part the changed files with the "
+            "definitions their changed lines fall in, so a definition changed in "
+            "another part is visible."
         ),
         type=ConfigType.BOOL,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
@@ -212,14 +214,11 @@ SETTINGS: tuple[Setting, ...] = (
         advanced=True,
     ),
     Setting(
-        key="review.investigation_limit",
-        label="Most investigations per review",
+        key="review.maximum_parts",
+        label="Most parts per change",
         description=(
-            "The largest number of investigations one review may plan. A change "
-            "is split into at least as many investigations as independent "
-            "readings, and into more when its parts would not fit the reading "
-            "budget. A change that needs more than this is refused before any "
-            "investigation runs."
+            "The largest number of parts a change may be split into. A change "
+            "that needs more is refused before any model is asked."
         ),
         type=ConfigType.INT,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
@@ -249,6 +248,7 @@ SETTINGS: tuple[Setting, ...] = (
         minimum=0,
         maximum=10,
         group="Review",
+        advanced=True,
     ),
     Setting(
         key="review.expert_execution",
@@ -259,6 +259,7 @@ SETTINGS: tuple[Setting, ...] = (
         default="passes",
         choices=("passes", "guidance"),
         group="Review",
+        advanced=True,
     ),
     Setting(
         key="review.concurrency",
@@ -272,42 +273,55 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
-        key="review.investigation_allocation",
-        label="Investigation task allocation",
-        description="Group changed files by diff size or keep related implementations and tests together.",
-        type=ConfigType.STRING,
+        key="review.group_related_files",
+        label="Group related files",
+        description=(
+            "When a change is split, keep files that import each other and "
+            "implementations with their tests in the same part, instead of "
+            "balancing parts by size."
+        ),
+        type=ConfigType.BOOL,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
-        default="balanced",
-        choices=("balanced", "dependencies"),
+        default=False,
         group="Review",
         advanced=True,
     ),
     Setting(
-        key="review.context_strategy",
-        label="Dependency context order",
-        description="Choose legacy traversal or direct dependencies before transitive dependencies.",
-        type=ConfigType.STRING,
+        key="review.direct_dependencies_first",
+        label="Direct dependencies first",
+        description=(
+            "Order imported files by distance from the change, with changed "
+            "files first, instead of reading them in import order."
+        ),
+        type=ConfigType.BOOL,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
-        default="legacy",
-        choices=("legacy", "direct"),
+        default=False,
         group="Review",
         advanced=True,
     ),
     Setting(
         key="review.evaluation_policy",
         label="Finding evaluation policy",
-        description="Choose the existing evaluation policy, assess behavioral harm independently of documented intent, or also verify each finding's stated premises and rank it by the verified ones.",
+        description=(
+            "standard checks each finding against the source; behavioral also "
+            "judges demonstrated harm apart from documented intent; "
+            "verify-claims also verifies who can trigger a finding, who is "
+            "affected and how badly, and ranks it by what was verified."
+        ),
         type=ConfigType.STRING,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
-        default="legacy",
-        choices=("legacy", "behavioral", "premises"),
+        default="standard",
+        choices=("standard", "behavioral", "verify-claims"),
         group="Review",
         advanced=True,
     ),
     Setting(
-        key="review.discovery_doubts",
-        label="Evaluate doubtful concerns",
-        description="Premium discovery reports concerns it is unsure about instead of omitting them, and evaluation decides whether they are retained.",
+        key="review.evaluate_uncertain_findings",
+        label="Evaluate uncertain findings",
+        description=(
+            "Reviews report findings they are unsure about instead of dropping "
+            "them, and evaluation decides whether each is kept."
+        ),
         type=ConfigType.BOOL,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
         default=False,

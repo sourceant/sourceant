@@ -335,7 +335,7 @@ class TestLocalReview(BaseTestCase):
             "review.plan": "premium",
             "review.discovery_passes": 1,
             "review.evaluation_passes": 1,
-            "review.discovery_doubts": True,
+            "review.evaluate_uncertain_findings": True,
         }.items():
             response = self.client.put(
                 f"/api/local/settings/{key}", json={"value": value}
@@ -345,7 +345,7 @@ class TestLocalReview(BaseTestCase):
             self.edit_the_migration()
             response = self.review()
         finally:
-            self.client.delete("/api/local/settings/review.discovery_doubts")
+            self.client.delete("/api/local/settings/review.evaluate_uncertain_findings")
         assert response.status_code == 200, response.text
         published = [
             one["comment"]
@@ -435,7 +435,7 @@ class TestLocalReview(BaseTestCase):
             "review.plan": "premium",
             "review.discovery_passes": 1,
             "review.evaluation_passes": 1,
-            "review.evaluation_policy": "premises",
+            "review.evaluation_policy": "verify-claims",
             "review.include_nitpicks": False,
         }
         for key, value in settings.items():
@@ -517,7 +517,7 @@ class TestLocalReview(BaseTestCase):
             "review.plan": "premium",
             "review.discovery_passes": 1,
             "review.evaluation_passes": 2,
-            "review.evaluation_policy": "premises",
+            "review.evaluation_policy": "verify-claims",
             "review.include_nitpicks": True,
         }
         for key, value in settings.items():
@@ -619,14 +619,16 @@ class TestLocalReview(BaseTestCase):
             "test-signing-secret-for-review",
             algorithm="HS256",
         )
-        captured["snapshot"]["configuration"]["discovery-strategy"] = strategy
+        captured["snapshot"]["configuration"]["split-large-changes"] = (
+            "true" if strategy == "investigations" else "false"
+        )
         captured["snapshot"]["configuration"]["reading-budget"] = str(budget)
         if budget == 2000:
             captured["snapshot"]["configuration"]["discovery-passes"] = "1"
         if limit:
-            captured["snapshot"]["configuration"]["investigation-limit"] = str(limit)
+            captured["snapshot"]["configuration"]["maximum-parts"] = str(limit)
         if digest:
-            captured["snapshot"]["configuration"]["change-digest"] = "true"
+            captured["snapshot"]["configuration"]["include-change-digest"] = "true"
         response = self.client.post(
             "/api/reviews/snapshots",
             json=captured["snapshot"],
@@ -1103,7 +1105,9 @@ class TestLocalReview(BaseTestCase):
             },
             "configuration": {
                 "discovery-passes": "3",
-                "discovery-strategy": strategy,
+                "split-large-changes": (
+                    "true" if strategy == "investigations" else "false"
+                ),
                 "expert-readings": str(expert_readings),
                 "expert-execution": expert_execution,
                 "evaluation-passes": "2",

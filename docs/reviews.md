@@ -123,6 +123,6 @@ Three settings, off by default, add repository context to every reading and eval
 
 Evaluators read source for the selected candidate batch and report context omitted by the reading budget. Missing evidence still requires an unresolved judgment.
 
-With `review.discovery_strategy` set to `investigations`, discovery splits a change into investigations that each fit one model call, growing their number with the change up to `review.investigation_limit`. `review.change_digest` gives each investigation the changed files with the definitions their changed lines fall in, so a definition changed in another investigation's files is visible.
+With `review.split_large_changes` on, a change is split into parts that each fit one model call, growing their number with the change up to `review.maximum_parts`. `review.include_change_digest` gives each part the changed files with the definitions their changed lines fall in, so a definition changed in another part is visible.
 
 Duplicate links identify the same defect independently of whether the earlier comment is supported. Different file anchors can describe one defect when one concrete fix addresses both reports. Accepted comments merge only when the supporting evaluations agree on the duplicate link; a supported comment remains available when the earlier anchor is rejected or unresolved.

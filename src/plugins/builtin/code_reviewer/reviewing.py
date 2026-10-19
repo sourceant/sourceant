@@ -450,7 +450,7 @@ class CodeReviewer:
             (
                 "repository-contracts",
                 changes.diff,
-                configuration.value("review.context_strategy"),
+                configuration.value("review.direct_dependencies_first"),
                 context_changes.paths,
                 id(read_content),
                 id(context_provider),
@@ -460,7 +460,8 @@ class CodeReviewer:
                 ReviewInput(
                     (
                         context_changes
-                        if configuration.value("review.context_strategy") == "direct"
+                        if configuration.value("review.direct_dependencies_first")
+                        is True
                         else changes
                     ),
                     read_content=read_content,
@@ -556,7 +557,8 @@ class CodeReviewer:
                                     min(32000, 2 * self._budget(configuration)),
                                 ),
                             )
-                            if configuration.value("review.change_digest") is True
+                            if configuration.value("review.include_change_digest")
+                            is True
                             else change_inventory(
                                 context_changes.paths,
                                 omitted,
@@ -632,9 +634,9 @@ class CodeReviewer:
                     ]
                 ),
             )
-        if configuration.value("review.discovery_doubts") is True and evaluated(
-            configuration
-        ):
+        if configuration.value(
+            "review.evaluate_uncertain_findings"
+        ) is True and evaluated(configuration):
             sections = replace(
                 sections,
                 knowledge=self._joined(

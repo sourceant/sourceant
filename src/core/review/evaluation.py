@@ -189,7 +189,10 @@ class ModelReviewEvaluator:
                 if path not in candidate_paths or path in source
             },
         }
-        if request.changes.configuration.value("review.context_strategy") == "direct":
+        if (
+            request.changes.configuration.value("review.direct_dependencies_first")
+            is True
+        ):
             references = set(finding_references(batch))
             context = {
                 **{
@@ -251,12 +254,12 @@ class ModelReviewEvaluator:
         )
         verifies_premises = (
             request.changes.configuration.value("review.evaluation_policy")
-            == "premises"
+            == "verify-claims"
         )
         answer_type = _PremiseAnswer if verifies_premises else _EvaluationAnswer
         if request.changes.configuration.value("review.evaluation_policy") in (
             "behavioral",
-            "premises",
+            "verify-claims",
         ):
             policy += (
                 "Documented intent explains a choice; it does not establish that the "
