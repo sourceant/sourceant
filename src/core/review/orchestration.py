@@ -12,6 +12,7 @@ from src.models.code_review import (
     SuggestionCategory,
     Severity,
     Verdict,
+    is_nitpick,
     severity_of,
     summary_from,
 )
@@ -28,12 +29,34 @@ from .execution import (
 from .fingerprint import of_words
 from .interfaces import ReviewPlan
 from .models import Told
+from src.core.review_performance import stage, review_session, session_id
+from src.core.review_trace import finding as trace_finding
+from src.utils.logger import logger
+
+
+def verified(finding, judgments):
+    """The finding ranked by the premises its supporting evaluations verified.
+
+    Supporters can disagree; the softest verified reading wins, so a finding
+    is never ranked above what every supporter established.
+    """
+    readings = [
+        type(finding).model_validate(
+            {**finding.model_dump(mode="json"), **judgment.premises}
+        )
+        for judgment in judgments
+        if judgment.status == EvaluationStatus.SUPPORTED and judgment.premises
+    ]
+    if not readings:
+        return finding
+    return max(readings, key=lambda one: list(Severity).index(severity_of(one)))
 
 
 class ParallelReviewOrchestrator:
     def __init__(self, deterministic: DeterministicReviewEvaluator | None = None):
         self.deterministic = deterministic or DeterministicReviewEvaluator()
 
+    @review_session
     def review(self, request: ReviewInput, plan: ReviewPlan) -> ReviewExecution:
         ParallelReviewPlan(
             tuple(plan.reviewers),
@@ -52,7 +75,19 @@ class ParallelReviewOrchestrator:
             identity = f"{participant.name}:{repetition}"
             try:
                 options = dict(request.options)
-                if isinstance(options.get("coverage"), Coverage):
+                if participant.investigations:
+                    investigation = participant.investigations[repetition - 1]
+                    options["investigation"] = investigation
+                    options["include_experts"] = False
+                if (
+                    participant.expert_repetitions is not None
+                    and repetition > participant.expert_repetitions
+                ):
+                    options["include_experts"] = False
+                if (
+                    isinstance(options.get("coverage"), Coverage)
+                    or participant.investigations
+                ):
                     options["coverage"] = coverage_by_pass[identity]
                 options["told"] = (
                     *options.get("told", ()),
@@ -61,18 +96,45 @@ class ParallelReviewOrchestrator:
                         f"Reading {identity}. Independently inspect the change.",
                     ),
                 )
+                if participant.investigations:
+                    options["told"] = (
+                        *options["told"],
+                        Told(investigation.name, investigation.question),
+                    )
+                if participant.focuses:
+                    options["told"] = (
+                        *options["told"],
+                        Told(
+                            "Review focus",
+                            participant.focuses[
+                                (repetition - 1) % len(participant.focuses)
+                            ]
+                            + " Use the supplied source as evidence. Report other concrete defects too; this focus does not restrict finding scope.",
+                        ),
+                    )
                 if request.analysis is not None:
                     options["analysis"] = request.analysis
-                answer = participant.reviewer.review(
-                    request.changes,
-                    provider=participant.provider,
-                    read_content=request.read_content,
-                    **options,
-                )
+                with stage(
+                    "discovery", participant=participant.name, repetition=repetition
+                ):
+                    answer = participant.reviewer.review(
+                        request.changes,
+                        provider=participant.provider,
+                        read_content=request.read_content,
+                        **options,
+                    )
                 if answer is not None and not isinstance(answer, CodeReview):
                     raise ValueError("A reviewer must return CodeReview or None")
                 return ParticipantOutcome(participant.name, repetition, answer)
             except Exception as error:
+                logger.warning(
+                    "review_participant_failed session=%s stage=discovery participant=%s repetition=%s error=%s reason=%s",
+                    session_id(),
+                    participant.name,
+                    repetition,
+                    type(error).__name__,
+                    str(error) if type(error) is ValueError else "",
+                )
                 return ParticipantOutcome(
                     participant.name, repetition, error=type(error).__name__
                 )
@@ -90,9 +152,10 @@ class ParallelReviewOrchestrator:
         def discover(task):
             if task is None:
                 try:
-                    answer = self.deterministic.evaluate(
-                        request, (), pass_id="deterministic:1"
-                    )
+                    with stage("static-analysis"):
+                        answer = self.deterministic.evaluate(
+                            request, (), pass_id="deterministic:1"
+                        )
                     if (
                         not isinstance(answer, ReviewEvaluation)
                         or answer.analysis is None
@@ -118,6 +181,8 @@ class ParallelReviewOrchestrator:
             for collected in coverage_by_pass.values():
                 coverage.merge(collected)
         reviews = tuple(outcomes[:-1])
+        if request.require_complete_discovery and any(one.error for one in reviews):
+            raise RuntimeError("A discovery participant failed")
         deterministic = outcomes[-1]
         analysis = (
             deterministic.result.analysis
@@ -168,11 +233,14 @@ class ParallelReviewOrchestrator:
         def evaluate(task):
             participant, repetition = task
             try:
-                result = participant.evaluator.evaluate(
-                    evaluating,
-                    tuple(one.model_copy(deep=True) for one in candidates),
-                    pass_id=f"{participant.name}:{repetition}",
-                )
+                with stage(
+                    "evaluation", participant=participant.name, repetition=repetition
+                ):
+                    result = participant.evaluator.evaluate(
+                        evaluating,
+                        tuple(one.model_copy(deep=True) for one in candidates),
+                        pass_id=f"{participant.name}:{repetition}",
+                    )
                 if (
                     not isinstance(result, ReviewEvaluation)
                     or result.analysis is not None
@@ -198,14 +266,20 @@ class ParallelReviewOrchestrator:
                         type(one.duplicate_of) is not int
                         or one.status != EvaluationStatus.SUPPORTED
                         or not 0 <= one.duplicate_of < one.candidate
-                        or candidates[one.duplicate_of].file_name
-                        != candidates[one.candidate].file_name
                     )
                     for one in result.judgments
                 ):
                     raise ValueError("An evaluator returned an invalid duplicate")
                 return ParticipantOutcome(participant.name, repetition, result)
             except Exception as error:
+                logger.warning(
+                    "review_participant_failed session=%s stage=evaluation participant=%s repetition=%s error=%s reason=%s",
+                    session_id(),
+                    participant.name,
+                    repetition,
+                    type(error).__name__,
+                    str(error) if type(error) is ValueError else "",
+                )
                 return ParticipantOutcome(
                     participant.name, repetition, error=type(error).__name__
                 )
@@ -223,8 +297,20 @@ class ParallelReviewOrchestrator:
             ),
         )
         accepted = []
+        investigation_gaps = tuple(
+            dict.fromkeys(
+                attempt.reason
+                for collected in coverage_by_pass.values()
+                for attempt in collected.attempts
+                if attempt.question == "investigation" and not attempt.answered
+            )
+        )
         judgments = {}
+        ranked = {}
         unresolved = False
+        include_nitpicks = (
+            request.changes.configuration.value("review.include_nitpicks") is True
+        )
         for index, finding in enumerate(candidates):
             valid_location = 1 <= finding.start_line <= finding.end_line
             if (
@@ -247,20 +333,48 @@ class ParallelReviewOrchestrator:
                 if judgment.candidate == index
             ]
             votes = [one.status for one in judgments[index]]
+            tally = ", ".join(
+                f"{status.value} {votes.count(status)}" for status in EvaluationStatus
+            )
+            if getattr(finding, "doubt", None):
+                tally = "doubted; " + tally
             if not valid_location:
                 unresolved = True
+                trace_finding(
+                    "acceptance", "dropped", finding, reason="invalid location"
+                )
                 continue
+            required = plan.minimum_support
+            if getattr(finding, "doubt", None):
+                required = max(required, 1)
             if (
-                votes.count(EvaluationStatus.SUPPORTED) >= plan.minimum_support
+                votes.count(EvaluationStatus.SUPPORTED) >= required
                 and votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections
             ):
+                ranked[index] = verified(finding, judgments[index])
+                if (
+                    not include_nitpicks
+                    and ranked[index] is not finding
+                    and is_nitpick(ranked[index])
+                ):
+                    trace_finding(
+                        "acceptance",
+                        "dropped",
+                        finding,
+                        reason="verified premises make it a nitpick; " + tally,
+                    )
+                    continue
                 accepted.append(index)
-            elif votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections and (
+                trace_finding("acceptance", "accepted", finding, reason=tally)
+                continue
+            if votes.count(EvaluationStatus.REJECTED) <= plan.maximum_rejections and (
                 not votes or EvaluationStatus.UNRESOLVED in votes
             ):
                 unresolved = True
+            trace_finding("acceptance", "dropped", finding, reason=tally)
         grouped = {}
         canonical = {}
+        representatives = {}
         for index in accepted:
             links = [
                 one.duplicate_of
@@ -270,20 +384,27 @@ class ParallelReviewOrchestrator:
             target = index
             if (
                 len(links) >= max(1, plan.minimum_support)
-                and links[0] in canonical
+                and links[0] is not None
                 and all(one == links[0] for one in links)
             ):
-                target = canonical[links[0]]
+                target = canonical.get(
+                    links[0], representatives.setdefault(links[0], index)
+                )
             canonical[index] = target
             grouped.setdefault(target, []).append(index)
-        retained = [
-            candidates[index] for index in grouped if index not in tool_candidates
-        ]
+            if target != index:
+                trace_finding(
+                    "grouping",
+                    "merged",
+                    candidates[index],
+                    reason=f"duplicate of candidate {target}",
+                )
+        retained = [ranked[index] for index in grouped if index not in tool_candidates]
         retained_tools = [
             tool_candidates[index] for index in grouped if index in tool_candidates
         ]
         blocking = any(
-            severity_of(candidates[index]) == Severity.BLOCKING
+            severity_of(ranked[index]) == Severity.BLOCKING
             or (index in tool_candidates and tool_candidates[index].severity == ERROR)
             for index in accepted
         )
@@ -297,6 +418,7 @@ class ParallelReviewOrchestrator:
                 or bool(analysis is not None and analysis.unavailable)
                 or bool(analysis is not None and analysis.unchecked)
                 or unresolved
+                or bool(investigation_gaps)
             )
             verdict = (
                 Verdict.REQUEST_CHANGES
@@ -323,4 +445,5 @@ class ParallelReviewOrchestrator:
             tuple(evaluations),
             analysis,
             tuple(tuple(one) for one in grouped.values()),
+            investigation_gaps,
         )

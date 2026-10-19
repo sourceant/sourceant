@@ -208,6 +208,58 @@ def test_evaluated_duplicates_merge_across_producers_but_distinct_issues_survive
     assert answer.review.verdict == Verdict.REQUEST_CHANGES
 
 
+@pytest.mark.parametrize(
+    "anchor_status", [EvaluationStatus.UNRESOLVED, EvaluationStatus.REJECTED]
+)
+def test_duplicate_group_retains_a_supported_comment_when_earlier_anchor_is_not_accepted(
+    anchor_status,
+):
+    class Multiple:
+        def review(self, *args, **options):
+            return CodeReview(
+                verdict=Verdict.COMMENT,
+                code_suggestions=[
+                    finding(),
+                    finding().model_copy(
+                        update={
+                            "file_name": "package.json",
+                            "comment": "The package omits the required file.",
+                        }
+                    ),
+                    finding().model_copy(
+                        update={"comment": "The same omitted file breaks this import."}
+                    ),
+                ],
+            )
+
+    class Challenge:
+        def evaluate(self, request, candidates, *, pass_id):
+            return ReviewEvaluation(
+                tuple(
+                    FindingEvaluation(
+                        index,
+                        anchor_status if index == 0 else EvaluationStatus.SUPPORTED,
+                        "Source establishes the package contents",
+                        ("package.json",),
+                        duplicate_of=None if index == 0 else 0,
+                    )
+                    for index in range(3)
+                )
+            )
+
+    answer = ParallelReviewOrchestrator().review(
+        request(Analysis()),
+        ParallelReviewPlan(
+            (ReviewParticipant("reader", Multiple(), object()),),
+            (EvaluationParticipant("check", Challenge(), 2),),
+            minimum_support=2,
+        ),
+    )
+    assert answer.finding_groups == ((1, 2),)
+    assert answer.review.code_suggestions[0].file_name == "package.json"
+    assert all(not one.error for one in answer.evaluations)
+
+
 @pytest.mark.parametrize("target", [-1, 1, 2, True])
 def test_invalid_duplicate_links_fail_evaluation(target):
     class Multiple:
@@ -635,3 +687,31 @@ def test_captured_reversed_range_is_retained_as_unresolved_execution_detail():
     assert not answer.review.code_suggestions
     assert answer.review.verdict == Verdict.COMMENT
     assert any("incomplete" in note for note in answer.review.summary.minor_suggestions)
+
+
+def test_doubtful_finding_needs_support_even_when_none_is_required():
+    class Doubtful:
+        def review(self, *args, **kwargs):
+            return CodeReview(
+                verdict=Verdict.COMMENT,
+                code_suggestions=[
+                    finding(),
+                    finding().model_copy(
+                        update={
+                            "comment": "A caller may rely on the old value.",
+                            "doubt": "No caller was shown.",
+                        }
+                    ),
+                ],
+            )
+
+    answer = ParallelReviewOrchestrator().review(
+        request(Analysis()),
+        ParallelReviewPlan(
+            (ReviewParticipant("reader", Doubtful(), object()),),
+            minimum_support=0,
+        ),
+    )
+    assert [one.comment for one in answer.review.code_suggestions] == [
+        finding().comment
+    ]
