@@ -1,0 +1,68 @@
+{
+  "name": "tech-debt-mcp",
+  "version": "2.0.1",
+  "description": "MCP Server for analyzing technical debt across multiple programming languages",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "tech-debt-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "watch": "tsc --watch",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "prepare": "npm run build",
+    "webhook": "PROJECT_ROOT=\"$(pwd)\"; if [ -z \"${PR_AUTOMATION_ROOT}\" ]; then echo 'Error: PR_AUTOMATION_ROOT is not set. Export it to the root of your pr-automation repo (containing scripts/webhook-listener.mjs).' >&2; exit 1; fi; node \"${PR_AUTOMATION_ROOT}/scripts/webhook-listener.mjs\""
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tech-debt",
+    "technical-debt",
+    "code-analysis",
+    "static-analysis",
+    "copilot",
+    "code-quality",
+    "sqale",
+    "typescript",
+    "javascript",
+    "python",
+    "java"
+  ],
+  "author": "Pierre Janineh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PierreJanineh/TechDebtMCP.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/PierreJanineh/TechDebtMCP#readme",
+  "bugs": {
+    "url": "https://github.com/PierreJanineh/TechDebtMCP/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "glob": "^10.3.10",
+    "ignore": "^5.3.0",
+    "minimatch": "^10.2.4",
+    "semver": "^7.5.4",
+    "toml": "^3.0.0",
+    "yaml": "^2.3.4"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.10.0",
+    "@types/semver": "^7.5.6",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

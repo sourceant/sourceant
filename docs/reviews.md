@@ -54,7 +54,13 @@ Built-in skills have the origin `system`; this describes who supplies the skill,
 
 ### Large pull requests
 
-`review.reading_budget` controls the token budget per batch. General and specialist passes run concurrently; specialist passes with explicit skill path patterns read only matching files, and an overview is prepared alongside PR review. All model calls in a process share `REVIEW_MODEL_CONCURRENCY` slots (default 6). Multiple worker processes each have their own limit.
+`review.reading_budget` controls the token budget per batch. General and specialist passes run concurrently; specialist passes with explicit skill path patterns read only matching files, and an overview is prepared alongside PR review. All model calls in a process share `REVIEW_MODEL_CONCURRENCY` slots (default 6). Batch readers follow that capacity; participant concurrency remains a separate control. Multiple worker processes each have their own limit.
+
+Premium shares diff parsing, indexes, source reads and identical skill-selection requests within a review while retaining independent discovery and evaluation calls. Snapshot source is read from pinned Git blobs in batches. Static analysis starts alongside model preparation, and local multi-batch overviews and final skill checks overlap discovery. `review.evaluation_batch_size` targets 16 candidates per evaluation call; candidates in the same file remain together, and each group retains the full diff and source context.
+
+`model.purposes` accepts `review-search` and `skill-selection` profiles alongside review, evaluation and overview profiles. Unsupported reasoning controls fail before model admission. A truncated structured response with an explicit output budget retries once at twice that budget; failure remains visible if the retry is incomplete.
+
+Performance logs identify review sessions, stage durations, model admission wait, active calls, provider errors, tokens, cache hits and completed batches. Prompts and credentials are not included in these measurements. Set `REVIEW_MODEL_CONCURRENCY=20` on a canary worker after testing provider capacity; drain active work before replacing it.
 
 Lockfiles are excluded from model passes by default. Dependency manifests remain included. `review.exclude_patterns` is a newline-separated list of glob patterns, configurable for a user, repository, workspace, or organization. Setting a list replaces the inherited list; setting an empty string includes all files. Excluded paths are recorded in review coverage.
 
@@ -108,3 +114,15 @@ Reuse is best effort: when Redis is unavailable the review is simply generated a
 Fixed-revision and uploaded snapshot reviews scan included source in memory up to 256 KB and use ripgrep (`rg`) for larger snapshots. Searches use literal, case-insensitive terms and return original source excerpts with head-revision line numbers. Prepared source is reused within the review. Hidden and ignored files remain searchable when included in the snapshot.
 
 The runtime images include ripgrep. Manual installations must install it before running source search. Missing ripgrep or a failed search is reported as unavailable coverage.
+
+Three settings, off by default, add repository context to every reading and evaluation:
+
+- `review.include_documentation_files` adds the repository's documentation, found by format (`.md`, `.mdx`, `.mdc`, `.rst`, `.txt`, `.adoc`) rather than by name. Documents nearest the change come first, within a quarter of the reading budget, and the rules they state are listed.
+- `review.include_imported_files` adds package manifests and the source the changed files import. Test dependency chains take priority over broader dependencies.
+- `review.include_callers_and_callees` adds the functions that call each changed definition and the functions it calls. They come from the code index where it resolved them; otherwise they are matched by name in the source, and each says which.
+
+Evaluators read source for the selected candidate batch and report context omitted by the reading budget. Missing evidence still requires an unresolved judgment.
+
+With `review.split_large_changes` on, a change is split into parts that each fit one model call, growing their number with the change up to `review.maximum_parts`. `review.include_change_digest` gives each part the changed files with the definitions their changed lines fall in, so a definition changed in another part is visible.
+
+Duplicate links identify the same defect independently of whether the earlier comment is supported. Different file anchors can describe one defect when one concrete fix addresses both reports. Accepted comments merge only when the supporting evaluations agree on the duplicate link; a supported comment remains available when the earlier anchor is rejected or unresolved.

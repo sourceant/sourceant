@@ -30,6 +30,7 @@ class LineMapper:
             suggestion.start_line
             and suggestion.end_line
             and suggestion.start_line < suggestion.end_line
+            and line_num == suggestion.end_line
         ):
             mapping["start_line"] = suggestion.start_line
             mapping["start_side"] = side
@@ -221,6 +222,8 @@ class LineMapper:
 
         best_match_start = None
         best_match_score = 0
+        best_distance = float("inf")
+        preferred_side = suggestion.side.value if suggestion.side else "RIGHT"
 
         for start_pos in range(num_diff_lines):
             if start_pos + num_existing > num_diff_lines:
@@ -237,9 +240,18 @@ class LineMapper:
                     match_count += 0.8
 
             score = match_count / num_existing
-            if score > best_match_score:
+            mapped = parsed_file.position_to_line.get(start_pos + 1)
+            distance = (
+                abs(mapped[0] - (suggestion.start_line or suggestion.end_line))
+                if mapped and mapped[1] == preferred_side
+                else float("inf")
+            )
+            if score > best_match_score or (
+                score == best_match_score and distance < best_distance
+            ):
                 best_match_score = score
                 best_match_start = start_pos
+                best_distance = distance
 
         if best_match_score >= 0.7 and best_match_start is not None:
             position = best_match_start + 1

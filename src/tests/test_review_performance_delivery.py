@@ -4,7 +4,7 @@ from contextlib import ExitStack
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from threading import Barrier, Lock
+from threading import Barrier, Lock, Event, BoundedSemaphore
 import unittest
 from unittest.mock import Mock, patch
 
@@ -131,6 +131,9 @@ class ReviewPerformanceTests(unittest.TestCase):
 
 
 class WebhookDeliveryTests(unittest.TestCase):
+    def test_large_webhook_review_uses_twenty_shared_slots(self):
+        self._webhook_delivery("", 0, capacity=20)
+
     def test_webhook_exclusions_and_posting_retry_do_not_regenerate(self):
         for experts, count in (("auto", 2), ("contracts", 1), ("", 0)):
             with self.subTest(experts=experts):
@@ -139,7 +142,7 @@ class WebhookDeliveryTests(unittest.TestCase):
     def test_lookup_failure_retries_native_posting(self):
         self._webhook_delivery("", 0, rejected=False)
 
-    def _webhook_delivery(self, experts, expert_count, rejected=True):
+    def _webhook_delivery(self, experts, expert_count, rejected=True, capacity=None):
         with ExitStack() as stack:
             folder = stack.enter_context(TemporaryDirectory())
             engine = create_engine(
@@ -164,6 +167,14 @@ class WebhookDeliveryTests(unittest.TestCase):
             }
             for name, value in replacements.items():
                 stack.enter_context(patch(name, value))
+            if capacity is not None:
+                for name, value in {
+                    "src.core.parallel.MODEL_CONCURRENCY": capacity,
+                    "src.core.parallel.model_slots": BoundedSemaphore(capacity),
+                    "src.plugins.builtin.code_reviewer.reviewing.MAX_AT_ONCE": capacity,
+                    "src.plugins.builtin.code_reviewer.overview.MAX_AT_ONCE": capacity,
+                }.items():
+                    stack.enter_context(patch(name, value))
             from src.core.settings.resolver import value_of
 
             stack.enter_context(
@@ -182,7 +193,12 @@ class WebhookDeliveryTests(unittest.TestCase):
             asyncio.run(plugin._initialize())
             github = Mock()
             github.get_diff.return_value = (
-                FIXTURES / "review-overview/full.diff"
+                FIXTURES
+                / (
+                    "review-overview/large.diff"
+                    if capacity is not None
+                    else "review-overview/full.diff"
+                )
             ).read_text()
             github.get_existing_bot_review_comments.return_value = []
             github.get_previous_review_summary.return_value = None
@@ -221,10 +237,23 @@ class WebhookDeliveryTests(unittest.TestCase):
             services.register(SkillLibrary, library, "test")
             barrier = Barrier(2 + expert_count)
             prompts = []
+            active = peak = 0
+            lock, admitted = Lock(), Event()
 
             def answer(**kwargs):
+                nonlocal active, peak
                 prompts.append(json.dumps(kwargs["messages"]))
-                barrier.wait(timeout=10)
+                if capacity is None:
+                    barrier.wait(timeout=10)
+                else:
+                    with lock:
+                        active += 1
+                        peak = max(peak, active)
+                        if active == capacity:
+                            admitted.set()
+                    self.assertTrue(admitted.wait(timeout=10))
+                    with lock:
+                        active -= 1
                 return captures[
                     (
                         "review"
@@ -249,10 +278,12 @@ class WebhookDeliveryTests(unittest.TestCase):
             }
             client = stack.enter_context(TestClient(app))
             for key, value in [
+                ("review.plan", "standard"),
                 ("model.name", "deepseek/deepseek-v4-flash"),
                 ("model.api_key", "your-api-key-here"),
                 ("review.exclude_patterns", "src/migrations/*"),
                 ("review.expert_passes", experts),
+                ("review.reading_budget", 2000 if capacity is not None else 15000),
             ]:
                 response = client.put(
                     f"/api/settings/user/1/{key}", json={"value": value}
@@ -272,7 +303,30 @@ class WebhookDeliveryTests(unittest.TestCase):
             services.contribute(JobHandler, ReviewPosting(), "test")
             worker = Worker(store, INTERACTIVE, services=services)
             self.assertEqual(worker.work(max_jobs=1, max_time=15), 1)
-            self.assertEqual(completion.call_count, 2 + expert_count)
+            calls = completion.call_count
+            if capacity is None:
+                self.assertEqual(calls, 2 + expert_count)
+            else:
+                self.assertEqual(peak, capacity)
+                configuration = Mock()
+                configuration.value.return_value = "src/migrations/*"
+                filtered, _ = review_diff(github.get_diff.return_value, configuration)
+                from src.plugins.builtin.code_reviewer.reviewing import _batched
+                from src.llms.litellm_provider import LiteLLMProvider
+
+                batches = len(
+                    _batched(
+                        parse_diff(filtered),
+                        2000,
+                        LiteLLMProvider(
+                            "deepseek/deepseek-v4-flash", 131072
+                        ).count_tokens,
+                    )
+                )
+                review_prompts = [
+                    prompt for prompt in prompts if "CodeReviewFindings" in prompt
+                ]
+                self.assertEqual(len(review_prompts), batches)
             self.assertTrue(
                 all("create_requirement_tables.py" not in prompt for prompt in prompts)
             )
@@ -317,7 +371,7 @@ class WebhookDeliveryTests(unittest.TestCase):
                     .values(available_at=posting["created_at"])
                 )
             self.assertEqual(worker.work(max_jobs=1, max_time=15), 1)
-            self.assertEqual(completion.call_count, 2 + expert_count)
+            self.assertEqual(completion.call_count, calls)
             self.assertNotIn("force_fallback", github.post_review.call_args.kwargs)
             with engine.connect() as connection:
                 self.assertEqual(len(connection.execute(select(ReviewRecord)).all()), 1)

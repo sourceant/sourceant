@@ -1,0 +1,623 @@
+{
+  "captured_request_id": 652,
+  "source": "import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';\nimport {\n  SupportedLanguage,\n  DebtCategory,\n  Severity,\n} from '../types/index.js';\nimport { LANGUAGE_CONFIGS } from '../config/languages.js';\nimport { requireRecord } from './argValidation.js';\nimport { MAX_CODE_LENGTH } from '../core/customRulesEngine.js';\n\n/** Typed input for analyze_project tool */\nexport interface AnalyzeProjectInput {\n  path: string;\n  languages?: SupportedLanguage[];\n  categories?: DebtCategory[];\n  severity?: Severity;\n  maxFiles?: number;\n}\n\n/** Typed input for analyze_file tool */\nexport interface AnalyzeFileInput {\n  path: string;\n}\n\n/** Typed input for get_debt_summary tool */\nexport interface GetDebtSummaryInput {\n  path: string;\n}\n\n/** Typed input for get_sqale_metrics tool */\nexport interface GetSqaleMetricsInput {\n  path: string;\n  developmentTime?: number;\n}\n\n/** Typed input for get_recommendations tool */\nexport interface GetRecommendationsInput {\n  path: string;\n  limit?: number;\n}\n\n/** Typed input for get_issues_by_severity tool */\nexport interface GetIssuesBySeverityInput {\n  path: string;\n  severity: Severity;\n}\n\n/** Typed input for get_issues_by_category tool */\nexport interface GetIssuesByCategoryInput {\n  path: string;\n  category: DebtCategory;\n}\n\n/** Typed input for add_custom_rule tool */\nexport interface AddCustomRuleInput {\n  id: string;\n  pattern: string;\n  message: string;\n  severity: Severity;\n  category: DebtCategory;\n  suggestion?: string;\n  languages?: SupportedLanguage[];\n  flags?: string;\n}\n\n/** Typed input for remove_custom_rule tool */\nexport interface RemoveCustomRuleInput {\n  id: string;\n}\n\n/** Typed input for execute_custom_rules tool */\nexport interface ExecuteCustomRulesInput {\n  path?: string;\n  code?: string;\n  language?: string;\n}\n\n/** Typed input for validate_custom_pattern tool */\nexport interface ValidateCustomPatternInput {\n  id: string;\n  pattern: string;\n  message: string;\n  severity: Severity;\n  category: DebtCategory;\n}\n\nconst VALID_SEVERITIES: Severity[] = ['low', 'medium', 'high', 'critical'];\nconst VALID_CATEGORIES: DebtCategory[] = [\n  'dependency',\n  'code-quality',\n  'architecture',\n  'documentation',\n  'testing',\n  'security',\n  'performance',\n  'maintainability',\n];\n/** Derived from LANGUAGE_CONFIGS keys to stay in sync with supported languages. */\nconst VALID_LANGUAGES: SupportedLanguage[] = Object.keys(LANGUAGE_CONFIGS) as SupportedLanguage[];\n\n/**\n * Assert that a value is a non-empty string, throwing McpError if not.\n */\nfunction requireString(args: Record<string, unknown>, key: string): string {\n  const value = args[key];\n  if (typeof value !== 'string' || value.length === 0) {\n    throw new McpError(ErrorCode.InvalidParams, `Missing or invalid parameter: ${key}`);\n  }\n  return value;\n}\n\n/**\n * Narrow a raw value to Severity, throwing McpError if invalid or missing.\n */\nfunction requireSeverity(args: Record<string, unknown>, key: string): Severity {\n  const raw = args[key];\n  if (typeof raw !== 'string' || raw.length === 0) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `Missing or invalid parameter: ${key}`,\n    );\n  }\n  const value = raw as Severity;\n  if (!VALID_SEVERITIES.includes(value)) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `Invalid ${key}: must be one of ${VALID_SEVERITIES.join(', ')}`,\n    );\n  }\n  return value;\n}\n\n/**\n * Narrow a raw value to DebtCategory, throwing McpError if invalid or missing.\n */\nfunction requireCategory(args: Record<string, unknown>, key: string): DebtCategory {\n  const raw = args[key];\n  if (typeof raw !== 'string' || raw.length === 0) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `Missing or invalid parameter: ${key}`,\n    );\n  }\n  const value = raw as DebtCategory;\n  if (!VALID_CATEGORIES.includes(value)) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `Invalid ${key}: must be one of ${VALID_CATEGORIES.join(', ')}`,\n    );\n  }\n  return value;\n}\n\n/**\n * Optionally narrow an array of strings to SupportedLanguage[].\n * Returns undefined if the field is absent; throws McpError for null or invalid entries.\n */\nfunction optionalLanguages(\n  args: Record<string, unknown>,\n  key: string,\n): SupportedLanguage[] | undefined {\n  const value = args[key];\n  if (value === undefined) return undefined;\n  if (!Array.isArray(value)) {\n    throw new McpError(ErrorCode.InvalidParams, `${key} must be an array`);\n  }\n  for (const lang of value) {\n    if (!VALID_LANGUAGES.includes(lang as SupportedLanguage)) {\n      throw new McpError(\n        ErrorCode.InvalidParams,\n        `Invalid language '${lang}': must be one of ${VALID_LANGUAGES.join(', ')}`,\n      );\n    }\n  }\n  return value as SupportedLanguage[];\n}\n\n/**\n * Optionally narrow an array of strings to DebtCategory[].\n * Returns undefined if the field is absent; throws McpError for null or invalid entries.\n */\nfunction optionalCategories(\n  args: Record<string, unknown>,\n  key: string,\n): DebtCategory[] | undefined {\n  const value = args[key];\n  if (value === undefined) return undefined;\n  if (!Array.isArray(value)) {\n    throw new McpError(ErrorCode.InvalidParams, `${key} must be an array`);\n  }\n  for (const cat of value) {\n    if (!VALID_CATEGORIES.includes(cat as DebtCategory)) {\n      throw new McpError(\n        ErrorCode.InvalidParams,\n        `Invalid category '${cat}': must be one of ${VALID_CATEGORIES.join(', ')}`,\n      );\n    }\n  }\n  return value as DebtCategory[];\n}\n\n/** Optional Severity field \u2014 returns undefined if absent; throws McpError for null. */\nfunction optionalSeverity(\n  args: Record<string, unknown>,\n  key: string,\n): Severity | undefined {\n  const value = args[key];\n  if (value === undefined) return undefined;\n  if (!VALID_SEVERITIES.includes(value as Severity)) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `Invalid ${key}: must be one of ${VALID_SEVERITIES.join(', ')}`,\n    );\n  }\n  return value as Severity;\n}\n\n/** Optional number field \u2014 returns undefined if absent. Rejects null, NaN, and Infinity. */\nfunction optionalNumber(\n  args: Record<string, unknown>,\n  key: string,\n): number | undefined {\n  const value = args[key];\n  if (value === undefined) return undefined;\n  if (typeof value !== 'number') {\n    throw new McpError(ErrorCode.InvalidParams, `${key} must be a number`);\n  }\n  if (!Number.isFinite(value)) {\n    throw new McpError(ErrorCode.InvalidParams, `${key} must be a finite number`);\n  }\n  return value;\n}\n\n/**\n * Optional positive-integer field \u2014 returns undefined if absent.\n * Rejects null, NaN, Infinity, non-integers, and values less than 1.\n */\nfunction optionalPositiveInteger(\n  args: Record<string, unknown>,\n  key: string,\n): number | undefined {\n  const value = args[key];\n  if (value === undefined) return undefined;\n  if (typeof value !== 'number') {\n    throw new McpError(ErrorCode.InvalidParams, `${key} must be an integer (>= 1)`);\n  }\n  if (!Number.isFinite(value)) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `${key} must be a finite number (NaN and Infinity are not allowed)`,\n    );\n  }\n  if (!Number.isInteger(value) || value < 1) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `${key} must be a finite positive integer (minimum value: 1)`,\n    );\n  }\n  return value;\n}\n\n/** Optional string field \u2014 returns undefined if absent; throws McpError for null. */\nfunction optionalString(\n  args: Record<string, unknown>,\n  key: string,\n): string | undefined {\n  const value = args[key];\n  if (value === undefined) return undefined;\n  if (typeof value !== 'string') {\n    throw new McpError(ErrorCode.InvalidParams, `${key} must be a string`);\n  }\n  return value;\n}\n\n/**\n * Parse and validate typed input for the analyze_project tool.\n */\nexport function parseAnalyzeProjectInput(\n  args: unknown,\n): AnalyzeProjectInput {\n  const a = requireRecord(args);\n  return {\n    path: requireString(a, 'path'),\n    languages: optionalLanguages(a, 'languages'),\n    categories: optionalCategories(a, 'categories'),\n    severity: optionalSeverity(a, 'severity'),\n    maxFiles: optionalPositiveInteger(a, 'maxFiles'),\n  };\n}\n\n/**\n * Parse and validate typed input for the analyze_file tool.\n */\nexport function parseAnalyzeFileInput(\n  args: unknown,\n): AnalyzeFileInput {\n  const a = requireRecord(args);\n  return { path: requireString(a, 'path') };\n}\n\n/**\n * Parse and validate typed input for the get_debt_summary tool.\n */\nexport function parseGetDebtSummaryInput(\n  args: unknown,\n): GetDebtSummaryInput {\n  const a = requireRecord(args);\n  return { path: requireString(a, 'path') };\n}\n\n/**\n * Parse and validate typed input for the get_sqale_metrics tool.\n */\nexport function parseGetSqaleMetricsInput(\n  args: unknown,\n): GetSqaleMetricsInput {\n  const a = requireRecord(args);\n  return {\n    path: requireString(a, 'path'),\n    developmentTime: optionalNumber(a, 'developmentTime'),\n  };\n}\n\n/**\n * Parse and validate typed input for the get_recommendations tool.\n */\nexport function parseGetRecommendationsInput(\n  args: unknown,\n): GetRecommendationsInput {\n  const a = requireRecord(args);\n  return {\n    path: requireString(a, 'path'),\n    limit: optionalPositiveInteger(a, 'limit'),\n  };\n}\n\n/**\n * Parse and validate typed input for the get_issues_by_severity tool.\n */\nexport function parseGetIssuesBySeverityInput(\n  args: unknown,\n): GetIssuesBySeverityInput {\n  const a = requireRecord(args);\n  return {\n    path: requireString(a, 'path'),\n    severity: requireSeverity(a, 'severity'),\n  };\n}\n\n/**\n * Parse and validate typed input for the get_issues_by_category tool.\n */\nexport function parseGetIssuesByCategoryInput(\n  args: unknown,\n): GetIssuesByCategoryInput {\n  const a = requireRecord(args);\n  return {\n    path: requireString(a, 'path'),\n    category: requireCategory(a, 'category'),\n  };\n}\n\n/**\n * Parse and validate typed input for the add_custom_rule tool.\n */\nexport function parseAddCustomRuleInput(\n  args: unknown,\n): AddCustomRuleInput {\n  const a = requireRecord(args);\n  return {\n    id: requireString(a, 'id'),\n    pattern: requireString(a, 'pattern'),\n    message: requireString(a, 'message'),\n    severity: requireSeverity(a, 'severity'),\n    category: requireCategory(a, 'category'),\n    suggestion: optionalString(a, 'suggestion'),\n    languages: optionalLanguages(a, 'languages'),\n    flags: optionalString(a, 'flags'),\n  };\n}\n\n/**\n * Parse and validate typed input for the remove_custom_rule tool.\n */\nexport function parseRemoveCustomRuleInput(\n  args: unknown,\n): RemoveCustomRuleInput {\n  const a = requireRecord(args);\n  return { id: requireString(a, 'id') };\n}\n\n/**\n * Parse and validate typed input for the execute_custom_rules tool.\n */\nexport function parseExecuteCustomRulesInput(\n  args: unknown,\n): ExecuteCustomRulesInput {\n  const a = requireRecord(args);\n  const code = optionalString(a, 'code');\n  if (code !== undefined && code.length > MAX_CODE_LENGTH) {\n    throw new McpError(\n      ErrorCode.InvalidParams,\n      `Inline code exceeds maximum length of ${MAX_CODE_LENGTH} characters`,\n    );\n  }\n  return {\n    path: optionalString(a, 'path'),\n    code,\n    language: optionalString(a, 'language'),\n  };\n}\n\n/**\n * Parse and validate typed input for the validate_custom_pattern tool.\n */\nexport function parseValidateCustomPatternInput(\n  args: unknown,\n): ValidateCustomPatternInput {\n  const a = requireRecord(args);\n  return {\n    id: requireString(a, 'id'),\n    pattern: requireString(a, 'pattern'),\n    message: requireString(a, 'message'),\n    severity: requireSeverity(a, 'severity'),\n    category: requireCategory(a, 'category'),\n  };\n}\n",
+  "path": "src/server/inputParser.ts",
+  "candidates": [
+    {
+      "candidate": 0,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 76,
+        "start_line": 266,
+        "end_line": 266,
+        "side": "RIGHT",
+        "comment": "`pattern.flags` can be a non-string (e.g. a numeric `flags` in `.techdebtrc.json`, which `isCustomPatternShape` does not type-check). Calling `.replace` then throws a TypeError outside the `try`, so `validate_config` errors out instead of reporting an invalid-flags message. Guard with `typeof pattern.flags === 'string'`.",
+        "category": "BUG",
+        "trigger": "anyone",
+        "blast": "one",
+        "impact": "crash",
+        "certainty": "conditional",
+        "comment_only": false,
+        "suggested_code": "        const stripped = typeof pattern.flags === 'string'\n          ? pattern.flags.replace(/[^gimsuy]/g, '')\n          : 'g';",
+        "existing_code": "        const stripped = pattern.flags !== undefined\n          ? pattern.flags.replace(/[^gimsuy]/g, '')\n          : 'g';",
+        "claims": [
+          {
+            "subject": "CustomRulesEngine.validatePattern",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "ALLOWED_FLAGS_RE",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 1,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 4,
+        "start_line": 22,
+        "end_line": 22,
+        "side": "RIGHT",
+        "comment": "Length caps do not stop ReDoS: a 7-character pattern such as `(a+)+$` still backtracks exponentially on the 500 000-character input permitted by `MAX_CODE_LENGTH`, so the CHANGELOG claim of 'preventing ReDoS attacks' is overstated. Add a regex-safety check or an execution timeout instead of relying on length alone.",
+        "category": "SECURITY",
+        "trigger": "anyone",
+        "blast": "one",
+        "impact": "hang",
+        "certainty": "conditional",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "/**\n * Maximum allowed length in UTF-16 code units for a user-supplied regex\n * pattern string. Patterns longer than this are rejected to prevent DoS via large patterns.\n */\nconst MAX_PATTERN_LENGTH = 1_000;",
+        "claims": [
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "MAX_CODE_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 2,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 16,
+        "start_line": 34,
+        "end_line": 34,
+        "side": "RIGHT",
+        "comment": "Length caps do not prevent catastrophic backtracking: a tiny pattern such as `(a+)+$` against input up to 500 000 chars still hangs the process, so the claimed ReDoS protection is unmet. Reject nested quantifiers/backreferences or use a bounded engine (RE2) / a wall-clock step limit; capping size alone is not a guard.",
+        "category": "SECURITY",
+        "trigger": "anyone",
+        "blast": "everyone",
+        "impact": "hang",
+        "certainty": "conditional",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "/**\n * Maximum allowed string length for the inline `code` parameter passed to\n * `execute_custom_rules`. This caps the input fed to regex matching per call.\n * Enforced using JavaScript string length semantics (`string.length`).\n */\nexport const MAX_CODE_LENGTH = 500_000;",
+        "claims": [
+          {
+            "subject": "MAX_CODE_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 3,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 76,
+        "start_line": 266,
+        "end_line": 266,
+        "side": "RIGHT",
+        "comment": "`pattern.flags` is only tested with `!== undefined`, but `isCustomPatternShape` never type-checks `flags`, so a `null`/numeric value from `.techdebtrc.json` reaches `.replace()` and throws a TypeError, crashing `validatePattern` (the old `|| 'g'` degraded gracefully). Guard with `typeof pattern.flags === 'string'`.",
+        "category": "BUG",
+        "trigger": "operator",
+        "blast": "one",
+        "impact": "crash",
+        "certainty": "possible",
+        "comment_only": false,
+        "suggested_code": "        const stripped = typeof pattern.flags === 'string'\n          ? pattern.flags.replace(/[^gimsuy]/g, '')\n          : 'g';",
+        "existing_code": "        const stripped = pattern.flags !== undefined\n          ? pattern.flags.replace(/[^gimsuy]/g, '')\n          : 'g';",
+        "claims": [
+          {
+            "subject": "ALLOWED_FLAGS_RE",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 4,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 47,
+        "start_line": 148,
+        "end_line": 148,
+        "side": "RIGHT",
+        "comment": "Same non-string hazard at execution time: `pattern.flags` of `null`/number reaches `.replace()` and throws, aborting `executeRules` instead of skipping the bad flag. Apply the same `typeof pattern.flags === 'string'` guard here.",
+        "category": "BUG",
+        "trigger": "service",
+        "blast": "one",
+        "impact": "crash",
+        "certainty": "possible",
+        "comment_only": false,
+        "suggested_code": "      const stripped = typeof pattern.flags === 'string'\n        ? pattern.flags.replace(/[^gimsuy]/g, '')\n        : 'g';",
+        "existing_code": "      const stripped = pattern.flags !== undefined\n        ? pattern.flags.replace(/[^gimsuy]/g, '')\n        : 'g';",
+        "claims": [
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 5,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 47,
+        "start_line": 148,
+        "end_line": 148,
+        "side": "RIGHT",
+        "comment": "This strip-and-dedupe flag normalization is duplicated verbatim in `validatePattern` (lines 266-270), and the allowlist is encoded twice (`ALLOWED_FLAGS_RE` vs the `[^gimsuy]` strip pattern). If one encoding is edited without the other, validation can accept a flag that execution silently strips, so the two paths disagree. Extract one shared `normalizeFlags(flags)` helper and derive both from a single source.",
+        "category": "REFACTOR",
+        "trigger": "deploy",
+        "blast": "nobody",
+        "impact": "none",
+        "certainty": "possible",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "+      const stripped = pattern.flags !== undefined\n+        ? pattern.flags.replace(/[^gimsuy]/g, '')\n+        : 'g';\n+      const deduped = Array.from(new Set(stripped.split(''))).join('');\n+      const safeFlags = deduped.length > 0 ? deduped : 'g';\n+      const regex = new RegExp(pattern.pattern, safeFlags);",
+        "claims": [
+          {
+            "subject": "ALLOWED_FLAGS_RE",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 6,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 8,
+        "start_line": 26,
+        "end_line": 26,
+        "side": "RIGHT",
+        "comment": "Length caps alone do not prevent ReDoS. Catastrophic backtracking comes from short patterns such as `(a+)+$` matched against large input, which a 1,000-char pattern and 500,000-char input still permit, so a caller can still hang execution. Add a backtracking/safe-regex check or a match timeout to actually bound runtime.",
+        "category": "SECURITY",
+        "trigger": "anyone",
+        "blast": "everyone",
+        "impact": "hang",
+        "certainty": "conditional",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "+const MAX_PATTERN_LENGTH = 1_000;",
+        "claims": [
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "MAX_CODE_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 7,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 35,
+        "start_line": 137,
+        "end_line": 137,
+        "side": "RIGHT",
+        "comment": "A 1000-character cap does not prevent ReDoS: a short pattern like `(a+)+$` still backtracks catastrophically against the 500 KB input, hanging the single-threaded server. Length limits alone are insufficient; add a safe-regex check or enforce a matching timeout (e.g. worker thread) to actually bound execution time.",
+        "category": "SECURITY",
+        "trigger": "anyone",
+        "blast": "everyone",
+        "impact": "hang",
+        "certainty": "possible",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "      // Defense-in-depth: reject oversized patterns even if they bypassed validatePattern().\n      if (pattern.pattern.length > MAX_PATTERN_LENGTH) {\n        if (this.onRuleError) {\n          this.onRuleError(\n            pattern.id,\n            new Error(`Pattern exceeds maximum length of ${MAX_PATTERN_LENGTH} characters`)\n          );\n        }\n        return [];\n      }",
+        "claims": [
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 8,
+      "finding": {
+        "file_name": "CHANGELOG.md",
+        "position": 4,
+        "start_line": 36,
+        "end_line": 36,
+        "side": "RIGHT",
+        "comment": "This entry claims the change prevents ReDoS, but the length cap and flag allowlist do not stop catastrophic backtracking from short patterns. Reword to state only the added size/flag limits and avoid asserting a complete mitigation that the code does not provide.",
+        "category": "DOCUMENTATION",
+        "trigger": "operator",
+        "blast": "nobody",
+        "impact": "none",
+        "certainty": "always",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "- Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, preventing ReDoS attacks (#127)",
+        "claims": []
+      }
+    },
+    {
+      "candidate": 9,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 21,
+        "start_line": 39,
+        "end_line": 39,
+        "side": "RIGHT",
+        "comment": "Length caps do not bound catastrophic backtracking. A short pattern such as `(a+)+$` run against the permitted 500,000-char `code` (or a 500,000-byte file) still hangs the single-threaded Node process, so the PR's ReDoS claim is unmet. Add a ReDoS-safe check (e.g. `safe-regex`) or run matching in a worker with a timeout.",
+        "category": "SECURITY",
+        "trigger": "anyone",
+        "blast": "everyone",
+        "impact": "hang",
+        "certainty": "conditional",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "export const MAX_CODE_LENGTH = 500_000;",
+        "claims": [
+          {
+            "subject": "MAX_CODE_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 10,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 47,
+        "start_line": 148,
+        "end_line": 148,
+        "side": "RIGHT",
+        "comment": "This flag-normalization is duplicated verbatim in `validatePattern` (lines 266-270). If the two copies drift, validation and execution will disagree about which flags are accepted, re-opening a RegExp construction error. Extract a shared `normalizeFlags(flags)` helper and call it from both sites.",
+        "category": "REFACTOR",
+        "trigger": "deploy",
+        "blast": "nobody",
+        "impact": "none",
+        "certainty": "possible",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "      const stripped = pattern.flags !== undefined\n        ? pattern.flags.replace(/[^gimsuy]/g, '')\n        : 'g';\n      const deduped = Array.from(new Set(stripped.split(''))).join('');\n      const safeFlags = deduped.length > 0 ? deduped : 'g';",
+        "claims": []
+      }
+    },
+    {
+      "candidate": 11,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 35,
+        "start_line": 137,
+        "end_line": 137,
+        "side": "RIGHT",
+        "comment": "Capping the pattern at 1000 chars does not stop ReDoS: catastrophic backtracking comes from quantifier structure (e.g. `(a+)+$`, 6 chars), not pattern length, and 500k input is ample to hang the single-threaded server. The \"preventing ReDoS\" claim is therefore not met; reduce input caps drastically, reject nested-quantifier patterns (e.g. a safe-regex check), or run matching under a timeout.",
+        "category": "SECURITY",
+        "trigger": "authenticated",
+        "blast": "one",
+        "impact": "hang",
+        "certainty": "conditional",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "      // Defense-in-depth: reject oversized patterns even if they bypassed validatePattern().\n      if (pattern.pattern.length > MAX_PATTERN_LENGTH) {\n        if (this.onRuleError) {\n          this.onRuleError(\n            pattern.id,\n            new Error(`Pattern exceeds maximum length of ${MAX_PATTERN_LENGTH} characters`)\n          );\n        }\n        return [];\n      }",
+        "claims": [
+          {
+            "subject": "MAX_PATTERN_LENGTH",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 12,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 47,
+        "start_line": 148,
+        "end_line": 148,
+        "side": "RIGHT",
+        "comment": "The `gimsuy` allowlist is now encoded twice \u2014 as `ALLOWED_FLAGS_RE` in `validatePattern` and as the inline `/[^gimsuy]/g` here \u2014 so the two can silently diverge, letting validation and execution disagree on accepted flags. Extract a single `normalizeFlags()`/strip helper (or a paired strip constant) and call it from both sites.",
+        "category": "REFACTOR",
+        "trigger": "authenticated",
+        "blast": "one",
+        "impact": "none",
+        "certainty": "possible",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "      const stripped = pattern.flags !== undefined\n        ? pattern.flags.replace(/[^gimsuy]/g, '')\n        : 'g';\n      const deduped = Array.from(new Set(stripped.split(''))).join('');\n      const safeFlags = deduped.length > 0 ? deduped : 'g';",
+        "claims": [
+          {
+            "subject": "ALLOWED_FLAGS_RE",
+            "predicate": "DEFINED",
+            "expected": true
+          },
+          {
+            "subject": "normalizeFlags",
+            "predicate": "DEFINED",
+            "expected": false
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 13,
+      "finding": {
+        "file_name": "CHANGELOG.md",
+        "position": 4,
+        "start_line": 36,
+        "end_line": 36,
+        "side": "RIGHT",
+        "comment": "The entry claims the length cap and flag allowlist prevent ReDoS, but neither stops catastrophic backtracking: a pattern like `(a+)+$` (well under 1 000 chars) against the 500 000-char input still hangs the process. Reword to present these as defense-in-depth bounds, not ReDoS prevention.",
+        "category": "DOCUMENTATION",
+        "trigger": "anyone",
+        "blast": "nobody",
+        "impact": "none",
+        "certainty": "always",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "+Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, preventing ReDoS attacks (#127)",
+        "claims": []
+      }
+    },
+    {
+      "candidate": 14,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": 47,
+        "start_line": 148,
+        "end_line": 148,
+        "side": "RIGHT",
+        "comment": "Flag normalization (strip `[^gimsuy]`, de-duplicate, default to `g`) is duplicated here and again in `validatePattern`, so the two can silently drift and validate with different flags than execution uses. Extract one helper, e.g. `normalizeFlags(flags?)`, and call it from both sites.",
+        "category": "REFACTOR",
+        "trigger": "automation",
+        "blast": "nobody",
+        "impact": "none",
+        "certainty": "possible",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "+      const stripped = pattern.flags !== undefined\n+        ? pattern.flags.replace(/[^gimsuy]/g, '')\n+        : 'g';\n+      const deduped = Array.from(new Set(stripped.split(''))).join('');\n+      const safeFlags = deduped.length > 0 ? deduped : 'g';",
+        "claims": []
+      }
+    },
+    {
+      "candidate": 15,
+      "finding": {
+        "file_name": "src/server/__tests__/handlers.test.ts",
+        "position": 12,
+        "start_line": 11,
+        "end_line": 11,
+        "side": "RIGHT",
+        "comment": "The inline `CustomRulesEngine` mock defines no static `validatePattern`, but `handleAddCustomRule` and `handleValidateCustomPattern` both call it, so any test dispatching `add_custom_rule`/`validate_custom_pattern` now throws `TypeError: CustomRulesEngine.validatePattern is not a function`. Add a static mock such as `static validatePattern = jest.fn(() => ({ valid: true, errors: [] }))`.",
+        "category": "BUG",
+        "trigger": "automation",
+        "blast": "nobody",
+        "impact": "crash",
+        "certainty": "conditional",
+        "comment_only": true,
+        "suggested_code": null,
+        "existing_code": "+  CustomRulesEngine: class {\n+    addRule = jest.fn();",
+        "claims": [
+          {
+            "subject": "CustomRulesEngine.validatePattern",
+            "predicate": "DEFINED",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 16,
+      "finding": {
+        "file_name": "CHANGELOG.md",
+        "position": 4,
+        "start_line": 36,
+        "end_line": 36,
+        "side": "RIGHT",
+        "comment": "These caps do not \"prevent\" ReDoS: a short catastrophic-backtracking pattern (e.g. `(a+)+$`, well under the 1 000-char cap) still hangs on far fewer than 500 000 input characters, so ReDoS remains reachable. Reword the entry to describe reduced risk/blast radius rather than prevention.",
+        "category": "DOCUMENTATION",
+        "trigger": "anyone",
+        "blast": "everyone",
+        "impact": "none",
+        "certainty": "always",
+        "comment_only": false,
+        "suggested_code": "- Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, reducing the blast radius of ReDoS (#127)",
+        "existing_code": "- Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, preventing ReDoS attacks (#127)",
+        "claims": []
+      }
+    },
+    {
+      "candidate": 17,
+      "finding": {
+        "file_name": "src/server/__tests__/handlers.test.ts",
+        "position": 11,
+        "start_line": 10,
+        "end_line": 10,
+        "side": "RIGHT",
+        "comment": "The replacement mock class omits the static `CustomRulesEngine.validatePattern` that `handleAddCustomRule` and `handleValidateCustomPattern` call. Any test that now invokes the captured tool handler for `add_custom_rule` or `validate_custom_pattern` will throw `TypeError: CustomRulesEngine.validatePattern is not a function`. Add the static stub.",
+        "category": "BUG",
+        "trigger": "automation",
+        "blast": "nobody",
+        "impact": "none",
+        "certainty": "possible",
+        "comment_only": false,
+        "suggested_code": "jest.mock('../../core/customRulesEngine.js', () => ({\n  CustomRulesEngine: class {\n    static validatePattern = jest.fn(() => ({ valid: true, errors: [] }));\n    addRule = jest.fn();\n    removeRule = jest.fn(() => false);\n    getAllRules = jest.fn(() => []);\n    hasRule = jest.fn(() => false);\n    getRuleStats = jest.fn(() => ({ totalRules: 0, bySeverity: {}, byCategory: {} }));\n    executeRules = jest.fn(() => []);\n  },\n  MAX_CODE_LENGTH: 500_000,\n  MAX_FILE_SIZE_BYTES: 500_000,\n}));",
+        "existing_code": "jest.mock('../../core/customRulesEngine.js', () => ({\n  CustomRulesEngine: class {\n    addRule = jest.fn();\n    removeRule = jest.fn(() => false);\n    getAllRules = jest.fn(() => []);\n    hasRule = jest.fn(() => false);\n    getRuleStats = jest.fn(() => ({ totalRules: 0, bySeverity: {}, byCategory: {} }));\n    executeRules = jest.fn(() => []);\n  },\n  MAX_CODE_LENGTH: 500_000,\n  MAX_FILE_SIZE_BYTES: 500_000,\n}));",
+        "claims": [
+          {
+            "subject": "CustomRulesEngine.validatePattern",
+            "predicate": "DEFINED",
+            "expected": false
+          }
+        ]
+      }
+    },
+    {
+      "candidate": 18,
+      "finding": {
+        "file_name": "CHANGELOG.md",
+        "position": 4,
+        "start_line": 36,
+        "end_line": 36,
+        "side": "RIGHT",
+        "comment": "The caps bound input size but do not prevent ReDoS: a short catastrophic pattern (e.g. `(a+)+$`) still backtracks exponentially over up to 500 000 characters. Reword the claim to 'mitigating' so the changelog does not overstate the guarantee.",
+        "category": "DOCUMENTATION",
+        "trigger": "anyone",
+        "blast": "nobody",
+        "impact": "none",
+        "certainty": "possible",
+        "comment_only": false,
+        "suggested_code": "- Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, mitigating ReDoS attacks (#127)",
+        "existing_code": "- Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, preventing ReDoS attacks (#127)",
+        "claims": []
+      }
+    },
+    {
+      "candidate": 19,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": null,
+        "start_line": 153,
+        "end_line": 153,
+        "side": "RIGHT",
+        "comment": "[warning] src/core/customRulesEngine.ts:153 (semgrep detect-non-literal-regexp): RegExp() called with a `pattern` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+        "category": "IMPROVEMENT",
+        "trigger": null,
+        "blast": null,
+        "impact": null,
+        "certainty": null,
+        "comment_only": false,
+        "suggested_code": "",
+        "existing_code": null,
+        "claims": []
+      }
+    },
+    {
+      "candidate": 20,
+      "finding": {
+        "file_name": "src/core/customRulesEngine.ts",
+        "position": null,
+        "start_line": 272,
+        "end_line": 272,
+        "side": "RIGHT",
+        "comment": "[warning] src/core/customRulesEngine.ts:272 (semgrep detect-non-literal-regexp): RegExp() called with a `pattern` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+        "category": "IMPROVEMENT",
+        "trigger": null,
+        "blast": null,
+        "impact": null,
+        "certainty": null,
+        "comment_only": false,
+        "suggested_code": "",
+        "existing_code": null,
+        "claims": []
+      }
+    }
+  ],
+  "diff": "diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md\nindex a074fe2..66cec1f 100644\n--- a/ARCHITECTURE.md\n+++ b/ARCHITECTURE.md\n@@ -328,7 +328,7 @@ The server is split into focused modules under `src/server/`:\n - `static createSimplePattern()` \u2014 Helper to create patterns\n \n **Features:**\n-- Regex pattern matching with configurable flags (g, i, m, s, etc.)\n+- Regex pattern matching with configurable flags (allowlist: `gimsuy`; patterns capped at 1 000 characters; inline `code` capped at 500 000 characters; `path` inputs capped at 500 000 bytes before reading)\n - Language-specific rule filtering\n - Multiple matches per line support\n - Cross-platform line ending support (\\r\\n and \\n)\ndiff --git a/CHANGELOG.md b/CHANGELOG.md\nindex b0fb2bb..386d5f1 100644\n--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0\n - Eliminated analyzer false positives via `ruleExclusions` config mechanism (#78)\n - Replaced non-null assertions with destructured variables in `analysisEngine` (#101)\n - Security: absolute filesystem paths no longer leaked in `scanErrors` returned to MCP clients; `findPackageFiles` now uses `getRelativePath()` for error messages (#129)\n+- Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, preventing ReDoS attacks (#127)\n \n ### Added\n - Direct unit tests for `swiftUiChecks` and `swiftUiChecksPhase2` modules\ndiff --git a/README.md b/README.md\nindex 7c88807..f21b7d3 100644\n--- a/README.md\n+++ b/README.md\n@@ -254,7 +254,9 @@ Add a custom pattern-based tech debt rule.\n - `category` (required): One of the debt categories\n - `suggestion` (optional): How to fix the issue\n - `languages` (optional): Apply only to specific languages\n-- `flags` (optional): Regex flags (g, i, m, s, etc.)\n+- `flags` (optional): Regex flags for `add_custom_rule` \u2014 only `g`, `i`, `m`, `s`, `u`, and `y` are accepted; any other character causes validation to reject the rule outright\n+\n+  > **Note:** At execution time, unsupported flag characters are still stripped as a defense-in-depth safeguard if a rule bypasses normal validation, and duplicate characters are de-duplicated to prevent `RegExp` construction errors. If stripping and deduplication leave no valid flags, execution defaults to `g`.\n \n **Example custom rules:**\n \n@@ -294,18 +296,18 @@ List all active custom rules with their statistics. No parameters.\n \n Run all custom rules against code or a file.\n \n-- `path` (optional): Path to the file to analyze\n-- `code` (optional): Code content to analyze directly\n+- `path` (optional): Path to the file to analyze (file size limited to 500,000 bytes before reading)\n+- `code` (optional): Code content to analyze directly (limited to 500,000 characters)\n - `language` (optional): Programming language for filtering rules\n \n _Either `path` or `code` must be provided._\n \n ### `validate_custom_pattern`\n \n-Validate a custom pattern before adding it as a rule.\n+Validate a custom pattern before adding it as a rule. Enforces the same 1,000-character pattern cap as `add_custom_rule`.\n \n - `id` (required): Unique identifier for the rule\n-- `pattern` (required): Regex pattern to validate\n+- `pattern` (required): Regex pattern to validate (limited to 1,000 characters)\n - `message` (required): Issue title/message\n - `severity` (required): low, medium, high, or critical\n - `category` (required): One of the debt categories\ndiff --git a/src/core/__tests__/customRulesEngine.test.ts b/src/core/__tests__/customRulesEngine.test.ts\nindex bfd79fc..5ffbc5c 100644\n--- a/src/core/__tests__/customRulesEngine.test.ts\n+++ b/src/core/__tests__/customRulesEngine.test.ts\n@@ -231,6 +231,82 @@ console.log(\"test3\");`;\n       const validation = CustomRulesEngine.validatePattern(pattern);\n       expect(validation.valid).toBe(false);\n     });\n+\n+    it('rejects pattern whose length exceeds 1000 characters', () => {\n+      const pattern: CustomPattern = {\n+        id: 'long-rule',\n+        pattern: 'a'.repeat(1001),\n+        severity: 'low',\n+        category: 'code-quality',\n+        message: 'Too long',\n+      };\n+\n+      const validation = CustomRulesEngine.validatePattern(pattern);\n+      expect(validation.valid).toBe(false);\n+      expect(validation.errors.some(e => e.includes('maximum length'))).toBe(true);\n+    });\n+\n+    it('accepts pattern exactly at the 1000-character limit', () => {\n+      const pattern: CustomPattern = {\n+        id: 'boundary-rule',\n+        pattern: 'a'.repeat(1000),\n+        severity: 'low',\n+        category: 'code-quality',\n+        message: 'At boundary',\n+      };\n+\n+      const validation = CustomRulesEngine.validatePattern(pattern);\n+      expect(validation.valid).toBe(true);\n+    });\n+\n+    it('rejects flags containing disallowed characters', () => {\n+      const pattern: CustomPattern = {\n+        id: 'bad-flags-rule',\n+        pattern: 'test',\n+        flags: 'gx',  // 'x' is not a valid JS regex flag\n+        severity: 'low',\n+        category: 'code-quality',\n+        message: 'Bad flags',\n+      };\n+\n+      const validation = CustomRulesEngine.validatePattern(pattern);\n+      expect(validation.valid).toBe(false);\n+      expect(validation.errors.some(e => e.includes('Invalid regex flags'))).toBe(true);\n+    });\n+\n+    it('accepts all valid flag characters', () => {\n+      const pattern: CustomPattern = {\n+        id: 'good-flags-rule',\n+        pattern: 'test',\n+        flags: 'gimsuy',\n+        severity: 'low',\n+        category: 'code-quality',\n+        message: 'All valid flags',\n+      };\n+\n+      const validation = CustomRulesEngine.validatePattern(pattern);\n+      // This verifies the flags contain only valid JavaScript RegExp flag characters.\n+      expect(validation.valid).toBe(true);\n+      expect(validation.errors).toHaveLength(0);\n+    });\n+\n+    it('strips disallowed flag characters at execution time for rules bypassing validation', () => {\n+      const engine = new CustomRulesEngine();\n+      const pattern: CustomPattern = {\n+        id: 'bad-flags-exec',\n+        pattern: 'hello',\n+        flags: 'gX',  // 'X' is disallowed \u2014 stripped to 'g' at runtime\n+        severity: 'low',\n+        category: 'code-quality',\n+        message: 'Bad flags at exec',\n+      };\n+\n+      // Add directly (bypassing validatePattern) to simulate a config-loaded rule\n+      engine.addRule(pattern);\n+      // Should not throw and should still find the match\n+      const issues = engine.executeRules('test.ts', 'hello world');\n+      expect(issues.length).toBe(1);\n+    });\n   });\n \n   describe('Helper Methods', () => {\n@@ -338,6 +414,46 @@ console.log(\"test3\");`;\n     });\n   });\n \n+  describe('MAX_PATTERN_LENGTH defense-in-depth at execution time', () => {\n+    it('returns empty array and calls onRuleError for oversized patterns added directly via addRule', () => {\n+      const errors: Array<{ id: string; error: Error }> = [];\n+      const engineWithErrCb = new CustomRulesEngine(\n+        undefined,\n+        (id, error) => errors.push({ id, error })\n+      );\n+\n+      const oversizedPattern: CustomPattern = {\n+        id: 'oversized-rule',\n+        pattern: 'a'.repeat(1_001),\n+        severity: 'low',\n+        category: 'code-quality',\n+        message: 'Oversized',\n+      };\n+\n+      // Bypass validatePattern by calling addRule directly\n+      engineWithErrCb.addRule(oversizedPattern);\n+      const issues = engineWithErrCb.executeRules('test.ts', 'aaaa');\n+      expect(issues).toHaveLength(0);\n+      expect(errors).toHaveLength(1);\n+      expect(errors[0].id).toBe('oversized-rule');\n+      expect(errors[0].error.message).toMatch(/exceeds maximum length/);\n+    });\n+\n+    it('executes a pattern at exactly MAX_PATTERN_LENGTH without error', () => {\n+      const exactPattern: CustomPattern = {\n+        id: 'exact-length-rule',\n+        pattern: 'a'.repeat(1_000),\n+        severity: 'low',\n+        category: 'code-quality',\n+        message: 'Exact length',\n+      };\n+\n+      engine.addRule(exactPattern);\n+      // Should not throw and returns results normally (no match in this content)\n+      expect(() => engine.executeRules('test.ts', 'hello')).not.toThrow();\n+    });\n+  });\n+\n   describe('Error Handling', () => {\n     it('handles invalid regex gracefully', () => {\n       const pattern: CustomPattern = {\ndiff --git a/src/core/customRulesEngine.ts b/src/core/customRulesEngine.ts\nindex 41e29dc..ea68977 100644\n--- a/src/core/customRulesEngine.ts\n+++ b/src/core/customRulesEngine.ts\n@@ -19,6 +19,31 @@ const VALID_CATEGORIES: DebtCategory[] = [\n   'maintainability',\n ];\n \n+/**\n+ * Maximum allowed length in UTF-16 code units for a user-supplied regex\n+ * pattern string. Patterns longer than this are rejected to prevent DoS via large patterns.\n+ */\n+const MAX_PATTERN_LENGTH = 1_000;\n+\n+/**\n+ * Allowlisted regex flag characters. Any character outside this set is rejected.\n+ * See: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/flags\n+ */\n+const ALLOWED_FLAGS_RE = /^[gimsuy]*$/;\n+\n+/**\n+ * Maximum allowed string length for the inline `code` parameter passed to\n+ * `execute_custom_rules`. This caps the input fed to regex matching per call.\n+ * Enforced using JavaScript string length semantics (`string.length`).\n+ */\n+export const MAX_CODE_LENGTH = 500_000;\n+\n+/**\n+ * Maximum allowed file size in bytes for `path` inputs to `execute_custom_rules`.\n+ * Enforced via `fs.Stats.size` before reading the file into memory.\n+ */\n+export const MAX_FILE_SIZE_BYTES = 500_000;\n+\n /**\n  * Custom Rules Engine\n  * Allows users to define and execute custom pattern-based tech debt checks\n@@ -109,8 +134,23 @@ export class CustomRulesEngine {\n     pattern: CustomPattern\n   ): TechDebtIssue[] {\n     try {\n+      // Defense-in-depth: reject oversized patterns even if they bypassed validatePattern().\n+      if (pattern.pattern.length > MAX_PATTERN_LENGTH) {\n+        if (this.onRuleError) {\n+          this.onRuleError(\n+            pattern.id,\n+            new Error(`Pattern exceeds maximum length of ${MAX_PATTERN_LENGTH} characters`)\n+          );\n+        }\n+        return [];\n+      }\n       const lines = content.split(/\\r?\\n/);\n-      const regex = new RegExp(pattern.pattern, pattern.flags || 'g');\n+      const stripped = pattern.flags !== undefined\n+        ? pattern.flags.replace(/[^gimsuy]/g, '')\n+        : 'g';\n+      const deduped = Array.from(new Set(stripped.split(''))).join('');\n+      const safeFlags = deduped.length > 0 ? deduped : 'g';\n+      const regex = new RegExp(pattern.pattern, safeFlags);\n       return lines.flatMap((line, index) =>\n         this.matchLineIssues(filePath, line, index + 1, regex, pattern)\n       );\n@@ -211,14 +251,28 @@ export class CustomRulesEngine {\n       errors.push('Pattern ID is required');\n     }\n \n+    // Validate and normalize flags first so the regex compilation uses safe flags.\n+    if (pattern.flags !== undefined && !ALLOWED_FLAGS_RE.test(pattern.flags)) {\n+      errors.push(`Invalid regex flags: \"${pattern.flags}\". Only the characters g, i, m, s, u, y are allowed`);\n+    }\n+\n     if (!pattern.pattern) {\n       errors.push('Pattern regex is required');\n     } else {\n-      try {\n-        // Test if regex is valid\n-        new RegExp(pattern.pattern, pattern.flags || 'g');\n-      } catch (error) {\n-        errors.push(`Invalid regex pattern: ${error instanceof Error ? error.message : 'Unknown error'}`);\n+      if (pattern.pattern.length > MAX_PATTERN_LENGTH) {\n+        errors.push(`Pattern exceeds maximum length of ${MAX_PATTERN_LENGTH} characters`);\n+      } else {\n+        // Compile with the same normalized (stripped + deduped) flags used at execution time.\n+        const stripped = pattern.flags !== undefined\n+          ? pattern.flags.replace(/[^gimsuy]/g, '')\n+          : 'g';\n+        const deduped = Array.from(new Set(stripped.split(''))).join('');\n+        const normalizedFlags = deduped.length > 0 ? deduped : 'g';\n+        try {\n+          new RegExp(pattern.pattern, normalizedFlags);\n+        } catch (error) {\n+          errors.push(`Invalid regex pattern: ${error instanceof Error ? error.message : 'Unknown error'}`);\n+        }\n       }\n     }\n \ndiff --git a/src/server/__tests__/handlers.test.ts b/src/server/__tests__/handlers.test.ts\nindex ff097b0..0663ef1 100644\n--- a/src/server/__tests__/handlers.test.ts\n+++ b/src/server/__tests__/handlers.test.ts\n@@ -1,26 +1,54 @@\n import { jest } from '@jest/globals';\n import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';\n+import { McpError } from '@modelcontextprotocol/sdk/types.js';\n import { attachHandlers } from '../handlers.js';\n+import { fileExists, getFileStats } from '../../utils/fileUtils.js';\n+import { MAX_FILE_SIZE_BYTES } from '../../core/customRulesEngine.js';\n \n // Mock the dependencies\n jest.mock('../../core/analysisEngine.js');\n-jest.mock('../../core/customRulesEngine.js');\n+jest.mock('../../core/customRulesEngine.js', () => ({\n+  CustomRulesEngine: class {\n+    addRule = jest.fn();\n+    removeRule = jest.fn(() => false);\n+    getAllRules = jest.fn(() => []);\n+    hasRule = jest.fn(() => false);\n+    getRuleStats = jest.fn(() => ({ totalRules: 0, bySeverity: {}, byCategory: {} }));\n+    executeRules = jest.fn(() => []);\n+  },\n+  MAX_CODE_LENGTH: 500_000,\n+  MAX_FILE_SIZE_BYTES: 500_000,\n+}));\n jest.mock('../../analyzers/index.js');\n jest.mock('../../analyzers/dependencies/index.js');\n jest.mock('../../config/languages.js');\n-jest.mock('../../utils/fileUtils.js');\n+jest.mock('../../utils/fileUtils.js', () => ({\n+  readFile: jest.fn(),\n+  fileExists: jest.fn(),\n+  getFileStats: jest.fn(),\n+  getRelativePath: jest.fn((_b: string, f: string) => f),\n+}));\n+\n+const mockFileExists = fileExists as jest.MockedFunction<typeof fileExists>;\n+const mockGetFileStats = getFileStats as jest.MockedFunction<typeof getFileStats>;\n \n describe('Handlers', () => {\n   let mockServer: McpServer;\n+  let callToolHandler: (request: any) => Promise<any>;\n \n   beforeEach(() => {\n     // Reset all mocks\n     jest.clearAllMocks();\n \n-    // Create mock server\n+    // Create mock server that captures the registered handlers\n     mockServer = {\n       server: {\n-        setRequestHandler: jest.fn(),\n+        setRequestHandler: jest.fn((schema: any, handler: any) => {\n+          // Capture the CallToolRequestSchema handler (second call)\n+          if (schema?.method === 'tools/call' || typeof handler === 'function') {\n+            callToolHandler = handler;\n+          }\n+        }),\n       },\n     } as any;\n   });\n@@ -33,6 +61,46 @@ describe('Handlers', () => {\n     });\n   });\n \n+  describe('execute_custom_rules file size guard', () => {\n+    beforeEach(() => {\n+      attachHandlers(mockServer);\n+      // The second setRequestHandler call receives the CallToolRequestSchema handler\n+      const calls = (mockServer.server.setRequestHandler as jest.MockedFunction<any>).mock.calls;\n+      callToolHandler = calls[calls.length - 1][1];\n+    });\n+\n+    it('rejects a path input whose file size exceeds MAX_FILE_SIZE_BYTES', async () => {\n+      mockFileExists.mockResolvedValue(true);\n+      mockGetFileStats.mockResolvedValue({ size: MAX_FILE_SIZE_BYTES + 1 } as any);\n+\n+      await expect(\n+        callToolHandler({\n+          params: {\n+            name: 'execute_custom_rules',\n+            arguments: { path: '/some/large/file.ts' },\n+          },\n+        })\n+      ).rejects.toThrow(McpError);\n+    });\n+\n+    it('accepts a path input whose file size is exactly MAX_FILE_SIZE_BYTES', async () => {\n+      mockFileExists.mockResolvedValue(true);\n+      mockGetFileStats.mockResolvedValue({ size: MAX_FILE_SIZE_BYTES } as any);\n+      // readFile needs to return something \u2014 mock it\n+      const { readFile } = await import('../../utils/fileUtils.js');\n+      (readFile as jest.MockedFunction<typeof readFile>).mockResolvedValue('const x = 1;');\n+\n+      await expect(\n+        callToolHandler({\n+          params: {\n+            name: 'execute_custom_rules',\n+            arguments: { path: '/some/file.ts' },\n+          },\n+        })\n+      ).resolves.toBeDefined();\n+    });\n+  });\n+\n   describe('Tool Definitions', () => {\n     it('should export all required tools', () => {\n       const { TOOL_DEFINITIONS } = require('../tools.js');\ndiff --git a/src/server/__tests__/inputParser.test.ts b/src/server/__tests__/inputParser.test.ts\nindex 3995e35..d6c9987 100644\n--- a/src/server/__tests__/inputParser.test.ts\n+++ b/src/server/__tests__/inputParser.test.ts\n@@ -347,6 +347,17 @@ describe('inputParser', () => {\n     it('throws McpError when code is not a string', () => {\n       expect(() => parseExecuteCustomRulesInput({ code: 123 })).toThrow(McpError);\n     });\n+\n+    it('throws McpError when code exceeds 500 000 characters', () => {\n+      expect(() =>\n+        parseExecuteCustomRulesInput({ code: 'a'.repeat(500_001) }),\n+      ).toThrow(McpError);\n+    });\n+\n+    it('accepts code exactly at the 500 000-character limit', () => {\n+      const result = parseExecuteCustomRulesInput({ code: 'a'.repeat(500_000) });\n+      expect(result.code).toHaveLength(500_000);\n+    });\n   });\n \n   // ---- parseValidateCustomPatternInput ----\ndiff --git a/src/server/handlers.ts b/src/server/handlers.ts\nindex 44c1fd8..c46a768 100644\n--- a/src/server/handlers.ts\n+++ b/src/server/handlers.ts\n@@ -6,10 +6,10 @@ import {\n } from '@modelcontextprotocol/sdk/types.js';\n import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';\n import { AnalysisEngine } from '../core/analysisEngine.js';\n-import { CustomRulesEngine } from '../core/customRulesEngine.js';\n+import { CustomRulesEngine, MAX_FILE_SIZE_BYTES } from '../core/customRulesEngine.js';\n import { analyzeFile } from '../analyzers/index.js';\n import { getSupportedLanguages, LANGUAGE_CONFIGS } from '../config/languages.js';\n-import { readFile, fileExists } from '../utils/fileUtils.js';\n+import { readFile, fileExists, getFileStats } from '../utils/fileUtils.js';\n import { formatReport, formatMinutes } from './formatters.js';\n import { TOOL_DEFINITIONS } from './tools.js';\n import { handleValidateConfig } from './configValidator.js';\n@@ -438,6 +438,19 @@ async function handleExecuteCustomRules(\n     if (!await fileExists(path)) {\n       throw new McpError(ErrorCode.InvalidParams, `File not found: ${path}`);\n     }\n+    const stats = await getFileStats(path);\n+    if (!stats) {\n+      throw new McpError(\n+        ErrorCode.InvalidParams,\n+        `Could not read file stats for: ${path}`\n+      );\n+    }\n+    if (stats.size > MAX_FILE_SIZE_BYTES) {\n+      throw new McpError(\n+        ErrorCode.InvalidParams,\n+        `File exceeds maximum size of ${MAX_FILE_SIZE_BYTES} bytes for regex matching`\n+      );\n+    }\n     code = await readFile(path);\n   }\n   if (!code) {\ndiff --git a/src/server/inputParser.ts b/src/server/inputParser.ts\nindex 290a497..4c97007 100644\n--- a/src/server/inputParser.ts\n+++ b/src/server/inputParser.ts\n@@ -6,6 +6,7 @@ import {\n } from '../types/index.js';\n import { LANGUAGE_CONFIGS } from '../config/languages.js';\n import { requireRecord } from './argValidation.js';\n+import { MAX_CODE_LENGTH } from '../core/customRulesEngine.js';\n \n /** Typed input for analyze_project tool */\n export interface AnalyzeProjectInput {\n@@ -395,9 +396,16 @@ export function parseExecuteCustomRulesInput(\n   args: unknown,\n ): ExecuteCustomRulesInput {\n   const a = requireRecord(args);\n+  const code = optionalString(a, 'code');\n+  if (code !== undefined && code.length > MAX_CODE_LENGTH) {\n+    throw new McpError(\n+      ErrorCode.InvalidParams,\n+      `Inline code exceeds maximum length of ${MAX_CODE_LENGTH} characters`,\n+    );\n+  }\n   return {\n     path: optionalString(a, 'path'),\n-    code: optionalString(a, 'code'),\n+    code,\n     language: optionalString(a, 'language'),\n   };\n }\ndiff --git a/src/server/tools.ts b/src/server/tools.ts\nindex ae8cf88..b65c2b2 100644\n--- a/src/server/tools.ts\n+++ b/src/server/tools.ts\n@@ -104,13 +104,13 @@ export const TOOL_DEFINITIONS = [\n       type: 'object',\n       properties: {\n         id: { type: 'string', description: 'Unique identifier for the rule' },\n-        pattern: { type: 'string', description: 'Regex pattern to match' },\n+        pattern: { type: 'string', description: 'Regex pattern to match (limited to 1 000 characters)' },\n         message: { type: 'string', description: 'Issue title/message' },\n         severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Issue severity level' },\n         category: { type: 'string', enum: ['dependency', 'code-quality', 'architecture', 'documentation', 'testing', 'security', 'performance', 'maintainability'], description: 'Debt category' },\n         suggestion: { type: 'string', description: 'Optional: how to fix the issue' },\n         languages: { type: 'array', items: { type: 'string' }, description: 'Optional: apply only to specific languages' },\n-        flags: { type: 'string', description: 'Optional: regex flags (g, i, m, s, etc.)' },\n+        flags: { type: 'string', description: 'Optional: regex flags \u2014 allowed characters: g, i, m, s, u, y' },\n       },\n       required: ['id', 'pattern', 'message', 'severity', 'category'],\n     },\n@@ -140,8 +140,8 @@ export const TOOL_DEFINITIONS = [\n     inputSchema: {\n       type: 'object',\n       properties: {\n-        path: { type: 'string', description: 'Path to the file to analyze' },\n-        code: { type: 'string', description: 'Code content to analyze (alternative to path)' },\n+        path: { type: 'string', description: 'Path to the file to analyze (file size limited to 500 000 bytes)' },\n+        code: { type: 'string', description: 'Code content to analyze (alternative to path; limited to 500 000 characters)' },\n         language: { type: 'string', description: 'Optional: programming language for filtering rules' },\n       },\n     },\n@@ -153,7 +153,7 @@ export const TOOL_DEFINITIONS = [\n       type: 'object',\n       properties: {\n         id: { type: 'string', description: 'Unique identifier for the rule' },\n-        pattern: { type: 'string', description: 'Regex pattern to validate' },\n+        pattern: { type: 'string', description: 'Regex pattern to validate (limited to 1 000 characters)' },\n         message: { type: 'string', description: 'Issue title/message' },\n         severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Issue severity level' },\n         category: { type: 'string', enum: ['dependency', 'code-quality', 'architecture', 'documentation', 'testing', 'security', 'performance', 'maintainability'], description: 'Debt category' },\n",
+  "response": "{\"judgments\": [{\"candidate\": 8, \"status\": \"supported\", \"reason\": \"The CHANGELOG entry asserts the change 'prevent[s] ReDoS attacks', but the implemented safeguards only bound pattern length (MAX_PATTERN_LENGTH = 1_000) and allowlist flags; neither defeats catastrophic backtracking, which can be triggered by a short pattern such as `(a+)+$` (well under 1 000 chars) executed against a long line from the 500 000-char input cap. The documentation overstates the guarantee; rewording to state only the size/flag limits is a concrete, useful fix.\", \"evidence\": [\"CHANGELOG.md line 36: \\\"...inline `code` for `execute_custom_rules` is capped at 500 000 characters, preventing ReDoS attacks (#127)\\\"\", \"src/core/customRulesEngine.ts: `const MAX_PATTERN_LENGTH = 1_000;`\", \"src/core/customRulesEngine.ts: `const regex = new RegExp(pattern.pattern, safeFlags);`\"], \"duplicate_of\": null, \"unverified_assumptions\": []}, {\"candidate\": 13, \"status\": \"supported\", \"reason\": \"Same underlying documentation defect as candidate 8: the CHANGELOG claims prevention of ReDoS while the length cap and flag allowlist do not stop catastrophic backtracking from short patterns. The fix (reword to defense-in-depth) is identical, so this is a duplicate of candidate 8.\", \"evidence\": [\"CHANGELOG.md line 36: \\\"...preventing ReDoS attacks (#127)\\\"\", \"src/core/customRulesEngine.ts: `const MAX_PATTERN_LENGTH = 1_000;`\"], \"duplicate_of\": 8, \"unverified_assumptions\": []}, {\"candidate\": 15, \"status\": \"supported\", \"reason\": \"The manual module mock introduced in this diff defines only instance members and omits the static `validatePattern` that the production class exposes and that handlers.ts depends on. handleAddCustomRule and handleValidateCustomPattern both call `CustomRulesEngine.validatePattern(...)`, so any test dispatching those tools through the captured handler would throw `TypeError: CustomRulesEngine.validatePattern is not a function`. Adding the static stub to the mock is a concrete, correct fix.\", \"evidence\": [\"src/server/handlers.ts: `const validation = CustomRulesEngine.validatePattern(customPattern);` (in both handleAddCustomRule and handleValidateCustomPattern)\", \"src/core/customRulesEngine.ts: `static validatePattern(pattern: CustomPattern): { valid: boolean; errors: string[] }`\", \"src/server/__tests__/handlers.test.ts mock: `CustomRulesEngine: class { addRule = jest.fn(); ... }` (no static validatePattern)\"], \"duplicate_of\": null, \"unverified_assumptions\": []}, {\"candidate\": 16, \"status\": \"supported\", \"reason\": \"Same documentation defect as candidate 8, reporting the identical CHANGELOG line and the same rewording fix. It is the same underlying issue.\", \"evidence\": [\"CHANGELOG.md line 36: \\\"...preventing ReDoS attacks (#127)\\\"\", \"src/core/customRulesEngine.ts: `const MAX_PATTERN_LENGTH = 1_000;`\"], \"duplicate_of\": 8, \"unverified_assumptions\": []}, {\"candidate\": 17, \"status\": \"supported\", \"reason\": \"Same defect as candidate 15: the replacement mock class omits the static `validatePattern` that handlers.ts calls. One concrete fix (adding the static stub) addresses both reports, so this is a duplicate of candidate 15.\", \"evidence\": [\"src/server/handlers.ts: `const validation = CustomRulesEngine.validatePattern(customPattern);`\", \"src/server/__tests__/handlers.test.ts mock class without static validatePattern\"], \"duplicate_of\": 15, \"unverified_assumptions\": []}, {\"candidate\": 18, \"status\": \"supported\", \"reason\": \"Same documentation defect as candidate 8: the CHANGELOG overstates that the caps 'prevent' ReDoS; a short catastrophic-backtracking pattern still hangs over up to 500 000 characters. The proposed reword is the same fix as candidate 8.\", \"evidence\": [\"CHANGELOG.md line 36: \\\"...preventing ReDoS attacks (#127)\\\"\", \"src/core/customRulesEngine.ts: `const regex = new RegExp(pattern.pattern, safeFlags);`\"], \"duplicate_of\": 8, \"unverified_assumptions\": []}]}",
+  "captured_omitted_context": [
+    "CONTRIBUTING.md",
+    "ARCHITECTURE.md",
+    "README.md",
+    "src/core/analysisEngine.ts",
+    "src/config/languages.ts",
+    "src/server/configValidator.ts",
+    "src/server/dependencyHandlers.ts",
+    "src/types/index.ts",
+    "src/server/inputParser.ts",
+    "src/analyzers/baseAnalyzer.ts",
+    "src/analyzers/javascriptAnalyzer.ts",
+    "src/analyzers/typescriptAnalyzer.ts",
+    "src/analyzers/pythonAnalyzer.ts",
+    "src/analyzers/javaAnalyzer.ts",
+    "src/analyzers/swiftAnalyzer.ts",
+    "src/analyzers/kotlinAnalyzer.ts",
+    "src/analyzers/objectivecAnalyzer.ts",
+    "src/analyzers/cppAnalyzer.ts",
+    "src/analyzers/cAnalyzer.ts",
+    "src/analyzers/csharpAnalyzer.ts",
+    "src/analyzers/goAnalyzer.ts",
+    "src/analyzers/rustAnalyzer.ts",
+    "src/analyzers/rubyAnalyzer.ts",
+    "src/analyzers/phpAnalyzer.ts",
+    "src/server/tools.ts",
+    "src/server/configValidator.ts",
+    ".github/workflows/publish.yml",
+    ".github/workflows/test.yml",
+    ".npmignore",
+    ".techdebtrc.json",
+    "ARCHITECTURE.md",
+    "README.md",
+    "CLAUDE.md",
+    ".github/copilot-instructions.md",
+    "CONTRIBUTING.md",
+    "ROADMAP.md",
+    "package.json",
+    "src/utils/fileUtils.ts",
+    "src/analyzers/index.ts",
+    "src/server/formatters.ts",
+    "src/server/__tests__/dependencyHandlers.test.ts",
+    "src/server/dependencyHandlers.ts",
+    "src/analyzers/baseAnalyzer.ts",
+    "src/types/index.ts",
+    "src/core/analysisEngine.ts",
+    "src/config/languages.ts",
+    "src/server/argValidation.ts",
+    "src/core/sqaleEngine.ts",
+    "src/analyzers/javascriptAnalyzer.ts",
+    "src/analyzers/typescriptAnalyzer.ts",
+    "src/analyzers/pythonAnalyzer.ts",
+    "src/analyzers/javaAnalyzer.ts",
+    "src/analyzers/swiftAnalyzer.ts",
+    "src/analyzers/kotlinAnalyzer.ts",
+    "src/analyzers/objectivecAnalyzer.ts",
+    "src/analyzers/cppAnalyzer.ts",
+    "src/analyzers/cAnalyzer.ts",
+    "src/analyzers/csharpAnalyzer.ts",
+    "src/analyzers/goAnalyzer.ts",
+    "src/analyzers/rustAnalyzer.ts",
+    "src/analyzers/rubyAnalyzer.ts",
+    "src/analyzers/phpAnalyzer.ts"
+  ],
+  "candidate_source": {
+    "CHANGELOG.md": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n## [Unreleased]\n\n### Changed\n- **README.md** \u2014 Restructured for scannability: added stat line, grouped tools table with collapsible parameter reference, Resources table, collapsed SwiftUI section, merged Custom Rules into Configuration\n- **ARCHITECTURE.md** \u2014 Fixed project structure tree (added `inputParser.ts`, `argValidation.ts`, `swiftUiChecks.ts`, `swiftUiChecksPhase2.ts`), removed phantom `src/services/` directory, updated test count (522), fixed file size table, marked resolved debt items\n- **CLAUDE.md** \u2014 Deduplicated Git and Code Quality sections (reference `.claude/rules/`), updated resource recipe, added Security section\n- **.github/copilot-instructions.md** \u2014 Added Security Review and Testing Review sections, updated architecture tree, aligned file length threshold (500)\n- **ROADMAP.md** \u2014 Added v2.0.2 security patch section with issues #124-130\n- **CONTRIBUTING.md** \u2014 Updated metrics to March 2026 scan, marked resolved refactoring targets\n- **GITHUB_PACKAGES.md** \u2014 Clarified npm as primary distribution, removed incorrect `require()` API example\n\n- Reduced nesting in core engines (`analysisEngine`, `customRulesEngine`) to \u22644 levels (#118)\n- Reduced nesting in server modules to \u22644 levels (#119)\n- Reduced nesting depth in 10 dependency parsers (#88)\n- Reduced `csharpAnalyzer.ts` nesting from 7 to \u22644 levels (#113)\n- Reduced `cppParser.parseVcpkgJson` nesting from 5 to \u22644 levels via `makeVcpkgDep()` helper (#131)\n- Split `swiftAnalyzer.ts` into companion modules (`swiftUiChecks.ts`, `swiftUiChecksPhase2.ts`) (#121)\n- Replaced `<any>` generics and suppressed non-null-assertion false positives (#112)\n- Replaced type assertions in `handlers.ts` with typed input parsers (#110)\n- Replaced type assertions in `configValidator.ts` and `dependencyHandlers.ts` with type guards (#106)\n- Replaced type assertions in `resourceHandlers.ts` with type guards (#107)\n\n### Fixed\n- **npm-shrinkwrap.json** \u2014 Removed to stop publishing lockfile to npm (#123)\n- Replaced `console.warn` with `console.error` for MCP stdio compatibility (#100)\n- Eliminated analyzer false positives via `ruleExclusions` config mechanism (#78)\n- Replaced non-null assertions with destructured variables in `analysisEngine` (#101)\n- Security: absolute filesystem paths no longer leaked in `scanErrors` returned to MCP clients; `findPackageFiles` now uses `getRelativePath()` for error messages (#129)\n- Security: user-supplied regex patterns in `add_custom_rule` and `validate_custom_pattern` are now validated for length (\u22641 000 chars) and flag allowlist (`gimsuy` only); inline `code` for `execute_custom_rules` is capped at 500 000 characters, preventing ReDoS attacks (#127)\n\n### Added\n- Direct unit tests for `swiftUiChecks` and `swiftUiChecksPhase2` modules\n- Unit tests for `inputParser` module\n- Inline suppression comments for tech debt issues (#105)\n- Regex precision improvements to eliminate 11 analyzer false positives (#102, #104)\n\n## [2.0.1] - 2026-03-20\n\n### Added\n- **MCP Resources (Phase 6)** \u2014 Two passive resource templates for tech debt data access:\n  - `debt://summary/{+projectPath}` \u2014 Health score, SQALE metrics, issue counts by severity/category\n  - `debt://issues/{+projectPath}` \u2014 Filterable issues list with severity, category, and limit query parameters\n- `src/server/resourceHandlers.ts` \u2014 New module using `McpServer.registerResource()` high-level API\n- 8 tests covering resource registration, reads, filters, limits, and error paths\n\n### Changed\n- **CLAUDE.md** \u2014 Consolidated as single source of truth for coding conventions; added MCP resource recipe, design spec pointer, documentation maintenance checklist\n- **ARCHITECTURE.md** \u2014 Updated MCP Server section to reflect `src/server/` module split, fixed tool count (16), added `resourceHandlers.ts`, updated dependency graph\n- **README.md** \u2014 Added MCP Resources section with usage documentation\n- **ROADMAP.md** \u2014 Phase 6 marked complete, Phase 3/4 enriched with issue numbers, branch names, and acceptance criteria\n- **.github/copilot-instructions.md** \u2014 Trimmed to Copilot-specific PR review workflow, references CLAUDE.md for conventions\n\n## [2.0.0] - 2026-03-09\n\n### Added\n- **CODE_OF_CONDUCT.md** - Added Contributor Covenant v2.1 based Code of Conduct\n  - Establishes community standards and expectations\n  - Defines enforcement guidelines\n  - Improves Snyk community health score\n- **.techdebtrc.json** - Project-specific tech debt configuration file\n  - File size limits (max 500 lines)\n  - Complexity limits (max nesting depth 4)\n  - Custom patterns for nullish coalescing and non-null assertions\n  - Test file exclusions to prevent false positives\n- **TECH_DEBT_SCAN.md** - Complete self-scan analysis with before/after comparison\n  - Shows impact of .techdebtrc.json configuration\n  - Documents reduction from 101 to 81 issues (-19.8%)\n  - Identifies false positives vs. real technical debt\n  - Provides actionable roadmap for continuous improvement\n- **check_dependencies** MCP tool (Phase 2 - Dependency Analysis)\n  - Scans project for package manifests across multiple ecosystems\n  - Validates that the provided path is a directory (rejects file paths)\n  - Returns a structured dependency report with production vs development dependencies\n  - Includes failed-parse reporting and filesystem scan error surfacing\n  - Filters empty manifest sections from reports (e.g., dev-only with `includeDev=false`)\n  - Parsers for npm, pip, Maven/Gradle, Cargo, Go Modules, Composer, Bundler, NuGet, C/C++, and Swift Package Manager added under `src/analyzers/dependencies/`\n- **validate_config** MCP tool (Phase 2 - Config Validation)\n  - Validates `.techdebtrc.json` syntax and schema\n  - Checks `ignore`, `include`, `rules`, `severity`, `languageOverrides`, and `customPatterns` fields\n  - Guards against non-object top-level values (null, array, primitives)\n  - Reuses `CustomRulesEngine.validatePattern()` for custom pattern validation\n  - Returns detailed errors and warnings with actionable messages\n- **get_vulnerability_report** MCP tool (Phase 2 - Offline Vulnerability Inventory)\n  - Generates an offline dependency inventory for vulnerability review\n  - Validates that the provided path is a directory\n  - Lists all dependencies by ecosystem in tabular format\n  - Filters empty manifest sections and surfaces filesystem scan errors\n  - Offline-first; online CVE lookup planned for Phase 2b (OSV API)\n  - Accepts `includeDev` flag (default: false) to focus on production dependencies\n\n### Changed\n- **src/index.ts refactored** \u2014 split 883-line monolith into focused modules:\n  - `src/server/setup.ts` \u2014 server instantiation and transport wiring\n  - `src/server/handlers.ts` \u2014 all MCP tool request handlers\n  - `src/server/tools.ts` \u2014 centralized `TOOL_DEFINITIONS` array\n  - `src/server/formatters.ts` \u2014 output formatting helpers\n  - `src/index.ts` now an 18-line entry point only\n- **README.md** - Added Code Quality section with updated SQALE rating\n  - Self-scan results (A rating, 2.9% debt ratio, down from 3.4%)\n  - Link to TECH_DEBT_SCAN.md with before/after comparison\n  - Configuration impact metrics (81 issues vs. 101 before)\n  - Link to CODE_OF_CONDUCT.md in Contributing section\n  - Added SQALE rating badge to header\n- **CONTRIBUTING.md** - Added Tech Debt Compliance section\n  - Updated metrics (2.9% debt ratio)\n  - File size and complexity limits\n  - Code quality rules enforcement\n  - Known refactoring targets with specific line numbers\n  - Configuration impact before/after comparison\n- **ARCHITECTURE.md** - Added Code Quality Standards section\n  - Current project health metrics (2.9% debt ratio)\n  - File size and complexity limits table\n  - Known technical debt items with priorities and line numbers\n  - Self-scan strategy with measured configuration impact\n  - Before/after comparison showing improvement\n  - Regular health checks documentation\n- **.github/copilot-instructions.md** - Added Tech Debt Refactoring Rules\n  - Current SQALE rating and debt ratio (2.9%)\n  - File size and complexity limits\n  - Refactoring priorities with specific targets\n  - Code quality rules enforcement\n  - Pre/post refactoring checklist\n\n### Documentation\n- Comprehensive self-scan using tech-debt-mcp tool (2 scans: with/without config)\n- Measured impact of .techdebtrc.json: -20 issues (-19.8%), -10 hours (-14.3%) remediation\n- Identified 1 real high-priority issue (C# analyzer nesting at line 267)\n- Identified 13 false positives (analyzer pattern definitions)\n- Documented specific refactoring targets (src/index.ts: 883 lines, csharpAnalyzer.ts:267)\n- Established quality baselines and targets with measurable goals\n- Created configuration to prevent false positives in self-scanning\n- All documentation now cross-references TECH_DEBT_SCAN.md for transparency\n\n### Metrics Summary (at time of v2.0.0 release)\n- **SQALE Rating:** A \u2b50\u2b50\u2b50\u2b50\u2b50 (2.9% debt ratio, improved from 3.4%)\n- **Total Issues:** 81 (down from 101)\n- **Remediation Time:** 60 hours (down from 70 hours)\n- **Improvement:** -20 false positives, -10 hours remediation time\n- **Files Analyzed:** 25 (down from 33, test files excluded)\n- **Critical Issues:** 0\n- **High Issues:** 14 (13 are false positives in analyzer patterns)\n\n### Community\n- Improved Snyk package health score with Code of Conduct\n- Better contributor onboarding with comprehensive guidelines\n- Transparent quality metrics showing \"we practice what we preach\"\n\n## [1.1.0] - 2026-02-07\n\n### Added\n\n#### SwiftUI-Specific Technical Debt Analysis (Issue #58)\n- **14 comprehensive SwiftUI checks** across 2 phases\n- **Phase 1 - Core SwiftUI Checks (9 checks):**\n  - Excessive @State variables detection (>5 per view)\n  - @ObservedObject initialization misuse detection\n  - @Environment value force unwrap detection\n  - Combine pipeline circular reference detection ([weak self] validation)\n  - Missing Timer cleanup in onDisappear\n  - Missing Task cancellation in async operations\n  - UI updates on background threads detection\n  - Dynamic list missing .id() modifiers\n  - Expensive calculations in view body\n\n- **Phase 2 - Advanced SwiftUI Patterns (5 checks):**\n  - AnyView type erasure detection\n  - Deprecated NavigationLink patterns\n  - GeometryReader root-level misuse\n  - Retain cycles in SwiftUI closures\n  - Deep view nesting detection (>6 levels)\n\n#### GitHub Packages Support\n- Published to both npm Registry and GitHub Packages\n- Comprehensive installation documentation (GITHUB_PACKAGES.md)\n- Automated CI/CD publishing workflow\n\n#### Quality Improvements\n- 96 tests passing (100% of SwiftUI implementation)\n- 22 todo tests for Phase 3 enhancements\n- Performance optimization: content split once per file analysis\n- Issue IDs include filePath for global uniqueness\n- All Copilot review suggestions addressed\n\n### Changed\n- Updated README.md with multiple installation options (npm, GitHub Packages, source)\n- Enhanced publish.yml workflow to publish to both registries\n- Improved SwiftUI analyzer with per-view @State counting\n- Better Environment validation with force unwrap detection at usage sites\n\n### Fixed\n- Timer cleanup detection bug (lines.indexOf issue)\n- Environment validation now detects actual usage patterns\n- Task cancellation guidance clarified (@MainActor \u2260 cancellation)\n- Removed duplicate method implementations in SwiftAnalyzer\n- **execute_custom_rules schema** - Removed unsupported anyOf constraint (Thanks @ophirbucai - PR #63)\n\n### Documentation\n- Added GITHUB_PACKAGES.md - Comprehensive installation and setup guide\n- Updated .github/copilot-instructions.md with strict documentation requirements\n- Enhanced PR workflow with mandatory documentation checklist\n- **IDE Installation Badges** - One-click install for VS Code, Cursor, Claude, Windsurf, JetBrains, Xcode (Thanks @ophirbucai - PR #66)\n- **Documentation Accuracy** - Fixed tool count (13 tools), test count (96 passing + 22 todo), and branch references throughout all docs\n\n## [1.0.0] - 2026-02-07\n\n### Added\n\n#### Phase 0: Language Support\n- Support for 14 programming languages: JavaScript, TypeScript, Python, Java, Swift, Kotlin, Objective-C, C++, C, C#, Go, Rust, Ruby, PHP\n- BaseAnalyzer with factory pattern for extensibility\n- Language-specific tech debt detection patterns\n- Comprehensive test coverage for all analyzers\n\n#### Phase 1: SQALE Metrics \u2705\n- SQALE Engine with A-E rating system\n- Remediation time calculations\n- Debt ratio metrics (percentage of development time)\n- Category and severity breakdowns\n- Human-readable time formatting\n- **NEW:** `get_sqale_metrics` MCP tool for dedicated SQALE reporting\n- **NEW:** SQALE metrics integrated into all analysis reports\n\n#### Phase 5: Custom Rules\n- CustomRulesEngine for pattern-based checks\n- 5 MCP tools for rule management:\n  - `add_custom_rule` - Add custom pattern rules\n  - `remove_custom_rule` - Remove rules by ID\n  - `list_custom_rules` - Show all active rules\n  - `execute_custom_rules` - Run rules against code\n  - `validate_custom_pattern` - Validate patterns\n- Regex support with configurable flags\n- Language-specific rule filtering\n- Multiple matches per line\n- Cross-platform line ending support (\\r\\n and \\n)\n\n#### MCP Tools (13 total)\n1. `analyze_project` - Full project technical debt analysis\n2. `analyze_file` - Single file analysis\n3. `get_debt_summary` - Quick debt summary\n4. `get_sqale_metrics` - SQALE metrics with rating and remediation time\n5. `list_supported_languages` - Show supported languages\n6. `get_recommendations` - Prioritized suggestions\n7. `get_issues_by_severity` - Filter issues by severity\n8. `get_issues_by_category` - Filter issues by category\n9. `add_custom_rule` - Add custom pattern rules\n10. `remove_custom_rule` - Remove custom rules\n11. `list_custom_rules` - List all custom rules\n12. `execute_custom_rules` - Execute custom rules\n13. `validate_custom_pattern` - Validate custom patterns\n\n### Documentation\n- Comprehensive README with installation and usage instructions\n- ARCHITECTURE.md describing system design and patterns\n- CONTRIBUTING.md with contribution guidelines\n- AI agent instructions for Copilot\n- Full API documentation for all MCP tools\n\n### Testing\n- 96 comprehensive tests across 8 test suites (22 todo for future enhancements)\n- 100% test pass rate\n- Tests for all language analyzers\n- Tests for SQALE engine\n- Tests for custom rules engine\n\n[Unreleased]: https://github.com/PierreJanineh/TechDebtMCP/compare/v2.0.1...HEAD\n[2.0.1]: https://github.com/PierreJanineh/TechDebtMCP/releases/tag/v2.0.1\n[2.0.0]: https://github.com/PierreJanineh/TechDebtMCP/releases/tag/v2.0.0\n[1.1.0]: https://github.com/PierreJanineh/TechDebtMCP/releases/tag/v1.1.0\n[1.0.0]: https://github.com/PierreJanineh/TechDebtMCP/releases/tag/v1.0.0\n\n",
+    "src/server/__tests__/handlers.test.ts": "import { jest } from '@jest/globals';\nimport { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';\nimport { McpError } from '@modelcontextprotocol/sdk/types.js';\nimport { attachHandlers } from '../handlers.js';\nimport { fileExists, getFileStats } from '../../utils/fileUtils.js';\nimport { MAX_FILE_SIZE_BYTES } from '../../core/customRulesEngine.js';\n\n// Mock the dependencies\njest.mock('../../core/analysisEngine.js');\njest.mock('../../core/customRulesEngine.js', () => ({\n  CustomRulesEngine: class {\n    addRule = jest.fn();\n    removeRule = jest.fn(() => false);\n    getAllRules = jest.fn(() => []);\n    hasRule = jest.fn(() => false);\n    getRuleStats = jest.fn(() => ({ totalRules: 0, bySeverity: {}, byCategory: {} }));\n    executeRules = jest.fn(() => []);\n  },\n  MAX_CODE_LENGTH: 500_000,\n  MAX_FILE_SIZE_BYTES: 500_000,\n}));\njest.mock('../../analyzers/index.js');\njest.mock('../../analyzers/dependencies/index.js');\njest.mock('../../config/languages.js');\njest.mock('../../utils/fileUtils.js', () => ({\n  readFile: jest.fn(),\n  fileExists: jest.fn(),\n  getFileStats: jest.fn(),\n  getRelativePath: jest.fn((_b: string, f: string) => f),\n}));\n\nconst mockFileExists = fileExists as jest.MockedFunction<typeof fileExists>;\nconst mockGetFileStats = getFileStats as jest.MockedFunction<typeof getFileStats>;\n\ndescribe('Handlers', () => {\n  let mockServer: McpServer;\n  let callToolHandler: (request: any) => Promise<any>;\n\n  beforeEach(() => {\n    // Reset all mocks\n    jest.clearAllMocks();\n\n    // Create mock server that captures the registered handlers\n    mockServer = {\n      server: {\n        setRequestHandler: jest.fn((schema: any, handler: any) => {\n          // Capture the CallToolRequestSchema handler (second call)\n          if (schema?.method === 'tools/call' || typeof handler === 'function') {\n            callToolHandler = handler;\n          }\n        }),\n      },\n    } as any;\n  });\n\n  describe('attachHandlers', () => {\n    it('should attach handlers to the server', () => {\n      attachHandlers(mockServer);\n\n      expect(mockServer.server.setRequestHandler).toHaveBeenCalledTimes(2);\n    });\n  });\n\n  describe('execute_custom_rules file size guard', () => {\n    beforeEach(() => {\n      attachHandlers(mockServer);\n      // The second setRequestHandler call receives the CallToolRequestSchema handler\n      const calls = (mockServer.server.setRequestHandler as jest.MockedFunction<any>).mock.calls;\n      callToolHandler = calls[calls.length - 1][1];\n    });\n\n    it('rejects a path input whose file size exceeds MAX_FILE_SIZE_BYTES', async () => {\n      mockFileExists.mockResolvedValue(true);\n      mockGetFileStats.mockResolvedValue({ size: MAX_FILE_SIZE_BYTES + 1 } as any);\n\n      await expect(\n        callToolHandler({\n          params: {\n            name: 'execute_custom_rules',\n            arguments: { path: '/some/large/file.ts' },\n          },\n        })\n      ).rejects.toThrow(McpError);\n    });\n\n    it('accepts a path input whose file size is exactly MAX_FILE_SIZE_BYTES', async () => {\n      mockFileExists.mockResolvedValue(true);\n      mockGetFileStats.mockResolvedValue({ size: MAX_FILE_SIZE_BYTES } as any);\n      // readFile needs to return something \u2014 mock it\n      const { readFile } = await import('../../utils/fileUtils.js');\n      (readFile as jest.MockedFunction<typeof readFile>).mockResolvedValue('const x = 1;');\n\n      await expect(\n        callToolHandler({\n          params: {\n            name: 'execute_custom_rules',\n            arguments: { path: '/some/file.ts' },\n          },\n        })\n      ).resolves.toBeDefined();\n    });\n  });\n\n  describe('Tool Definitions', () => {\n    it('should export all required tools', () => {\n      const { TOOL_DEFINITIONS } = require('../tools.js');\n\n      expect(TOOL_DEFINITIONS).toBeDefined();\n      expect(Array.isArray(TOOL_DEFINITIONS)).toBe(true);\n      expect(TOOL_DEFINITIONS.length).toBeGreaterThan(0);\n\n      // Check that each tool has required properties\n      TOOL_DEFINITIONS.forEach((tool: any) => {\n        expect(tool).toHaveProperty('name');\n        expect(tool).toHaveProperty('description');\n        expect(tool).toHaveProperty('inputSchema');\n        expect(tool.inputSchema).toHaveProperty('type', 'object');\n        expect(tool.inputSchema).toHaveProperty('properties');\n      });\n    });\n\n    it('should include all expected tools', () => {\n      const { TOOL_DEFINITIONS } = require('../tools.js');\n      const toolNames = TOOL_DEFINITIONS.map((tool: any) => tool.name);\n\n      const expectedTools = [\n        'analyze_project',\n        'analyze_file',\n        'get_debt_summary',\n        'get_sqale_metrics',\n        'list_supported_languages',\n        'get_recommendations',\n        'get_issues_by_severity',\n        'get_issues_by_category',\n        'add_custom_rule',\n        'remove_custom_rule',\n        'list_custom_rules',\n        'execute_custom_rules',\n        'validate_custom_pattern',\n        'check_dependencies',\n        'validate_config',\n        'get_vulnerability_report',\n      ];\n\n      expectedTools.forEach(toolName => {\n        expect(toolNames).toContain(toolName);\n      });\n    });\n  });\n});\n"
+  },
+  "batch_indices": [
+    8,
+    13,
+    15,
+    16,
+    17,
+    18
+  ]
+}

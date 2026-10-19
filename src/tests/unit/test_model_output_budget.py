@@ -119,3 +119,30 @@ def test_structured_generation_requests_json_and_validates_captured_output():
         )
     CodeReview.model_validate_json(written)
     assert completion.call_args.kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_truncated_response_retries_only_that_call_with_a_larger_budget():
+    from src.models.code_review import CodeReview
+
+    sample = (
+        Path(__file__).parents[1] / "fixtures/deepseek/output-budget-exhausted.json"
+    )
+    truncated = ModelResponse(**json.loads(sample.read_text()))
+    provider = LiteLLMProvider(
+        "deepseek/deepseek-flash", 131072, max_output_tokens=16384
+    )
+    with patch(
+        "src.llms.litellm_provider.litellm.completion",
+        side_effect=[truncated, captured(), captured()],
+    ) as completion:
+        provider._validated_response(
+            lambda: provider._completion(model=provider.model, messages=[]),
+            CodeReview,
+            "review",
+        )
+        provider.generate_text("Another reading", purpose="review")
+    assert [call.kwargs["max_tokens"] for call in completion.call_args_list] == [
+        16384,
+        32768,
+        16384,
+    ]

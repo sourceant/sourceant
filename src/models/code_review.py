@@ -268,6 +268,14 @@ class CodeSuggestion(BaseModel):
             "about code you have not been shown."
         ),
     )
+    doubt: Optional[str] = Field(
+        None,
+        description=(
+            "Null unless the review instructions ask for doubtful concerns. "
+            "Then, for a concern you considered and would otherwise have set "
+            "aside, one sentence on why it may not be a real issue."
+        ),
+    )
     comment_only: bool = Field(
         False,
         description=(
@@ -285,7 +293,7 @@ class CodeSuggestion(BaseModel):
     )
     existing_code: Optional[str] = Field(
         None,
-        description="Required non-empty code quoted from the diff to anchor the finding, including comment-only findings.",
+        description="Required non-empty code quoted from the reviewed source to anchor the finding, including comment-only findings. Follow the configured finding scope.",
     )
     claims: List[ReviewClaim] = Field(
         default_factory=list,
@@ -429,8 +437,12 @@ class CodeReview(BaseModel):
     )
 
 
-class CodeReviewFindings(CodeReview):
-    summary: None = None
+class CodeReviewFindings(BaseModel):
+    code_suggestions: List[CodeSuggestion] = Field(
+        default_factory=list,
+        description="Every distinct actionable issue supported by the source, including enabled test, documentation and contract concerns. Put all issues here.",
+    )
+    verdict: Verdict
 
 
 def summary_from(

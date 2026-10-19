@@ -88,14 +88,14 @@ def test_search_preserves_literal_unicode_and_ignored_source():
     assert any("Straße" in match.text for match in folded.matches)
 
 
-def test_missing_ripgrep_is_reported_as_unavailable(monkeypatch):
+def test_missing_ripgrep_uses_python_search(monkeypatch):
     monkeypatch.setattr("src.core.search.source_text.shutil.which", lambda _: None)
     scope = Scope.from_mapping({"repository": "acme/app", "revision": "head"})
     result = SnapshotSearcher(scope, ("app.py",), lambda _: "needle").search(
         SearchQuery(scope, ("needle",))
     )
-    assert not result.matches
-    assert result.unavailable == "ripgrep is required for source text search"
+    assert [match.path for match in result.matches] == ["app.py"]
+    assert result.unavailable is None
 
 
 def test_parallel_queries_share_one_prepared_revision():

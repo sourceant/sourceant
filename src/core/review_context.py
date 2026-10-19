@@ -17,6 +17,7 @@ from src.core.code_index import (
 from src.core.code_index.emit import DEFAULT_FILE_CHARACTER_LIMIT, emit_file_graph
 from src.core.language_pack import detect_language
 from src.core.scope import Scope
+from src.core.review_trace import context as trace_context
 
 
 @dataclass(frozen=True)
@@ -214,6 +215,14 @@ class DefaultReviewCodeContextPreparer:
                     "content": "\n".join(excerpt_lines),
                 }
             )
+            trace_context(
+                "graph",
+                "prepared-excerpt",
+                path,
+                start_line=start,
+                end_line=bounded_end,
+                characters=len(excerpts[-1]["content"]),
+            )
         return excerpts
 
     def _fit_to_character_limit(self, payload: dict) -> str:
@@ -223,7 +232,13 @@ class DefaultReviewCodeContextPreparer:
             if len(content) <= self._character_limit:
                 return content
             if payload["nodes"]:
-                payload["nodes"].pop()
+                removed = payload["nodes"].pop()
+                trace_context(
+                    "graph",
+                    "omitted-node",
+                    removed["properties"].get("file_path", ""),
+                    reason="character limit",
+                )
                 included = {node["id"] for node in payload["nodes"]}
                 payload["edges"] = [
                     edge
@@ -231,10 +246,27 @@ class DefaultReviewCodeContextPreparer:
                     if edge["source"] in included and edge["target"] in included
                 ]
             elif len(payload["source_excerpts"]) > 1:
-                payload["source_excerpts"].pop()
+                removed = payload["source_excerpts"].pop()
+                trace_context(
+                    "graph",
+                    "omitted-excerpt",
+                    removed["file_path"],
+                    start_line=removed["start_line"],
+                    end_line=removed["end_line"],
+                    reason="character limit",
+                )
             elif payload["edges"]:
                 payload["edges"].pop()
             else:
+                for removed in payload["source_excerpts"]:
+                    trace_context(
+                        "graph",
+                        "omitted-excerpt",
+                        removed["file_path"],
+                        start_line=removed["start_line"],
+                        end_line=removed["end_line"],
+                        reason="character limit",
+                    )
                 payload["source_excerpts"].clear()
 
     @classmethod
@@ -274,7 +306,13 @@ def merge_review_code_contexts(
             return ReviewCodeContext(content, payload["truncated"])
         payload["truncated"] = True
         if payload["nodes"]:
-            payload["nodes"].pop()
+            removed = payload["nodes"].pop()
+            trace_context(
+                "graph-merge",
+                "omitted-node",
+                removed["properties"].get("file_path", ""),
+                reason="character limit",
+            )
             included = {node["id"] for node in payload["nodes"]}
             payload["edges"] = [
                 edge
@@ -282,10 +320,27 @@ def merge_review_code_contexts(
                 if edge["source"] in included and edge["target"] in included
             ]
         elif len(payload["source_excerpts"]) > 1:
-            payload["source_excerpts"].pop()
+            removed = payload["source_excerpts"].pop()
+            trace_context(
+                "graph-merge",
+                "omitted-excerpt",
+                removed["file_path"],
+                start_line=removed["start_line"],
+                end_line=removed["end_line"],
+                reason="character limit",
+            )
         elif payload["edges"]:
             payload["edges"].pop()
         elif payload["source_excerpts"]:
+            for removed in payload["source_excerpts"]:
+                trace_context(
+                    "graph-merge",
+                    "omitted-excerpt",
+                    removed["file_path"],
+                    start_line=removed["start_line"],
+                    end_line=removed["end_line"],
+                    reason="character limit",
+                )
             payload["source_excerpts"].clear()
         else:
             return ReviewCodeContext(content, True)

@@ -13,16 +13,29 @@ from src.core.settings.configuration import Configuration
 from src.core.settings.definitions import get
 from src.core.workspace import workspace_of
 from src.models.code_review import Verdict
+from src.core.review.investigations import ChangeTooLarge
 from src.plugins.builtin.code_reviewer.working_tree import reviewed
 
 router = APIRouter()
 MAX_UPLOAD = 64 * 1024 * 1024
 OPTIONS = {
     "discovery-passes": "review.discovery_passes",
+    "split-large-changes": "review.split_large_changes",
+    "maximum-parts": "review.maximum_parts",
+    "include-change-digest": "review.include_change_digest",
+    "expert-readings": "review.expert_readings",
+    "expert-execution": "review.expert_execution",
     "evaluation-passes": "review.evaluation_passes",
     "concurrency": "review.concurrency",
     "minimum-support": "review.minimum_support",
     "maximum-rejections": "review.maximum_rejections",
+    "group-related-files": "review.group_related_files",
+    "direct-dependencies-first": "review.direct_dependencies_first",
+    "include-documentation-files": "review.include_documentation_files",
+    "include-imported-files": "review.include_imported_files",
+    "include-callers-and-callees": "review.include_callers_and_callees",
+    "evaluation-policy": "review.evaluation_policy",
+    "evaluate-uncertain-findings": "review.evaluate_uncertain_findings",
     "reading-budget": "review.reading_budget",
     "max-output-tokens": "model.max_output_tokens",
     "reasoning-effort": "model.reasoning_effort",
@@ -42,7 +55,7 @@ class Snapshot(BaseModel):
     omitted: list[str] = Field(default_factory=list, max_length=50000)
     title: str = Field(default="", max_length=1000)
     description: str = Field(default="", max_length=100000)
-    configuration: dict[str, str] = Field(default_factory=dict, max_length=16)
+    configuration: dict[str, str] = Field(default_factory=dict, max_length=len(OPTIONS))
 
     @field_validator("files")
     @classmethod
@@ -125,6 +138,8 @@ async def submit_snapshot(request: Request, user: dict = Depends(get_current_use
             description=body.description,
             configuration=configuration,
         )
+    except ChangeTooLarge as error:
+        raise HTTPException(422, str(error))
     except ValueError:
         raise HTTPException(
             422, "The snapshot cannot be reviewed with the configured models"

@@ -70,6 +70,7 @@ def test_premium_uses_registered_router_and_configured_repetitions():
             "review.plan": "premium",
             "model.purposes": {"review": ["a"], "review-evaluation": ["b"]},
             "review.discovery_passes": 3,
+            "review.expert_readings": 0,
             "review.evaluation_passes": 2,
             "review.minimum_support": 2,
             "review.maximum_rejections": 0,
@@ -88,3 +89,6 @@ def test_premium_uses_registered_router_and_configured_repetitions():
     assert plan.evaluators[0].evaluator.provider is evaluator
     assert plan.evaluators[0].repetitions == 2
     assert plan.minimum_support == 2
+    assert len(plan.reviewers[0].focuses) == 3
+    assert len(set(plan.reviewers[0].focuses)) == 3
+    assert plan.evaluators[0].evaluator.services is services

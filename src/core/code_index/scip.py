@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -131,6 +132,8 @@ class ScipJsonImporter:
                     relationship_count,
                 )
 
+            defined: list[tuple[str, int, int]] = []
+            referenced: list[tuple[str, int]] = []
             occurrences = _sequence(document.get("occurrences", ()), "occurrences")
             occurrence_count += len(occurrences)
             if occurrence_count > self._limits.occurrence_limit:
@@ -155,6 +158,28 @@ class ScipJsonImporter:
                         },
                     )
                 roles = _integer(occurrence.get("symbol_roles", 0), "symbol_roles")
+                span = _lines(
+                    occurrence.get("enclosing_range")
+                    or occurrence.get("TypedEnclosingRange")
+                )
+                if roles & self.DEFINITION_ROLE and span is not None:
+                    defined.append((symbol, *span))
+                    nodes[symbol_id] = CodeNode(
+                        id=symbol_id,
+                        labels=nodes[symbol_id].labels,
+                        properties={
+                            **nodes[symbol_id].properties,
+                            "name": nodes[symbol_id].properties.get("name")
+                            or _descriptor_name(symbol),
+                            "file_path": path,
+                            "start_line": span[0] + 1,
+                            "end_line": span[1] + 1,
+                        },
+                    )
+                elif not roles & (self.DEFINITION_ROLE | self.IMPORT_ROLE):
+                    at = _lines(_range_value(occurrence))
+                    if at is not None and CALLABLE.search(symbol):
+                        referenced.append((symbol, at[0]))
                 for edge_type in self._occurrence_edge_types(roles):
                     edge_id = _identity(
                         "occurrence",
@@ -180,6 +205,28 @@ class ScipJsonImporter:
                             "symbol_roles": roles,
                         },
                     )
+            # SCIP records which symbols a body references, not which it calls.
+            # A reference to a function or method from inside another
+            # definition's enclosing range is that definition calling it.
+            for symbol, line in referenced:
+                holders = [
+                    one
+                    for one in defined
+                    if one[1] <= line <= one[2] and CALLABLE.search(one[0])
+                ]
+                if not holders:
+                    continue
+                holder = min(holders, key=lambda one: one[2] - one[1])[0]
+                if holder == symbol:
+                    continue
+                edge_id = _identity("call", f"{path}:{holder}:{symbol}:{line}")
+                edges[edge_id] = CodeEdge(
+                    id=edge_id,
+                    source_id=_identity("symbol", holder),
+                    target_id=_identity("symbol", symbol),
+                    type="CALLS",
+                    properties={**common, "file_path": path, "line": line + 1},
+                )
 
         self._writer.clear(scope)
         for node in sorted(nodes.values(), key=lambda item: item.id):
@@ -277,6 +324,26 @@ class ScipJsonImporter:
         if roles & self.IMPORT_ROLE:
             edge_types.append("IMPORTS")
         return tuple(edge_types or ["REFERENCES"])
+
+
+# A function or method symbol ends in its disambiguator and a period:
+# `pkg/Thing#run().`, `example/run(+1).`.
+CALLABLE = re.compile(r"\([^)]*\)\.$")
+NAME = re.compile(r"[`]?([^`/#.()]+)[`]?(?:\([^)]*\))?[.#]?$")
+
+
+def _descriptor_name(symbol: str) -> str:
+    match = NAME.search(symbol.rsplit(" ", 1)[-1])
+    return match.group(1) if match else ""
+
+
+def _lines(value: Any) -> tuple[int, int] | None:
+    """The first and last zero-based line of a SCIP range."""
+    if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
+        return None
+    if not all(isinstance(one, int) for one in value):
+        return None
+    return (value[0], value[2] if len(value) == 4 else value[0])
 
 
 def _identity(kind: str, value: str) -> str:

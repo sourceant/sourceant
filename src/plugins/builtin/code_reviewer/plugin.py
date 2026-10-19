@@ -5,6 +5,7 @@ Subscribes to pull request events and generates automated code reviews.
 """
 
 import difflib
+import functools
 import time
 from concurrent.futures import ThreadPoolExecutor
 from src.core.parallel import SharedReader, submit
@@ -710,6 +711,15 @@ class CodeReviewerPlugin(BasePlugin):
                         title=pull_request.title or "",
                         description=getattr(pull_request, "body", "") or "",
                         diff=raw_diff,
+                        repository_paths=functools.cache(
+                            lambda: tuple(
+                                github.list_paths(
+                                    repository.owner,
+                                    repository.name,
+                                    pull_request.head_sha,
+                                )
+                            )
+                        ),
                     ),
                     provider=llm_instance,
                     skills=review_skills,

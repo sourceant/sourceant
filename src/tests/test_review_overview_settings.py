@@ -183,3 +183,75 @@ def test_nitpicks_require_opt_in_through_http(tmp_path, only_nitpicks):
                 assert ("Nitpicks are disabled" in knowledge) is not enabled
     finally:
         engine.dispose()
+
+
+def test_doubtful_findings_are_not_published_without_evaluation(tmp_path):
+    from unittest.mock import Mock
+
+    from src.core.change_context.models import ChangedFile, ChangeSet
+    from src.core.scope import Scope
+    from src.core.services import ServiceRegistry
+    from src.models.code_review import (
+        CodeReview,
+        CodeSuggestion,
+        SuggestionCategory,
+        Verdict,
+    )
+    from src.plugins.builtin.code_reviewer.reviewing import CodeReviewer
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'settings.db'}")
+    Config.__table__.create(engine)
+    app = FastAPI()
+    app.include_router(settings.router, prefix="/api/settings")
+    app.dependency_overrides[get_current_user] = lambda: {
+        "user_id": "42",
+        "scope": {"workspace_id": "one"},
+    }
+    sure = CodeSuggestion(
+        file_name="a.py",
+        start_line=1,
+        end_line=1,
+        side="RIGHT",
+        suggested_code=None,
+        category=SuggestionCategory.BUG,
+        comment="The new value breaks callers that expect 1.",
+    )
+    doubted = sure.model_copy(
+        update={
+            "comment": "Callers comparing against 1 now fail.",
+            "doubt": "No caller of this value was shown.",
+        }
+    )
+    answer = CodeReview(
+        summary=CodeReviewSummary(
+            overview="Changes a value.", minor_suggestions=[], critical_issues=[]
+        ),
+        verdict=Verdict.COMMENT,
+        code_suggestions=[sure, doubted],
+    )
+    changes = ChangeSet(
+        scope=Scope.from_mapping({"repository": "acme/web"}),
+        configuration=Configuration(workspace="one", user="42"),
+        files=(ChangedFile(path="a.py"),),
+        diff="diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n",
+    )
+    reviewer = CodeReviewer(services=ServiceRegistry())
+    provider = Mock()
+    provider.count_tokens.side_effect = len
+    try:
+        with (
+            patch("src.config.db.engine", engine),
+            TestClient(app) as client,
+            patch.object(reviewer, "_in_one_pass", return_value=answer) as reading,
+        ):
+            response = client.put(
+                "/api/settings/workspace/one/review.evaluate_uncertain_findings",
+                json={"value": True},
+            )
+            assert response.status_code == 200, response.text
+            result = reviewer.review(changes, provider=provider)
+            assert result.code_suggestions == [sure]
+            knowledge = reading.call_args.args[9].knowledge or ""
+            assert "Doubtful concerns" not in knowledge
+    finally:
+        engine.dispose()

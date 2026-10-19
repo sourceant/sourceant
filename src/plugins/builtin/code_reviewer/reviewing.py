@@ -14,7 +14,16 @@ from pathlib import PurePosixPath
 
 from rapidfuzz import fuzz
 
-from src.core.parallel import parallel_map
+from src.core.parallel import MODEL_CONCURRENCY, parallel_map
+from src.core.review_performance import (
+    review_session,
+    shared,
+    stage,
+    session_id,
+    reading_identity,
+    expert_identity,
+)
+from src.core.model import purpose_provider
 from src.core.review.exclusions import review_diff
 from src.core.skills.matching import matches
 from src.core.skills.selection import for_review, said_here
@@ -51,8 +60,15 @@ from src.core.skills import (
     split,
 )
 from src.core.review.fingerprint import of_words
-from src.core.review.models import Sections, Told
-from src.core.review.execution import ReviewEvaluation
+from src.core.review.planning import evaluated
+from src.core.review.models import Sections, Told, scoped_specialist_guidance
+from src.core.review.execution import ReviewEvaluation, ReviewInput, ReviewInvestigation
+from src.core.review.contracts import (
+    review_context_provider,
+    stated_constraints,
+    change_digest,
+    change_inventory,
+)
 from src.core.services import ServiceRegistry, service_registry
 from src.core.settings.configuration import Configuration
 from src.models.code_review import (
@@ -69,6 +85,11 @@ from src.utils.diff_parser import ParsedDiff, parse_diff
 from src.utils.line_mapper import LineMapper
 from src.utils.logger import logger
 from src.utils.suggestion_filter import SuggestionFilter
+from src.core.review_trace import (
+    traced_review,
+    finding as trace_finding,
+    completed as trace_completed,
+)
 
 # How alike two statements of a problem have to be before they are one
 # problem. Set where a reworded version of the same complaint matches and a
@@ -92,10 +113,10 @@ def _says_the_same(said: str, reported: str) -> bool:
 DEFAULT_FILE_LIMIT = 20
 
 # How much is worth reading in one go, which is not how much fits.
-DEFAULT_READING_BUDGET = 15_000
+DEFAULT_READING_BUDGET = 50_000
 
 # Short enough a wait, without asking a provider for everything at once.
-MAX_AT_ONCE = 6
+MAX_AT_ONCE = MODEL_CONCURRENCY
 
 
 def _batched(parsed_files, budget: int, cost) -> list[list]:
@@ -138,6 +159,8 @@ class CodeReviewer:
 
     services: ServiceRegistry = field(default=service_registry)
 
+    @review_session
+    @traced_review
     def review(
         self, changes: ChangeSet, *, provider: Any, **options
     ) -> CodeReview | None:
@@ -148,23 +171,40 @@ class CodeReviewer:
             return None
         request = ReviewInput(
             changes,
+            require_complete_discovery=options.get("require_complete_discovery", False),
             read_content=options.get("read_content"),
             root=options.get("root"),
             analysis=options.get("analysis"),
+            analysis_task=options.get("analysis_task"),
             options={
                 key: value
                 for key, value in options.items()
-                if key not in {"read_content", "analysis", "root"}
+                if key
+                not in {
+                    "read_content",
+                    "analysis",
+                    "analysis_task",
+                    "root",
+                    "require_complete_discovery",
+                }
             },
         )
         plan = review_plan_source(self.services).plan_for(
             request, SimpleNamespace(review=self._review_once), provider
         )
         if plan is None:
+            options = dict(options)
+            task = options.pop("analysis_task", None)
+            if task is not None and options.get("analysis") is None:
+                options["analysis"] = task.result()
             return self._review_once(
                 changes,
                 provider=provider,
-                **{key: value for key, value in options.items() if key != "root"},
+                **{
+                    key: value
+                    for key, value in options.items()
+                    if key not in {"root", "require_complete_discovery"}
+                },
             )
         execution = review_orchestrator(self.services).review(request, plan)
         if _stopped(changes, options.get("metadata"), options.get("revision", "")):
@@ -178,6 +218,12 @@ class CodeReviewer:
             from dataclasses import asdict
 
             execution.review.execution = {
+                "investigation_gaps": execution.investigation_gaps,
+                "investigations": [
+                    asdict(task)
+                    for participant in plan.reviewers
+                    for task in participant.investigations
+                ],
                 "reviews": [
                     {
                         "participant": one.participant,
@@ -238,6 +284,8 @@ class CodeReviewer:
         told: Sequence[Told] = (),
         skills: Sequence[Skill] = (),
         expert_passes: str | None = None,
+        include_experts: bool = True,
+        investigation: ReviewInvestigation | None = None,
         code_scope: Scope | None = None,
         metadata: dict | None = None,
         coverage: Coverage | None = None,
@@ -284,7 +332,21 @@ class CodeReviewer:
             diff=filtered_diff,
             files=tuple(f for f in changes.files if f.path not in omitted),
         )
-        parsed_files = parse_diff(changes.diff)
+        parsed_files = shared(
+            ("parsed-diff", changes.diff), lambda: parse_diff(changes.diff)
+        )
+        context_changes = changes
+        if investigation is not None:
+            paths = {target.path for target in investigation.targets}
+            parsed_files = [one for one in parsed_files if one.file_path in paths]
+            if not parsed_files:
+                raise ValueError("The investigation has no reviewable targets")
+            changes = replace(
+                changes,
+                diff="\n".join(one.diff_text for one in parsed_files),
+                files=tuple(one for one in changes.files if one.path in paths),
+            )
+            include_experts = False
         if not parsed_files:
             return None
         line_mapper = LineMapper(parsed_files)
@@ -295,24 +357,77 @@ class CodeReviewer:
         ]
 
         configuration = changes.configuration
+        expert_guidance = (
+            investigation is not None
+            or configuration.value("review.expert_execution") == "guidance"
+        )
+        if expert_guidance:
+            include_experts = False
+        # One file larger than the budget is investigated alone, as a batch
+        # would read it, rather than being dropped.
+        if (
+            investigation is not None
+            and len(parsed_files) > 1
+            and sum(provider.count_tokens(one.diff_text) for one in parsed_files)
+            > self._budget(configuration)
+        ):
+            raise ValueError(
+                "Investigation diff exceeds its single-call reading budget"
+            )
         include_nitpicks = configuration.value("review.include_nitpicks") is True
         file_limit = (
             configuration.value("review.structural_context_file_limit")
             or DEFAULT_FILE_LIMIT
         )
 
-        durable_code, local_code = self._indexes(
-            changes, readable, read_content, file_limit, code_scope, code_index
-        )
-        known = known_for(changes, self.services, durable_code, coverage)
-
-        sections = Sections(
-            requirements=requirements_section(known),
-            knowledge=self._joined(
-                [knowledge_section(known), *(one.rendered() for one in told)]
+        durable_code, local_code = shared(
+            (
+                "indexes",
+                changes.diff,
+                file_limit,
+                id(code_index),
+                str(code_scope),
+                id(self.services),
             ),
-            impact=impact_section(known),
-            related_code=related_code_section(
+            lambda: self._indexes(
+                changes, readable, read_content, file_limit, code_scope, code_index
+            ),
+        )
+
+        def resolve_known():
+            collected = Coverage()
+            value = known_for(changes, self.services, durable_code, collected)
+            return value, collected
+
+        known, collected = shared(
+            ("known", changes.diff, id(self.services)), resolve_known
+        )
+        coverage.merge(collected)
+
+        def choose_skills():
+            available = {skill.id: skill for skill in skills}
+            for source in self.services.contributions(SkillSource):
+                for skill in source.read():
+                    available[skill.id] = skill
+            selector = purpose_provider(
+                configuration, self.services, "skill-selection", provider
+            )
+            chosen = for_review(
+                tuple(available.values()),
+                Change(changes.title, changes.description, changes.paths, changes.diff),
+                (
+                    configuration.value("review.expert_passes")
+                    if expert_passes is None
+                    else expert_passes
+                ),
+                said=said_here(configuration.value("skills.uses")),
+                ask=selector.generate_text,
+                model=selector.model,
+            )
+            return available, chosen
+
+        def related():
+            return related_code_section(
                 changes,
                 self.services,
                 durable_code,
@@ -320,8 +435,146 @@ class CodeReviewer:
                 code_scope,
                 known,
                 coverage,
-                provider,
+                purpose_provider(
+                    configuration, self.services, "review-search", provider
+                ),
+            )
+
+        with stage("preparation"):
+            (available, chosen), related_code = parallel_map(
+                lambda call: call(), (choose_skills, related), 2
+            )
+
+        context_provider = review_context_provider(self.services)
+        contracts = shared(
+            (
+                "repository-contracts",
+                changes.diff,
+                configuration.value("review.direct_dependencies_first"),
+                context_changes.paths,
+                id(read_content),
+                id(context_provider),
+                configuration.value("review.reading_budget"),
             ),
+            lambda: context_provider.prepare(
+                ReviewInput(
+                    (
+                        context_changes
+                        if configuration.value("review.direct_dependencies_first")
+                        is True
+                        else changes
+                    ),
+                    read_content=read_content,
+                ),
+                readable,
+            ),
+        )
+        related_code = self._joined([related_code, contracts.rendered()])
+        if configuration.value("review.include_callers_and_callees") is True:
+            from src.core.review.call_context import call_context
+            from src.core.search import Searcher
+
+            try:
+                searcher = self.services.resolve(Searcher)
+            except LookupError:
+                searcher = None
+            calling = shared(
+                (
+                    "call-context",
+                    context_changes.diff,
+                    id(read_content),
+                    id(durable_code),
+                ),
+                lambda: call_context(
+                    context_changes.diff,
+                    str(changes.scope.get("repository") or ""),
+                    read_content,
+                    revision=changes.revision,
+                    reader=durable_code,
+                    searcher=searcher,
+                ),
+            )
+            related_code = self._joined(
+                [
+                    related_code,
+                    calling.rendered(
+                        readable,
+                        read_content,
+                        min(16000, self._budget(configuration)),
+                    ),
+                ]
+            )
+        if investigation is not None:
+            from src.core.review.investigations import target_source
+
+            source, missing = target_source(
+                investigation, read_content, self._budget(configuration)
+            )
+            missing = (
+                *missing,
+                *(f"{path}: repository context budget" for path in contracts.omitted),
+            )
+            for gap in missing:
+                coverage.record(
+                    "investigation",
+                    "source evidence",
+                    answered=False,
+                    target=investigation.name,
+                    reason=gap,
+                )
+            related_code = self._joined(
+                [
+                    related_code,
+                    source,
+                    (
+                        "Investigation evidence gaps:\n" + "\n".join(missing)
+                        if missing
+                        else None
+                    ),
+                ]
+            )
+
+        sections = Sections(
+            requirements=self._joined(
+                [
+                    requirements_section(known),
+                    stated_constraints(
+                        contracts.source, min(4000, self._budget(configuration))
+                    ),
+                    (
+                        (
+                            shared(
+                                (
+                                    "change-digest",
+                                    context_changes.diff,
+                                    tuple(omitted),
+                                    id(read_content),
+                                ),
+                                lambda: change_digest(
+                                    context_changes.diff,
+                                    read_content,
+                                    omitted,
+                                    min(32000, 2 * self._budget(configuration)),
+                                ),
+                            )
+                            if configuration.value("review.include_change_digest")
+                            is True
+                            else change_inventory(
+                                context_changes.paths,
+                                omitted,
+                                min(8000, self._budget(configuration)),
+                            )
+                        )
+                        if investigation is not None
+                        else None
+                    ),
+                ]
+            ),
+            knowledge=self._joined(
+                [knowledge_section(known), *(one.rendered() for one in told)]
+            ),
+            impact=impact_section(known),
+            related_code=related_code,
             analysis=analysis.rendered() if analysis else None,
         )
 
@@ -337,6 +590,26 @@ class CodeReviewer:
                             "this change, including pre-existing issues and related "
                             "files outside the diff. Use actual head source paths and "
                             "line numbers. Scope alone is not grounds to omit an issue.",
+                        ).rendered(),
+                    ]
+                ),
+            )
+        if include_nitpicks:
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        Told(
+                            "Finding policy",
+                            "Actionable type-contract, test-quality, documentation and "
+                            "maintainability concerns are enabled. They need a concrete "
+                            "flaw and useful fix, but need not demonstrate a runtime "
+                            "failure. Check new failure branches against the tests, "
+                            "changed claims against implementation, and explicit "
+                            "repository requirements against the changed behavior. "
+                            "Do not omit such concerns solely because they are not "
+                            "runtime bugs. Report distinct issues separately.",
                         ).rendered(),
                     ]
                 ),
@@ -361,6 +634,27 @@ class CodeReviewer:
                     ]
                 ),
             )
+        if configuration.value(
+            "review.evaluate_uncertain_findings"
+        ) is True and evaluated(configuration):
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        Told(
+                            "Doubtful concerns",
+                            "An independent evaluation checks every finding against "
+                            "the source before anything is published. When you "
+                            "consider a concern and lean towards setting it aside "
+                            "because it may be intended, out of scope, too minor, or "
+                            "unproven, report it anyway and state that reason in "
+                            "`doubt`. Leave out concerns you verified are not "
+                            "problems. Findings you are sure of keep `doubt` null.",
+                        ).rendered(),
+                    ]
+                ),
+            )
 
         evidence = self._evidence(changes, durable_code, read_content, code_scope)
         metadata = metadata or self._metadata(changes)
@@ -368,22 +662,6 @@ class CodeReviewer:
         readers = (durable_code, local_code)
         budget = self._budget(configuration)
 
-        available = {skill.id: skill for skill in skills}
-        for source in self.services.contributions(SkillSource):
-            for skill in source.read():
-                available[skill.id] = skill
-        chosen = for_review(
-            tuple(available.values()),
-            Change(changes.title, changes.description, changes.paths, changes.diff),
-            (
-                configuration.value("review.expert_passes")
-                if expert_passes is None
-                else expert_passes
-            ),
-            said=said_here(configuration.value("skills.uses")),
-            ask=provider.generate_text,
-            model=provider.model,
-        )
         # Most skills are a pointer at the page that holds the rule, and a
         # change judged against a pointer is judged against nothing.
         selected = split(chosen)
@@ -430,7 +708,14 @@ class CodeReviewer:
             pass_changes = replace(
                 changes, diff="\n".join(one.diff_text for one in pass_files)
             )
-            total = sum(provider.count_tokens(one.diff_text) for one in pass_files)
+
+            def cost(text):
+                return shared(
+                    ("diff-tokens", provider.model, text),
+                    lambda: provider.count_tokens(text),
+                )
+
+            total = sum(cost(one.diff_text) for one in pass_files)
             if total <= budget:
                 logger.info("The whole change fits in one reading.")
                 return self._in_one_pass(
@@ -449,7 +734,15 @@ class CodeReviewer:
                     code_scope,
                 )
 
-            batches = _batched(pass_files, budget, provider.count_tokens)
+            batches = shared(
+                (
+                    "batches",
+                    provider.model,
+                    budget,
+                    tuple(one.diff_text for one in pass_files),
+                ),
+                lambda: _batched(pass_files, budget, cost),
+            )
             logger.info(f"Reading {len(pass_files)} files in {len(batches)} passes.")
             return self._in_batches(
                 provider,
@@ -470,6 +763,20 @@ class CodeReviewer:
             )
 
         focused = [skill for skill in selected if skill.type == SkillType.REVIEW_PASS]
+        if expert_guidance:
+            sections = replace(
+                sections,
+                knowledge=self._joined(
+                    [
+                        sections.knowledge,
+                        scoped_specialist_guidance(
+                            [(skill.name, skill.body) for skill in focused],
+                            finding_scope=configuration.value("review.finding_scope"),
+                            include_nitpicks=include_nitpicks,
+                        ),
+                    ]
+                ),
+            )
 
         def run_pass(skill):
             if skill is None:
@@ -481,18 +788,19 @@ class CodeReviewer:
                 "has already been removed.\n\n" + skill.body
             )
             try:
-                return read(
-                    replace(
-                        sections,
-                        knowledge=self._joined(
-                            [
-                                sections.knowledge,
-                                Told(skill.name, instructions).rendered(),
-                            ]
+                with stage("expert", skill=skill.id):
+                    return read(
+                        replace(
+                            sections,
+                            knowledge=self._joined(
+                                [
+                                    sections.knowledge,
+                                    Told(skill.name, instructions).rendered(),
+                                ]
+                            ),
                         ),
-                    ),
-                    skill.paths,
-                )
+                        skill.paths,
+                    )
             except Exception as error:  # noqa: BLE001 - one pass, not the review
                 # One pass is one extra reading. Losing it costs what it
                 # would have said; losing the review costs every other pass.
@@ -508,7 +816,7 @@ class CodeReviewer:
                 )
                 return None
 
-        answers = parallel_map(run_pass, [None, *focused])
+        answers = parallel_map(run_pass, [None, *(focused if include_experts else ())])
         answer = answers[0]
         if answer is None:
             return None
@@ -523,14 +831,32 @@ class CodeReviewer:
         )
 
         unique, seen = [], set()
-        for suggestion in self._beyond(analysis, combined):
+        beyond = self._beyond(analysis, combined)
+        for suggestion in beyond:
+            if suggestion.doubt and not evaluated(configuration):
+                trace_finding(
+                    "policy", "dropped", suggestion, reason="doubt without evaluation"
+                )
+                continue
             if not include_nitpicks and is_nitpick(suggestion):
+                trace_finding(
+                    "policy", "dropped", suggestion, reason="nitpicks disabled"
+                )
                 continue
             anchor = (suggestion.start_line, suggestion.end_line, suggestion.side)
             keys = {(*anchor, of_words(suggestion.file_name, suggestion.comment))}
             if not seen.intersection(keys):
                 unique.append(suggestion)
                 seen.update(keys)
+                trace_finding("candidate-pool", "retained", suggestion)
+            else:
+                trace_finding(
+                    "deduplication",
+                    "dropped",
+                    suggestion,
+                    reason="identical comment and anchor",
+                )
+        trace_completed("policy-and-deduplication", len(beyond), len(unique))
         # What the tools found goes out with the review. Findings are dropped
         # for repeating a tool, so the tool has to be the thing that said it.
         review = CodeReview(
@@ -551,6 +877,7 @@ class CodeReviewer:
         finding is worse than a repeated one.
         """
         if not analysis or not analysis.findings:
+            trace_completed("tool-deduplication", len(suggestions), len(suggestions))
             return suggestions
         kept, covered = [], 0
         for suggestion in suggestions:
@@ -558,11 +885,18 @@ class CodeReviewer:
                 suggestion.file_name, suggestion.start_line, suggestion.end_line
             )
             if any(_says_the_same(suggestion.comment, one.message) for one in here):
+                trace_finding(
+                    "tool-deduplication",
+                    "dropped",
+                    suggestion,
+                    reason="matches an overlapping tool finding",
+                )
                 covered += 1
                 continue
             kept.append(suggestion)
         if covered:
             logger.info(f"Dropped {covered} findings a tool had already reported")
+        trace_completed("tool-deduplication", len(suggestions), len(kept))
         return kept
 
     @staticmethod
@@ -683,14 +1017,24 @@ class CodeReviewer:
         }
 
     def _context(self, changes, readers, paths, read_content, file_limit, code_scope):
-        return prepare_code_context(
-            readers,
-            str(changes.scope.get("repository") or ""),
-            changes.revision,
-            paths,
-            scope=code_scope,
-            read_content=read_content,
-            file_limit=file_limit,
+        return shared(
+            (
+                "code-context",
+                changes.revision,
+                tuple(paths),
+                file_limit,
+                str(code_scope),
+                tuple(id(one) for one in readers),
+            ),
+            lambda: prepare_code_context(
+                readers,
+                str(changes.scope.get("repository") or ""),
+                changes.revision,
+                paths,
+                scope=code_scope,
+                read_content=read_content,
+                file_limit=file_limit,
+            ),
         )
 
     def _in_one_pass(
@@ -736,6 +1080,8 @@ class CodeReviewer:
         suggestions: List = []
         rejections: List[str] = []
         if full_review and full_review.code_suggestions:
+            for suggestion in full_review.code_suggestions:
+                trace_finding("discovery", "raw", suggestion)
             suggestions = self.process(
                 full_review.code_suggestions,
                 suggestion_filter,
@@ -789,7 +1135,13 @@ class CodeReviewer:
         # a change that fitted in one reading.
         rejections: List[str] = []
 
+        completed = 0
+        from threading import Lock
+
+        progress = Lock()
+
         def read(batch):
+            nonlocal completed
             if _stopped(changes, metadata, revision):
                 return None
             paths = [one.file_path for one in batch]
@@ -798,7 +1150,7 @@ class CodeReviewer:
                 about_these = [
                     one for one in existing_comments if one.get("path") in set(paths)
                 ]
-            return provider.generate_code_review(
+            answer = provider.generate_code_review(
                 diff="\n".join(one.diff_text for one in batch),
                 parsed_files=batch,
                 pr_metadata=metadata,
@@ -818,6 +1170,18 @@ class CodeReviewer:
                 related_code=sections.related_code,
                 analysis=sections.analysis,
             )
+            with progress:
+                completed += 1
+                logger.info(
+                    "review_batch session=%s model=%s reading=%s expert=%s completed=%s total=%s",
+                    session_id(),
+                    provider.model,
+                    reading_identity.get(),
+                    expert_identity.get(),
+                    completed,
+                    len(batches),
+                )
+            return answer
 
         answers = parallel_map(read, batches, MAX_AT_ONCE)
 
@@ -826,6 +1190,8 @@ class CodeReviewer:
 
         for answer in answers:
             if answer and answer.code_suggestions:
+                for suggestion in answer.code_suggestions:
+                    trace_finding("discovery", "raw", suggestion)
                 suggestions.extend(
                     self.process(
                         answer.code_suggestions,
@@ -866,9 +1232,21 @@ class CodeReviewer:
         """Filter and map suggestions to valid diff positions."""
         result = []
         validator = StructuralReviewEvidenceValidator()
-        filtered, _ = suggestion_filter.filter_suggestions(suggestions)
+        filtered, _ = suggestion_filter.filter_suggestions(
+            suggestions,
+            on_rejected=lambda suggestion, reason: trace_finding(
+                "actionability", "dropped", suggestion, reason=reason
+            ),
+        )
+        trace_completed("actionability", len(suggestions), len(filtered))
         for suggestion in filtered:
             if line_mapper.suggestion_replays_diff(suggestion):
+                trace_finding(
+                    "replacement",
+                    "dropped",
+                    suggestion,
+                    reason="replacement already applied",
+                )
                 logger.info(
                     f"Filtered out suggestion for "
                     f"{suggestion.file_name}:{suggestion.start_line}: "
@@ -892,6 +1270,9 @@ class CodeReviewer:
                         <= len(content.splitlines())
                     )
             if suggestion.comment_only and not mapped_result and not outside_diff:
+                trace_finding(
+                    "anchor", "dropped", suggestion, reason="no permitted source anchor"
+                )
                 logger.info(
                     "Filtered comment-only finding without a valid diff anchor for %s",
                     suggestion.file_name,
@@ -909,6 +1290,7 @@ class CodeReviewer:
                 at=suggestion.start_line,
             )
             if decision.contradicted:
+                trace_finding("claims", "dropped", suggestion, reason=decision.reason)
                 if evidence_rejections is not None:
                     evidence_rejections.append(decision.reason)
                 logger.info(
@@ -917,6 +1299,8 @@ class CodeReviewer:
                 )
                 continue
             result.append(suggestion)
+            trace_finding("processing", "retained", suggestion)
+        trace_completed("processing", len(filtered), len(result))
         return result
 
 

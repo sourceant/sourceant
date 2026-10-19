@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any, Callable, Mapping, TYPE_CHECKING
 
@@ -27,12 +28,28 @@ class FindingEvaluation:
     reason: str
     evidence: tuple[str, ...] = ()
     duplicate_of: int | None = None
+    premises: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
 class ReviewEvaluation:
     judgments: tuple[FindingEvaluation, ...] = ()
     analysis: Analysis | None = None
+
+
+@dataclass
+class ReviewSourceContext:
+    source: dict[str, str] = field(default_factory=dict)
+    omitted: list[str] = field(default_factory=list)
+
+    def rendered(self) -> str:
+        return "\n\n".join(
+            f"Repository contract source: {path}\n"
+            + "\n".join(
+                f"{line}: {text}" for line, text in enumerate(content.splitlines(), 1)
+            )
+            for path, content in self.source.items()
+        )
 
 
 @dataclass(frozen=True)
@@ -43,6 +60,28 @@ class ReviewInput:
     analysis: Analysis | None = None
     options: dict[str, Any] = field(default_factory=dict)
     source_context: Mapping[str, str] = field(default_factory=dict)
+    analysis_task: Future[Analysis] | None = None
+    require_complete_discovery: bool = False
+
+
+@dataclass(frozen=True)
+class ReviewTarget:
+    path: str
+    ranges: tuple[tuple[int, int, int, int], ...]
+
+
+@dataclass(frozen=True)
+class ReviewInvestigation:
+    name: str
+    targets: tuple[ReviewTarget, ...]
+    question: str
+
+    def __post_init__(self):
+        if not self.name or not self.targets or not self.question.strip():
+            raise ValueError("An investigation needs an identity, targets and question")
+        paths = [target.path for target in self.targets]
+        if len(paths) != len(set(paths)) or any(not path for path in paths):
+            raise ValueError("Investigation targets must have unique nonempty paths")
 
 
 @dataclass(frozen=True)
@@ -51,6 +90,9 @@ class ReviewParticipant:
     reviewer: Reviewer
     provider: LLMInterface
     repetitions: int = 1
+    focuses: tuple[str, ...] = ()
+    expert_repetitions: int | None = None
+    investigations: tuple[ReviewInvestigation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -81,6 +123,18 @@ class ParallelReviewPlan:
                 raise ValueError("Participant names must be nonempty and unique")
             if any(one.repetitions < 1 for one in participants):
                 raise ValueError("Repetitions must be positive")
+        if any(
+            one.expert_repetitions is not None
+            and not 0 <= one.expert_repetitions <= one.repetitions
+            for one in self.reviewers
+        ):
+            raise ValueError("Expert repetitions must fit within discovery repetitions")
+        for participant in self.reviewers:
+            if (
+                participant.investigations
+                and len(participant.investigations) != participant.repetitions
+            ):
+                raise ValueError("Every investigation reading needs its own task")
 
 
 @dataclass(frozen=True)
@@ -100,3 +154,4 @@ class ReviewExecution:
     evaluations: tuple[ParticipantOutcome, ...]
     analysis: Analysis | None = None
     finding_groups: tuple[tuple[int, ...], ...] = ()
+    investigation_gaps: tuple[str, ...] = ()

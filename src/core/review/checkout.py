@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from io import BytesIO
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -32,11 +33,12 @@ class CheckoutConfiguration(Configuration):
         return self
 
 
-def git(root: Path, *arguments: str) -> bytes:
+def git(root: Path, *arguments: str, data: bytes | None = None) -> bytes:
     completed = subprocess.run(
         ["git", "-C", str(root), *arguments],
         capture_output=True,
         timeout=120,
+        input=data,
     )
     if completed.returncode:
         raise ValueError("The requested Git snapshot is unavailable")
@@ -45,27 +47,58 @@ def git(root: Path, *arguments: str) -> bytes:
 
 def checkout_source(root: Path, head: str):
     entries = {}
-    for entry in git(root, "ls-tree", "-r", "-z", head).split(b"\0"):
+    sizes = {}
+    for entry in git(root, "ls-tree", "-r", "-l", "-z", head).split(b"\0"):
         if not entry:
             continue
         info, path = entry.split(b"\t", 1)
-        mode, kind, object_id = info.split(b" ")
+        mode, kind, object_id, size = info.split()
         if kind == b"blob" and mode in (b"100644", b"100755"):
             entries[path.decode("utf-8")] = object_id.decode("ascii")
+            sizes[object_id.decode("ascii")] = int(size)
+
+    objects = tuple(oid for oid in sizes if sizes[oid] <= 1_000_000)
+    chunks = [objects[start : start + 64] for start in range(0, len(objects), 64)]
+    chunk_for = {oid: chunk for chunk in chunks for oid in chunk}
+
+    def read_blobs(chunk):
+        response = BytesIO(
+            git(
+                root,
+                "cat-file",
+                "--batch",
+                data="".join(oid + "\n" for oid in chunk).encode("ascii"),
+            )
+        )
+        decoded = {}
+        for expected in chunk:
+            header = response.readline().split()
+            if (
+                len(header) != 3
+                or header[0].decode("ascii") != expected
+                or header[1] != b"blob"
+            ):
+                raise ValueError("The requested Git blob is unavailable")
+            size = int(header[2])
+            raw = response.read(size)
+            if len(raw) != size or response.read(1) != b"\n":
+                raise ValueError("The requested Git blob is incomplete")
+            try:
+                decoded[expected] = None if b"\0" in raw else raw.decode("utf-8")
+            except UnicodeDecodeError:
+                decoded[expected] = None
+        return decoded
+
+    blobs = SharedReader(read_blobs)
 
     def content(path: str) -> str | None:
         relative = PurePosixPath(path)
         if relative.is_absolute() or ".." in relative.parts or path not in entries:
             return None
-        if int(git(root, "cat-file", "-s", entries[path])) > 1_000_000:
+        oid = entries[path]
+        if oid not in chunk_for:
             return None
-        raw = git(root, "cat-file", "blob", entries[path])
-        if b"\0" in raw:
-            return None
-        try:
-            return raw.decode("utf-8")
-        except UnicodeDecodeError:
-            return None
+        return blobs(chunk_for[oid])[oid]
 
     return tuple(entries), SharedReader(content)
 
@@ -111,6 +144,7 @@ def read_checkout(
     if not files:
         raise ValueError("The snapshot contains no reviewable diff")
     configuration = configuration or CheckoutConfiguration(repository=repository)
+    entries, read_content = checkout_source(root, head)
     changes = ChangeSet(
         Scope.from_mapping({"repository": repository}),
         files,
@@ -120,8 +154,8 @@ def read_checkout(
         title=title,
         description=description,
         configuration=configuration,
+        repository_paths=lambda: tuple(entries),
     )
-    entries, read_content = checkout_source(root, head)
     services = services or ServiceRegistry()
     index = InMemoryCodeIndex()
     for path in entries:

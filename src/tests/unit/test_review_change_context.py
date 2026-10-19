@@ -465,7 +465,8 @@ def test_a_decision_on_an_untouched_file_stays_out_of_the_review(
     )
 
     assert result["status"] == "success"
-    assert instance.generate_code_review.call_args.kwargs["knowledge"] is None
+    knowledge = instance.generate_code_review.call_args.kwargs["knowledge"] or ""
+    assert "Retries are capped at three attempts" not in knowledge
 
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
@@ -495,7 +496,8 @@ def test_a_store_that_holds_no_links_reviews_without_knowledge(
     )
 
     assert result["status"] == "success"
-    assert instance.generate_code_review.call_args.kwargs["knowledge"] is None
+    knowledge = instance.generate_code_review.call_args.kwargs["knowledge"] or ""
+    assert "Retries are capped at three attempts" not in knowledge
 
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")

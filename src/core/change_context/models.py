@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from src.core.code_index import CodeTraversalResult
 from src.core.knowledge import KnowledgeObject
@@ -43,6 +43,11 @@ class ChangeSet:
     #: wider than the repository.
     configuration: Configuration = field(default_factory=Configuration)
     knowledge_scopes: tuple[Scope, ...] = ()
+    #: Every file at the revision under review, asked for only when needed,
+    #: since listing a hosted repository costs a request.
+    repository_paths: Callable[[], Sequence[str]] | None = field(
+        default=None, compare=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         if not self.files:
