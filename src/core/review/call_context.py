@@ -92,19 +92,27 @@ class CallContext:
         )
 
 
-def _graph(reader, scope, changed, read_content, context) -> set[tuple[str, str, int]]:
-    """Answer from the stored graph; the definitions it answered for."""
+def _graph(reader, scopes, changed, read_content, context) -> set[tuple[str, str, int]]:
+    """Answer from the stored graph; the definitions it answered for.
+
+    An index filed at the revision under review is preferred to one filed for
+    the repository as last read.
+    """
     answered = set()
     for path, found in changed.items():
         try:
-            files = reader.search(
-                CodeSearch(
-                    scope=scope,
-                    labels=frozenset({"File"}),
-                    properties={"file_path": path},
-                    limit=1,
-                )
-            ).nodes
+            files, scope = (), None
+            for scope in scopes:
+                files = reader.search(
+                    CodeSearch(
+                        scope=scope,
+                        labels=frozenset({"File"}),
+                        properties={"file_path": path},
+                        limit=1,
+                    )
+                ).nodes
+                if files:
+                    break
             if not files:
                 continue
             symbols = reader.traverse(
@@ -389,7 +397,22 @@ def call_context(
         return context
     indexed = Scope.from_mapping({"repository": repository})
     answered = (
-        _graph(reader, indexed, context.changed, read_content, context)
+        _graph(
+            reader,
+            (
+                (
+                    Scope.from_mapping(
+                        {"repository": repository, "revision": revision}
+                    ),
+                    indexed,
+                )
+                if revision
+                else (indexed,)
+            ),
+            context.changed,
+            read_content,
+            context,
+        )
         if reader is not None and repository
         else set()
     )

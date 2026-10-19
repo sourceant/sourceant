@@ -1,0 +1,15 @@
+{
+ "typescript": {
+  "src/lib.ts": "export function callee(): number {\n  return 1\n}\n",
+  "src/main.ts": "import { callee } from \"./lib\"\n\nexport function caller(): number {\n  return callee() + 1\n}\n"
+ },
+ "python": {
+  "pkg/main.py": "from pkg.lib import callee\n\n\ndef caller():\n    return callee() + 1\n",
+  "pkg/__init__.py": "",
+  "pkg/lib.py": "def callee():\n    return 1\n"
+ },
+ "go": {
+  "lib.go": "package probe\n\nfunc Callee() int {\n\treturn 1\n}\n",
+  "main.go": "package probe\n\nfunc Caller() int {\n\treturn Callee() + 1\n}\n"
+ }
+}
