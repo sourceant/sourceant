@@ -14,6 +14,9 @@ from pydantic import BaseModel, Field
 Status = Literal["todo", "in_progress", "in_review", "done"]
 Priority = Literal["urgent", "high", "normal", "low"]
 Kind = Literal["issue", "pull", "finding"]
+# Where the item stands on GitHub, which is what its colour shows: an open or
+# draft pull, a merged or closed one, an issue done or closed as not planned.
+State = Literal["open", "draft", "merged", "closed", "completed", "not_planned"]
 
 STATUSES: tuple[Status, ...] = ("todo", "in_progress", "in_review", "done")
 PRIORITIES: tuple[Priority, ...] = ("urgent", "high", "normal", "low")
@@ -32,6 +35,7 @@ class WorkItem(BaseModel):
     title: str
     url: str | None = None
     status: Status
+    state: State = "open"
     priority: Priority | None = None
     assignees: list[str] = Field(default_factory=list)
     labels: list[str] = Field(default_factory=list)

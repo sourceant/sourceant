@@ -262,3 +262,23 @@ def test_work_outside_the_workspace_is_refused(github):
 
     assert response.status_code == 403
     assert fake.requests == []
+
+
+def test_each_item_carries_the_state_github_colours_it_by():
+    from src.core.work.github import item_of
+
+    seen = {
+        issue["number"]: item_of("r/r", issue).state
+        for issue in _load("states.json")
+        + _load("issues.json")[:1]
+        + _load("labeled-issues.json")[:1]
+    }
+
+    assert seen == {
+        191: "completed",
+        177: "closed",
+        200: "draft",
+        15928: "not_planned",
+        209: "merged",
+        8158: "open",
+    }

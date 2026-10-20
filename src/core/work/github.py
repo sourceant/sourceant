@@ -69,6 +69,19 @@ def priority_of(labels: list[str]) -> Priority | None:
     return None
 
 
+def state_of(issue: dict) -> str:
+    pull = issue.get("pull_request")
+    if pull is not None:
+        if pull.get("merged_at"):
+            return "merged"
+        if issue.get("state") == "closed":
+            return "closed"
+        return "draft" if issue.get("draft") else "open"
+    if issue.get("state") != "closed":
+        return "open"
+    return "not_planned" if issue.get("state_reason") == "not_planned" else "completed"
+
+
 def item_of(repo: str, issue: dict) -> WorkItem:
     labels = [label["name"] for label in issue.get("labels", [])]
     kind = (
@@ -84,6 +97,7 @@ def item_of(repo: str, issue: dict) -> WorkItem:
         title=issue.get("title") or "",
         url=issue.get("html_url"),
         status=status_of(issue, labels),
+        state=state_of(issue),
         priority=priority_of(labels),
         assignees=[a["login"] for a in issue.get("assignees") or []],
         labels=labels,
