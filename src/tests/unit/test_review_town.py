@@ -112,3 +112,12 @@ def test_a_folder_is_drawn_as_what_its_name_says_it_is():
     assert _kind("src/app/jobs") == ("service", "job")
     assert _kind("src/app/events") == ("queue", None)
     assert _kind("src/core/topology") == ("service", None)
+
+
+def test_a_long_finding_is_cut_at_a_word_not_inside_one():
+    from src.core.review.town import _first_sentence
+
+    said = "The same rename corrupts the echo: " + "word " * 80
+    cut = _first_sentence(said)
+    assert len(cut) <= 221
+    assert cut.endswith("word…")

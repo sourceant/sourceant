@@ -86,9 +86,11 @@ def _kind(folder: str) -> tuple[str, str | None]:
     return SERVICE, None
 
 
-def _first_sentence(text: str) -> str:
+def _first_sentence(text: str, limit: int = 220) -> str:
     sentence = re.split(r"(?<=[.!?])\s", " ".join(str(text).split()), maxsplit=1)[0]
-    return sentence[:120]
+    if len(sentence) <= limit:
+        return sentence
+    return sentence[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
 class _Places:
