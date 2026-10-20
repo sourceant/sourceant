@@ -84,6 +84,7 @@ from src.api.routes import settings as settings_endpoints
 from src.api.routes import skills as skill_endpoints
 from src.api.routes import topology as topology_endpoints
 from src.api.routes import triage as triage_endpoints
+from src.api.routes import work as work_endpoints
 
 app.include_router(health_endpoints.router, tags=["health"])
 app.include_router(app_endpoints.router, tags=["general"])
@@ -95,6 +96,7 @@ app.include_router(
     snapshot_endpoints.router, prefix="/api/reviews/snapshots", tags=["reviews"]
 )
 app.include_router(triage_endpoints.router, prefix="/api/triage", tags=["triage"])
+app.include_router(work_endpoints.router, prefix="/api/work", tags=["work"])
 app.include_router(cache_endpoints.router, prefix="/api/caches", tags=["caches"])
 app.include_router(settings_endpoints.router, prefix="/api/settings", tags=["settings"])
 app.include_router(topology_endpoints.router, prefix="/api/topology", tags=["topology"])
