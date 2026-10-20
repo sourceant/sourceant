@@ -76,3 +76,27 @@ def test_findings_and_behaviors_land_on_the_definition_they_name():
         in text
     )
     assert "Rename this" not in text
+
+
+def test_every_word_written_is_one_the_library_defines():
+    from src.core.review.codetown import vocabulary
+
+    known = {one["keyword"] for one in vocabulary()["concepts"]} | set(
+        vocabulary()["statements"]
+    )
+    text = town(_measured(), title="feat(topology): Suggest systems")
+    for line in text.splitlines():
+        words = line.split()
+        if not words:
+            continue
+        head = words[1] if words[0] in vocabulary()["changes"] else words[0]
+        assert head in known or words[1] in known, line
+
+
+def test_a_word_the_library_lacks_fails_loudly():
+    import pytest
+
+    from src.core.review.codetown import word
+
+    with pytest.raises(KeyError, match="no word 'skyscraper'"):
+        word("skyscraper")

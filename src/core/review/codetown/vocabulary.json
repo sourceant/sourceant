@@ -1,0 +1,884 @@
+{
+  "concepts": [
+    {
+      "keyword": "service",
+      "aliases": [
+        "app",
+        "building"
+      ],
+      "layer": "scale",
+      "role": "place",
+      "means": "An application that runs on its own",
+      "source": {
+        "name": "C4 model",
+        "url": "https://c4model.com/abstractions",
+        "term": "Container: application"
+      },
+      "town": "Building"
+    },
+    {
+      "keyword": "database",
+      "aliases": [
+        "db",
+        "warehouse",
+        "store"
+      ],
+      "layer": "scale",
+      "role": "place",
+      "means": "A store of data",
+      "source": {
+        "name": "C4 model",
+        "url": "https://c4model.com/abstractions",
+        "term": "Container: data store"
+      },
+      "town": "Warehouse"
+    },
+    {
+      "keyword": "cache",
+      "aliases": [
+        "shelf"
+      ],
+      "layer": "type",
+      "role": "place",
+      "means": "A fast copy of data kept near its readers",
+      "source": null,
+      "town": "Shelf by the counter",
+      "candidate": {
+        "name": "C4 model",
+        "url": "https://c4model.com/abstractions",
+        "term": "Container: data store"
+      }
+    },
+    {
+      "keyword": "external",
+      "aliases": [
+        "outside",
+        "thirdparty"
+      ],
+      "layer": "scale",
+      "role": "place",
+      "means": "A software system someone else runs",
+      "source": {
+        "name": "C4 model",
+        "url": "https://c4model.com/abstractions",
+        "term": "Software system"
+      },
+      "town": "Building outside the wall"
+    },
+    {
+      "keyword": "person",
+      "aliases": [
+        "user",
+        "actor"
+      ],
+      "layer": "scale",
+      "role": "place",
+      "means": "Someone who uses the system",
+      "source": {
+        "name": "C4 model",
+        "url": "https://c4model.com/abstractions",
+        "term": "Person"
+      },
+      "town": "Resident walking in"
+    },
+    {
+      "keyword": "queue",
+      "aliases": [
+        "mailbox",
+        "channel"
+      ],
+      "layer": "link",
+      "role": "place",
+      "means": "Messages waiting for one receiver",
+      "source": {
+        "name": "Enterprise Integration Patterns",
+        "url": "https://www.enterpriseintegrationpatterns.com/patterns/messaging/toc.html",
+        "term": "Point-to-Point Channel"
+      },
+      "town": "Mailbox"
+    },
+    {
+      "keyword": "topic",
+      "aliases": [
+        "pubsub"
+      ],
+      "layer": "link",
+      "role": "place",
+      "means": "Messages every subscriber receives",
+      "source": {
+        "name": "Enterprise Integration Patterns",
+        "url": "https://www.enterpriseintegrationpatterns.com/patterns/messaging/toc.html",
+        "term": "Publish-Subscribe Channel"
+      },
+      "town": "Notice board"
+    },
+    {
+      "keyword": "deadletter",
+      "aliases": [],
+      "layer": "link",
+      "role": "place",
+      "means": "Messages nobody could deliver",
+      "source": {
+        "name": "Enterprise Integration Patterns",
+        "url": "https://www.enterpriseintegrationpatterns.com/patterns/messaging/toc.html",
+        "term": "Dead Letter Channel"
+      },
+      "town": "Lost and found box"
+    },
+    {
+      "keyword": "router",
+      "aliases": [],
+      "layer": "link",
+      "role": "place",
+      "means": "Sends each message on by its content",
+      "source": {
+        "name": "Enterprise Integration Patterns",
+        "url": "https://www.enterpriseintegrationpatterns.com/patterns/messaging/toc.html",
+        "term": "Message Router"
+      },
+      "town": "Sorting office"
+    },
+    {
+      "keyword": "bus",
+      "aliases": [],
+      "layer": "link",
+      "role": "place",
+      "means": "A shared channel many systems use",
+      "source": {
+        "name": "Enterprise Integration Patterns",
+        "url": "https://www.enterpriseintegrationpatterns.com/patterns/messaging/toc.html",
+        "term": "Message Bus"
+      },
+      "town": "Ring road with a post van"
+    },
+    {
+      "keyword": "host",
+      "aliases": [],
+      "layer": "type",
+      "role": "place",
+      "means": "A machine or environment that runs software",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Node"
+      },
+      "town": "Plot of land"
+    },
+    {
+      "keyword": "device",
+      "aliases": [],
+      "layer": "type",
+      "role": "place",
+      "means": "A physical device",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Device"
+      },
+      "town": "Vehicle or machine"
+    },
+    {
+      "keyword": "runtime",
+      "aliases": [],
+      "layer": "type",
+      "role": "place",
+      "means": "Software that other software runs on",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "System software"
+      },
+      "town": "Power station"
+    },
+    {
+      "keyword": "artifact",
+      "aliases": [],
+      "layer": "type",
+      "role": "place",
+      "means": "A deployable file",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Artifact"
+      },
+      "town": "Shipping crate"
+    },
+    {
+      "keyword": "data",
+      "aliases": [
+        "parcel"
+      ],
+      "layer": "type",
+      "role": "place",
+      "means": "A piece of data passed around",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Data object"
+      },
+      "town": "Parcel"
+    },
+    {
+      "keyword": "endpoint",
+      "aliases": [
+        "door",
+        "api",
+        "route"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "Where others call in",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Application interface"
+      },
+      "town": "Door"
+    },
+    {
+      "keyword": "offer",
+      "aliases": [],
+      "layer": "type",
+      "role": "member",
+      "means": "A service offered to callers",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Application service"
+      },
+      "town": "Menu board"
+    },
+    {
+      "keyword": "function",
+      "aliases": [
+        "worker",
+        "method"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "A function or method",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "Function, Method, Operator"
+      },
+      "town": "Worker at a window"
+    },
+    {
+      "keyword": "constructor",
+      "aliases": [],
+      "layer": "type",
+      "role": "member",
+      "means": "Builds an object",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "Constructor"
+      },
+      "town": "Builder"
+    },
+    {
+      "keyword": "class",
+      "aliases": [
+        "struct"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "A class or struct",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "Class, Struct"
+      },
+      "town": "Workshop"
+    },
+    {
+      "keyword": "interface",
+      "aliases": [],
+      "layer": "type",
+      "role": "member",
+      "means": "A contract others implement",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "Interface"
+      },
+      "town": "Contract on the door"
+    },
+    {
+      "keyword": "module",
+      "aliases": [
+        "package",
+        "namespace"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "A module, namespace or package",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "Module, Namespace, Package"
+      },
+      "town": "Wing"
+    },
+    {
+      "keyword": "file",
+      "aliases": [],
+      "layer": "type",
+      "role": "member",
+      "means": "A source file",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "File"
+      },
+      "town": "Room"
+    },
+    {
+      "keyword": "constant",
+      "aliases": [
+        "enum"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "A fixed value or enum",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "Constant, Enum"
+      },
+      "town": "Sign on the wall"
+    },
+    {
+      "keyword": "field",
+      "aliases": [
+        "property",
+        "variable"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "A field, property or variable",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "Field, Property, Variable"
+      },
+      "town": "Tool on the bench"
+    },
+    {
+      "keyword": "event",
+      "aliases": [],
+      "layer": "type",
+      "role": "member",
+      "means": "Something that happens and others react to",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Application event"
+      },
+      "town": "Bell"
+    },
+    {
+      "keyword": "generic",
+      "aliases": [],
+      "layer": "type",
+      "role": "member",
+      "means": "A type parameter",
+      "source": {
+        "name": "Language Server Protocol SymbolKind",
+        "url": "https://github.com/microsoft/vscode-languageserver-node",
+        "term": "TypeParameter"
+      },
+      "town": "Blank label"
+    },
+    {
+      "keyword": "process",
+      "aliases": [],
+      "layer": "type",
+      "role": "member",
+      "means": "A sequence of steps",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Application process"
+      },
+      "town": "Assembly line"
+    },
+    {
+      "keyword": "config",
+      "aliases": [
+        "rulebook",
+        "env"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "Settings read at start",
+      "source": null,
+      "town": "Rulebook on the wall",
+      "candidate": {
+        "name": "The Twelve-Factor App",
+        "url": "https://12factor.net/",
+        "term": "III. Config"
+      }
+    },
+    {
+      "keyword": "job",
+      "aliases": [
+        "clock",
+        "cron"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "Work that runs on a schedule",
+      "source": null,
+      "town": "Clock tower",
+      "candidate": {
+        "name": "The Twelve-Factor App",
+        "url": "https://12factor.net/",
+        "term": "XII. Admin processes"
+      }
+    },
+    {
+      "keyword": "guard",
+      "aliases": [
+        "auth"
+      ],
+      "layer": "type",
+      "role": "member",
+      "means": "A check on who may come in",
+      "source": null,
+      "town": "Gate with a guard"
+    },
+    {
+      "keyword": "calls",
+      "aliases": [
+        "road",
+        "uses"
+      ],
+      "layer": "link",
+      "role": "link",
+      "means": "Asks and waits for an answer",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Serving"
+      },
+      "town": "Road"
+    },
+    {
+      "keyword": "reads",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "Reads data",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Access, read"
+      },
+      "town": "Pipe out"
+    },
+    {
+      "keyword": "writes",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "Writes data",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Access, write"
+      },
+      "town": "Pipe in"
+    },
+    {
+      "keyword": "sends",
+      "aliases": [
+        "publishes",
+        "emits"
+      ],
+      "layer": "link",
+      "role": "link",
+      "means": "Hands something on without waiting",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Flow"
+      },
+      "town": "Conveyor belt"
+    },
+    {
+      "keyword": "triggers",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "Starts something",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Triggering"
+      },
+      "town": "Bell wire"
+    },
+    {
+      "keyword": "transfers",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "Moves whole files",
+      "source": {
+        "name": "Enterprise Integration Patterns",
+        "url": "https://www.enterpriseintegrationpatterns.com/patterns/messaging/toc.html",
+        "term": "File Transfer"
+      },
+      "town": "Delivery truck"
+    },
+    {
+      "keyword": "runs",
+      "aliases": [
+        "hosts"
+      ],
+      "layer": "link",
+      "role": "link",
+      "means": "Runs on or is assigned to",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Assignment"
+      },
+      "town": "Worker at a desk"
+    },
+    {
+      "keyword": "implements",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "Makes a contract real",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Realization"
+      },
+      "town": "Blueprint"
+    },
+    {
+      "keyword": "extends",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "A special case of",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Specialization"
+      },
+      "town": "Same building style"
+    },
+    {
+      "keyword": "relates",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "Related in a way not said",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Association"
+      },
+      "town": "Footpath"
+    },
+    {
+      "keyword": "influences",
+      "aliases": [],
+      "layer": "link",
+      "role": "link",
+      "means": "Affects without calling",
+      "source": {
+        "name": "ArchiMate 3.2",
+        "url": "https://github.com/archimatetool/archi",
+        "term": "Influence"
+      },
+      "town": "Signpost"
+    },
+    {
+      "keyword": "bug",
+      "aliases": [
+        "fault"
+      ],
+      "layer": "condition",
+      "role": "condition",
+      "means": "A cause of wrong behavior, hidden until reached",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Fault"
+      },
+      "town": "Crack in a wall"
+    },
+    {
+      "keyword": "error",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Wrong state inside, not yet seen outside",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Error"
+      },
+      "town": "Damage behind a window"
+    },
+    {
+      "keyword": "wrong",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Gives a wrong answer",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Content failure"
+      },
+      "town": "Wrong parcel handed over"
+    },
+    {
+      "keyword": "late",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Answers too late",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Timing failure"
+      },
+      "town": "Queue out of the door"
+    },
+    {
+      "keyword": "down",
+      "aliases": [
+        "failure"
+      ],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Gives no answer at all",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Halt failure"
+      },
+      "town": "Building dark, door shut"
+    },
+    {
+      "keyword": "flaky",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Sometimes right, sometimes not",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Erratic failure"
+      },
+      "town": "Flickering lights"
+    },
+    {
+      "keyword": "slow",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Takes long to answer",
+      "source": {
+        "name": "Google SRE book, four golden signals",
+        "url": "https://sre.google/sre-book/monitoring-distributed-systems/",
+        "term": "Latency"
+      },
+      "town": "Cars crawl"
+    },
+    {
+      "keyword": "busy",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Many requests",
+      "source": {
+        "name": "Google SRE book, four golden signals",
+        "url": "https://sre.google/sre-book/monitoring-distributed-systems/",
+        "term": "Traffic"
+      },
+      "town": "Many cars"
+    },
+    {
+      "keyword": "errors",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "Many requests fail",
+      "source": {
+        "name": "Google SRE book, four golden signals",
+        "url": "https://sre.google/sre-book/monitoring-distributed-systems/",
+        "term": "Errors"
+      },
+      "town": "Crashed cars"
+    },
+    {
+      "keyword": "full",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "No room for more work",
+      "source": {
+        "name": "Google SRE book, four golden signals",
+        "url": "https://sre.google/sre-book/monitoring-distributed-systems/",
+        "term": "Saturation"
+      },
+      "town": "Car park full"
+    },
+    {
+      "keyword": "broken",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "The connection fails",
+      "source": null,
+      "town": "Collapsed bridge"
+    },
+    {
+      "keyword": "degraded",
+      "aliases": [],
+      "layer": "condition",
+      "role": "condition",
+      "means": "The connection works poorly",
+      "source": null,
+      "town": "Road works"
+    },
+    {
+      "keyword": "guarded",
+      "aliases": [],
+      "layer": "condition",
+      "role": "means",
+      "means": "Faults are prevented",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Fault prevention"
+      },
+      "town": "Fence and building code plaque"
+    },
+    {
+      "keyword": "fallback",
+      "aliases": [],
+      "layer": "condition",
+      "role": "means",
+      "means": "Faults are tolerated",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Fault tolerance"
+      },
+      "town": "Detour and backup generator"
+    },
+    {
+      "keyword": "fix",
+      "aliases": [],
+      "layer": "condition",
+      "role": "means",
+      "means": "A fault is removed",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Fault removal"
+      },
+      "town": "Repair crew"
+    },
+    {
+      "keyword": "monitored",
+      "aliases": [],
+      "layer": "condition",
+      "role": "means",
+      "means": "Faults are forecast",
+      "source": {
+        "name": "Avizienis et al. 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing",
+        "url": "https://doi.org/10.1109/TDSC.2004.2",
+        "term": "Fault forecasting"
+      },
+      "town": "Watchtower"
+    }
+  ],
+  "changes": {
+    "+": "added",
+    "~": "modified",
+    "-": "deleted",
+    ">": "renamed",
+    "*": "copied",
+    "!": "retyped"
+  },
+  "purposes": [
+    "fix",
+    "feat",
+    "refactor",
+    "perf",
+    "test",
+    "docs",
+    "build",
+    "ci",
+    "style",
+    "chore",
+    "revert"
+  ],
+  "impacts": [
+    "data_loss",
+    "corruption",
+    "disclosure",
+    "escalation",
+    "wrong_answer",
+    "hang",
+    "crash",
+    "degraded",
+    "rejected",
+    "none"
+  ],
+  "certainties": [
+    "always",
+    "conditional",
+    "possible"
+  ],
+  "blasts": [
+    "everyone",
+    "many",
+    "one",
+    "nobody"
+  ],
+  "triggers": [
+    "anyone",
+    "authenticated",
+    "operator",
+    "service",
+    "event",
+    "automation",
+    "deploy",
+    "environment"
+  ],
+  "traffic": [
+    "low",
+    "normal",
+    "high"
+  ],
+  "worlds": [
+    "town",
+    "body",
+    "workshop",
+    "bank"
+  ],
+  "statements": [
+    "system",
+    "world",
+    "intent",
+    "purpose",
+    "district",
+    "risk",
+    "behavior",
+    "test",
+    "trip"
+  ]
+}
