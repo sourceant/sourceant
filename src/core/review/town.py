@@ -25,6 +25,30 @@ SYSTEM, INTENT, PURPOSE_WORD, DISTRICT = (
     word(one) for one in ("system", "intent", "purpose", "district")
 )
 SERVICE, FUNCTION, CALLS = word("service"), word("function"), word("calls")
+DATABASE, QUEUE, CACHE = word("database"), word("queue"), word("cache")
+PROCESS, ENDPOINT, JOB = word("process"), word("endpoint"), word("job")
+
+# What a folder is, read from its own name: (pattern, place word, member word).
+# A member word of None keeps the definitions as plain functions.
+FOLDER_KINDS: list[tuple[re.Pattern[str], str, str | None]] = [
+    (re.compile(r"^(workflows|\.circleci|ci|pipelines?)$"), SERVICE, PROCESS),
+    (
+        re.compile(
+            r"^(migrations?|alembic|schemas?|db|database|storage|stores?|persistence"
+            r"|repositor(y|ies)|memory|archive)$"
+        ),
+        DATABASE,
+        None,
+    ),
+    (
+        re.compile(r"^(routes?|api|controllers?|handlers?|endpoints?|views)$"),
+        SERVICE,
+        ENDPOINT,
+    ),
+    (re.compile(r"^(jobs?|tasks?|workers?|cron|schedul\w*)$"), SERVICE, JOB),
+    (re.compile(r"^(queues?|events?|consumers?|producers?|messag\w*)$"), QUEUE, None),
+    (re.compile(r"^(cache|caches)$"), CACHE, None),
+]
 BEHAVIOR, RISK, TEST = word("behavior"), word("risk"), word("test")
 IMPACTS, CERTAINTIES, BLASTS, TRIGGERS = (
     set(allowed(one)) for one in ("impacts", "certainties", "blasts", "triggers")
@@ -51,6 +75,15 @@ def _district(folder: str) -> str:
     """The area a folder belongs to: its first two segments, without `src`."""
     parts = [one for one in folder.split("/") if one and one != "src"]
     return "/".join(parts[:1]) or "root"
+
+
+def _kind(folder: str) -> tuple[str, str | None]:
+    """The place word and member word a folder's own name suggests."""
+    name = folder.rsplit("/", 1)[-1].lower()
+    for pattern, place, member in FOLDER_KINDS:
+        if pattern.match(name):
+            return place, member
+    return SERVICE, None
 
 
 def _first_sentence(text: str) -> str:
@@ -135,11 +168,19 @@ def town(
         if size != 2:
             options.append(f"size={size}")
         mark = "+ " if new else ""
+        kind, member_kind = _kind(folder)
         lines.append("")
         lines.append(
-            f"{mark}{SERVICE} {place} {_quote(folder or '/')}{' ' + ' '.join(options) if options else ''}"
+            f"{mark}{kind} {place} {_quote(folder or '/')}{' ' + ' '.join(options) if options else ''}"
         )
         seen: set[str] = set()
+        if member_kind == PROCESS:
+            # Workflow files define no functions; each file is one line of work.
+            for file in changed[:MEMBERS_PER_PLACE]:
+                name = _ident(PurePosixPath(file["path"]).stem)
+                seen.add(name)
+                changed_mark = "+" if file["path"] in added_files else "~"
+                lines.append(f"  {changed_mark} {PROCESS} {name}")
         for definition in [
             one for one in definitions if _folder(one["path"]) == folder
         ][:MEMBERS_PER_PLACE]:
@@ -153,7 +194,7 @@ def town(
             seen.add(member)
             member_of[(definition["path"], definition["start"])] = (place, member)
             changed_mark = "+" if definition["path"] in added_files else "~"
-            lines.append(f"  {changed_mark} {FUNCTION} {member}")
+            lines.append(f"  {changed_mark} {member_kind or FUNCTION} {member}")
 
     # Roads: a changed definition's callers and callees in other folders.
     roads: set[tuple[str, str]] = set()

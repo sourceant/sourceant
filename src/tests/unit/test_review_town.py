@@ -100,3 +100,15 @@ def test_a_word_the_library_lacks_fails_loudly():
 
     with pytest.raises(KeyError, match="no word 'skyscraper'"):
         word("skyscraper")
+
+
+def test_a_folder_is_drawn_as_what_its_name_says_it_is():
+    from src.core.review.town import _kind
+
+    assert _kind(".github/workflows") == ("service", "process")
+    assert _kind("src/memory/migrations") == ("database", None)
+    assert _kind("src/memory") == ("database", None)
+    assert _kind("src/memory/routes") == ("service", "endpoint")
+    assert _kind("src/app/jobs") == ("service", "job")
+    assert _kind("src/app/events") == ("queue", None)
+    assert _kind("src/core/topology") == ("service", None)
