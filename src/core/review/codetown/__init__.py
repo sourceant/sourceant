@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from functools import cache
+from importlib import import_module
 from pathlib import Path
 
 VERSION = "ecbf12431f32ebafd8f59f838888ba33fcdad1cb"
@@ -16,7 +17,12 @@ VERSION = "ecbf12431f32ebafd8f59f838888ba33fcdad1cb"
 
 @cache
 def vocabulary() -> dict:
-    return json.loads((Path(__file__).parent / "vocabulary.json").read_text())
+    path = Path(__file__).parent / "vocabulary.json"
+    if path.is_file():
+        return json.loads(path.read_text())
+    # A compiled build ships data files inside the package, not beside it.
+    resources = import_module("src._compiled_resources").resources()
+    return json.loads(resources["core/review/codetown/vocabulary.json"])
 
 
 def word(keyword: str) -> str:

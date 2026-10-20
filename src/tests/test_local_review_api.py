@@ -428,6 +428,9 @@ class TestLocalReview(BaseTestCase):
                     }
                 )
 
+        from src.core.analysis import SemgrepAnalyzer
+
+        monkeypatch.setattr(SemgrepAnalyzer, "available", lambda self: False)
         model = Model({"findings": []}, review=_review(Verdict.COMMENT, [stated]))
         monkeypatch.setattr(working_tree, "provider_for", lambda *_, **__: model)
         self.register()
