@@ -361,3 +361,76 @@ def test_http_impact_lists_what_the_pull_request_defines(api, monkeypatch):
         "head_sha": metadata["head"]["sha"],
     }
     assert kept[0][2] == f"{metadata['head']['sha']}:impact"
+
+
+def test_http_town_draws_the_pull_request_with_its_review(api, monkeypatch):
+    from src.tests.unit.test_review_impact import _new_side
+
+    client, headers, _, _ = api
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    head = metadata["head"]["sha"]
+    review = {
+        "summary": {"intent": "Suggest systems", "behaviors": []},
+        "code_suggestions": [
+            {
+                "file_name": "src/core/topology/suggestions.py",
+                "start_line": 11,
+                "comment": "Cycles never end.",
+                "severity": "blocking",
+                "impact": "hang",
+                "certainty": "always",
+                "blast": "one",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        reviews,
+        "get_cached_review",
+        lambda repo, number, sha, workspace=None: (
+            {"review": review} if sha == head else None
+        ),
+    )
+    monkeypatch.setattr(reviews, "save_cached_review", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    diff = (FIXTURES / "full.diff").read_text()
+    contents = _new_side(diff)
+    github = MagicMock()
+    github.get_diff.return_value = diff
+    github.get_file_content.side_effect = lambda owner, name, path, sha: contents.get(
+        path
+    )
+    monkeypatch.setattr("src.integrations.github.github.GitHub", lambda: github)
+    monkeypatch.setattr(
+        "src.plugins.builtin.code_reviewer.context.durable_index", lambda: None
+    )
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "test-placeholder"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+
+    response = client.get(
+        "/api/reviews/town",
+        headers=credentials,
+        params={"repo": "sourceant/sourceant", "number": metadata["number"]},
+    )
+
+    assert response.status_code == 200, response.text
+    drawn = response.json()["data"]
+    assert drawn["reviewed"] is True
+    assert 'intent "Suggest systems"' in drawn["text"]
+    assert "risk 1 at core_topology.root" in drawn["text"]

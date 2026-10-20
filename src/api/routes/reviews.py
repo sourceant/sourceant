@@ -118,6 +118,36 @@ async def review_impact(
     user: dict = Depends(get_current_user),
 ):
     """What a pull request reaches in its repository, read without a model."""
+    _, measured, _ = await _measured(repo, number, user)
+    return success_response(measured)
+
+
+@router.get("/town")
+async def review_town(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    number: int = Query(..., description="Pull request number"),
+    user: dict = Depends(get_current_user),
+):
+    """The pull request as a Codetown town: what it reaches, and what its
+    review found, if one was already generated for this revision."""
+    from src.core.review.town import town
+
+    pr, measured, workspace = await _measured(repo, number, user)
+    head_sha = (pr.get("head") or {}).get("sha")
+    reviewed = get_cached_review(repo, number, head_sha, workspace=workspace)
+    text = town(
+        measured,
+        (reviewed or {}).get("review"),
+        title=pr.get("title") or "",
+        name=f"{repo}#{number}",
+    )
+    return success_response({"text": text, "reviewed": bool(reviewed)})
+
+
+async def _measured(
+    repo: str, number: int, user: dict
+) -> tuple[dict, dict, str | None]:
+    """The pull request, what it reaches, and the workspace asking, kept per revision."""
     from src.api.routes.requirements import connected_names
     from src.core.review.impact import impact
     from src.core.search import Searcher
@@ -139,7 +169,7 @@ async def review_impact(
     kept_as = f"{head_sha}:impact" if head_sha else None
     cached = get_cached_review(repo, number, kept_as, workspace=workspace)
     if cached:
-        return success_response(cached)
+        return pr, cached, workspace
 
     owner, _, name = repo.partition("/")
     github = GitHub()
@@ -171,7 +201,7 @@ async def review_impact(
 
     measured = await asyncio.to_thread(measure)
     save_cached_review(repo, number, kept_as, measured, workspace=workspace)
-    return success_response(measured)
+    return pr, measured, workspace
 
 
 async def _fetch_pull_request(

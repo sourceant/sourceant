@@ -57,6 +57,7 @@ def impact(
                 "deletions": removed,
                 "binary": bool(one.is_binary_file),
                 "test": is_test(one.file_path),
+                "added": "\n--- /dev/null" in "\n" + one.diff_text,
             }
         )
     changed = {one["path"] for one in files}
