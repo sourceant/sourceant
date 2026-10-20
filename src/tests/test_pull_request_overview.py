@@ -434,3 +434,60 @@ def test_http_town_draws_the_pull_request_with_its_review(api, monkeypatch):
     assert drawn["reviewed"] is True
     assert 'intent "Suggest systems"' in drawn["text"]
     assert "risk 1 at core_topology.root" in drawn["text"]
+
+
+def test_http_file_reads_one_whole_file_at_the_head_of_the_change(api, monkeypatch):
+    client, headers, _, _ = api
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    from src.tests.unit.test_review_impact import _new_side
+
+    contents = _new_side((FIXTURES / "full.diff").read_text())
+    asked = []
+    github = MagicMock()
+
+    def read(owner, name, path, sha):
+        asked.append(sha)
+        return contents.get(path)
+
+    github.get_file_content.side_effect = read
+    monkeypatch.setattr("src.integrations.github.github.GitHub", lambda: github)
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "test-placeholder"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+    query = {"repo": "sourceant/sourceant", "number": metadata["number"]}
+
+    found = client.get(
+        "/api/reviews/file",
+        headers=credentials,
+        params={**query, "path": "src/core/topology/suggestions.py"},
+    )
+    missing = client.get(
+        "/api/reviews/file",
+        headers=credentials,
+        params={**query, "path": "nowhere.py", "side": "base"},
+    )
+
+    assert found.status_code == 200, found.text
+    body = found.json()["data"]
+    assert body["sha"] == metadata["head"]["sha"]
+    assert "def suggest_groups(" in body["content"]
+    assert body["truncated"] is False
+    assert missing.status_code == 404
+    assert asked == [metadata["head"]["sha"], metadata["base"]["sha"]]

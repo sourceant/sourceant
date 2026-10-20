@@ -1,4 +1,5 @@
 import asyncio
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +19,8 @@ from src.utils.review_cache import save_review as save_cached_review
 router = APIRouter()
 
 _GITHUB_API = "https://api.github.com"
+# Past this a file is shown cut short; a reader wanting more opens it on the provider.
+FILE_LIMIT = 1_000_000
 
 
 class RerunRequest(BaseModel):
@@ -142,6 +145,45 @@ async def review_town(
         name=f"{repo}#{number}",
     )
     return success_response({"text": text, "reviewed": bool(reviewed)})
+
+
+@router.get("/file")
+async def review_file(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    number: int = Query(..., description="Pull request number"),
+    path: str = Query(..., description="Path of the file in the repository"),
+    side: Literal["head", "base"] = Query(
+        "head", description="The revision to read: the change, or what it is based on"
+    ),
+    user: dict = Depends(get_current_user),
+):
+    """One whole file as the pull request has it, or as it was before."""
+    from src.api.routes.requirements import connected_names
+    from src.integrations.github.github import GitHub
+
+    if repo not in connected_names(user):
+        raise HTTPException(403, "Repository is outside this workspace")
+    async with httpx.AsyncClient(timeout=15) as client:
+        pr = await _fetch_pull_request(client, repo, number, user.get("github_token"))
+    if pr is None:
+        raise HTTPException(status_code=502, detail="Could not load the pull request")
+    sha = (pr.get(side) or {}).get("sha")
+    if not sha:
+        raise HTTPException(status_code=404, detail=f"The pull request has no {side}")
+    owner, _, name = repo.partition("/")
+    content = await asyncio.to_thread(GitHub().get_file_content, owner, name, path, sha)
+    if content is None:
+        raise HTTPException(status_code=404, detail="The file does not exist there")
+    truncated = len(content) > FILE_LIMIT
+    return success_response(
+        {
+            "path": path,
+            "side": side,
+            "sha": sha,
+            "content": content[:FILE_LIMIT],
+            "truncated": truncated,
+        }
+    )
 
 
 async def _measured(
