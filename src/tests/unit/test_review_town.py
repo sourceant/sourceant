@@ -121,3 +121,11 @@ def test_a_long_finding_is_cut_at_a_word_not_inside_one():
     cut = _first_sentence(said)
     assert len(cut) <= 221
     assert cut.endswith("word…")
+
+
+def test_an_adapter_folder_calls_the_outside_system_it_is_named_after():
+    from src.core.review.town import _speaks_to
+
+    assert _speaks_to("src/integrations/github") == "github"
+    assert _speaks_to("src/llms") == "LLM providers"
+    assert _speaks_to("src/core/review") is None

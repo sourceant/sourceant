@@ -27,6 +27,16 @@ SYSTEM, INTENT, PURPOSE_WORD, DISTRICT = (
 SERVICE, FUNCTION, CALLS = word("service"), word("function"), word("calls")
 DATABASE, QUEUE, CACHE = word("database"), word("queue"), word("cache")
 PROCESS, ENDPOINT, JOB = word("process"), word("endpoint"), word("job")
+EXTERNAL, CLASS, INTERFACE = word("external"), word("class"), word("interface")
+MEMBER_KINDS = {
+    "class": CLASS,
+    "struct": CLASS,
+    "interface": INTERFACE,
+    "trait": INTERFACE,
+}
+# A folder inside one of these speaks to the outside system it is named after.
+ADAPTER_PARENTS = {"integrations", "clients", "providers", "adapters", "connectors"}
+ADAPTER_NAMES = {"llms": "LLM providers", "llm": "LLM providers"}
 
 # What a folder is, read from its own name: (pattern, place word, member word).
 # A member word of None keeps the definitions as plain functions.
@@ -35,7 +45,7 @@ FOLDER_KINDS: list[tuple[re.Pattern[str], str, str | None]] = [
     (
         re.compile(
             r"^(migrations?|alembic|schemas?|db|database|storage|stores?|persistence"
-            r"|repositor(y|ies)|memory|archive)$"
+            r"|repositor(y|ies)|memory|archive|models)$"
         ),
         DATABASE,
         None,
@@ -75,6 +85,18 @@ def _district(folder: str) -> str:
     """The area a folder belongs to: its first two segments, without `src`."""
     parts = [one for one in folder.split("/") if one and one != "src"]
     return "/".join(parts[:1]) or "root"
+
+
+def _speaks_to(folder: str) -> str | None:
+    """The outside system a folder is the adapter for, if it is one."""
+    parts = [one for one in folder.split("/") if one]
+    if not parts:
+        return None
+    if parts[-1].lower() in ADAPTER_NAMES:
+        return ADAPTER_NAMES[parts[-1].lower()]
+    if len(parts) > 1 and parts[-2].lower() in ADAPTER_PARENTS:
+        return parts[-1]
+    return None
 
 
 def _kind(folder: str) -> tuple[str, str | None]:
@@ -184,7 +206,9 @@ def town(
                 changed_mark = "+" if file["path"] in added_files else "~"
                 lines.append(f"  {changed_mark} {PROCESS} {name}")
         for definition in [
-            one for one in definitions if _folder(one["path"]) == folder
+            one
+            for one in definitions
+            if _folder(one["path"]) == folder and not one["name"].startswith("__")
         ][:MEMBERS_PER_PLACE]:
             member = (
                 definition["name"]
@@ -196,7 +220,10 @@ def town(
             seen.add(member)
             member_of[(definition["path"], definition["start"])] = (place, member)
             changed_mark = "+" if definition["path"] in added_files else "~"
-            lines.append(f"  {changed_mark} {member_kind or FUNCTION} {member}")
+            word_for = MEMBER_KINDS.get(str(definition.get("kind", "")).lower())
+            lines.append(
+                f"  {changed_mark} {member_kind or word_for or FUNCTION} {member}"
+            )
 
     # Roads: a changed definition's callers and callees in other folders.
     roads: set[tuple[str, str]] = set()
@@ -212,6 +239,15 @@ def town(
             there = places.id_for(_folder(callee["path"]))
             if there != here and _folder(callee["path"]) in folders:
                 roads.add((here, there))
+    outside: dict[str, str] = {}
+    for folder in sorted(folders):
+        system = _speaks_to(folder)
+        if system:
+            outside.setdefault(system, f"outside_{_ident(system).lower()}")
+            roads.add((places.id_for(folder), outside[system]))
+    for system, place in sorted(outside.items()):
+        lines.append("")
+        lines.append(f"{EXTERNAL} {place} {_quote(system)}")
     if roads:
         lines.append("")
         lines.extend(f"{a} {CALLS} {b}" for a, b in sorted(roads))
