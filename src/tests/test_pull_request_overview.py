@@ -142,6 +142,14 @@ def test_http_preview_overview_reads_all_pr_changes(
     )
     assert response.status_code == 200
     assert response.json()["data"]["status"] == "success"
+    from src.models.code_review import severity_of
+
+    expected = {finding.comment: severity_of(finding).value for finding in findings}
+    returned = response.json()["data"]["review"]["code_suggestions"] or []
+    assert len(returned) == (
+        2 if with_findings and include_nitpicks else int(with_findings)
+    )
+    assert all(one["severity"] == expected[one["comment"]] for one in returned)
     assert (
         response.json()["data"]["review"]["summary"]["overview"]
         == "Adds system suggestions and requirement priority."
@@ -198,3 +206,288 @@ def test_empty_overview_cannot_replace_the_standing_overview():
             provider,
             Configuration(repository="sourceant/sourceant"),
         )
+
+
+def test_http_preview_reviews_with_the_model_its_reader_chose(api, monkeypatch):
+    client, headers, _, engine = api
+    Config.__table__.create(engine, checkfirst=True)
+    monkeypatch.setattr("src.config.db.engine", engine)
+    for name in ("DEEPSEEK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    client.app.include_router(settings.router, prefix="/api/settings")
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    chosen = client.put(
+        "/api/settings/user/1/model.name",
+        headers=headers(),
+        json={"value": "deepseek/deepseek-chat"},
+    )
+    assert chosen.status_code == 200, chosen.text
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    monkeypatch.setattr(
+        plugin_registry, "get_plugin", lambda name: reviewer_plugin.CodeReviewerPlugin()
+    )
+    github = MagicMock()
+    github.get_diff.return_value = (FIXTURES / "full.diff").read_text()
+    monkeypatch.setattr(reviewer_plugin, "GitHub", lambda: github)
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "test-placeholder"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+
+    response = client.post(
+        "/api/reviews/rerun",
+        headers=credentials,
+        json={"repo": "sourceant/sourceant", "number": metadata["number"]},
+    )
+
+    assert response.status_code == 200, response.text
+    message = response.json()["data"]["message"]
+    assert message.startswith(
+        "No credentials are configured for deepseek/deepseek-chat"
+    )
+    assert "Nothing here names a model" not in message
+
+
+def test_overview_keeps_only_behaviors_placed_in_the_change():
+    from src.models.code_review import Behavior
+
+    provider = MagicMock()
+    provider.count_tokens.return_value = 1
+    provider.generate_summary.return_value = CodeReviewSummary(
+        intent="Suggest which repositories belong to one system.",
+        behaviors=[
+            Behavior(
+                subject="System suggestions",
+                before="",
+                after="Related repositories are proposed as one system.",
+                locations=[
+                    "src/core/topology/suggestions.py:6",
+                    "src/elsewhere.py:3",
+                ],
+            ),
+            Behavior(
+                subject="Billing",
+                before="Charged monthly.",
+                after="Charged yearly.",
+                locations=["src/billing.py:1"],
+            ),
+        ],
+        overview="Adds system suggestions.",
+        key_improvements=[],
+        minor_suggestions=[],
+        critical_issues=[],
+    )
+
+    summary = summarize_changes(
+        (FIXTURES / "full.diff").read_text(),
+        provider,
+        Configuration(repository="sourceant/sourceant"),
+    )
+
+    assert summary.intent == "Suggest which repositories belong to one system."
+    assert [(one.subject, one.locations) for one in summary.behaviors] == [
+        ("System suggestions", ["src/core/topology/suggestions.py:6"])
+    ]
+
+
+def test_http_impact_lists_what_the_pull_request_defines(api, monkeypatch):
+    from src.tests.unit.test_review_impact import _new_side
+
+    client, headers, _, _ = api
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    monkeypatch.setattr(reviews, "get_cached_review", lambda *args, **kwargs: None)
+    kept = []
+    monkeypatch.setattr(
+        reviews, "save_cached_review", lambda *args, **kwargs: kept.append(args)
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    diff = (FIXTURES / "full.diff").read_text()
+    contents = _new_side(diff)
+    github = MagicMock()
+    github.get_diff.return_value = diff
+    github.get_file_content.side_effect = lambda owner, name, path, sha: contents.get(
+        path
+    )
+    monkeypatch.setattr("src.integrations.github.github.GitHub", lambda: github)
+    monkeypatch.setattr(
+        "src.plugins.builtin.code_reviewer.context.durable_index", lambda: None
+    )
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "test-placeholder"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+
+    response = client.get(
+        "/api/reviews/impact",
+        headers=credentials,
+        params={"repo": "sourceant/sourceant", "number": metadata["number"]},
+    )
+
+    assert response.status_code == 200, response.text
+    measured = response.json()["data"]
+    assert "root" in [one["name"] for one in measured["definitions"]]
+    assert github.get_diff.call_args.kwargs == {
+        "base_sha": metadata["base"]["sha"],
+        "head_sha": metadata["head"]["sha"],
+    }
+    assert kept[0][2] == f"{metadata['head']['sha']}:impact"
+
+
+def test_http_town_draws_the_pull_request_with_its_review(api, monkeypatch):
+    from src.tests.unit.test_review_impact import _new_side
+
+    client, headers, _, _ = api
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    head = metadata["head"]["sha"]
+    review = {
+        "summary": {"intent": "Suggest systems", "behaviors": []},
+        "code_suggestions": [
+            {
+                "file_name": "src/core/topology/suggestions.py",
+                "start_line": 11,
+                "comment": "Cycles never end.",
+                "severity": "blocking",
+                "impact": "hang",
+                "certainty": "always",
+                "blast": "one",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        reviews,
+        "get_cached_review",
+        lambda repo, number, sha, workspace=None: (
+            {"review": review} if sha == head else None
+        ),
+    )
+    monkeypatch.setattr(reviews, "save_cached_review", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    diff = (FIXTURES / "full.diff").read_text()
+    contents = _new_side(diff)
+    github = MagicMock()
+    github.get_diff.return_value = diff
+    github.get_file_content.side_effect = lambda owner, name, path, sha: contents.get(
+        path
+    )
+    monkeypatch.setattr("src.integrations.github.github.GitHub", lambda: github)
+    monkeypatch.setattr(
+        "src.plugins.builtin.code_reviewer.context.durable_index", lambda: None
+    )
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "test-placeholder"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+
+    response = client.get(
+        "/api/reviews/town",
+        headers=credentials,
+        params={"repo": "sourceant/sourceant", "number": metadata["number"]},
+    )
+
+    assert response.status_code == 200, response.text
+    drawn = response.json()["data"]
+    assert drawn["reviewed"] is True
+    assert 'intent "Suggest systems"' in drawn["text"]
+    assert "risk 1 at core_topology.root" in drawn["text"]
+
+
+def test_http_file_reads_one_whole_file_at_the_head_of_the_change(api, monkeypatch):
+    client, headers, _, _ = api
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    from src.tests.unit.test_review_impact import _new_side
+
+    contents = _new_side((FIXTURES / "full.diff").read_text())
+    asked = []
+    github = MagicMock()
+
+    def read(owner, name, path, sha):
+        asked.append(sha)
+        return contents.get(path)
+
+    github.get_file_content.side_effect = read
+    monkeypatch.setattr("src.integrations.github.github.GitHub", lambda: github)
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "test-placeholder"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+    query = {"repo": "sourceant/sourceant", "number": metadata["number"]}
+
+    found = client.get(
+        "/api/reviews/file",
+        headers=credentials,
+        params={**query, "path": "src/core/topology/suggestions.py"},
+    )
+    missing = client.get(
+        "/api/reviews/file",
+        headers=credentials,
+        params={**query, "path": "nowhere.py", "side": "base"},
+    )
+
+    assert found.status_code == 200, found.text
+    body = found.json()["data"]
+    assert body["sha"] == metadata["head"]["sha"]
+    assert "def suggest_groups(" in body["content"]
+    assert body["truncated"] is False
+    assert missing.status_code == 404
+    assert asked == [metadata["head"]["sha"], metadata["base"]["sha"]]

@@ -354,9 +354,40 @@ class CodeReviewScores(BaseModel):
     )
 
 
+class Behavior(BaseModel):
+    """Something a user or caller of the code can observe, before and after."""
+
+    subject: str = Field(
+        ..., description="What behaves differently, in at most eight words."
+    )
+    before: str = Field(
+        ...,
+        description="What happened before this change, in at most 20 words. Empty for something new.",
+    )
+    after: str = Field(
+        ...,
+        description="What happens after this change, in at most 20 words. Empty for something removed.",
+    )
+    locations: List[str] = Field(
+        default_factory=list,
+        description="Where the diff makes this change, as path:line on the new side, at least one.",
+    )
+
+
 class CodeReviewOverview(BaseModel):
     """Represents a structured summary of the code review."""
 
+    intent: str = Field(
+        "",
+        description=(
+            "The problem this change sets out to solve, in one sentence of at "
+            "most 25 words, as the author states or the diff shows it."
+        ),
+    )
+    behaviors: List[Behavior] = Field(
+        default_factory=list,
+        description="At most six observable behavior changes, most consequential first.",
+    )
     overview: str = Field(
         ...,
         description="Main behavioral changes in at most three sentences and 75 words.",
@@ -465,6 +496,8 @@ def summary_from(
         else "No actionable issues were found."
     )
     return CodeReviewSummary(
+        intent=written.intent if written else "",
+        behaviors=list(written.behaviors) if written else [],
         overview=(written.overview if written and written.overview else counted),
         key_improvements=list(written.key_improvements) if written else [],
         regressions=list(written.regressions) if written else [],

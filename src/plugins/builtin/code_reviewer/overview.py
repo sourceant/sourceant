@@ -121,4 +121,16 @@ def summarize_changes(
             )
             for start in range(0, len(descriptions), 10)
         ]
-    return summary_from(list(suggestions), descriptions[0])
+    summary = summary_from(list(suggestions), descriptions[0])
+    changed = {one.file_path for one in parse_diff(diff) if one.file_path}
+    # A behavior is only as good as the code it points at; one placed outside
+    # this diff cannot be checked by its reader, so it is not shown.
+    anchored = []
+    for behavior in summary.behaviors:
+        located = [
+            where for where in behavior.locations if where.rpartition(":")[0] in changed
+        ]
+        if located:
+            anchored.append(behavior.model_copy(update={"locations": located}))
+    summary.behaviors = anchored
+    return summary

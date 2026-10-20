@@ -1,4 +1,5 @@
 import asyncio
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +19,8 @@ from src.utils.review_cache import save_review as save_cached_review
 router = APIRouter()
 
 _GITHUB_API = "https://api.github.com"
+# Past this a file is shown cut short; a reader wanting more opens it on the provider.
+FILE_LIMIT = 1_000_000
 
 
 class RerunRequest(BaseModel):
@@ -102,12 +105,145 @@ async def rerun_review(
         repository_full_name=data.repo,
         post=data.post,
         workspace=workspace,
+        user=str(user["user_id"]),
     )
     if result.get("status") == "success":
         save_cached_review(
             data.repo, data.number, head_sha, result, workspace=workspace
         )
     return success_response({**result, "cached": False})
+
+
+@router.get("/impact")
+async def review_impact(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    number: int = Query(..., description="Pull request number"),
+    user: dict = Depends(get_current_user),
+):
+    """What a pull request reaches in its repository, read without a model."""
+    _, measured, _ = await _measured(repo, number, user)
+    return success_response(measured)
+
+
+@router.get("/town")
+async def review_town(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    number: int = Query(..., description="Pull request number"),
+    user: dict = Depends(get_current_user),
+):
+    """The pull request as a Codetown town: what it reaches, and what its
+    review found, if one was already generated for this revision."""
+    from src.core.review.town import town
+
+    pr, measured, workspace = await _measured(repo, number, user)
+    head_sha = (pr.get("head") or {}).get("sha")
+    reviewed = get_cached_review(repo, number, head_sha, workspace=workspace)
+    text = town(
+        measured,
+        (reviewed or {}).get("review"),
+        title=pr.get("title") or "",
+        name=f"{repo}#{number}",
+    )
+    return success_response({"text": text, "reviewed": bool(reviewed)})
+
+
+@router.get("/file")
+async def review_file(
+    repo: str = Query(..., description="Repository full name, e.g. owner/name"),
+    number: int = Query(..., description="Pull request number"),
+    path: str = Query(..., description="Path of the file in the repository"),
+    side: Literal["head", "base"] = Query(
+        "head", description="The revision to read: the change, or what it is based on"
+    ),
+    user: dict = Depends(get_current_user),
+):
+    """One whole file as the pull request has it, or as it was before."""
+    from src.api.routes.requirements import connected_names
+    from src.integrations.github.github import GitHub
+
+    if repo not in connected_names(user):
+        raise HTTPException(403, "Repository is outside this workspace")
+    async with httpx.AsyncClient(timeout=15) as client:
+        pr = await _fetch_pull_request(client, repo, number, user.get("github_token"))
+    if pr is None:
+        raise HTTPException(status_code=502, detail="Could not load the pull request")
+    sha = (pr.get(side) or {}).get("sha")
+    if not sha:
+        raise HTTPException(status_code=404, detail=f"The pull request has no {side}")
+    owner, _, name = repo.partition("/")
+    content = await asyncio.to_thread(GitHub().get_file_content, owner, name, path, sha)
+    if content is None:
+        raise HTTPException(status_code=404, detail="The file does not exist there")
+    truncated = len(content) > FILE_LIMIT
+    return success_response(
+        {
+            "path": path,
+            "side": side,
+            "sha": sha,
+            "content": content[:FILE_LIMIT],
+            "truncated": truncated,
+        }
+    )
+
+
+async def _measured(
+    repo: str, number: int, user: dict
+) -> tuple[dict, dict, str | None]:
+    """The pull request, what it reaches, and the workspace asking, kept per revision."""
+    from src.api.routes.requirements import connected_names
+    from src.core.review.impact import impact
+    from src.core.search import Searcher
+    from src.core.services import service_registry
+    from src.core.workspace import workspace_of
+    from src.integrations.github.github import GitHub
+    from src.plugins.builtin.code_reviewer.context import durable_index
+
+    workspace = workspace_of(user)
+    if repo not in connected_names(user):
+        raise HTTPException(403, "Repository is outside this workspace")
+    async with httpx.AsyncClient(timeout=15) as client:
+        pr = await _fetch_pull_request(client, repo, number, user.get("github_token"))
+    if pr is None:
+        raise HTTPException(status_code=502, detail="Could not load the pull request")
+    head_sha = (pr.get("head") or {}).get("sha")
+    base_sha = (pr.get("base") or {}).get("sha")
+    # Kept beside the review of the same revision, under its own name.
+    kept_as = f"{head_sha}:impact" if head_sha else None
+    cached = get_cached_review(repo, number, kept_as, workspace=workspace)
+    if cached:
+        return pr, cached, workspace
+
+    owner, _, name = repo.partition("/")
+    github = GitHub()
+    contents: dict[str, str | None] = {}
+
+    def read_content(path: str) -> str | None:
+        if path not in contents:
+            contents[path] = github.get_file_content(owner, name, path, head_sha)
+        return contents[path]
+
+    def measure() -> dict:
+        diff = github.get_diff(
+            owner, name, number, base_sha=base_sha, head_sha=head_sha
+        )
+        if not diff:
+            raise HTTPException(status_code=502, detail="Could not load the diff")
+        try:
+            searcher = service_registry.resolve(Searcher)
+        except LookupError:
+            searcher = None
+        return impact(
+            diff,
+            repo,
+            read_content,
+            revision=head_sha or "",
+            reader=durable_index(),
+            searcher=searcher,
+        )
+
+    measured = await asyncio.to_thread(measure)
+    save_cached_review(repo, number, kept_as, measured, workspace=workspace)
+    return pr, measured, workspace
 
 
 async def _fetch_pull_request(

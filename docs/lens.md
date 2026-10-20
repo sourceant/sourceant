@@ -2,13 +2,25 @@
 
 Inline comments on a diff assume someone will open that diff and read it. When most of the change was written by an agent, and the provider will not render a diff that size anyway, the review has no working consumer: the person cannot read it, and the agent that wrote the change has to scrape its own pull request page to find out what was said.
 
-Lens is the other way to review. It opens on what the change is trying to do and what is most likely to hurt, ranks findings by risk and by how much depends on the code they sit on, and zooms into the code only once it has said where to look. Nothing here is posted to GitHub, so reading a change in Lens costs the pull request nothing.
+Lens is the other way to review. It opens on what the change is trying to do, what behaves differently because of it, what is most likely to hurt, and what code outside the change depends on it. The diff is still there, underneath, as the evidence each of those points at. Nothing here is posted to GitHub, so reading a change in Lens costs the pull request nothing.
 
 Lens is part of SourceAnt Cloud. The review endpoints underneath it are in the open core, so a self-hosted instance can build the same surface on the same data.
 
 ### How it works
 
-Pick a repository and an open pull request. Lens loads the pull request with the reviews already on it, asks the API for a review of the current revision, and lays the two side by side against the diff.
+Pick a repository and an open pull request. Lens loads the pull request with the reviews already on it and asks for two things at once: a review of the current revision, and what the change reaches in the repository.
+
+The page leads with the intent, one sentence on the problem the change solves, and the review's overview. Below it, one list holds everything worth reading, in this order:
+
+| Group | What it is | Where it comes from |
+|---|---|---|
+| Behavior | Something a user or caller can observe, before and after | The review; each one names the changed lines that make it, and one that cannot is dropped |
+| Risks | The review's findings | The review |
+| Consumers | Code the pull request does not change but that calls what it does | The code index, or names matched in the source, each labelled with which |
+| Notes | Remarks that are not findings | The review |
+| Files | Every changed file, including ones nothing was said about | The diff |
+
+Selecting one shows it in the middle, with the code it rests on. The right side shows its evidence: whether a finding is anchored and how often it happens, which changed tests name the file, and who calls the definitions it touches. The full diff opens at the bottom, on the line the selection points at.
 
 The review is generated in preview mode: `POST /api/reviews/rerun` with `post: false`. Nothing reaches the pull request from here. A review already generated for the same commit is served again rather than paid for a second time, and the screen says so. Asking for a fresh one is an explicit action.
 
@@ -20,21 +32,17 @@ Review comments already written on overlapping lines, by people or by other agen
 
 ### How claims are ordered
 
-A claim carries a position made of named dimensions, each cited to the records it was derived from, rather than one opaque score. Two dimensions compose it.
+Each finding states what causes it, who is worse off, what goes wrong and how often. The review turns those answers into a severity, and Lens orders claims by it:
 
-**Risk** is how badly this can go wrong, read from the reviewer's classification of the finding.
-
-| Risk | Categories |
+| Severity | Shown as |
 |---|---|
-| High | `SECURITY`, `BUG` |
-| Medium | `PERFORMANCE`, `REFACTOR` |
-| Low | `CLARITY`, `STYLE`, `DOCUMENTATION`, `IMPROVEMENT` |
+| Blocking | High risk |
+| Advisory | Medium risk |
+| Nit | Low risk |
 
-**Importance** is how much depends on the code the claim is anchored to: what [the system graph](systems.md) says consumes it, whether it sits on a published contract, and what knowledge records say about the part it belongs to. A bug in a script nobody calls and a bug on the payment path are the same risk and a different importance, and only the second one is worth interrupting someone for.
+A review generated before findings carried a severity is ordered by category instead: `SECURITY` and `BUG` high, `PERFORMANCE` and `REFACTOR` medium, the rest low. A finding with no category is shown as risk unstated, which is not the same as low. Order is never inferred from diff size, touched paths, or who wrote the change.
 
-The two are kept apart on purpose. Collapsing them hides which one put a claim at the top, and a reader who cannot see that has no way to disagree with it.
-
-A dimension with no evidence behind it contributes nothing rather than a guess, so a claim on code SourceAnt has never been told about is ordered on risk alone. Neither dimension is inferred from diff size, touched paths, or who wrote the change.
+Consumers are listed separately rather than folded into the order, so a reader can see what depends on a finding's code without the ranking hiding why a claim is where it is.
 
 ### Deciding
 
@@ -50,4 +58,4 @@ Decisions are kept in your browser, so they do not follow you to another device.
 
 ### On your own instance
 
-Lens is one client of the review endpoints, not a privileged one. `POST /api/reviews/rerun`, `GET /api/reviews/detail`, and `GET /api/reviews/pulls` are in the open core and answer anything holding a token, so generating a review without posting it needs nothing from the cloud. What Lens adds is the reading: the ranking, the anchored claims, and the record of what was signed or dismissed. See [API](api.md#reviews).
+Lens is one client of the review endpoints, not a privileged one. `POST /api/reviews/rerun`, `GET /api/reviews/detail`, `GET /api/reviews/impact`, and `GET /api/reviews/pulls` are in the open core and answer anything holding a token, so generating a review without posting it needs nothing from the cloud. What Lens adds is the reading: the ranking, the anchored claims, and the record of what was signed or dismissed. See [API](api.md#reviews).
