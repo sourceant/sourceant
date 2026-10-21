@@ -7,6 +7,14 @@ from mcp.server.fastmcp import FastMCP
 from src.utils.native_callables import NativeFastMCP
 
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
+from src.core.mcp.capabilities import (
+    READ,
+    WRITE_GROUPS,
+    WRITE_KNOWLEDGE,
+    WRITE_REQUIREMENTS,
+    WRITE_SYSTEMS,
+    scoped,
+)
 from src.core.context import ContextProvider, ContextRequest
 from src.core.contracts import ContractQuery
 from src.core.groups import (
@@ -109,6 +117,7 @@ def create_mcp_server(
         description="Search bounded structural code nodes by labels and exact properties.",
         structured_output=True,
     )
+    @scoped(READ)
     def search_code(
         scope: dict[str, str],
         labels: list[str] | None = None,
@@ -136,6 +145,7 @@ def create_mcp_server(
         description="Traverse a bounded structural code neighborhood and its references.",
         structured_output=True,
     )
+    @scoped(READ)
     def trace_code(
         scope: dict[str, str],
         node_ids: list[str],
@@ -168,6 +178,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(READ)
     def get_context(
         scope: dict[str, str],
         code_node_ids: list[str] | None = None,
@@ -255,6 +266,7 @@ def create_mcp_server(
         description="Create or update a scoped engineering knowledge item.",
         structured_output=True,
     )
+    @scoped(WRITE_KNOWLEDGE)
     def put_knowledge(
         scope: dict[str, str],
         id: str,
@@ -273,6 +285,7 @@ def create_mcp_server(
         description="Create or update a relationship between scoped knowledge items.",
         structured_output=True,
     )
+    @scoped(WRITE_KNOWLEDGE)
     def put_knowledge_relationship(
         scope: dict[str, str],
         id: str,
@@ -304,6 +317,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(WRITE_KNOWLEDGE)
     def link_knowledge(
         scope: dict[str, str],
         id: str,
@@ -324,6 +338,7 @@ def create_mcp_server(
         description="Search scoped engineering knowledge by identity and lifecycle.",
         structured_output=True,
     )
+    @scoped(READ)
     def search_knowledge(
         scope: dict[str, str],
         ids: list[str] | None = None,
@@ -354,6 +369,7 @@ def create_mcp_server(
         description="Create or update a scoped software topology entity.",
         structured_output=True,
     )
+    @scoped(WRITE_SYSTEMS)
     def put_topology_entity(
         scope: dict[str, str],
         id: str,
@@ -382,6 +398,7 @@ def create_mcp_server(
         description="Create or update a relationship between scoped topology entities.",
         structured_output=True,
     )
+    @scoped(WRITE_SYSTEMS)
     def put_topology_relationship(
         scope: dict[str, str],
         id: str,
@@ -416,6 +433,7 @@ def create_mcp_server(
         description="Traverse scoped software topology from a set of seed entities.",
         structured_output=True,
     )
+    @scoped(READ)
     def traverse_topology(
         scope: dict[str, str],
         entity_ids: list[str],
@@ -450,6 +468,7 @@ def create_mcp_server(
         return asdict(result)
 
     @server.tool(name="parse_requirement_scenarios", structured_output=True)
+    @scoped(READ)
     def parse_requirement_scenarios(source: str) -> dict[str, Any]:
         """Validate Gherkin behavior scenarios without executing them. Save the result
         in a requirement's properties.behavior using put_requirement. Link optional
@@ -466,6 +485,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(WRITE_REQUIREMENTS)
     def put_requirement(
         scope: dict[str, str],
         id: str,
@@ -488,6 +508,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(WRITE_REQUIREMENTS)
     def link_requirement(
         scope: dict[str, str],
         id: str,
@@ -516,6 +537,7 @@ def create_mcp_server(
         return acceptance
 
     @server.tool(name="put_acceptance_criterion", structured_output=True)
+    @scoped(WRITE_REQUIREMENTS)
     def put_acceptance_criterion(
         scope: dict[str, str],
         criterion: AcceptanceCriterion,
@@ -530,6 +552,7 @@ def create_mcp_server(
         )
 
     @server.tool(name="record_requirement_evidence", structured_output=True)
+    @scoped(WRITE_REQUIREMENTS)
     def record_requirement_evidence(
         scope: dict[str, str], evidence: EvidenceRecord
     ) -> dict[str, Any]:
@@ -539,6 +562,7 @@ def create_mcp_server(
         )
 
     @server.tool(name="assess_requirement_criterion", structured_output=True)
+    @scoped(WRITE_REQUIREMENTS)
     def assess_requirement_criterion(
         scope: dict[str, str], assessment: CriterionAssessment
     ) -> dict[str, Any]:
@@ -548,6 +572,7 @@ def create_mcp_server(
         )
 
     @server.tool(name="get_requirement_acceptance", structured_output=True)
+    @scoped(READ)
     def get_requirement_acceptance(
         scope: dict[str, str], requirement_id: str
     ) -> dict[str, Any]:
@@ -557,6 +582,7 @@ def create_mcp_server(
         )
 
     @server.tool(name="get_requirement_assessment_history", structured_output=True)
+    @scoped(READ)
     def get_requirement_assessment_history(
         scope: dict[str, str], requirement_id: str, limit: int = 50, offset: int = 0
     ) -> dict[str, Any]:
@@ -566,6 +592,7 @@ def create_mcp_server(
         )
 
     @server.tool(name="get_requirement_evidence", structured_output=True)
+    @scoped(READ)
     def get_requirement_evidence(
         scope: dict[str, str], evidence_id: str
     ) -> dict[str, Any]:
@@ -575,6 +602,7 @@ def create_mcp_server(
         )
 
     @server.tool(name="search_requirement_evidence", structured_output=True)
+    @scoped(READ)
     def search_requirement_evidence(
         scope: dict[str, str], limit: int = 50, offset: int = 0
     ) -> dict[str, Any]:
@@ -588,6 +616,7 @@ def create_mcp_server(
         description="Search scoped requirements by identity, type, status, or origin.",
         structured_output=True,
     )
+    @scoped(READ)
     def search_requirements(
         scope: dict[str, str],
         ids: list[str] | None = None,
@@ -619,6 +648,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(READ)
     def get_requirement_coverage(
         scope: dict[str, str],
         requirement_ids: list[str] | None = None,
@@ -672,6 +702,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(WRITE_GROUPS)
     def put_group(
         scope: dict[str, str],
         id: str,
@@ -696,6 +727,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(WRITE_GROUPS)
     def place_in_group(
         scope: dict[str, str],
         group_id: str,
@@ -726,6 +758,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(WRITE_GROUPS)
     def unfile_from_group(
         scope: dict[str, str],
         group_id: str,
@@ -752,6 +785,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(READ)
     def search_groups(
         scope: dict[str, str],
         ids: list[str] | None = None,
@@ -784,6 +818,7 @@ def create_mcp_server(
         ),
         structured_output=True,
     )
+    @scoped(READ)
     def get_group_rollup(
         scope: dict[str, str],
         group_ids: list[str],

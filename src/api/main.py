@@ -70,6 +70,7 @@ app = FastAPI(
 from src.api.routes import requirements, artifacts, usage
 from src.api.routes import groups as group_endpoints
 from src.api.routes import caches as cache_endpoints
+from src.api.routes import mcp_tokens as mcp_token_endpoints
 from src.api.routes import code as code_endpoints
 from src.api.routes import architecture as architecture_endpoints
 from src.api.routes import jobs as job_endpoints
@@ -91,6 +92,7 @@ app.include_router(app_endpoints.router, tags=["general"])
 app.include_router(pr_endpoints.router, prefix="/api/prs", tags=["pull_requests"])
 app.include_router(repo_endpoints.router, prefix="/api/repos", tags=["repositories"])
 app.include_router(routing_endpoints.router, prefix="/api/routing", tags=["routing"])
+app.include_router(mcp_token_endpoints.router, prefix="/api/mcp", tags=["mcp"])
 app.include_router(review_endpoints.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(
     snapshot_endpoints.router, prefix="/api/reviews/snapshots", tags=["reviews"]
