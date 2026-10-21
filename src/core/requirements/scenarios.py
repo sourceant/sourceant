@@ -139,6 +139,16 @@ def scenario_properties(properties):
     return {**properties, "behavior": parse_scenarios(behavior.get("source"))}
 
 
+def stored_properties(properties):
+    try:
+        scenario_properties(properties)
+    except ValueError:
+        # Rows written before behavior meant Gherkin keep their text readable.
+        kept = {key: value for key, value in properties.items() if key != "behavior"}
+        return {**kept, "behavior_text": properties["behavior"]}
+    return properties
+
+
 def scenario_link_properties(requirement, link):
     identifier = link.properties.get("scenario_id")
     if not identifier:

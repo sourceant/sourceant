@@ -22,6 +22,7 @@ from src.core import scopes
 from src.core.scope import Scope
 from src.core.sql_support import rows_for
 
+from .scenarios import stored_properties
 from .models import (
     CODE,
     TEST,
@@ -303,7 +304,7 @@ def _requirement_from_row(row: Mapping[str, Any]) -> Requirement:
         summary=row["summary"],
         priority=row["priority"],
         external_ref=row["external_ref"],
-        properties=json.loads(row["properties"]),
+        properties=stored_properties(json.loads(row["properties"])),
     )
 
 

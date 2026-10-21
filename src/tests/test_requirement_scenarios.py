@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from src.api.routes import requirements
 from src.auth import get_current_user
 from src.core.requirements import SQLRequirementsRepository
+from src.core.requirements.sql import requirement_table
 
 SOURCE = """Feature: Workspace invitations
   Background:
@@ -270,3 +271,34 @@ def test_same_requirement_id_keeps_evidence_in_its_repository(api):
         ).status_code
         == 403
     )
+
+
+def test_a_stored_free_form_behavior_still_lists(api, tmp_path):
+    client, _ = api
+    assert (
+        client.put(
+            "/requirements",
+            json={
+                "id": "legacy",
+                "type": "requirement",
+                "status": "open",
+                "summary": "Written before behavior meant Gherkin",
+            },
+        ).status_code
+        == 200
+    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'requirements.db'}")
+    with engine.begin() as connection:
+        connection.execute(
+            requirement_table.update().values(
+                properties=json.dumps({"behavior": "Owners invite teammates"})
+            )
+        )
+    engine.dispose()
+
+    response = client.get("/requirements")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"][0]["properties"] == {
+        "behavior_text": "Owners invite teammates"
+    }

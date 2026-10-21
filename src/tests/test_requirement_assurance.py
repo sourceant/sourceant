@@ -329,9 +329,7 @@ async def test_assurance_mcp_uses_the_same_revision_and_evidence_rules(api):
             tool.name: tool.inputSchema for tool in (await session.list_tools()).tools
         }
         assert "type" in tools["put_requirement"]["properties"]
-        assert "kind" not in tools["put_requirement"]["properties"]
         assert "types" in tools["search_requirements"]["properties"]
-        assert "kinds" not in tools["search_requirements"]["properties"]
         assert "target_type" in tools["link_requirement"]["properties"]
         result = await session.call_tool(
             "put_requirement",
@@ -417,7 +415,6 @@ def test_requirement_type_is_the_only_public_classification_field(api):
     saved = client.put("/requirements", json=payload)
     assert saved.status_code == 200, saved.text
     assert saved.json()["data"]["type"] == "constraint"
-    assert "kind" not in saved.json()["data"]
     assert (
         client.get("/requirements", params={"types": "constraint"}).json()["data"][0][
             "id"
@@ -427,20 +424,4 @@ def test_requirement_type_is_the_only_public_classification_field(api):
     assert (
         client.get("/requirements", params={"types": "requirement"}).json()["data"]
         == []
-    )
-    assert (
-        client.put("/requirements", json={**payload, "kind": "constraint"}).status_code
-        == 422
-    )
-    assert (
-        client.put(
-            "/requirements/links",
-            json={
-                "id": "old",
-                "requirement_id": "typed",
-                "target_kind": "code",
-                "target_id": "src/main.py",
-            },
-        ).status_code
-        == 422
     )

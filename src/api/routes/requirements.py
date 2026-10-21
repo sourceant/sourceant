@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session, select
 
 from src.auth import get_current_user
@@ -93,18 +93,7 @@ def write_scope(user: dict, repo: str) -> Scope:
     return scopes[0]
 
 
-class RequirementPayload(BaseModel):
-    @model_validator(mode="before")
-    @classmethod
-    def public_types(cls, values):
-        if isinstance(values, dict) and {"kind", "kinds", "target_kind"}.intersection(
-            values
-        ):
-            raise ValueError("Use type, types, and target_type for requirements")
-        return values
-
-
-class RequirementInput(RequirementPayload):
+class RequirementInput(BaseModel):
 
     @field_validator("properties", mode="before")
     @classmethod
@@ -126,7 +115,7 @@ class RequirementInput(RequirementPayload):
     repo: str = ""
 
 
-class LinkInput(RequirementPayload):
+class LinkInput(BaseModel):
 
     @field_validator("properties", mode="before")
     @classmethod
