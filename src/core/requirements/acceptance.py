@@ -129,7 +129,7 @@ class CriterionAssessment:
             raise ValueError("Evidence ids must be distinct")
 
 
-class AssuranceRepository(Protocol):
+class AcceptanceRepository(Protocol):
     def put_criterion(
         self,
         scope: Scope,

@@ -33,8 +33,8 @@ from src.core.requirements import (
     RequirementQuery,
     RequirementsRepository,
 )
-from src.core.requirements.assurance import (
-    AssuranceRepository,
+from src.core.requirements.acceptance import (
+    AcceptanceRepository,
     AcceptanceCriterion,
     EvidenceRecord,
     CriterionAssessment,
@@ -61,7 +61,7 @@ def create_mcp_server(
     knowledge: KnowledgeRepository | None = None,
     topology: TopologyRepository | None = None,
     requirements: RequirementsRepository | None = None,
-    assurance: AssuranceRepository | None = None,
+    acceptance: AcceptanceRepository | None = None,
     groups: GroupsRepository | None = None,
     surface: "Surface | None" = None,
     services: ServiceRegistry = service_registry,
@@ -504,16 +504,16 @@ def create_mcp_server(
         repository.put_link(requirement_scope(Scope.from_mapping(scope)), link)
         return asdict(link)
 
-    def assurance_actor():
+    def acceptance_actor():
         from mcp.server.auth.middleware.auth_context import get_access_token
 
         token = get_access_token()
         return str(token.subject or token.client_id) if token else "local"
 
-    def assurance_store():
-        if assurance is None:
+    def acceptance_store():
+        if acceptance is None:
             raise ValueError("Acceptance and evidence storage is unavailable")
-        return assurance
+        return acceptance
 
     @server.tool(name="put_acceptance_criterion", structured_output=True)
     def put_acceptance_criterion(
@@ -522,11 +522,11 @@ def create_mcp_server(
         expected_revision: str = "",
     ) -> dict[str, Any]:
         """Define or revise a measurable criterion. Supply the previous revision when editing."""
-        return assurance_store().put_criterion(
+        return acceptance_store().put_criterion(
             requirement_scope(Scope.from_mapping(scope)),
             criterion,
             expected_revision,
-            assurance_actor(),
+            acceptance_actor(),
         )
 
     @server.tool(name="record_requirement_evidence", structured_output=True)
@@ -534,8 +534,8 @@ def create_mcp_server(
         scope: dict[str, str], evidence: EvidenceRecord
     ) -> dict[str, Any]:
         """Record immutable observations or results, reusable across requirements. Never infer results from file links."""
-        return assurance_store().record_evidence(
-            requirement_scope(Scope.from_mapping(scope)), evidence, assurance_actor()
+        return acceptance_store().record_evidence(
+            requirement_scope(Scope.from_mapping(scope)), evidence, acceptance_actor()
         )
 
     @server.tool(name="assess_requirement_criterion", structured_output=True)
@@ -543,16 +543,16 @@ def create_mcp_server(
         scope: dict[str, str], assessment: CriterionAssessment
     ) -> dict[str, Any]:
         """Record a criterion decision with evidence and rationale. Bind current revisions and supersede the preceding decision explicitly."""
-        return assurance_store().assess(
-            requirement_scope(Scope.from_mapping(scope)), assessment, assurance_actor()
+        return acceptance_store().assess(
+            requirement_scope(Scope.from_mapping(scope)), assessment, acceptance_actor()
         )
 
-    @server.tool(name="get_requirement_assurance", structured_output=True)
-    def get_requirement_assurance(
+    @server.tool(name="get_requirement_acceptance", structured_output=True)
+    def get_requirement_acceptance(
         scope: dict[str, str], requirement_id: str
     ) -> dict[str, Any]:
         """Read acceptance criteria and current assessments. Use the history tool for earlier decisions. References alone never establish satisfaction."""
-        return assurance_store().report(
+        return acceptance_store().report(
             requirement_scope(Scope.from_mapping(scope)), requirement_id
         )
 
@@ -561,7 +561,7 @@ def create_mcp_server(
         scope: dict[str, str], requirement_id: str, limit: int = 50, offset: int = 0
     ) -> dict[str, Any]:
         """Read paginated criterion revisions and assessment decisions, newest first."""
-        return assurance_store().history(
+        return acceptance_store().history(
             requirement_scope(Scope.from_mapping(scope)), requirement_id, limit, offset
         )
 
@@ -570,7 +570,7 @@ def create_mcp_server(
         scope: dict[str, str], evidence_id: str
     ) -> dict[str, Any]:
         """Read the observations and provenance behind an assessment."""
-        return assurance_store().get_evidence(
+        return acceptance_store().get_evidence(
             requirement_scope(Scope.from_mapping(scope)), evidence_id
         )
 
@@ -579,7 +579,7 @@ def create_mcp_server(
         scope: dict[str, str], limit: int = 50, offset: int = 0
     ) -> dict[str, Any]:
         """Browse reusable evidence records in the authorized scope."""
-        return assurance_store().evidence(
+        return acceptance_store().evidence(
             requirement_scope(Scope.from_mapping(scope)), limit, offset
         )
 

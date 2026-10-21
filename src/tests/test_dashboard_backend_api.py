@@ -676,11 +676,11 @@ def test_usage_reports_what_a_provider_cache_served(api):
 
 
 def test_assessments_use_authenticated_actor_and_keep_workspace_evidence_private(api):
-    from src.core.requirements.assurance_sql import SQLAssuranceRepository
+    from src.core.requirements.acceptance_sql import SQLAcceptanceRepository
 
     client, headers, _, engine = api
-    assurance = SQLAssuranceRepository(engine, create_schema=True)
-    client.app.dependency_overrides[requirements.get_assurance] = lambda: assurance
+    acceptance = SQLAcceptanceRepository(engine, create_schema=True)
+    client.app.dependency_overrides[requirements.get_acceptance] = lambda: acceptance
     payload = {
         "id": "inspection",
         "type": "inspection",

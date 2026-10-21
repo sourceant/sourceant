@@ -1,7 +1,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "requirement_assurance_001"
+revision = "requirement_acceptance_001"
 down_revision = "groups_002"
 branch_labels = None
 depends_on = None

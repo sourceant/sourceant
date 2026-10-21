@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 
 from src.core import scopes
-from .assurance import requirement_revision
+from .acceptance import requirement_revision
 from .sql import requirement_table, _requirement_from_row
 
 metadata = MetaData()
@@ -100,7 +100,7 @@ def unpack(row):
     }
 
 
-class SQLAssuranceRepository:
+class SQLAcceptanceRepository:
     def __init__(self, engine, create_schema=False):
         self.engine = engine
         if create_schema:

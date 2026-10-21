@@ -6,20 +6,20 @@ from sqlalchemy import create_engine
 from src.api.routes import requirements
 from src.auth import get_current_user
 from src.core.requirements import SQLRequirementsRepository
-from src.core.requirements.assurance_sql import SQLAssuranceRepository
+from src.core.requirements.acceptance_sql import SQLAcceptanceRepository
 
 
 @pytest.fixture
 def api(tmp_path, monkeypatch):
-    engine = create_engine(f"sqlite:///{tmp_path / 'assurance.db'}")
+    engine = create_engine(f"sqlite:///{tmp_path / 'acceptance.db'}")
     store = SQLRequirementsRepository(engine, create_schema=True)
-    assurance = SQLAssuranceRepository(engine, create_schema=True)
+    acceptance = SQLAcceptanceRepository(engine, create_schema=True)
     app = FastAPI()
     app.include_router(requirements.router, prefix="/requirements")
     user = {"user_id": "reviewer-1", "scope": {"workspace_id": "one"}}
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[requirements.get_requirements] = lambda: store
-    app.dependency_overrides[requirements.get_assurance] = lambda: assurance
+    app.dependency_overrides[requirements.get_acceptance] = lambda: acceptance
     monkeypatch.setattr(requirements, "connected_names", lambda user: ["acme/app"])
     monkeypatch.setattr(requirements, "grouping", lambda: None)
     with TestClient(app) as client:
@@ -92,7 +92,7 @@ def decision(item, identifier="assessment-1", outcome="passed", supersedes=""):
 
 def report(client, identifier="search"):
     response = client.get(
-        "/requirements/assurance", params={"requirement_id": identifier}
+        "/requirements/acceptance", params={"requirement_id": identifier}
     )
     assert response.status_code == 200, response.text
     return response.json()["data"]
@@ -165,7 +165,7 @@ def test_requirement_changes_invalidate_assessments_and_preserve_history(api):
     current = report(client)
     assert current["state"] == "waived"
     history = client.get(
-        "/requirements/assurance/history", params={"requirement_id": "search"}
+        "/requirements/acceptance/history", params={"requirement_id": "search"}
     ).json()["data"]
     assert [item["outcome"] for item in history["assessments"]["items"]] == [
         "waived",
@@ -241,7 +241,7 @@ def test_history_is_paged_and_keeps_original_requirement_baselines(api, monkeypa
     )
     requirement(client, summary="Search responds within 300 ms")
     from datetime import datetime, timezone
-    from src.core.requirements import assurance_sql
+    from src.core.requirements import acceptance_sql
 
     class EarlierClock(datetime):
         @classmethod
@@ -249,11 +249,11 @@ def test_history_is_paged_and_keeps_original_requirement_baselines(api, monkeypa
             return datetime(2020, 1, 1, tzinfo=timezone.utc)
 
     with monkeypatch.context() as patch:
-        patch.setattr(assurance_sql, "datetime", EarlierClock)
+        patch.setattr(acceptance_sql, "datetime", EarlierClock)
         latest = criterion(client, expected=first["revision"])
     assert report(client)["criteria"][0]["revision"] == latest["revision"]
     history = client.get(
-        "/requirements/assurance/history",
+        "/requirements/acceptance/history",
         params={"requirement_id": "search", "limit": 1},
     ).json()["data"]
     assert history["criteria"]["total"] == 2
@@ -268,7 +268,7 @@ def test_history_is_paged_and_keeps_original_requirement_baselines(api, monkeypa
     ] == {"p95_ms": 450}
     assert (
         client.get(
-            "/requirements/assurance/history",
+            "/requirements/acceptance/history",
             params={"requirement_id": "search", "limit": 101},
         ).status_code
         == 422
@@ -281,7 +281,7 @@ def test_new_migration_preserves_existing_requirements_and_can_be_reversed(tmp_p
     from sqlalchemy import inspect
     from src.core.requirements import Requirement, RequirementQuery
     from src.core.scope import Scope
-    from src.migrations.versions import requirement_assurance
+    from src.migrations.versions import requirement_acceptance
 
     engine = create_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     store = SQLRequirementsRepository(engine, create_schema=True)
@@ -293,13 +293,13 @@ def test_new_migration_preserves_existing_requirements_and_can_be_reversed(tmp_p
     with engine.begin() as connection:
         context = MigrationContext.configure(connection)
         with Operations.context(context):
-            requirement_assurance.upgrade()
+            requirement_acceptance.upgrade()
         assert inspect(connection).has_table("requirement_assessments")
-    assurance = SQLAssuranceRepository(engine)
-    assert assurance.report(scope, "existing")["state"] == "undefined"
+    acceptance = SQLAcceptanceRepository(engine)
+    assert acceptance.report(scope, "existing")["state"] == "undefined"
     with engine.begin() as connection:
         with Operations.context(MigrationContext.configure(connection)):
-            requirement_assurance.downgrade()
+            requirement_acceptance.downgrade()
         assert not inspect(connection).has_table("requirement_assessments")
     assert (
         store.search(RequirementQuery(scope=scope)).items[0].summary
@@ -309,7 +309,7 @@ def test_new_migration_preserves_existing_requirements_and_can_be_reversed(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_assurance_mcp_uses_the_same_revision_and_evidence_rules(api):
+async def test_acceptance_mcp_uses_the_same_revision_and_evidence_rules(api):
     from mcp.shared.memory import create_connected_server_and_client_session
     from src.core.context import DefaultContextProvider
     from src.core.mcp import create_mcp_server
@@ -321,7 +321,7 @@ async def test_assurance_mcp_uses_the_same_revision_and_evidence_rules(api):
     server = create_mcp_server(
         DefaultContextProvider(),
         requirements=SQLRequirementsRepository(engine),
-        assurance=SQLAssuranceRepository(engine),
+        acceptance=SQLAcceptanceRepository(engine),
     )
     async with create_connected_server_and_client_session(server) as session:
         scope = {"workspace": "one"}
@@ -353,7 +353,7 @@ async def test_assurance_mcp_uses_the_same_revision_and_evidence_rules(api):
         assert not result.isError, result.content
         assert result.structuredContent["recorded_by"] == "local"
         result = await session.call_tool(
-            "get_requirement_assurance", {"scope": scope, "requirement_id": "search"}
+            "get_requirement_acceptance", {"scope": scope, "requirement_id": "search"}
         )
         assert result.structuredContent["state"] == "passed"
         result = await session.call_tool(

@@ -29,12 +29,12 @@ from src.core.services import service_registry
 from src.core.workspace import repositories_of
 from src.models.repository import Repository
 
-from src.core.requirements.assurance import (
+from src.core.requirements.acceptance import (
     AcceptanceCriterion,
     EvidenceRecord,
     CriterionAssessment,
 )
-from src.core.requirements.assurance_sql import SQLAssuranceRepository
+from src.core.requirements.acceptance_sql import SQLAcceptanceRepository
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
@@ -370,13 +370,13 @@ def remove(
     return success_response({"deleted": True})
 
 
-def get_assurance():
+def get_acceptance():
     engine = get_engine()
     if engine is None or not inspect(engine).has_table("requirement_assessments"):
         raise HTTPException(
             503, "Acceptance and evidence storage requires the requirements migration"
         )
-    return SQLAssuranceRepository(engine)
+    return SQLAcceptanceRepository(engine)
 
 
 class CriterionInput(BaseModel):
@@ -384,7 +384,7 @@ class CriterionInput(BaseModel):
     expected_revision: str = ""
 
 
-def assurance_write(action):
+def acceptance_write(action):
     try:
         return success_response(action())
     except IntegrityError:
@@ -400,10 +400,10 @@ def put_criterion(
     payload: CriterionInput,
     repo: str = "",
     user: dict = Depends(get_current_user),
-    store=Depends(get_assurance),
+    store=Depends(get_acceptance),
 ):
     scope = write_scope(user, repo)
-    return assurance_write(
+    return acceptance_write(
         lambda: store.put_criterion(
             scope, payload.criterion, payload.expected_revision, str(user["user_id"])
         )
@@ -415,10 +415,10 @@ def record_evidence(
     payload: EvidenceRecord,
     repo: str = "",
     user: dict = Depends(get_current_user),
-    store=Depends(get_assurance),
+    store=Depends(get_acceptance),
 ):
     scope = write_scope(user, repo)
-    return assurance_write(
+    return acceptance_write(
         lambda: store.record_evidence(scope, payload, str(user["user_id"]))
     )
 
@@ -429,7 +429,7 @@ def list_evidence(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
-    store=Depends(get_assurance),
+    store=Depends(get_acceptance),
 ):
     return success_response(store.evidence(write_scope(user, repo), limit, offset))
 
@@ -439,34 +439,34 @@ def assess_criterion(
     payload: CriterionAssessment,
     repo: str = "",
     user: dict = Depends(get_current_user),
-    store=Depends(get_assurance),
+    store=Depends(get_acceptance),
 ):
     scope = write_scope(user, repo)
-    return assurance_write(lambda: store.assess(scope, payload, str(user["user_id"])))
+    return acceptance_write(lambda: store.assess(scope, payload, str(user["user_id"])))
 
 
-@router.get("/assurance")
-def requirement_assurance(
+@router.get("/acceptance")
+def requirement_acceptance(
     requirement_id: str,
     repo: str = "",
     user: dict = Depends(get_current_user),
-    store=Depends(get_assurance),
+    store=Depends(get_acceptance),
 ):
     scope = write_scope(user, repo)
-    return assurance_write(lambda: store.report(scope, requirement_id))
+    return acceptance_write(lambda: store.report(scope, requirement_id))
 
 
-@router.get("/assurance/history")
-def assurance_history(
+@router.get("/acceptance/history")
+def acceptance_history(
     requirement_id: str,
     repo: str = "",
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
-    store=Depends(get_assurance),
+    store=Depends(get_acceptance),
 ):
     scope = write_scope(user, repo)
-    return assurance_write(lambda: store.history(scope, requirement_id, limit, offset))
+    return acceptance_write(lambda: store.history(scope, requirement_id, limit, offset))
 
 
 @router.get("/evidence/{evidence_id}")
@@ -474,7 +474,7 @@ def get_evidence_record(
     evidence_id: str,
     repo: str = "",
     user: dict = Depends(get_current_user),
-    store=Depends(get_assurance),
+    store=Depends(get_acceptance),
 ):
     scope = write_scope(user, repo)
-    return assurance_write(lambda: store.get_evidence(scope, evidence_id))
+    return acceptance_write(lambda: store.get_evidence(scope, evidence_id))

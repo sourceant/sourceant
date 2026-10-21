@@ -106,7 +106,7 @@ async def test_mcp_get_context_uses_protocol_boundary_and_isolates_scope():
         "put_acceptance_criterion",
         "record_requirement_evidence",
         "assess_requirement_criterion",
-        "get_requirement_assurance",
+        "get_requirement_acceptance",
         "search_requirement_evidence",
         "get_requirement_evidence",
         "get_requirement_assessment_history",
