@@ -86,12 +86,12 @@ def test_removing_a_path_shared_by_thousands_of_nodes(code):
 def test_requirement_coverage_over_thousands_of_changed_paths(tmp_path):
     store = SQLRequirementsRepository(_engine(tmp_path, "req.db"), create_schema=True)
     store.put(
-        SCOPE, Requirement(id="r1", kind="requirement", status="open", summary="x")
+        SCOPE, Requirement(id="r1", type="requirement", status="open", summary="x")
     )
     store.put_link(
         SCOPE,
         RequirementLink(
-            id="l1", requirement_id="r1", target_kind=CODE, target_id="src/hit.py"
+            id="l1", requirement_id="r1", target_type=CODE, target_id="src/hit.py"
         ),
     )
     paths = frozenset([f"src/f{index}.py" for index in range(MANY)] + ["src/hit.py"])
@@ -106,14 +106,14 @@ def test_requirement_links_for_thousands_of_requirements(tmp_path):
     for index in range(MANY):
         store.put(
             SCOPE,
-            Requirement(id=f"r{index}", kind="requirement", status="open", summary="x"),
+            Requirement(id=f"r{index}", type="requirement", status="open", summary="x"),
         )
         store.put_link(
             SCOPE,
             RequirementLink(
                 id=f"l{index}",
                 requirement_id=f"r{index}",
-                target_kind=CODE,
+                target_type=CODE,
                 target_id=f"src/f{index}.py",
             ),
         )

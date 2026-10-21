@@ -193,12 +193,20 @@ def _assemble(surface: Surface):
         review_state=finding_store() or InMemoryFindingStore(),
         requirements=requirements,
     )
+    from src.core.requirements.acceptance_sql import SQLAcceptanceRepository
+
+    acceptance_engine = get_engine()
     server = create_mcp_server(
         provider,
         code=code,
         knowledge=knowledge,
         topology=topology,
         requirements=requirements,
+        acceptance=(
+            SQLAcceptanceRepository(acceptance_engine)
+            if acceptance_engine is not None
+            else None
+        ),
         groups=groups(requirements=requirements),
         surface=surface,
         skills=skills,

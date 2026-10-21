@@ -33,21 +33,23 @@ def store(tmp_path):
 
 
 def _requirement(identity="r1", status="open", summary="Refunds settle within a day"):
-    return Requirement(id=identity, kind="requirement", status=status, summary=summary)
+    return Requirement(id=identity, type="requirement", status=status, summary=summary)
 
 
 def test_a_requirement_needs_an_identity_a_kind_and_a_status():
     with pytest.raises(ValueError):
-        Requirement(id="", kind="requirement", status="open", summary="x")
+        Requirement(id="", type="requirement", status="open", summary="x")
     with pytest.raises(ValueError):
-        Requirement(id="r1", kind="", status="open", summary="x")
+        Requirement(id="r1", type="", status="open", summary="x")
     with pytest.raises(ValueError):
-        Requirement(id="r1", kind="requirement", status="", summary="x")
+        Requirement(id="r1", type="requirement", status="", summary="x")
 
 
-def test_a_link_points_at_something_it_knows_how_to_point_at():
+def test_a_link_requires_a_machine_readable_target_type():
     with pytest.raises(ValueError):
-        RequirementLink(id="l1", requirement_id="r1", target_kind="wat", target_id="x")
+        RequirementLink(
+            id="l1", requirement_id="r1", target_type="invalid type", target_id="x"
+        )
 
 
 def test_a_requirement_survives_a_restart(store):
@@ -80,7 +82,7 @@ def test_a_requirement_can_be_found_by_where_it_came_from(store):
         SCOPE,
         Requirement(
             id="r1",
-            kind="requirement",
+            type="requirement",
             status="open",
             summary="x",
             external_ref="https://github.com/acme/billing/issues/7",
@@ -104,7 +106,7 @@ def test_a_link_needs_its_requirement(store):
             RequirementLink(
                 id="l1",
                 requirement_id="missing",
-                target_kind=CODE,
+                target_type=CODE,
                 target_id="src/a.py",
             ),
         )
@@ -115,7 +117,7 @@ def test_removing_a_requirement_takes_its_links(store):
     store.put_link(
         SCOPE,
         RequirementLink(
-            id="l1", requirement_id="r1", target_kind=CODE, target_id="src/a.py"
+            id="l1", requirement_id="r1", target_type=CODE, target_id="src/a.py"
         ),
     )
 
@@ -129,7 +131,7 @@ def test_coverage_counts_what_a_requirement_is_linked_to(store):
     store.put_link(
         SCOPE,
         RequirementLink(
-            id="l1", requirement_id="r1", target_kind=CODE, target_id="src/refund.py"
+            id="l1", requirement_id="r1", target_type=CODE, target_id="src/refund.py"
         ),
     )
     store.put_link(
@@ -137,7 +139,7 @@ def test_coverage_counts_what_a_requirement_is_linked_to(store):
         RequirementLink(
             id="l2",
             requirement_id="r1",
-            target_kind=TEST,
+            target_type=TEST,
             target_id="tests/test_refund.py",
         ),
     )
@@ -155,7 +157,7 @@ def test_coverage_names_what_has_code_but_no_test(store):
     store.put_link(
         SCOPE,
         RequirementLink(
-            id="l1", requirement_id="r1", target_kind=CODE, target_id="src/refund.py"
+            id="l1", requirement_id="r1", target_type=CODE, target_id="src/refund.py"
         ),
     )
 
@@ -179,7 +181,7 @@ def test_coverage_can_be_asked_about_the_files_a_change_touches(store):
     store.put_link(
         SCOPE,
         RequirementLink(
-            id="l1", requirement_id="r1", target_kind=CODE, target_id="src/refund.py"
+            id="l1", requirement_id="r1", target_type=CODE, target_id="src/refund.py"
         ),
     )
 
@@ -208,7 +210,7 @@ def test_coverage_says_when_it_stopped_short(store):
             RequirementLink(
                 id=f"l{index}",
                 requirement_id=f"r{index}",
-                target_kind=CODE,
+                target_type=CODE,
                 target_id="src/refund.py",
             ),
         )
@@ -265,7 +267,7 @@ def test_coverage_survives_a_change_touching_thousands_of_files(store):
     store.put_link(
         SCOPE,
         RequirementLink(
-            id="l1", requirement_id="r1", target_kind=CODE, target_id="src/refund.py"
+            id="l1", requirement_id="r1", target_type=CODE, target_id="src/refund.py"
         ),
     )
     many = frozenset(
@@ -306,7 +308,7 @@ def test_linking_a_requirement_to_knowledge_connects_them(store):
         RequirementLink(
             id="l1",
             requirement_id="r1",
-            target_kind=KNOWLEDGE,
+            target_type=KNOWLEDGE,
             target_id="decision:1",
         ),
     )
