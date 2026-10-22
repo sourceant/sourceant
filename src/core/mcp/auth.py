@@ -18,10 +18,12 @@ class SourceAntTokenVerifier:
         issuer: str,
         audience: str,
         required_scopes: frozenset[str],
+        revoked: Callable[[str], bool] | None = None,
     ) -> None:
         self._issuer = issuer
         self._audience = audience
         self._required_scopes = required_scopes
+        self._revoked = revoked
 
     async def verify_token(self, token: str) -> AccessToken | None:
         try:
@@ -34,6 +36,9 @@ class SourceAntTokenVerifier:
             return None
         scopes = self._scopes(payload)
         if not self._required_scopes.issubset(scopes):
+            return None
+        token_id = payload.get("jti")
+        if self._revoked and isinstance(token_id, str) and self._revoked(token_id):
             return None
         subject = str(payload["sub"])
         return AccessToken(

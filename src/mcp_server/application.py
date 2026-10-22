@@ -14,6 +14,7 @@ from typing import Optional
 from mcp.server.auth.settings import AuthSettings
 
 from src.config.db import get_engine
+from src.core.mcp.revocations import is_revoked
 from src.core.code_index import (
     CodeIndexReader,
     InMemoryCodeIndex,
@@ -125,6 +126,12 @@ def mcp_surface() -> Optional[Surface]:
     return None
 
 
+def _revocations(engine):
+    if engine is None:
+        return None
+    return lambda token_id: is_revoked(engine, token_id)
+
+
 def _hosted(issuer: str) -> Surface:
     values = {
         "issuer": issuer,
@@ -153,6 +160,7 @@ def _hosted(issuer: str) -> Surface:
             issuer=values["issuer"],
             audience=values["audience"],
             required_scopes=required_scopes,
+            revoked=_revocations(get_engine()),
         ),
         requirement_scope_resolver=RequirementScopeResolver(
             connected_repository_entitlement(get_engine())
