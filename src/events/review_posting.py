@@ -1,4 +1,5 @@
 from dataclasses import asdict
+import json
 import uuid
 
 from src.core.jobs import INTERACTIVE, JobOutcome, JobRequest, enqueue
@@ -108,4 +109,34 @@ class ReviewPosting:
                     source_plugin="code_reviewer",
                 )
             )
+        from src.plugins.builtin.code_reviewer.plugin import _with_severity
+        from src.utils.review_cache import save_review
+
+        delivered = {
+            "status": "success",
+            "review": _with_severity(review),
+            "verdict": review.verdict.value,
+            "suggestions_count": len(review.code_suggestions or ()),
+            "review_posted": result,
+        }
+        from src.core.cache import cache, Owner
+
+        cache().set(
+            "review.post-result",
+            str(job.id),
+            json.dumps(delivered),
+            ttl=86400,
+            scope=(
+                Owner("workspace", configuration.workspace)
+                if configuration.workspace
+                else Owner("repository", repository.full_name)
+            ),
+        )
+        save_review(
+            repository.full_name,
+            pr.number,
+            pr.head_sha,
+            delivered,
+            workspace=configuration.workspace,
+        )
         return JobOutcome.ok()

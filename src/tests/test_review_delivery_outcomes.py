@@ -270,7 +270,7 @@ def test_webhook_job_reflects_review_and_posting_outcomes(
         if failure == "generation":
             assert completion.call_count <= 2
         elif failure == "output_budget":
-            assert completion.call_count == 2
+            assert completion.call_count == 3
     else:
         github.post_review.assert_called_once()
 

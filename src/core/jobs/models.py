@@ -61,6 +61,7 @@ class JobRequest:
     #: A key at most one *queued* job may occupy. Left unset, the job gets one
     #: of its own so it never collides with anything.
     dedupe_slot: Optional[str] = None
+    coalesce_running: bool = False
     batch_id: Optional[int] = None
 
     def for_(self, tenant: Optional[str], kind: str = BY_WORKSPACE) -> "JobRequest":
