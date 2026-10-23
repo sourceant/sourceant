@@ -196,7 +196,7 @@ SETTINGS: tuple[Setting, ...] = (
         ),
         type=ConfigType.BOOL,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
-        default=True,
+        default=False,
         group="Review",
     ),
     Setting(
