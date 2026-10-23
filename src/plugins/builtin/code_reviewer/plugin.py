@@ -22,6 +22,7 @@ from src.core.plugins import event_hooks
 from src.core.change_context import ChangeSet
 from src.core.model import provider_for
 from src.core.settings.configuration import Configuration
+from src.core.review_performance import review_session
 from src.core.mcp import contribute_tools
 from src.core.review import Reviewer, WorkingTreeReviewer
 from src.core.analysis import (
@@ -479,6 +480,7 @@ class CodeReviewerPlugin(BasePlugin):
 
         return None
 
+    @review_session
     async def generate_review(
         self,
         repository: Repository,

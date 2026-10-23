@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
+import inspect
 from time import monotonic
 from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
@@ -15,8 +16,11 @@ expert_identity = ContextVar("review_expert_identity", default="general")
 
 
 class ReviewSession:
-    def __init__(self):
+    def __init__(self, configuration=None):
+        from src.core.review_budget import ReviewBudget
+
         self.id = uuid4().hex
+        self.budget = ReviewBudget(configuration)
         self.values = SharedReader(None)
         self.pool = ThreadPoolExecutor(max_workers=2)
 
@@ -68,19 +72,61 @@ def stage(name, **details):
 
 
 def review_session(call):
+    if inspect.iscoroutinefunction(call):
+
+        @wraps(call)
+        async def asynchronous(*args, **kwargs):
+            if _session.get() is not None:
+                return await call(*args, **kwargs)
+            from src.core.settings.configuration import Configuration
+            from src.core.review_budget import ReviewBudgetExceeded
+
+            repository = kwargs.get("repository_full_name")
+            if not repository and len(args) > 1:
+                repository = f"{args[1].owner}/{args[1].name}"
+            session = ReviewSession(
+                Configuration(
+                    repository=repository,
+                    workspace=kwargs.get("workspace"),
+                    user=kwargs.get("user"),
+                )
+            )
+            token = _session.set(session)
+            try:
+                result = await call(*args, **kwargs)
+                if session.budget.exhausted:
+                    raise ReviewBudgetExceeded(
+                        "The review exceeded its budget; no partial review was published."
+                    )
+                return result
+            finally:
+                session.pool.shutdown(wait=True)
+                _session.reset(token)
+
+        return asynchronous
+
     @wraps(call)
     def run(*args, **kwargs):
         if _session.get() is not None:
-            return call(*args, **kwargs)
-        session = ReviewSession()
-        token = _session.set(session)
+            result = call(*args, **kwargs)
+            if _session.get().budget.exhausted:
+                from src.core.review_budget import ReviewBudgetExceeded
+
+                raise ReviewBudgetExceeded(
+                    "The review exceeded its budget; no partial review was published."
+                )
+            return result
+        configuration = None
         repository, head = kwargs.get("repository", ""), kwargs.get("head", "")
         if len(args) > 1:
             change = getattr(args[1], "changes", args[1])
+            configuration = getattr(change, "configuration", None)
             scope = getattr(change, "scope", None)
             if scope is not None:
                 repository = repository or scope.get("repository") or ""
             head = head or getattr(change, "revision", "")
+        session = ReviewSession(configuration)
+        token = _session.set(session)
         logger.info(
             "review_started session=%s repository=%s head=%s",
             session.id,
@@ -90,7 +136,14 @@ def review_session(call):
         try:
             with stage("review", repository=repository, head=head):
                 try:
-                    return call(*args, **kwargs)
+                    result = call(*args, **kwargs)
+                    if session.budget.exhausted:
+                        from src.core.review_budget import ReviewBudgetExceeded
+
+                        raise ReviewBudgetExceeded(
+                            "The review exceeded its budget; no partial review was published."
+                        )
+                    return result
                 finally:
                     session.pool.shutdown(wait=True)
         finally:
@@ -102,6 +155,11 @@ def review_session(call):
 def session_id():
     session = _session.get()
     return session.id if session else ""
+
+
+def current_budget():
+    session = _session.get()
+    return session.budget if session else None
 
 
 def model_request(call):

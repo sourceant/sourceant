@@ -256,7 +256,9 @@ class SQLJobStore:
             ).one_or_none()
             if existing is None:
                 raise
-            if existing.state == QUEUED:
+            if existing.state == QUEUED or (
+                request.coalesce_running and existing.state == RUNNING
+            ):
                 return existing.id
             # The key says at most one job waits under it, and this one is no
             # longer waiting. A job asking for its own successor holds its key
@@ -653,6 +655,19 @@ class SQLJobStore:
             ).one_or_none()
         return None if row is None else _as_job(row)
 
+    def active(self, exclusive_key: str) -> Optional[Job]:
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                select(job_table)
+                .where(
+                    job_table.c.exclusive_key == exclusive_key,
+                    job_table.c.state.in_((QUEUED, RUNNING)),
+                )
+                .order_by(job_table.c.id.desc())
+                .limit(1)
+            ).one_or_none()
+        return None if row is None else _as_job(row)
+
     def pending(self, lane: str = "", limit: int = 100) -> Sequence[Job]:
         query = select(job_table).where(job_table.c.state == QUEUED)
         if lane:
@@ -745,21 +760,29 @@ class SQLJobStore:
     def cancel(self, job_id: int) -> bool:
         with self._engine.begin() as connection:
             now = self._clock(connection)
-            return (
-                connection.execute(
-                    update(job_table)
-                    .where(and_(job_table.c.id == job_id, job_table.c.state == QUEUED))
-                    .values(
-                        state=CANCELLED,
-                        # Cancelled is an ending like any other: it releases the
-                        # key so the same work can be asked for again, and it is
-                        # dated so that tidying up eventually reaches it.
-                        finished_at=now,
-                        dedupe_slot=f"job:{uuid.uuid4()}",
-                    )
-                ).rowcount
-                == 1
-            )
+            row = connection.execute(
+                select(job_table).where(job_table.c.id == job_id).with_for_update()
+            ).one_or_none()
+            if row is None or row.state not in (QUEUED, RUNNING):
+                return False
+            changed = connection.execute(
+                update(job_table)
+                .where(
+                    job_table.c.id == job_id, job_table.c.state.in_((QUEUED, RUNNING))
+                )
+                .values(
+                    state=CANCELLED,
+                    finished_at=now,
+                    leased_by=None,
+                    lease_until=None,
+                    dedupe_slot=f"job:{uuid.uuid4()}",
+                )
+            ).rowcount
+            if changed:
+                if row.state == QUEUED:
+                    self._unlock(connection, row)
+                self._settle(connection, row, now, failed=True)
+            return changed == 1
 
 
 def _as_job(row) -> Job:

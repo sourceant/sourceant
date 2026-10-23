@@ -68,7 +68,11 @@ class InMemoryJobStore:
             slot = request.dedupe_slot
             if slot:
                 for row in self._jobs.values():
-                    if row["dedupe_slot"] == slot and row["state"] == QUEUED:
+                    if row["dedupe_slot"] == slot and (
+                        row["state"] == QUEUED
+                        or request.coalesce_running
+                        and row["state"] == RUNNING
+                    ):
                         return row["id"]
             job_id = self._next_id
             self._next_id += 1
@@ -280,6 +284,16 @@ class InMemoryJobStore:
             row = self._jobs.get(job_id)
             return None if row is None else self._read(row)
 
+    def active(self, exclusive_key: str) -> Optional[Job]:
+        with self._lock:
+            rows = [
+                row
+                for row in self._jobs.values()
+                if row["exclusive_key"] == exclusive_key
+                and row["state"] in (QUEUED, RUNNING)
+            ]
+            return self._read(max(rows, key=lambda row: row["id"])) if rows else None
+
     def pending(self, lane: str = "", limit: int = 100) -> Sequence[Job]:
         with self._lock:
             rows = [
@@ -334,12 +348,14 @@ class InMemoryJobStore:
     def cancel(self, job_id: int) -> bool:
         with self._lock:
             row = self._jobs.get(job_id)
-            if row is None or row["state"] != QUEUED:
+            if row is None or row["state"] not in (QUEUED, RUNNING):
                 return False
+            if row["state"] == QUEUED:
+                self._drop_lock(row)
             row["state"] = CANCELLED
-            # Cancelled is an ending like any other: it releases the key so the
-            # same work can be asked for again, and it is dated so that tidying
-            # up eventually reaches it.
+            self._settle(row, failed=True)
+            row["leased_by"] = None
+            row["lease_until"] = None
             row["finished_at"] = self._now()
             row["dedupe_slot"] = f"job:{uuid.uuid4()}"
             return True
