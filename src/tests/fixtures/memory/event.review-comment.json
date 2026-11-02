@@ -1,0 +1,30 @@
+{
+  "bucket": "bk_shop",
+  "id": "ev_01J",
+  "type": "github.pull_request.review_comment",
+  "occurred_at": "2026-04-19T14:02:11Z",
+  "place": "pl_pr_4521_thread_3",
+  "participants": [
+    {"actor": "ac_ana", "role": "author"},
+    {"actor": "ac_ben", "role": "addressee"},
+    {"actor": "ac_review_bot", "role": "mentioned"}
+  ],
+  "content": [
+    {"speaker": "ac_ana", "text": "This should stop after three tries; the gateway bans us at five.", "at": "2026-04-19T14:02:11Z"}
+  ],
+  "subjects": [
+    {"subject": "sb_file_retry_go", "role": "about"},
+    {"subject": "sb_vendor_gateway", "role": "affected"}
+  ],
+  "part_of": "ev_review_4521_round_2",
+  "in_reply_to": "ev_01H",
+  "source": {
+    "system": "github",
+    "native_id": "PRRC_kwDO",
+    "url": "https://github.com/acme/shop/pull/4521#discussion_r1",
+    "recorded_at": "2026-04-19T14:05:00Z",
+    "method": "webhook",
+    "by": "ac_capture_agent"
+  },
+  "why": "The team needed to agree on safe retry behavior."
+}

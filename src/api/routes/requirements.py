@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from src.auth import get_current_user
 from src.api.routes.knowledge import get_knowledge
+from src.core.memory.knowledge import acting_as
 from src.api.routes.topology import get_scope
 from src.config.db import get_engine
 from src.core.requirements import (
@@ -275,7 +276,8 @@ def put(
         item = Requirement(**payload.model_dump(exclude={"repo"}))
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    store.put(scope, item)
+    with acting_as(str(user.get("user_id") or "local")):
+        store.put(scope, item)
     return success_response(asdict(item))
 
 
@@ -297,7 +299,8 @@ def put_link(
                 is None
             ):
                 raise HTTPException(404, "Artifact not found")
-        store.put_link(scope, link)
+        with acting_as(str(user.get("user_id") or "local")):
+            store.put_link(scope, link)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
     return success_response(asdict(link))
@@ -354,8 +357,9 @@ async def import_issues(
     imported = GitHubIssueRequirements(lambda repository, labels: issues.values()).sync(
         scope
     )
-    for item in imported:
-        store.put(scope, item)
+    with acting_as(str(user.get("user_id") or "local")):
+        for item in imported:
+            store.put(scope, item)
     return success_response({"imported": len(imported)})
 
 
@@ -366,7 +370,8 @@ def remove(
     user: dict = Depends(get_current_user),
     store=Depends(get_requirements),
 ):
-    store.remove(write_scope(user, repo), identifier)
+    with acting_as(str(user.get("user_id") or "local")):
+        store.remove(write_scope(user, repo), identifier)
     return success_response({"deleted": True})
 
 

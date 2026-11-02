@@ -1,0 +1,14 @@
+{
+  "bucket": "bk_people",
+  "id": "ac_ana",
+  "class": "actor",
+  "type": "person",
+  "name": "Ana Ruiz",
+  "image": "https://example.com/ana.png",
+  "identities": [
+    { "platform": "github", "handle": "anaruiz" },
+    { "platform": "slack", "handle": "U02ABC" },
+    { "platform": "email", "handle": "ana@acme.example" }
+  ],
+  "member_of": ["ac_team_payments"]
+}

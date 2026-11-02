@@ -35,6 +35,8 @@ from src.core.knowledge import (
 from src.core.responses import success_response
 from src.core.services import service_registry
 
+from src.core.memory.knowledge import recording
+
 router = APIRouter()
 
 _fallback: Any = None
@@ -48,7 +50,7 @@ def get_knowledge() -> Any:
     """
     global _fallback
     try:
-        return service_registry.resolve(KnowledgeRepository)
+        return recording(service_registry.resolve(KnowledgeRepository))
     except LookupError:
         pass
     if _fallback is None:
@@ -58,7 +60,7 @@ def get_knowledge() -> Any:
             if engine is not None
             else InMemoryKnowledgeRepository()
         )
-    return _fallback
+    return recording(_fallback)
 
 
 def payload(item: KnowledgeObject) -> dict[str, Any]:
@@ -142,7 +144,7 @@ def write_knowledge(body: KnowledgeInput, store: Any = Depends(get_knowledge)):
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    store.put(entry.scope, item)
+    recording(store).put(entry.scope, item)
     return success_response(payload(item))
 
 
@@ -271,7 +273,7 @@ def initialize(body: InitializeInput, store: Any = Depends(get_knowledge)):
 
     if not body.dry_run:
         for item in items:
-            store.put(entry.scope, item)
+            recording(store).put(entry.scope, item)
 
     return success_response(
         {"found": found, "recorded": 0 if body.dry_run else len(items)}
@@ -294,5 +296,5 @@ def forget_knowledge(
         raise HTTPException(
             status_code=501, detail="This store does not remove what it recorded"
         )
-    store.remove(entry.scope, id)
+    recording(store).remove(entry.scope, id)
     return success_response({"id": id})
