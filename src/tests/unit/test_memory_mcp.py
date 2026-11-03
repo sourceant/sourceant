@@ -4,15 +4,14 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from src.core.context import DefaultContextProvider
 from src.core.knowledge import InMemoryKnowledgeRepository
 from src.core.mcp import create_mcp_server
-from src.core.memory import EventReader, EventRecorder, InMemoryMemory
+from src.core.memory import Memory, InMemoryMemory
 from src.core.services import ServiceRegistry
 
 
 def services():
     memory = InMemoryMemory()
     registry = ServiceRegistry()
-    registry.register(EventRecorder, memory, "test")
-    registry.register(EventReader, memory, "test")
+    registry.register(Memory, memory, "test")
     return memory, registry
 
 
@@ -101,12 +100,59 @@ async def test_remember_then_recall_returns_when_why_who_and_paths():
             "recall", {"scope": {"repository": "acme/other"}, "query": "retry"}
         )
         assert isolated.structuredContent["results"] == []
-    assert recalled.structuredContent["results"][0]["type"] == "event"
-    event = recalled.structuredContent["results"][0]["record"]
+    event = recalled.structuredContent["results"][0]
     assert event["id"] == remembered.structuredContent["id"]
-    assert event["occurred_at"] == "2026-04-19T14:02:11Z"
+    assert event["what"] == "The retry experiment succeeded"
     assert event["why"] == "The gateway stops accepting requests after five tries"
-    assert memory.entities[event["participants"][0]["actor"]]["name"] == "Ana"
-    assert memory.entities[event["subjects"][0]["subject"]]["name"] == "src/retry.py"
-    assert event["appraisals"][0]["valence"] == 2
-    assert event["appraisals"][0]["importance"] == 4
+    assert event["who"] == "Ana"
+    stored = memory.events[event["id"]]
+    assert memory.entities[stored["subjects"][0]["subject"]]["name"] == "src/retry.py"
+    assert stored["appraisals"][0]["valence"] == 2
+    assert stored["appraisals"][0]["importance"] == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"text": " "},
+        {"when": "2026-04-19T14:02:11"},
+        {"valence": 3},
+        {"importance": 0},
+    ],
+)
+async def test_remember_rejects_invalid_observations(changes):
+    memory, registry = services()
+    server = create_mcp_server(DefaultContextProvider(), services=registry)
+    arguments = {
+        "scope": {"actor": "Ana"},
+        "text": "Retry succeeded",
+        "when": "2026-04-19T14:02:11Z",
+        **changes,
+    }
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool("remember", arguments)
+    assert result.isError
+    assert memory.events == {}
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_memory_is_explicit_and_does_not_store(monkeypatch):
+    from src.core.services import memory_services
+    from src.core.memory import DisabledMemory, Memory
+
+    monkeypatch.delenv("MEMORY_ENGINE_URL", raising=False)
+    monkeypatch.delenv("MEMORY_ENGINE_KEY", raising=False)
+    registry = ServiceRegistry()
+    assert isinstance(memory_services(registry), DisabledMemory)
+    assert registry.resolve(Memory) is memory_services(registry)
+    server = create_mcp_server(DefaultContextProvider(), services=registry)
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "remember",
+            {"scope": {}, "text": "Retry succeeded", "when": "2026-04-19T14:02:11Z"},
+        )
+        assert not result.isError
+        assert result.structuredContent["configured"] is False
+        recalled = await session.call_tool("recall", {"scope": {}, "query": "Retry"})
+        assert recalled.structuredContent == {"results": [], "configured": False}

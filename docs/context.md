@@ -87,5 +87,24 @@ search results use `type`. MCP knowledge searches accept `types` and the depreca
 Upgrade the database before starting the updated server. The migration preserves
 knowledge while renaming its category column; downgrading restores the old name.
 
-Memory recall results also expose their category as `type`, retaining `kind` for
-older consumers. Event records and knowledge history continue to use `type`.
+### Event memory
+
+`Memory` is the scope-level service contract. Register one implementation in the
+service registry to replace the default `TrailpadMemory` adapter. Callers pass
+`Remembered`, `KnowledgeChange`, or `RepositoryDelivery` values; bucket bindings,
+entity identifiers, appraisals, and engine filters belong to the adapter.
+
+`remember` accepts what happened, an aware datetime, why, who (defaulting to the
+scope actor), paths, optional valence from -2 to 2, optional importance from 1 to 5,
+and a type defaulting to `sourceant.observation`. Empty text, missing timezones,
+and out-of-range ratings are rejected by the memory implementation.
+
+`recall` returns `results` with `id`, `when`, `why`, `who` (actor names), `what`,
+`type`, and `score`. `history` returns those event values with a `next` cursor.
+Knowledge changes include the actor and before/after values. Repository deliveries
+are idempotent on their delivery ID; historical deliveries without an ID use a
+stable digest. The MCP tools expose these scope-level results without engine records.
+
+With `MEMORY_ENGINE_URL` and `MEMORY_ENGINE_KEY` set, events use the engine.
+Without both settings, `DisabledMemory` ignores writes and returns empty reads
+with `configured: false`. `InMemoryMemory` implements the contract for tests only.

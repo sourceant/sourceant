@@ -372,66 +372,28 @@ def create_mcp_server(
         paths: list[str] | None = None,
         valence: int | None = None,
         importance: int | None = None,
+        type: str = "sourceant.observation",
     ) -> dict[str, Any]:
         from datetime import datetime
-        from hashlib import sha256
-        from uuid import uuid4
-        from src.core.memory import Entity, Event
-        from src.core.memory.knowledge import actor_in
+        from src.core.memory.interfaces import Remembered
         from src.core.services import memory_services
 
-        if not text.strip():
-            raise ValueError("text must not be empty")
-        instant = datetime.fromisoformat(when.replace("Z", "+00:00"))
-        if instant.tzinfo is None:
-            raise ValueError("when must include a timezone")
-        if valence is not None and not -2 <= valence <= 2:
-            raise ValueError("valence must be between -2 and 2")
-        if importance is not None and not 1 <= importance <= 5:
-            raise ValueError("importance must be between 1 and 5")
         active = resolve_scope(Scope.from_mapping(scope))
-        recorder, _ = memory_services(services)
-        from src.core.memory.interfaces import BucketBinder
-
-        bucket = services.resolve(BucketBinder).bucket(active)
-        actor = who or actor_in(active)
-        actor_id = "ac_" + sha256(f"{bucket}\0{actor}".encode()).hexdigest()[:24]
-        entities = [Entity(bucket, actor_id, "person", "actor", actor)]
-        subjects = []
-        for path in paths or []:
-            subject = (
-                "sb_" + sha256(f"{bucket}\0path\0{path}".encode()).hexdigest()[:24]
+        return asdict(
+            memory_services(services).remember(
+                active,
+                Remembered(
+                    text,
+                    datetime.fromisoformat(when.replace("Z", "+00:00")),
+                    why,
+                    who,
+                    paths or [],
+                    valence,
+                    importance,
+                    type,
+                ),
             )
-            entities.append(Entity(bucket, subject, "code.path", "subject", path))
-            subjects.append({"subject": subject, "role": "about"})
-        event_id = "ev_" + uuid4().hex
-        appraisals = []
-        if valence is not None or importance is not None:
-            appraisal = {
-                "bucket": bucket,
-                "id": "ap_" + uuid4().hex,
-                "target": event_id,
-                "by": actor_id,
-                "at": when,
-            }
-            if valence is not None:
-                appraisal["valence"] = valence
-            if importance is not None:
-                appraisal["importance"] = importance
-            appraisals.append(appraisal)
-        event = Event(
-            bucket,
-            event_id,
-            "sourceant.observation",
-            occurred_at=when,
-            why=why,
-            participants=[{"actor": actor_id, "role": "author"}],
-            content=[{"speaker": actor_id, "text": text}],
-            subjects=subjects,
-            appraisals=appraisals,
         )
-        recorder.record([event], entities)
-        return asdict(event)
 
     @server.tool(
         name="recall",
@@ -442,28 +404,8 @@ def create_mcp_server(
     def recall(scope: dict[str, str], query: str, limit: int = 10) -> dict[str, Any]:
         from src.core.services import memory_services
 
-        if not query.strip() or not 1 <= limit <= 100:
-            raise ValueError("recall needs a query and a limit between 1 and 100")
         active = resolve_scope(Scope.from_mapping(scope))
-        recorder, reader = memory_services(services)
-        from src.core.memory.interfaces import BucketBinder
-
-        result = reader.recall(
-            {
-                "context": {"text": query},
-                "filters": {
-                    "kinds": ["event"],
-                    "buckets": services.resolve(BucketBinder).buckets(active),
-                },
-                "limit": limit,
-            }
-        )
-        for item in result.get("results", []):
-            event = item["record"]
-            item["when"] = event.get("occurred_at")
-            item["why"] = event.get("why", "")
-            item["who"] = event.get("participants", [])
-        return result
+        return asdict(memory_services(services).recall(active, query, limit))
 
     @server.tool(
         name="put_knowledge_relationship",

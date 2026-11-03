@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from src.core.memory import EngineMemory, Entity, Event, InMemoryMemory
+from src.core.memory import TrailpadMemory, Entity, Event, InMemoryMemory
 from src.core.scope import Scope
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "memory"
@@ -36,6 +36,8 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
             return httpx.Response(200, json=event)
         if request.url.path == "/v1/entities/" + entity["id"]:
             return httpx.Response(200, json=entity)
+        if request.method == "PUT":
+            return httpx.Response(200, json={"id": event["bucket"]})
         if request.url.path == "/v1/recall":
             assert json.loads(request.content)["filters"]["kinds"] == ["event"]
             return httpx.Response(
@@ -56,7 +58,7 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
             return httpx.Response(204)
         raise AssertionError(request.url)
 
-    memory = EngineMemory(
+    memory = TrailpadMemory(
         "https://memory.example",
         "test-service-key",
         person="test-person-token",
@@ -66,16 +68,15 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
         memory.record([Event.from_dict(event)], [Entity.from_dict(entity)])
         assert memory.event(event["id"]).to_dict() == event
         assert memory.entity(entity["id"]).to_dict() == entity
-        assert (
-            memory.recall(
-                {"context": {"text": "retry"}, "filters": {"kinds": ["event"]}}
-            )["results"][0]["record"]
-            == event
-        )
+        recalled = memory.recall(Scope.from_mapping({}), "retry").results[0]
+        assert recalled.what == event["content"][0]["text"]
+        assert recalled.why == event["why"]
+        assert recalled.who == entity["name"]
+        assert recalled.score == 1.0
         memory.use([event["id"]])
     finally:
         memory.close()
-    assert len(calls) == 5
+    assert len(calls) == 7
 
 
 def test_engine_caches_bucket_binding_and_forwards_listing_filters():
@@ -95,7 +96,7 @@ def test_engine_caches_bucket_binding_and_forwards_listing_filters():
             200, json={"events": [event], "entities": [entity], "next": event["id"]}
         )
 
-    memory = EngineMemory(
+    memory = TrailpadMemory(
         "https://memory.example",
         "test-service-key",
         transport=httpx.MockTransport(handle),
@@ -103,11 +104,12 @@ def test_engine_caches_bucket_binding_and_forwards_listing_filters():
     try:
         scope = Scope.from_mapping({"repository": "acme/shop"})
         memory.bucket(scope)
-        page = memory.list(
+        page = memory.history(
             scope, "2026-04-01T00:00:00Z", "2026-05-01T00:00:00Z", "previous"
         )
-        assert page["events"] == [event]
-        assert page["next"] == event["id"]
+        assert page.events[0].what == event["content"][0]["text"]
+        assert page.events[0].who == entity["name"]
+        assert page.next == event["id"]
         assert len(bindings) == 1
         assert bindings[0]["binding"]["system"] == "sourceant"
     finally:
@@ -115,7 +117,7 @@ def test_engine_caches_bucket_binding_and_forwards_listing_filters():
 
 
 def test_engine_propagates_conflicts():
-    memory = EngineMemory(
+    memory = TrailpadMemory(
         "https://memory.example",
         "test-service-key",
         transport=httpx.MockTransport(
@@ -163,3 +165,41 @@ def test_in_memory_listing_filters_scope_time_and_cursor():
     ] == ["first"]
     page["events"][0]["content"][0]["text"] = "Changed"
     assert memory.events["second"]["content"][0]["text"] != "Changed"
+
+
+def test_remember_constructs_engine_records_from_scope_observation():
+    from datetime import datetime
+    from src.core.memory import Remembered
+
+    event = example("event.review-comment.json")
+    actor = example("entity.actor.json")
+    records = []
+
+    def handle(request):
+        if request.method == "PUT":
+            return httpx.Response(200, json={"id": event["bucket"]})
+        assert request.url.path == "/v1/records"
+        records.append(json.loads(request.content))
+        return httpx.Response(204)
+
+    memory = TrailpadMemory(
+        "https://memory.example", "test-service-key", transport=httpx.MockTransport(handle)
+    )
+    try:
+        observation = Remembered(
+            event["content"][0]["text"],
+            datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00")),
+            why=event["why"],
+        )
+        result = memory.remember(Scope.from_mapping({"actor": actor["name"]}), observation)
+        assert result.what == observation.what
+        assert result.who == actor["name"]
+        assert result.when == observation.when
+        stored = records[0]["events"][0]
+        assert stored["id"] == result.id
+        assert stored["type"] == observation.type
+        assert stored["content"][0]["text"] == observation.what
+        assert records[0]["entities"][0]["name"] == result.who
+        assert stored["participants"][0]["actor"] == records[0]["entities"][0]["id"]
+    finally:
+        memory.close()

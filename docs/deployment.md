@@ -66,8 +66,9 @@ Put the returned key in `MEMORY_ENGINE_KEY` and set
 `MEMORY_ENGINE_URL=http://memory:8080` in `.env`, then recreate the app. The
 `sourceant/local` installation covers local knowledge and MCP events. For hosted
 workspace scopes, register `sourceant/your-workspace-id` too. Do not publish the
-engine port. With neither engine setting configured, events are held in process
-and disappear when the app restarts.
+engine port. With neither engine setting configured, memory is disabled: writes do nothing and reads return empty results with
+`configured: false`. In-process storage is reserved for tests. Both settings must
+be supplied together.
 
 Replay stored GitHub deliveries with `sourceant memory-replay`, optionally
 followed by repository names. Repeating a replay preserves existing events.

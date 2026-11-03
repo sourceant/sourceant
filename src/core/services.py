@@ -91,30 +91,16 @@ def memory_services(registry: ServiceRegistry = service_registry):
 
 def _memory_services(registry):
     import os
-    from src.core.memory import EngineMemory, InMemoryMemory, EventReader, EventRecorder
-    from src.core.memory.interfaces import BucketBinder
+    from src.core.memory import TrailpadMemory, DisabledMemory, Memory
 
     try:
-        recorder = registry.resolve(EventRecorder)
+        return registry.resolve(Memory)
     except LookupError:
         url, key = os.getenv("MEMORY_ENGINE_URL"), os.getenv("MEMORY_ENGINE_KEY")
         if bool(url) != bool(key):
             raise ValueError(
                 "MEMORY_ENGINE_URL and MEMORY_ENGINE_KEY must be configured together"
             )
-        recorder = EngineMemory(url, key) if url else InMemoryMemory()
-        registry.register(EventRecorder, recorder, "core.memory")
-    try:
-        reader = registry.resolve(EventReader)
-    except LookupError:
-        if not isinstance(recorder, EventReader):
-            raise LookupError("The memory recorder needs a registered EventReader")
-        reader = recorder
-        registry.register(EventReader, reader, "core.memory")
-    try:
-        registry.resolve(BucketBinder)
-    except LookupError:
-        if not isinstance(recorder, BucketBinder):
-            raise LookupError("The memory recorder needs a registered BucketBinder")
-        registry.register(BucketBinder, recorder, "core.memory")
-    return recorder, reader
+        memory = TrailpadMemory(url, key) if url else DisabledMemory()
+        registry.register(Memory, memory, "core.memory")
+        return memory

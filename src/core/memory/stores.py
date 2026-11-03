@@ -5,6 +5,15 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from threading import RLock
 from urllib.parse import quote
+from uuid import uuid4
+from .interfaces import (
+    Remembered,
+    RememberedEvent,
+    RecallResult,
+    HistoryPage,
+    KnowledgeChange,
+    RepositoryDelivery,
+)
 
 import httpx
 
@@ -26,7 +35,7 @@ def binding(scope: Scope) -> tuple[str, str, str]:
     )
 
 
-class EngineMemory:
+class _EngineRecords:
     def __init__(
         self,
         url: str,
@@ -101,11 +110,8 @@ class EngineMemory:
             params={key: value for key, value in params.items() if value is not None},
         )
 
-    def recall(self, query: dict) -> dict:
-        result = self._request("POST", "v1/recall", json=query)
-        for item in result.get("results", []):
-            item["type"] = item.get("type", item.get("kind"))
-        return result
+    def _recall(self, query: dict) -> dict:
+        return self._request("POST", "v1/recall", json=query)
 
     def event(self, id: str) -> Event:
         return Event.from_dict(self._request("GET", "v1/events/" + quote(id, safe="")))
@@ -122,7 +128,7 @@ class EngineMemory:
         self.client.close()
 
 
-class InMemoryMemory:
+class _InMemoryRecords:
     def __init__(self):
         self.repository_sources: dict[str, list[dict]] = {}
         self.events: dict[str, dict] = {}
@@ -212,7 +218,7 @@ class InMemoryMemory:
                 }
             )
 
-    def recall(self, query: dict) -> dict:
+    def _recall(self, query: dict) -> dict:
         filters = query.get("filters", {})
         buckets = filters.get("buckets", [])
         text = query.get("context", {}).get("text", "").casefold()
@@ -233,7 +239,6 @@ class InMemoryMemory:
             "results": [
                 {
                     "type": "event",
-                    "kind": "event",
                     "id": event["id"],
                     "record": event,
                     "score": 1.0,
@@ -251,3 +256,268 @@ def _time(value) -> datetime:
 
 def _at(event: dict) -> datetime:
     return _time(event["occurred_at"])
+
+
+def _actors(event):
+    speakers = [
+        item["speaker"] for item in event.get("content", []) if item.get("speaker")
+    ]
+    return list(
+        dict.fromkeys(speakers or [p["actor"] for p in event.get("participants", [])])
+    )
+
+
+def _validate(observation):
+    if not observation.what.strip():
+        raise ValueError("text must not be empty")
+    if observation.when.tzinfo is None or observation.when.utcoffset() is None:
+        raise ValueError("when must include a timezone")
+    if observation.valence is not None and not -2 <= observation.valence <= 2:
+        raise ValueError("valence must be between -2 and 2")
+    if observation.importance is not None and not 1 <= observation.importance <= 5:
+        raise ValueError("importance must be between 1 and 5")
+
+
+def _validate_recall(text, limit):
+    if not text.strip() or not 1 <= limit <= 100:
+        raise ValueError("recall needs a query and a limit between 1 and 100")
+
+
+class _ScopeMemory:
+    def remember(self, scope: Scope, observation: Remembered) -> RememberedEvent:
+        from .knowledge import actor_in
+
+        _validate(observation)
+        bucket = self.bucket(scope)
+        actor = observation.who or actor_in(scope)
+        actor_id = "ac_" + sha256(f"{bucket}\0{actor}".encode()).hexdigest()[:24]
+        entities = [Entity(bucket, actor_id, "person", "actor", actor)]
+        subjects = []
+        for path in observation.paths:
+            subject = (
+                "sb_" + sha256(f"{bucket}\0path\0{path}".encode()).hexdigest()[:24]
+            )
+            entities.append(Entity(bucket, subject, "code.path", "subject", path))
+            subjects.append({"subject": subject, "role": "about"})
+        event_id = "ev_" + uuid4().hex
+        appraisals = []
+        when = observation.when.isoformat()
+        if observation.valence is not None or observation.importance is not None:
+            appraisal = {
+                "bucket": bucket,
+                "id": "ap_" + uuid4().hex,
+                "target": event_id,
+                "by": actor_id,
+                "at": when,
+            }
+            for name in ("valence", "importance"):
+                value = getattr(observation, name)
+                if value is not None:
+                    appraisal[name] = value
+            appraisals.append(appraisal)
+        event = Event(
+            bucket,
+            event_id,
+            observation.type,
+            occurred_at=when,
+            why=observation.why,
+            participants=[{"actor": actor_id, "role": "author"}],
+            content=[{"speaker": actor_id, "text": observation.what}],
+            subjects=subjects,
+            appraisals=appraisals,
+        )
+        self.record([event], entities)
+        return RememberedEvent(
+            event_id,
+            observation.when,
+            observation.why,
+            actor,
+            observation.what,
+            observation.type,
+        )
+
+    def _view(self, event, entities, score=0.0):
+        names = {entity["id"]: entity.get("name", "") for entity in entities}
+        speakers = [names.get(actor, "") for actor in _actors(event)]
+        instant = event.get("occurred_at")
+        return RememberedEvent(
+            event["id"],
+            _time(instant) if instant else None,
+            event.get("why", ""),
+            ", ".join(s for s in speakers if s),
+            "\n".join(c["text"] for c in event.get("content", [])),
+            event["type"],
+            score=score,
+        )
+
+    def recall(self, scope: Scope, text: str, limit: int = 10) -> RecallResult:
+        _validate_recall(text, limit)
+        result = self._recall(
+            {
+                "context": {"text": text},
+                "filters": {"kinds": ["event"], "buckets": self.buckets(scope)},
+                "limit": limit,
+            }
+        )
+        events = []
+        for item in result.get("results", []):
+            event = item["record"]
+            entities = [self.entity(actor).to_dict() for actor in _actors(event)]
+            events.append(self._view(event, entities, item.get("score", 0.0)))
+        return RecallResult(events)
+
+    def history(self, scope: Scope, since=None, until=None, after=None) -> HistoryPage:
+        page = self.list(scope, since, until, after)
+        return HistoryPage(
+            [self._view(e, page.get("entities", [])) for e in page["events"]],
+            page.get("next"),
+        )
+
+    def record_knowledge_change(self, scope: Scope, change: KnowledgeChange) -> None:
+        before, after, event_type = change.before, change.after, change.type
+        bucket = self.bucket(scope)
+        item = after or before
+        subject = (
+            "sb_" + sha256(f"{bucket}\0knowledge\0{item.id}".encode()).hexdigest()[:24]
+        )
+        actor = change.actor
+        actor_id = "ac_" + sha256(f"{bucket}\0{actor}".encode()).hexdigest()[:24]
+        self.record(
+            [
+                Event(
+                    bucket=bucket,
+                    id="ev_" + uuid4().hex,
+                    type=event_type,
+                    occurred_at=datetime.now(timezone.utc).isoformat(),
+                    participants=[{"actor": actor_id, "role": "author"}],
+                    content=[{"speaker": actor_id, "text": item.summary}],
+                    subjects=[{"subject": subject, "role": "about"}],
+                    attributes={
+                        "knowledge.status_before": before.status if before else None,
+                        "knowledge.status_after": after.status if after else None,
+                        "knowledge.summary_before": before.summary if before else None,
+                        "knowledge.summary_after": after.summary if after else None,
+                    },
+                )
+            ],
+            [
+                Entity(bucket, subject, "knowledge.item", "subject", item.summary),
+                Entity(
+                    bucket,
+                    actor_id,
+                    "agent" if scope.get("agent") else "person",
+                    "actor",
+                    actor,
+                ),
+            ],
+        )
+
+    def _head(self, payload):
+        repository, pull = payload.get("repository"), payload.get("pull_request")
+        if isinstance(repository, dict) and isinstance(pull, dict):
+            branch = (pull.get("head") or {}).get("ref")
+            if branch:
+                self._heads[
+                    (str(repository.get("id") or repository.get("full_name")), branch)
+                ] = pull
+
+    def record_repository_event(
+        self, scope: Scope, delivery: RepositoryDelivery
+    ) -> None:
+        from .github import Bound, translate
+        from .history import _stored
+
+        with self._delivery_lock:
+            if delivery.id in self._deliveries:
+                return
+            self._record_delivery(delivery)
+            self._deliveries.add(delivery.id)
+
+    def _record_delivery(self, delivery):
+        from .github import Bound, translate
+        from .history import _stored
+
+        event_type, payload, stored = delivery.type, delivery.payload, delivery.stored
+        repository = payload["repository"]
+        installation = str(
+            (payload.get("installation") or {}).get("id")
+            or repository.get("owner", {}).get("id")
+            or "local"
+        )
+        container = str(repository.get("id") or repository["full_name"])
+        binder = self
+        bucket = binder.bind("github", installation, container)
+        binder.repository_sources[repository["full_name"]] = [
+            {
+                "repository": {
+                    "id": repository.get("id"),
+                    "full_name": repository["full_name"],
+                    "owner": {"id": (repository.get("owner") or {}).get("id")},
+                },
+                "installation": {"id": installation},
+                "sourceant_workspace_id": payload.get("sourceant_workspace_id"),
+            }
+        ]
+        with self._delivery_lock:
+            if event_type == "push" and stored:
+                for row in _stored(repository["full_name"]):
+                    self._head(row.payload or {})
+            self._head(payload)
+            batch = translate(
+                Bound(bucket, installation, container),
+                event_type,
+                payload.get("action"),
+                payload,
+                lambda branch: self._heads.get((container, branch)),
+            )
+        if batch:
+            self.record(
+                [Event.from_dict(event) for event in batch["events"]],
+                [Entity.from_dict(entity) for entity in batch["entities"]],
+            )
+
+
+class TrailpadMemory(_ScopeMemory, _EngineRecords):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._delivery_lock = RLock()
+        self._deliveries = set()
+        self._heads = {}
+
+
+class InMemoryMemory(_ScopeMemory, _InMemoryRecords):
+    def __init__(self):
+        super().__init__()
+        self._delivery_lock = RLock()
+        self._deliveries = set()
+        self._heads = {}
+
+    def entity(self, id):
+        return Entity.from_dict(self.entities[id])
+
+
+class DisabledMemory:
+    def remember(self, scope, observation):
+        _validate(observation)
+        return RememberedEvent(
+            "",
+            observation.when,
+            observation.why,
+            observation.who,
+            observation.what,
+            observation.type,
+            configured=False,
+        )
+
+    def recall(self, scope, text, limit=10):
+        _validate_recall(text, limit)
+        return RecallResult(configured=False)
+
+    def history(self, scope, since=None, until=None, after=None):
+        return HistoryPage(configured=False)
+
+    def record_knowledge_change(self, scope, change):
+        pass
+
+    def record_repository_event(self, scope, delivery):
+        pass

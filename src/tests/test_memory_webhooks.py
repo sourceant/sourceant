@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from src.core.memory import EventRecorder, InMemoryMemory
+from src.core.memory import Memory, InMemoryMemory
 from src.core.memory import history
 from src.core.services import service_registry
 from src.tests.base_test import BaseTestCase
@@ -35,14 +35,13 @@ class TestMemoryWebhooks(BaseTestCase):
             "src.controllers.repository_event_controller.STATELESS_MODE", False
         )
         monkeypatch.setattr(service_registry, "_registrations", {})
-        monkeypatch.setattr(history, "_heads", {})
         monkeypatch.setattr("src.api.routes.pr.GITHUB_SECRET", SECRET)
         monkeypatch.setattr(
             "src.controllers.repository_event_controller.dispatcher.dispatch",
             lambda event: None,
         )
         self.memory = InMemoryMemory()
-        service_registry.register(EventRecorder, self.memory, "test")
+        service_registry.register(Memory, self.memory, "test")
         yield
         engine.dispose()
 
@@ -119,13 +118,40 @@ class TestMemoryWebhooks(BaseTestCase):
         assert "part_of" not in before_open
         before = deepcopy(self.memory.events)
         before_entities = deepcopy(self.memory.entities)
-        history._heads.clear()
+        self.memory._heads.clear()
         result = CliRunner().invoke(cli, ["memory-replay", "sourceant/sourceant"])
         assert result.exit_code == 0, result.output
         assert self.memory.events == before
         assert self.memory.entities == before_entities
         assert all(self.deliver(row).status_code == 201 for row in rows)
         assert self.memory.events == before
+
+    def test_delivery_id_is_idempotent(self):
+        rows = json.loads(FIXTURE.read_text())
+        row = next(row for row in rows if row["action"] == "opened")
+        body = json.dumps(row["payload"]).encode()
+        headers = {
+            "X-GitHub-Event": row["type"],
+            "X-GitHub-Delivery": "captured-delivery",
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": "sha256="
+            + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest(),
+        }
+        assert (
+            self.client.post(
+                "/api/prs/github-webhook", content=body, headers=headers
+            ).status_code
+            == 201
+        )
+        before = deepcopy(self.memory.events)
+        assert (
+            self.client.post(
+                "/api/prs/github-webhook", content=body, headers=headers
+            ).status_code
+            == 201
+        )
+        assert self.memory.events == before
+        assert "captured-delivery" in self.memory._deliveries
 
     def test_stateless_deliveries_still_record_events(self, monkeypatch):
         monkeypatch.setattr(
@@ -176,9 +202,7 @@ class TestMemoryWebhooks(BaseTestCase):
             )
         assert not result.isError, result
         expected = f"ev_gh_922971929_review_{review['payload']['review']['id']}"
-        assert expected in {
-            item["record"]["id"] for item in result.structuredContent["results"]
-        }
+        assert expected in {item["id"] for item in result.structuredContent["results"]}
 
 
 def test_translation_skips_payloads_without_repository():

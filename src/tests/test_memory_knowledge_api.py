@@ -1,4 +1,4 @@
-from src.core.memory import EventRecorder, InMemoryMemory
+from src.core.memory import Memory, InMemoryMemory
 from src.core.services import service_registry
 from src.tests.base_test import BaseTestCase
 
@@ -12,7 +12,7 @@ class TestKnowledgeMemory(BaseTestCase):
 
         monkeypatch.setattr(service_registry, "_registrations", {})
         memory = InMemoryMemory()
-        service_registry.register(EventRecorder, memory, "test")
+        service_registry.register(Memory, memory, "test")
         service_registry.register(
             KnowledgeRepository, InMemoryKnowledgeRepository(), "test"
         )
@@ -79,7 +79,7 @@ class TestKnowledgeMemory(BaseTestCase):
 
         monkeypatch.setattr(service_registry, "_registrations", {})
         memory = InMemoryMemory()
-        service_registry.register(EventRecorder, memory, "test")
+        service_registry.register(Memory, memory, "test")
         monkeypatch.setenv("JWT_SECRET", "memory-requirements-test-signing-secret")
         token = jwt.encode(
             {

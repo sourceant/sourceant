@@ -2,14 +2,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
-from hashlib import sha256
-from uuid import uuid4
 
 from src.core.knowledge import KnowledgeQuery
 from src.core.services import memory_services
-from .models import Entity, Event
-from .interfaces import BucketBinder
 from src.utils.logger import logger
 
 _actor: ContextVar[str | None] = ContextVar("memory_actor", default=None)
@@ -94,49 +89,15 @@ class RecordingKnowledge:
             )
 
     def _write(self, scope, event_type, before, after):
-        recorder, _ = (
+        from .interfaces import KnowledgeChange
+
+        memory = (
             memory_services()
             if self.services is None
             else memory_services(self.services)
         )
-        from src.core.services import service_registry
-
-        registry = self.services if self.services is not None else service_registry
-        bucket = registry.resolve(BucketBinder).bucket(scope)
-        item = after or before
-        subject = (
-            "sb_" + sha256(f"{bucket}\0knowledge\0{item.id}".encode()).hexdigest()[:24]
-        )
-        actor = actor_in(scope)
-        actor_id = "ac_" + sha256(f"{bucket}\0{actor}".encode()).hexdigest()[:24]
-        recorder.record(
-            [
-                Event(
-                    bucket=bucket,
-                    id="ev_" + uuid4().hex,
-                    type=event_type,
-                    occurred_at=datetime.now(timezone.utc).isoformat(),
-                    participants=[{"actor": actor_id, "role": "author"}],
-                    content=[{"speaker": actor_id, "text": item.summary}],
-                    subjects=[{"subject": subject, "role": "about"}],
-                    attributes={
-                        "knowledge.status_before": before.status if before else None,
-                        "knowledge.status_after": after.status if after else None,
-                        "knowledge.summary_before": before.summary if before else None,
-                        "knowledge.summary_after": after.summary if after else None,
-                    },
-                )
-            ],
-            [
-                Entity(bucket, subject, "knowledge.item", "subject", item.summary),
-                Entity(
-                    bucket,
-                    actor_id,
-                    "agent" if scope.get("agent") else "person",
-                    "actor",
-                    actor,
-                ),
-            ],
+        memory.record_knowledge_change(
+            scope, KnowledgeChange(event_type, actor_in(scope), before, after)
         )
 
 
