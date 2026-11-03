@@ -39,13 +39,12 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
         if request.method == "PUT":
             return httpx.Response(200, json={"id": event["bucket"]})
         if request.url.path == "/v1/recall":
-            assert json.loads(request.content)["filters"]["kinds"] == ["event"]
+            assert json.loads(request.content)["filters"] == {"buckets": [event["bucket"]]}
             return httpx.Response(
                 200,
                 json={
                     "results": [
                         {
-                            "kind": "event",
                             "id": event["id"],
                             "record": event,
                             "score": 1.0,
@@ -82,6 +81,41 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
     finally:
         memory.close()
     assert len(calls) == 12
+
+
+def test_engine_preserves_service_and_group_actors_and_delegation():
+    event = example("event.review-comment.json")
+    actor = example("entity.actor.json")
+    service = {**actor, "id": "ac_service", "type": "service"}
+    group = {**actor, "id": "ac_group", "type": "group"}
+    event["participants"] = [
+        {"actor": service["id"], "role": "author"},
+        {"actor": group["id"], "role": "on_behalf_of"},
+    ]
+    entities = {entity["id"]: entity for entity in (service, group)}
+
+    def handle(request):
+        if request.method == "PUT":
+            return httpx.Response(200, json={"id": event["bucket"]})
+        if request.url.path == "/v1/recall":
+            assert json.loads(request.content)["filters"] == {"buckets": [event["bucket"]]}
+            return httpx.Response(200, json={"results": [{
+                "id": event["id"], "record": event, "score": 0.75,
+            }]})
+        entity = entities.get(request.url.path.rsplit("/", 1)[-1])
+        return httpx.Response(200, json=entity) if entity else httpx.Response(404)
+
+    memory = TrailpadMemory(
+        "https://memory.example", "test-service-key",
+        transport=httpx.MockTransport(handle),
+    )
+    try:
+        recalled = memory.recall(Scope.from_mapping({}), "retry").results[0]
+        assert [(actor.type, actor.role) for actor in recalled.actors] == [
+            ("service", "author"), ("group", "on_behalf_of"),
+        ]
+    finally:
+        memory.close()
 
 
 def test_engine_caches_bucket_binding_and_forwards_listing_filters():
@@ -250,8 +284,9 @@ def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
         if request.url.path == "/v1/events/" + parent["id"]:
             return httpx.Response(200, json=parent)
         if request.url.path == "/v1/recall":
+            assert json.loads(request.content)["filters"] == {"buckets": ["captured"]}
             return httpx.Response(200, json={"results": [{
-                "type": "event", "id": comment["id"], "record": comment,
+                "id": comment["id"], "record": comment,
                 "score": 0.75,
             }]})
         if request.url.path.startswith("/v1/entities/"):

@@ -107,7 +107,12 @@ Each view includes resolved `actors` (name, image, URL, role, type),
 copied `attributes`, `valence`, `importance`, and `score`. Titles use the title
 attribute, the pull request place title for pull requests and their child
 events, or the first content line.
-Actor types follow the engine profile: person, team, agent, bot, organisation.
+Recall requests filter by bucket, and the engine returns only events. Each engine
+result contains `id`, `record`, and `score`, plus explanation fields when requested.
+Actor types pass through from the engine: person, agent, bot, service, group,
+and organisation. The engine reads legacy team actors as group. An
+`on_behalf_of` participant appears in `actors` with that role, identifying the
+actor another participant acted for.
 Stored `software.bot` actors are returned as `bot`. MCP authentication does
 not distinguish coding agents, so `remember` records its actor as `person`.
 `history` returns the same views with a `next` cursor and `configured`.

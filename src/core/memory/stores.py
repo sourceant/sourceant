@@ -409,7 +409,7 @@ class _ScopeMemory:
         result = self._recall(
             {
                 "context": {"text": text},
-                "filters": {"kinds": ["event"], "buckets": self.buckets(scope)},
+                "filters": {"buckets": self.buckets(scope)},
                 "limit": limit,
             }
         )
