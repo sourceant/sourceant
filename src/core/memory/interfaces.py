@@ -4,6 +4,7 @@ from typing import Literal, Protocol, runtime_checkable
 from src.core.knowledge.models import KnowledgeObject
 
 from src.core.scope import Scope
+from .models import MemoryEvent
 
 
 @dataclass(frozen=True)
@@ -32,13 +33,13 @@ class RememberedEvent:
 
 @dataclass(frozen=True)
 class RecallResult:
-    results: list[RememberedEvent] = field(default_factory=list)
+    results: list[MemoryEvent] = field(default_factory=list)
     configured: bool = True
 
 
 @dataclass(frozen=True)
 class HistoryPage:
-    events: list[RememberedEvent] = field(default_factory=list)
+    events: list[MemoryEvent] = field(default_factory=list)
     next: str | None = None
     configured: bool = True
 

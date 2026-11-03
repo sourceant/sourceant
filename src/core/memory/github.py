@@ -57,7 +57,7 @@ class _Batch:
             {
                 "id": f"ac_gh_{self.bound.container}_{user['id']}",
                 "class": "actor",
-                "type": "software.bot" if bot else "person",
+                "type": "bot" if bot else "person",
                 "name": user.get("login") or "",
                 "image": user.get("avatar_url") or "",
                 "url": user.get("html_url") or "",

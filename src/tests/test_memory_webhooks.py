@@ -126,6 +126,43 @@ class TestMemoryWebhooks(BaseTestCase):
         assert all(self.deliver(row).status_code == 201 for row in rows)
         assert self.memory.events == before
 
+    def test_history_resolves_timeline_and_missing_parents(self):
+        from src.core.scope import Scope
+
+        rows = json.loads(FIXTURE.read_text())
+        for row in rows:
+            assert self.deliver(row).status_code == 201
+        scope = Scope.from_mapping({"repository": "sourceant/sourceant"})
+        page = self.memory.history(scope)
+        comments = [e for e in page.events if e.type == "github.pull_request.review_comment"]
+        assert comments
+        parent = next(e for e in page.events if e.type == "github.pull_request")
+        repository = rows[0]["payload"]["repository"]
+        assert all(event.title == parent.title for event in page.events if event.part_of == parent.id)
+        for comment in comments:
+            captured = next(row["payload"]["comment"] for row in rows if row["type"] == "pull_request_review_comment" and str(row["payload"]["comment"]["id"]) == self.memory.events[comment.id]["source"]["native_id"].split(":")[-1])
+            assert comment.source["url"] == captured["html_url"]
+            assert comment.actors[0].type == ("bot" if captured["user"]["type"] == "Bot" else "person")
+            assert comment.part_of == parent.id
+            assert comment.title == parent.title == next(row["payload"]["pull_request"]["title"] for row in rows if row["payload"].get("pull_request"))
+            assert comment.actors
+            assert all(actor.name and actor.image and actor.url for actor in comment.actors)
+            assert comment.source == {
+                "system": "github", "container": repository["full_name"],
+                "url": self.memory.events[comment.id]["source"]["url"],
+                "container_url": repository["html_url"],
+            }
+            assert any(subject.type == "code.path" for subject in comment.subjects)
+            assert any(subject.parent == repository["full_name"] for subject in comment.subjects)
+        assert any(actor.type == "bot" for event in page.events for actor in event.actors)
+        assert all(entity["type"] in {"person", "bot"} for entity in self.memory.entities.values() if entity.get("class") == "actor")
+        window = self.memory.history(scope, since=comments[0].when.isoformat())
+        fetched = next(e for e in window.events if e.id == parent.id)
+        assert fetched.outside_window
+        assert all(not e.outside_window for e in window.events if e.id != parent.id)
+        comments[0].attributes["changed"] = True
+        assert "changed" not in self.memory.events[comments[0].id].get("attributes", {})
+
     def test_delivery_id_is_idempotent(self):
         rows = json.loads(FIXTURE.read_text())
         row = next(row for row in rows if row["action"] == "opened")

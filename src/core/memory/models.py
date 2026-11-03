@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -67,3 +68,45 @@ def compact(body: dict) -> dict:
     return {
         key: value for key, value in body.items() if value not in (None, "", [], {})
     }
+
+
+@dataclass(frozen=True)
+class Actor:
+    name: str = ""
+    image: str = ""
+    url: str = ""
+    role: str = ""
+    type: str = ""
+
+
+@dataclass(frozen=True)
+class Subject:
+    type: str = ""
+    name: str = ""
+    url: str = ""
+    role: str = ""
+    parent: str | None = None
+
+
+@dataclass(frozen=True)
+class MemoryEvent:
+    id: str
+    type: str
+    when: datetime | None = None
+    ended_at: datetime | None = None
+    why: str = ""
+    what: str = ""
+    title: str = ""
+    part_of: str | None = None
+    source: dict[str, str] = field(default_factory=dict)
+    actors: list[Actor] = field(default_factory=list)
+    subjects: list[Subject] = field(default_factory=list)
+    attributes: dict[str, Any] = field(default_factory=dict)
+    valence: int | None = None
+    importance: int | None = None
+    score: float = 0.0
+    outside_window: bool = False
+
+    @property
+    def who(self) -> str:
+        return ", ".join(actor.name for actor in self.actors if actor.name)

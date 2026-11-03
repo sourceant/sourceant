@@ -99,8 +99,21 @@ scope actor), paths, optional valence from -2 to 2, optional importance from 1 t
 and a type defaulting to `sourceant.observation`. Empty text, missing timezones,
 and out-of-range ratings are rejected by the memory implementation.
 
-`recall` returns `results` with `id`, `when`, `why`, `who` (actor names), `what`,
-`type`, and `score`. `history` returns those event values with a `next` cursor.
+`recall` returns full event views in `results`: `id`, `type`, `when`,
+`ended_at`, `why`, joined content in `what`, `title`, and `part_of`.
+Each view includes resolved `actors` (name, image, URL, role, type),
+`subjects` (type, name, URL, role, parent name), repository `source`
+(system, container, event URL in `url`, repository URL in `container_url`),
+copied `attributes`, `valence`, `importance`, and `score`. Titles use the title
+attribute, the pull request place title for pull requests and their child
+events, or the first content line.
+Actor types follow the engine profile: person, team, agent, bot, organisation.
+Stored `software.bot` actors are returned as `bot`. MCP authentication does
+not distinguish coding agents, so `remember` records its actor as `person`.
+`history` returns the same views with a `next` cursor and `configured`.
+Parents missing from the page are included with `outside_window: true`,
+so comments can be grouped without another call. Regular page events have
+`outside_window: false`. `remember` retains its existing response.
 Knowledge changes include the actor and before/after values. Repository deliveries
 are idempotent on their delivery ID; historical deliveries without an ID use a
 stable digest. The MCP tools expose these scope-level results without engine records.

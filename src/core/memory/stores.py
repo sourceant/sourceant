@@ -18,7 +18,7 @@ from .interfaces import (
 import httpx
 
 from src.core.scope import Scope
-from .models import Entity, Event
+from .models import Entity, Event, MemoryEvent, Actor, Subject
 
 
 def binding(scope: Scope) -> tuple[str, str, str]:
@@ -46,7 +46,7 @@ class _EngineRecords:
     ):
         headers = {"Authorization": f"Bearer {key}"}
         if person:
-            headers["Memory-Person"] = person
+            headers["Memory-Actor"] = person
         self.client = httpx.Client(
             base_url=url.rstrip("/") + "/",
             headers=headers,
@@ -336,18 +336,72 @@ class _ScopeMemory:
             observation.type,
         )
 
-    def _view(self, event, entities, score=0.0):
-        names = {entity["id"]: entity.get("name", "") for entity in entities}
-        speakers = [names.get(actor, "") for actor in _actors(event)]
-        instant = event.get("occurred_at")
-        return RememberedEvent(
-            event["id"],
-            _time(instant) if instant else None,
-            event.get("why", ""),
-            ", ".join(s for s in speakers if s),
-            "\n".join(c["text"] for c in event.get("content", [])),
-            event["type"],
-            score=score,
+    def _view(self, event, entities, score=0.0, outside_window=False):
+        resolved = {entity["id"]: entity for entity in entities}
+
+        def resolve(ref):
+            if not ref:
+                return {}
+            if ref not in resolved:
+                try:
+                    resolved[ref] = self.entity(ref).to_dict()
+                except (KeyError, httpx.HTTPStatusError) as error:
+                    if (
+                        isinstance(error, httpx.HTTPStatusError)
+                        and error.response.status_code != 404
+                    ):
+                        raise
+                    resolved[ref] = {}
+            return resolved[ref]
+
+        actors = []
+        for participant in event.get("participants", []):
+            actor = resolve(participant.get("actor"))
+            if actor:
+                actors.append(Actor(
+                    name=actor.get("name", ""), image=actor.get("image", ""),
+                    url=actor.get("url", ""), role=participant.get("role", ""),
+                    type="bot" if actor.get("type") == "software.bot" else actor.get("type", ""),
+                ))
+        references = list(event.get("subjects", []))
+        if event.get("place"):
+            references.append({"subject": event["place"], "role": "place"})
+        place = resolve(event.get("place"))
+        repository = place
+        seen = set()
+        while repository.get("parent") and repository["parent"] not in seen:
+            seen.add(repository["parent"])
+            repository = resolve(repository["parent"])
+        subjects = []
+        for reference in references:
+            subject = resolve(reference.get("subject"))
+            if subject:
+                parent = resolve(subject.get("parent"))
+                subjects.append(Subject(
+                    type=subject.get("type", ""), name=subject.get("name", ""),
+                    url=subject.get("url", ""), role=reference.get("role", ""),
+                    parent=parent.get("name") or None,
+                ))
+        content = "\n".join(c["text"] for c in event.get("content", []))
+        attributes = deepcopy(event.get("attributes", {}))
+        source = event.get("source") or {}
+        ratings = {
+            name: next((a[name] for a in reversed(event.get("appraisals", [])) if name in a), None)
+            for name in ("valence", "importance")
+        }
+        return MemoryEvent(
+            id=event["id"], type=event["type"],
+            when=_time(event["occurred_at"]) if event.get("occurred_at") else None,
+            ended_at=_time(event["ended_at"]) if event.get("ended_at") else None,
+            why=event.get("why", ""), what=content,
+            title=attributes.get("title") or place.get("attributes", {}).get("github.title") or (content.splitlines()[0] if content else ""),
+            part_of=event.get("part_of") or None,
+            source={"system": source.get("system", ""),
+                    "container": repository.get("name", ""),
+                    "url": source.get("url", ""),
+                    "container_url": repository.get("url", "")},
+            actors=actors, subjects=subjects, attributes=attributes,
+            score=score, outside_window=outside_window, **ratings,
         )
 
     def recall(self, scope: Scope, text: str, limit: int = 10) -> RecallResult:
@@ -362,16 +416,37 @@ class _ScopeMemory:
         events = []
         for item in result.get("results", []):
             event = item["record"]
-            entities = [self.entity(actor).to_dict() for actor in _actors(event)]
+            entities = result.get("entities", [])
             events.append(self._view(event, entities, item.get("score", 0.0)))
         return RecallResult(events)
 
     def history(self, scope: Scope, since=None, until=None, after=None) -> HistoryPage:
         page = self.list(scope, since, until, after)
-        return HistoryPage(
-            [self._view(e, page.get("entities", [])) for e in page["events"]],
-            page.get("next"),
-        )
+        records = list(page["events"])
+        ids = {event["id"] for event in records}
+        views = [self._view(event, page.get("entities", [])) for event in records]
+        for event in records:
+            parent_id = event.get("part_of")
+            if not parent_id or parent_id in ids:
+                continue
+            ids.add(parent_id)
+            try:
+                parent = self.event(parent_id)
+            except (KeyError, httpx.HTTPStatusError) as error:
+                if (
+                    isinstance(error, httpx.HTTPStatusError)
+                    and error.response.status_code != 404
+                ):
+                    raise
+                continue
+            if parent.bucket in self.buckets(scope):
+                views.append(
+                    self._view(
+                        parent.to_dict(), page.get("entities", []),
+                        outside_window=True,
+                    )
+                )
+        return HistoryPage(views, page.get("next"))
 
     def record_knowledge_change(self, scope: Scope, change: KnowledgeChange) -> None:
         before, after, event_type = change.before, change.after, change.type
@@ -493,7 +568,10 @@ class InMemoryMemory(_ScopeMemory, _InMemoryRecords):
         self._heads = {}
 
     def entity(self, id):
-        return Entity.from_dict(self.entities[id])
+        return Entity.from_dict(deepcopy(self.entities[id]))
+
+    def event(self, id):
+        return Event.from_dict(deepcopy(self.events[id]))
 
 
 class DisabledMemory:

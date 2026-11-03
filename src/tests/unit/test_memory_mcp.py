@@ -104,7 +104,11 @@ async def test_remember_then_recall_returns_when_why_who_and_paths():
     assert event["id"] == remembered.structuredContent["id"]
     assert event["what"] == "The retry experiment succeeded"
     assert event["why"] == "The gateway stops accepting requests after five tries"
-    assert event["who"] == "Ana"
+    assert event["actors"][0]["name"] == "Ana"
+    assert event["actors"][0]["type"] == "person"
+    assert event["subjects"][0]["name"] == "src/retry.py"
+    assert event["valence"] == 2
+    assert event["importance"] == 4
     stored = memory.events[event["id"]]
     assert memory.entities[stored["subjects"][0]["subject"]]["name"] == "src/retry.py"
     assert stored["appraisals"][0]["valence"] == 2

@@ -7,5 +7,5 @@ from .interfaces import (
     KnowledgeChange,
     RepositoryDelivery,
 )
-from .models import Entity, Event
+from .models import Entity, Event, MemoryEvent, Actor, Subject
 from .stores import TrailpadMemory, DisabledMemory, InMemoryMemory

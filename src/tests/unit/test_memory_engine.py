@@ -22,7 +22,7 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
     def handle(request):
         calls.append(request)
         assert request.headers["Authorization"] == "Bearer test-service-key"
-        assert request.headers["Memory-Person"] == "test-person-token"
+        assert request.headers["Memory-Actor"] == "test-person-token"
         if request.url.path == "/v1/records":
             assert json.loads(request.content) == {
                 "events": [event],
@@ -56,6 +56,8 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
         if request.url.path == "/v1/events/use":
             assert json.loads(request.content) == {"events": [event["id"]]}
             return httpx.Response(204)
+        if request.url.path.startswith("/v1/entities/"):
+            return httpx.Response(404)
         raise AssertionError(request.url)
 
     memory = TrailpadMemory(
@@ -73,10 +75,13 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
         assert recalled.why == event["why"]
         assert recalled.who == entity["name"]
         assert recalled.score == 1.0
+        assert recalled.actors[0].type == entity["type"]
+        assert recalled.source["url"] == event["source"]["url"]
+        assert recalled.source["container_url"] == ""
         memory.use([event["id"]])
     finally:
         memory.close()
-    assert len(calls) == 7
+    assert len(calls) == 12
 
 
 def test_engine_caches_bucket_binding_and_forwards_listing_filters():
@@ -88,6 +93,8 @@ def test_engine_caches_bucket_binding_and_forwards_listing_filters():
         if request.method == "PUT":
             bindings.append(json.loads(request.content))
             return httpx.Response(200, json={"id": event["bucket"]})
+        if request.url.path.startswith(("/v1/entities/", "/v1/events/")):
+            return httpx.Response(404)
         assert request.url.params["bucket"] == event["bucket"]
         assert request.url.params["from"] == "2026-04-01T00:00:00Z"
         assert request.url.params["to"] == "2026-05-01T00:00:00Z"
@@ -201,5 +208,87 @@ def test_remember_constructs_engine_records_from_scope_observation():
         assert stored["content"][0]["text"] == observation.what
         assert records[0]["entities"][0]["name"] == result.who
         assert stored["participants"][0]["actor"] == records[0]["entities"][0]["id"]
+    finally:
+        memory.close()
+
+
+@pytest.mark.parametrize("legacy_bot", [False, True])
+def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
+    from dataclasses import asdict
+    from src.core.memory.github import Bound, translate
+
+    rows = json.loads(
+        (FIXTURES.parent / "github" / "pull-155-webhooks.json").read_text()
+    )
+    row = next(row for row in rows if row["type"] == "pull_request_review_comment" and row["payload"]["comment"]["user"]["type"] == "Bot")
+    batch = translate(
+        Bound("captured", "installation", "922971929"),
+        row["type"], row["action"], row["payload"],
+    )
+    events = {event["id"]: event for event in batch["events"]}
+    entities = {entity["id"]: entity for entity in batch["entities"]}
+    comment = next(
+        event for event in events.values()
+        if event["type"] == "github.pull_request.review_comment"
+    )
+    parent = events[comment["part_of"]]
+    if legacy_bot:
+        for entity in entities.values():
+            if entity["type"] == "bot":
+                entity["type"] = "software.bot"
+    calls = []
+
+    def handle(request):
+        calls.append(request.url.path)
+        if request.method == "PUT":
+            return httpx.Response(200, json={"id": "captured"})
+        if request.url.path == "/v1/events":
+            return httpx.Response(200, json={
+                "events": [comment], "entities": list(entities.values()),
+                "next": comment["id"],
+            })
+        if request.url.path == "/v1/events/" + parent["id"]:
+            return httpx.Response(200, json=parent)
+        if request.url.path == "/v1/recall":
+            return httpx.Response(200, json={"results": [{
+                "type": "event", "id": comment["id"], "record": comment,
+                "score": 0.75,
+            }]})
+        if request.url.path.startswith("/v1/entities/"):
+            return httpx.Response(200, json=entities[request.url.path.rsplit("/", 1)[1]])
+        raise AssertionError(request.url)
+
+    memory = TrailpadMemory(
+        "https://memory.example", "test-service-key",
+        transport=httpx.MockTransport(handle),
+    )
+    try:
+        scope = Scope.from_mapping({})
+        page = memory.history(scope)
+        view, context = page.events
+        assert page.next == comment["id"]
+        assert page.configured
+        assert view.part_of == context.id == parent["id"]
+        assert not view.outside_window
+        assert context.outside_window
+        user = row["payload"]["comment"]["user"]
+        assert view.actors[0].name == user["login"]
+        assert view.actors[0].image == user["avatar_url"]
+        assert view.actors[0].url == user["html_url"]
+        repository = row["payload"]["repository"]
+        assert view.source["container"] == repository["full_name"]
+        assert view.source["container_url"] == repository["html_url"]
+        assert view.source["url"] == row["payload"]["comment"]["html_url"]
+        assert view.title == context.title == row["payload"]["pull_request"]["title"]
+        assert view.actors[0].type == ("bot" if user["type"] == "Bot" else "person")
+        assert any(s.name == row["payload"]["comment"]["path"] for s in view.subjects)
+        recalled = memory.recall(scope, view.what).results[0]
+        assert recalled.actors == view.actors
+        assert recalled.subjects == view.subjects
+        assert recalled.score == 0.75
+        serialized = asdict(view)
+        assert "bucket" not in serialized
+        assert "appraisals" not in serialized
+        assert calls.count("/v1/events/" + parent["id"]) == 1
     finally:
         memory.close()
