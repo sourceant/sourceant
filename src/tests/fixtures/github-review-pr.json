@@ -1,0 +1,1 @@
+{"base":{"ref":"main","sha":"d2db738c37fa863283a1404ac4c407ceaa273e63"},"draft":false,"head":{"ref":"feat/mcp-token-scopes","sha":"1a9fc1cca20ffaf7b03ea301e1c13d228c973a06"},"merged":true,"number":213,"title":"feat(mcp): Token scopes and revocation"}

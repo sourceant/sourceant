@@ -106,8 +106,12 @@ class LiteLLMProvider(LLMInterface):
 
     def _completion(self, **kwargs):
         from src.core.parallel import model_call
+        from src.core.review_performance import current_budget
 
         output_limit = max(self._max_output_tokens, _output_budget.get())
+        budget = current_budget()
+        if budget and not output_limit:
+            output_limit = budget.output_tokens
         if output_limit or self._reasoning_effort:
             supported = litellm.get_supported_openai_params(model=self.model) or []
             if output_limit:
@@ -131,6 +135,11 @@ class LiteLLMProvider(LLMInterface):
                         "reasoning_effort": self._reasoning_effort,
                     }
         with model_call(self.model):
+            if budget:
+                kwargs["timeout"] = min(
+                    float(kwargs.get("timeout") or budget.remaining()),
+                    budget.remaining(),
+                )
             trace_request(kwargs, call_purpose.get())
             try:
                 return litellm.completion(**kwargs)
@@ -399,8 +408,13 @@ class LiteLLMProvider(LLMInterface):
         return read()
 
     def _validated_response(self, ask, schema, purpose: str) -> str:
+        from src.core.review_performance import current_budget
+
         failure: ValidationError | None = None
-        budget = self._max_output_tokens
+        execution_budget = current_budget()
+        budget = self._max_output_tokens or (
+            execution_budget.output_tokens if execution_budget else 0
+        )
         for attempt in range(2):
             token = _output_budget.set(budget)
             try:
