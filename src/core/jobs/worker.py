@@ -28,6 +28,7 @@ from src.utils.logger import logger
 
 from .interfaces import JobHandler, JobMiddleware, JobStore
 from .models import Job, JobOutcome, Lease
+from .models import CANCELLED
 
 #: Told to the supervisor when a job outran its deadline, so a restart is
 #: understood as intended rather than as a crash.
@@ -173,6 +174,11 @@ class Worker:
         while left > 0 and doing.is_alive():
             doing.join(timeout=min(WATCH_SECONDS, left))
             left -= WATCH_SECONDS
+            current = self._store.read(job.id)
+            if current is not None and current.state == CANCELLED:
+                beating.stop()
+                self._halt(LOST_EXIT)
+                return JobOutcome.failed("Review was stopped")
             if beating.lost and doing.is_alive():
                 return self._taken(job, beating)
 

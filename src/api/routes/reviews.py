@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Literal
 
 import httpx
@@ -30,6 +31,7 @@ class RerunRequest(BaseModel):
     post: bool = False
     # Ignore a review already generated for this revision and pay for a new one.
     refresh: bool = False
+    background: bool = False
 
 
 @router.post("/rerun")
@@ -40,7 +42,6 @@ async def rerun_review(
     """Re-run the reviewer for a pull request; preview to the dashboard or post to GitHub."""
     from src.core.plugins.plugin_registry import plugin_registry
     from src.models.pull_request import PullRequest
-    from src.models.repository import Repository
 
     from src.api.routes.requirements import connected_names
     from src.core.workspace import workspace_of
@@ -80,7 +81,6 @@ async def rerun_review(
     if plugin is None:
         raise HTTPException(status_code=503, detail="Reviewer is not available")
 
-    repository = Repository(name=name, owner=owner)
     pull_request = PullRequest(
         number=pr["number"],
         title=pr.get("title"),
@@ -97,21 +97,131 @@ async def rerun_review(
         "head_ref": (pr.get("head") or {}).get("ref"),
     }
 
-    result = await plugin.generate_review(
-        repository,
-        pull_request,
-        pr_metadata=pr_metadata,
-        event_type=None,
-        repository_full_name=data.repo,
-        post=data.post,
-        workspace=workspace,
-        user=str(user["user_id"]),
-    )
-    if result.get("status") == "success":
-        save_cached_review(
-            data.repo, data.number, head_sha, result, workspace=workspace
+    if not data.background:
+        from src.models.repository import Repository
+
+        result = await asyncio.to_thread(
+            lambda: asyncio.run(
+                plugin.generate_review(
+                    Repository(name=name, owner=owner),
+                    pull_request,
+                    pr_metadata=pr_metadata,
+                    event_type=None,
+                    repository_full_name=data.repo,
+                    post=data.post,
+                    workspace=workspace,
+                    user=str(user["user_id"]),
+                )
+            )
         )
-    return success_response({**result, "cached": False})
+        if result.get("status") == "success":
+            save_cached_review(
+                data.repo, data.number, head_sha, result, workspace=workspace
+            )
+        return success_response({**result, "cached": False})
+
+    from src.core.jobs import enqueue, job_store
+    from src.config.db import get_engine
+    from src.events.review_previews import request_for
+
+    if get_engine() is None:
+        raise HTTPException(
+            503, "Background reviews require a database and review worker"
+        )
+    request = request_for(
+        data.repo, pull_request, pr_metadata, workspace, str(user["user_id"]), data.post
+    )
+    job_id = enqueue(request)
+    job = job_store().read(job_id)
+    return success_response(
+        {
+            **_preview_result(job),
+            "cached": False,
+            "created": job.payload["request_id"] == request.payload["request_id"],
+        },
+        status_code=202 if job.state in ("queued", "running") else 200,
+    )
+
+
+def _preview_job(job_id, user):
+    from src.core.jobs import job_store
+    from src.core.workspace import workspace_of
+    from src.events.review_previews import KIND
+    from src.api.routes.requirements import connected_names
+
+    job = job_store().read(job_id)
+    if (
+        job is None
+        or job.kind != KIND
+        or job.tenant != workspace_of(user)
+        or job.payload["repo"] not in connected_names(user)
+    ):
+        raise HTTPException(404, "Review run not found")
+    return job
+
+
+def _preview_result(job):
+    from src.core.cache import cache
+    from src.events.review_previews import RESULTS
+
+    if job.state == "succeeded":
+        result = cache().get(RESULTS, str(job.id))
+        if result:
+            return {**json.loads(result), "job_id": job.id, "cached": False}
+        return {
+            "status": "error",
+            "message": "The review result has expired. Request a new review.",
+        }
+    if job.state in ("dead", "failed", "cancelled"):
+        return {
+            "status": job.state,
+            "job_id": job.id,
+            "message": (
+                "Review stopped"
+                if job.state == "cancelled"
+                else job.error or "Review failed"
+            ),
+        }
+    return {"status": job.state, "job_id": job.id}
+
+
+@router.get("/result")
+async def review_result(
+    repo: str, number: int, head_sha: str, user: dict = Depends(get_current_user)
+):
+    from src.api.routes.requirements import connected_names
+    from src.core.jobs import job_store
+    from src.core.workspace import workspace_of
+    from src.events.review_previews import key_for
+
+    if repo not in connected_names(user):
+        raise HTTPException(403, "Repository is outside this workspace")
+    workspace = workspace_of(user)
+    active = job_store().active(key_for(workspace, repo, number, head_sha))
+    if active:
+        return success_response(_preview_result(active))
+    cached = get_cached_review(repo, number, head_sha, workspace=workspace)
+    return success_response(
+        {**cached, "cached": True} if cached else {"status": "missing"}
+    )
+
+
+@router.get("/runs/{job_id}")
+async def review_run(job_id: int, user: dict = Depends(get_current_user)):
+    return success_response(_preview_result(_preview_job(job_id, user)))
+
+
+@router.delete("/runs/{job_id}")
+async def stop_review_run(job_id: int, user: dict = Depends(get_current_user)):
+    from src.core.cache import cache
+    from src.core.jobs import job_store
+
+    job = _preview_job(job_id, user)
+    job_store().cancel(job.id)
+    delivery = cache().get("review.preview-delivery", str(job.id))
+    if delivery:
+        job_store().cancel(int(delivery))
+    return success_response(_preview_result(job_store().read(job.id)))
 
 
 @router.get("/impact")

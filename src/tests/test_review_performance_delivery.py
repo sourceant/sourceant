@@ -279,6 +279,7 @@ class WebhookDeliveryTests(unittest.TestCase):
             client = stack.enter_context(TestClient(app))
             for key, value in [
                 ("review.plan", "standard"),
+                ("review.maximum_model_calls", 1000),
                 ("model.name", "deepseek/deepseek-v4-flash"),
                 ("model.api_key", "your-api-key-here"),
                 ("review.exclude_patterns", "src/migrations/*"),

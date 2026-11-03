@@ -14,12 +14,23 @@ _active_calls = 0
 
 @contextmanager
 def model_call(model):
-    from src.core.review_performance import call_purpose, session_id
+    from src.core.review_performance import call_purpose, session_id, current_budget
     from src.utils.logger import logger
 
     global _active_calls
     waiting = monotonic()
-    with model_slots:
+    budget = current_budget()
+    acquired = (
+        model_slots.acquire(timeout=budget.remaining())
+        if budget
+        else model_slots.acquire()
+    )
+    if not acquired:
+        budget.remaining()
+        raise TimeoutError("No model slot became available within the review budget")
+    try:
+        if budget:
+            budget.reserve()
         started = monotonic()
         with _active_lock:
             _active_calls += 1
@@ -52,6 +63,8 @@ def model_call(model):
                 (monotonic() - started) * 1000,
                 error,
             )
+    finally:
+        model_slots.release()
 
 
 def submit(pool, call, *args, **kwargs):
