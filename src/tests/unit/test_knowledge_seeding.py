@@ -76,7 +76,7 @@ class TestHeadings:
 
     def test_a_conventions_heading_is_a_convention(self):
         seeds = {
-            seed.knowledge.kind: seed
+            seed.knowledge.type: seed
             for seed in from_markdown("CONTRIBUTING.md", GUIDE)
         }
 
@@ -86,7 +86,7 @@ class TestHeadings:
 
     def test_a_constraints_heading_is_a_constraint(self):
         seeds = {
-            seed.knowledge.kind: seed
+            seed.knowledge.type: seed
             for seed in from_markdown("CONTRIBUTING.md", GUIDE)
         }
 

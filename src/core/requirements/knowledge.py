@@ -17,7 +17,7 @@ from .models import (
     RequirementLink,
 )
 
-KIND = "requirement"
+TYPE = "requirement"
 
 
 def as_knowledge(requirement: Requirement) -> KnowledgeObject:
@@ -27,7 +27,7 @@ def as_knowledge(requirement: Requirement) -> KnowledgeObject:
         properties["external_ref"] = requirement.external_ref
     return KnowledgeObject(
         id=knowledge_id(requirement.id),
-        kind=KIND,
+        type=TYPE,
         status=requirement.status,
         summary=requirement.summary,
         properties=properties,
@@ -75,7 +75,7 @@ class KnowledgeBackedRequirements:
                 scope,
                 KnowledgeObject(
                     id=link.target_id,
-                    kind="artifact",
+                    type="artifact",
                     status="active",
                     summary=str(link.properties.get("name") or link.target_id),
                     properties=dict(link.properties),

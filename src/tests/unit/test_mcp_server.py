@@ -630,7 +630,7 @@ async def test_streamable_http_serves_what_the_caller_is_entitled_to(
         Scope.from_mapping({"provider": "github", "repository": "acme/shop"}),
         KnowledgeObject(
             id="signed-requests",
-            kind="decision",
+            type="decision",
             status="approved",
             summary="Use signed requests",
         ),

@@ -36,7 +36,7 @@ A scope is an open map of key-value pairs, not a fixed hierarchy. A personal pro
 |---|---|
 | `put_knowledge` | Create or update a decision, rule, constraint, convention, or note, with a status and free-form properties |
 | `put_knowledge_relationship` | Connect two knowledge items, for example `depends_on`, `supports`, `contradicts` |
-| `search_knowledge` | Find knowledge by scope, id, kind, status, or properties |
+| `search_knowledge` | Find knowledge by scope, id, type, status, or properties |
 | `put_topology_entity` | Record a part of the system |
 | `put_topology_relationship` | Record how two parts relate |
 | `traverse_topology` | Walk the system graph outward from seed entities |
@@ -71,3 +71,21 @@ Connect the signed webhook decision to the rule that rejects unsigned requests.
 
 Get the approved knowledge related to the signed webhook decision before changing its handler.
 ```
+
+### Knowledge category compatibility
+
+Knowledge objects use `type` for their category. HTTP knowledge responses include
+`type` and the deprecated `kind` with identical values for one release. Writes
+accept either field and prefer `type` when both are present. Knowledge searches
+accept `types`, with `kinds` retained as a deprecated alias.
+
+The MCP `put_knowledge`, `capture_context`, and `update_context` tools accept
+`type`, with `kind` retained as a deprecated argument. Their results and knowledge
+search results use `type`. MCP knowledge searches accept `types` and the deprecated
+`kinds` alias, preferring `types`.
+
+Upgrade the database before starting the updated server. The migration preserves
+knowledge while renaming its category column; downgrading restores the old name.
+
+Memory recall results also expose their category as `type`, retaining `kind` for
+older consumers. Event records and knowledge history continue to use `type`.

@@ -394,7 +394,7 @@ def _knowledge(tmp_path, *, linked_path="test.py"):
         SCOPE,
         KnowledgeObject(
             id="d1",
-            kind="decision",
+            type="decision",
             status="approved",
             summary="Retries are capped at three attempts",
         ),
@@ -521,7 +521,7 @@ def test_a_registered_knowledge_selector_decides_instead_of_the_links(
             return (
                 KnowledgeObject(
                     id="d9",
-                    kind="constraint",
+                    type="constraint",
                     status="approved",
                     summary="Nothing links this to the change",
                 ),
@@ -765,7 +765,7 @@ def test_knowledge_survives_a_change_touching_thousands_of_files(tmp_path):
     )
     store.put(
         SCOPE,
-        KnowledgeObject(id="d1", kind="decision", status="approved", summary="Use UTC"),
+        KnowledgeObject(id="d1", type="decision", status="approved", summary="Use UTC"),
     )
     store.put_link(
         SCOPE,

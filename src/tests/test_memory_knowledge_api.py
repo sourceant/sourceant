@@ -28,7 +28,21 @@ class TestKnowledgeMemory(BaseTestCase):
             "status": "accepted",
             "summary": "Retry three times",
         }
-        assert self.client.put("/api/knowledge", json=body).status_code == 200
+        response = self.client.put("/api/knowledge", json=body)
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["type"] == "decision"
+        assert response.json()["data"]["kind"] == "decision"
+        response = self.client.get("/api/knowledge", params={"repository": "acme/shop"})
+        assert response.status_code == 200, response.text
+        item = response.json()["data"]["items"][0]
+        assert item["type"] == item["kind"] == "decision"
+        body["type"] = "constraint"
+        response = self.client.put("/api/knowledge", json=body)
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["type"] == "constraint"
+        assert response.json()["data"]["kind"] == "constraint"
+        body.pop("kind")
+
         body["summary"] = "Retry twice"
         assert self.client.put("/api/knowledge", json=body).status_code == 200
         body["status"] = "retired"
@@ -42,6 +56,7 @@ class TestKnowledgeMemory(BaseTestCase):
         events = list(memory.events.values())
         assert [event["type"] for event in events] == [
             "knowledge.captured",
+            "knowledge.updated",
             "knowledge.updated",
             "knowledge.status_changed",
             "knowledge.removed",

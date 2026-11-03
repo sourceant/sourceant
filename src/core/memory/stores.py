@@ -102,7 +102,10 @@ class EngineMemory:
         )
 
     def recall(self, query: dict) -> dict:
-        return self._request("POST", "v1/recall", json=query)
+        result = self._request("POST", "v1/recall", json=query)
+        for item in result.get("results", []):
+            item["type"] = item.get("type", item.get("kind"))
+        return result
 
     def event(self, id: str) -> Event:
         return Event.from_dict(self._request("GET", "v1/events/" + quote(id, safe="")))
@@ -228,7 +231,13 @@ class InMemoryMemory:
             ]
         return {
             "results": [
-                {"kind": "event", "id": event["id"], "record": event, "score": 1.0}
+                {
+                    "type": "event",
+                    "kind": "event",
+                    "id": event["id"],
+                    "record": event,
+                    "score": 1.0,
+                }
                 for event in events[: query.get("limit", 10)]
             ]
         }

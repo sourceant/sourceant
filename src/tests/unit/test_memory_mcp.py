@@ -17,7 +17,8 @@ def services():
 
 
 @pytest.mark.asyncio
-async def test_knowledge_tools_record_changes_with_actor(monkeypatch):
+@pytest.mark.parametrize("category_field", ["type", "kind", "both"])
+async def test_knowledge_tools_record_changes_with_actor(monkeypatch, category_field):
     from mcp.server.auth.provider import AccessToken
 
     monkeypatch.setattr(
@@ -47,10 +48,14 @@ async def test_knowledge_tools_record_changes_with_actor(monkeypatch):
         ):
             args.update(changes)
             sent = dict(args)
-            if tool != "put_knowledge":
+            if category_field == "type":
                 sent["type"] = sent.pop("kind")
+            elif category_field == "both":
+                sent["type"] = "decision"
+                sent["kind"] = "constraint"
             result = await session.call_tool(tool, sent)
             assert not result.isError, result
+            assert result.structuredContent["type"] == "decision"
     events = list(memory.events.values())
     assert [event["type"] for event in events] == [
         "knowledge.captured",
@@ -96,6 +101,7 @@ async def test_remember_then_recall_returns_when_why_who_and_paths():
             "recall", {"scope": {"repository": "acme/other"}, "query": "retry"}
         )
         assert isolated.structuredContent["results"] == []
+    assert recalled.structuredContent["results"][0]["type"] == "event"
     event = recalled.structuredContent["results"][0]["record"]
     assert event["id"] == remembered.structuredContent["id"]
     assert event["occurred_at"] == "2026-04-19T14:02:11Z"

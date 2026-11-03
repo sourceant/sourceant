@@ -20,8 +20,8 @@ def _mysql_key_bytes(table) -> int:
     """What MySQL counts the primary key as, reserving four bytes a character."""
     total = 0
     for column in table.primary_key:
-        kind = column.type.dialect_impl(mysql.dialect())
-        total += (kind.length * 4) if getattr(kind, "length", None) else 8
+        column_type = column.type.dialect_impl(mysql.dialect())
+        total += (column_type.length * 4) if getattr(column_type, "length", None) else 8
     return total
 
 
@@ -102,3 +102,27 @@ def test_sql_knowledge_reads_writes_from_another_repository_instance(tmp_path):
     result = reader.search(KnowledgeQuery(PROJECT))
 
     assert [item.id for item in result.items] == ["decision"]
+
+
+def test_knowledge_type_filter_prefers_types_and_keeps_legacy_alias(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'knowledge.db'}")
+    repository = SQLKnowledgeRepository(engine, create_schema=True)
+    repository.put(
+        PROJECT, KnowledgeObject("decision", "decision", "accepted", "Use UTC")
+    )
+    repository.put(
+        PROJECT, KnowledgeObject("rule", "rule", "accepted", "Validate input")
+    )
+    legacy = repository.search(KnowledgeQuery(PROJECT, kinds=frozenset({"rule"})))
+    current = repository.search(
+        KnowledgeQuery(
+            PROJECT, kinds=frozenset({"rule"}), types=frozenset({"decision"})
+        )
+    )
+    all_items = repository.search(
+        KnowledgeQuery(PROJECT, kinds=frozenset({"rule"}), types=frozenset())
+    )
+    assert [item.type for item in legacy.items] == ["rule"]
+    assert [item.type for item in current.items] == ["decision"]
+    assert all_items.total == 2
+    engine.dispose()

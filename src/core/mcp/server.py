@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 from src.utils.native_callables import NativeFastMCP
 
 from src.core.code_index import CodeIndexReader, CodeSearch, CodeTraversal
@@ -274,14 +275,21 @@ def create_mcp_server(
     def put_knowledge(
         scope: dict[str, str],
         id: str,
-        kind: str,
         status: str,
         summary: str,
+        type: str | None = None,
         properties: dict[str, Any] | None = None,
+        kind: Annotated[
+            str | None, Field(deprecated=True, description="Deprecated alias for type.")
+        ] = None,
     ) -> dict[str, Any]:
-        return write_context(scope, id, kind, status, summary, properties)
+        return write_context(
+            scope, id, type if type is not None else kind, status, summary, properties
+        )
 
     def write_context(scope, id, item_type, status, summary, properties, mode="upsert"):
+        if item_type is None:
+            raise ValueError("type is required (kind is a deprecated alias)")
         repository = _require_knowledge(knowledge)
         active = resolve_scope(Scope.from_mapping(scope))
         existing = repository.search(
@@ -304,12 +312,23 @@ def create_mcp_server(
     def capture_context(
         scope: dict[str, str],
         id: str,
-        type: str,
         status: str,
         summary: str,
+        type: str | None = None,
         properties: dict[str, Any] | None = None,
+        kind: Annotated[
+            str | None, Field(deprecated=True, description="Deprecated alias for type.")
+        ] = None,
     ) -> dict[str, Any]:
-        return write_context(scope, id, type, status, summary, properties, "create")
+        return write_context(
+            scope,
+            id,
+            type if type is not None else kind,
+            status,
+            summary,
+            properties,
+            "create",
+        )
 
     @server.tool(
         name="update_context",
@@ -320,12 +339,23 @@ def create_mcp_server(
     def update_context(
         scope: dict[str, str],
         id: str,
-        type: str,
         status: str,
         summary: str,
+        type: str | None = None,
         properties: dict[str, Any] | None = None,
+        kind: Annotated[
+            str | None, Field(deprecated=True, description="Deprecated alias for type.")
+        ] = None,
     ) -> dict[str, Any]:
-        return write_context(scope, id, type, status, summary, properties, "update")
+        return write_context(
+            scope,
+            id,
+            type if type is not None else kind,
+            status,
+            summary,
+            properties,
+            "update",
+        )
 
     @server.tool(
         name="remember",
@@ -502,6 +532,7 @@ def create_mcp_server(
         properties: dict[str, Any] | None = None,
         limit: int = 50,
         offset: int = 0,
+        types: list[str] | None = None,
     ) -> dict[str, Any]:
         if not 1 <= limit <= 50:
             raise ValueError("limit must be between 1 and 50")
@@ -510,7 +541,7 @@ def create_mcp_server(
             KnowledgeQuery(
                 resolve_scope(Scope.from_mapping(scope)),
                 ids=frozenset(ids or ()),
-                kinds=frozenset(kinds or ()),
+                types=frozenset(types if types is not None else kinds or ()),
                 statuses=frozenset(statuses or ()),
                 properties=properties or {},
                 limit=limit,

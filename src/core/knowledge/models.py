@@ -10,7 +10,7 @@ from .characteristics import KnowledgeApplicability, KnowledgeBasis, KnowledgeIm
 @dataclass(frozen=True)
 class KnowledgeObject:
     id: str
-    kind: str
+    type: str
     status: str
     summary: str
     properties: Mapping[str, Any] = field(default_factory=dict)
@@ -96,8 +96,11 @@ class KnowledgeQuery:
     properties: Mapping[str, Any] = field(default_factory=dict)
     limit: int = 50
     offset: int = 0
+    types: frozenset[str] | None = None
 
     def __post_init__(self) -> None:
+        if self.types is None:
+            object.__setattr__(self, "types", self.kinds)
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         if self.offset < 0:
