@@ -54,6 +54,8 @@ Built-in skills have the origin `system`; this describes who supplies the skill,
 
 ### Large pull requests
 
+Truncated review responses are retried in smaller chunks. Completed chunks are kept. Recovery stops after 15 chunk attempts per original batch or six levels of splitting. Any remaining gaps identify the affected files and prevent approval.
+
 `review.reading_budget` controls the token budget per batch. General and specialist passes run concurrently; specialist passes with explicit skill path patterns read only matching files, and an overview is prepared alongside PR review. All model calls in a process share `REVIEW_MODEL_CONCURRENCY` slots (default 6). Batch readers follow that capacity; participant concurrency remains a separate control. Multiple worker processes each have their own limit.
 
 Premium shares diff parsing, indexes, source reads and identical skill-selection requests within a review while retaining independent discovery and evaluation calls. Snapshot source is read from pinned Git blobs in batches. Static analysis starts alongside model preparation, and local multi-batch overviews and final skill checks overlap discovery. `review.evaluation_batch_size` targets 16 candidates per evaluation call; candidates in the same file remain together, and each group retains the full diff and source context.

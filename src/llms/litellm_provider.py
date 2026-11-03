@@ -6,7 +6,7 @@ import litellm
 from litellm.exceptions import BadRequestError
 from pydantic import ValidationError
 
-from src.llms.errors import LLMError
+from src.llms.errors import LLMError, OutputTruncated
 from src.llms.llm_interface import LLMInterface
 from src.prompts.prompts import Prompts
 from src.utils.diff_parser import ParsedDiff
@@ -433,7 +433,7 @@ class LiteLLMProvider(LLMInterface):
                         budget,
                     )
                     continue
-                raise LLMError.wrapping(
+                raise OutputTruncated.wrapping(
                     f"{purpose} output budget exhausted before a valid response",
                     ValueError("Truncated model response"),
                 )
