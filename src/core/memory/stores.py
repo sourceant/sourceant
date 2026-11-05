@@ -358,11 +358,19 @@ class _ScopeMemory:
         for participant in event.get("participants", []):
             actor = resolve(participant.get("actor"))
             if actor:
-                actors.append(Actor(
-                    name=actor.get("name", ""), image=actor.get("image", ""),
-                    url=actor.get("url", ""), role=participant.get("role", ""),
-                    type="bot" if actor.get("type") == "software.bot" else actor.get("type", ""),
-                ))
+                actors.append(
+                    Actor(
+                        name=actor.get("name", ""),
+                        image=actor.get("image", ""),
+                        url=actor.get("url", ""),
+                        role=participant.get("role", ""),
+                        type=(
+                            "bot"
+                            if actor.get("type") == "software.bot"
+                            else actor.get("type", "")
+                        ),
+                    )
+                )
         references = list(event.get("subjects", []))
         if event.get("place"):
             references.append({"subject": event["place"], "role": "place"})
@@ -377,31 +385,48 @@ class _ScopeMemory:
             subject = resolve(reference.get("subject"))
             if subject:
                 parent = resolve(subject.get("parent"))
-                subjects.append(Subject(
-                    type=subject.get("type", ""), name=subject.get("name", ""),
-                    url=subject.get("url", ""), role=reference.get("role", ""),
-                    parent=parent.get("name") or None,
-                ))
+                subjects.append(
+                    Subject(
+                        type=subject.get("type", ""),
+                        name=subject.get("name", ""),
+                        url=subject.get("url", ""),
+                        role=reference.get("role", ""),
+                        parent=parent.get("name") or None,
+                    )
+                )
         content = "\n".join(c["text"] for c in event.get("content", []))
         attributes = deepcopy(event.get("attributes", {}))
         source = event.get("source") or {}
         ratings = {
-            name: next((a[name] for a in reversed(event.get("appraisals", [])) if name in a), None)
+            name: next(
+                (a[name] for a in reversed(event.get("appraisals", [])) if name in a),
+                None,
+            )
             for name in ("valence", "importance")
         }
         return MemoryEvent(
-            id=event["id"], type=event["type"],
+            id=event["id"],
+            type=event["type"],
             when=_time(event["occurred_at"]) if event.get("occurred_at") else None,
             ended_at=_time(event["ended_at"]) if event.get("ended_at") else None,
-            why=event.get("why", ""), what=content,
-            title=attributes.get("title") or place.get("attributes", {}).get("github.title") or (content.splitlines()[0] if content else ""),
+            why=event.get("why", ""),
+            what=content,
+            title=attributes.get("title")
+            or place.get("attributes", {}).get("github.title")
+            or (content.splitlines()[0] if content else ""),
             part_of=event.get("part_of") or None,
-            source={"system": source.get("system", ""),
-                    "container": repository.get("name", ""),
-                    "url": source.get("url", ""),
-                    "container_url": repository.get("url", "")},
-            actors=actors, subjects=subjects, attributes=attributes,
-            score=score, outside_window=outside_window, **ratings,
+            source={
+                "system": source.get("system", ""),
+                "container": repository.get("name", ""),
+                "url": source.get("url", ""),
+                "container_url": repository.get("url", ""),
+            },
+            actors=actors,
+            subjects=subjects,
+            attributes=attributes,
+            score=score,
+            outside_window=outside_window,
+            **ratings,
         )
 
     def recall(self, scope: Scope, text: str, limit: int = 10) -> RecallResult:
@@ -442,7 +467,8 @@ class _ScopeMemory:
             if parent.bucket in self.buckets(scope):
                 views.append(
                     self._view(
-                        parent.to_dict(), page.get("entities", []),
+                        parent.to_dict(),
+                        page.get("entities", []),
                         outside_window=True,
                     )
                 )

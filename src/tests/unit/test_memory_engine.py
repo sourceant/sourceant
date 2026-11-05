@@ -39,7 +39,9 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
         if request.method == "PUT":
             return httpx.Response(200, json={"id": event["bucket"]})
         if request.url.path == "/v1/recall":
-            assert json.loads(request.content)["filters"] == {"buckets": [event["bucket"]]}
+            assert json.loads(request.content)["filters"] == {
+                "buckets": [event["bucket"]]
+            }
             return httpx.Response(
                 200,
                 json={
@@ -98,21 +100,34 @@ def test_engine_preserves_service_and_group_actors_and_delegation():
         if request.method == "PUT":
             return httpx.Response(200, json={"id": event["bucket"]})
         if request.url.path == "/v1/recall":
-            assert json.loads(request.content)["filters"] == {"buckets": [event["bucket"]]}
-            return httpx.Response(200, json={"results": [{
-                "id": event["id"], "record": event, "score": 0.75,
-            }]})
+            assert json.loads(request.content)["filters"] == {
+                "buckets": [event["bucket"]]
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": event["id"],
+                            "record": event,
+                            "score": 0.75,
+                        }
+                    ]
+                },
+            )
         entity = entities.get(request.url.path.rsplit("/", 1)[-1])
         return httpx.Response(200, json=entity) if entity else httpx.Response(404)
 
     memory = TrailpadMemory(
-        "https://memory.example", "test-service-key",
+        "https://memory.example",
+        "test-service-key",
         transport=httpx.MockTransport(handle),
     )
     try:
         recalled = memory.recall(Scope.from_mapping({}), "retry").results[0]
         assert [(actor.type, actor.role) for actor in recalled.actors] == [
-            ("service", "author"), ("group", "on_behalf_of"),
+            ("service", "author"),
+            ("group", "on_behalf_of"),
         ]
     finally:
         memory.close()
@@ -224,7 +239,9 @@ def test_remember_constructs_engine_records_from_scope_observation():
         return httpx.Response(204)
 
     memory = TrailpadMemory(
-        "https://memory.example", "test-service-key", transport=httpx.MockTransport(handle)
+        "https://memory.example",
+        "test-service-key",
+        transport=httpx.MockTransport(handle),
     )
     try:
         observation = Remembered(
@@ -232,7 +249,9 @@ def test_remember_constructs_engine_records_from_scope_observation():
             datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00")),
             why=event["why"],
         )
-        result = memory.remember(Scope.from_mapping({"actor": actor["name"]}), observation)
+        result = memory.remember(
+            Scope.from_mapping({"actor": actor["name"]}), observation
+        )
         assert result.what == observation.what
         assert result.who == actor["name"]
         assert result.when == observation.when
@@ -254,15 +273,23 @@ def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
     rows = json.loads(
         (FIXTURES.parent / "github" / "pull-155-webhooks.json").read_text()
     )
-    row = next(row for row in rows if row["type"] == "pull_request_review_comment" and row["payload"]["comment"]["user"]["type"] == "Bot")
+    row = next(
+        row
+        for row in rows
+        if row["type"] == "pull_request_review_comment"
+        and row["payload"]["comment"]["user"]["type"] == "Bot"
+    )
     batch = translate(
         Bound("captured", "installation", "922971929"),
-        row["type"], row["action"], row["payload"],
+        row["type"],
+        row["action"],
+        row["payload"],
     )
     events = {event["id"]: event for event in batch["events"]}
     entities = {entity["id"]: entity for entity in batch["entities"]}
     comment = next(
-        event for event in events.values()
+        event
+        for event in events.values()
         if event["type"] == "github.pull_request.review_comment"
     )
     parent = events[comment["part_of"]]
@@ -277,24 +304,39 @@ def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
         if request.method == "PUT":
             return httpx.Response(200, json={"id": "captured"})
         if request.url.path == "/v1/events":
-            return httpx.Response(200, json={
-                "events": [comment], "entities": list(entities.values()),
-                "next": comment["id"],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "events": [comment],
+                    "entities": list(entities.values()),
+                    "next": comment["id"],
+                },
+            )
         if request.url.path == "/v1/events/" + parent["id"]:
             return httpx.Response(200, json=parent)
         if request.url.path == "/v1/recall":
             assert json.loads(request.content)["filters"] == {"buckets": ["captured"]}
-            return httpx.Response(200, json={"results": [{
-                "id": comment["id"], "record": comment,
-                "score": 0.75,
-            }]})
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": comment["id"],
+                            "record": comment,
+                            "score": 0.75,
+                        }
+                    ]
+                },
+            )
         if request.url.path.startswith("/v1/entities/"):
-            return httpx.Response(200, json=entities[request.url.path.rsplit("/", 1)[1]])
+            return httpx.Response(
+                200, json=entities[request.url.path.rsplit("/", 1)[1]]
+            )
         raise AssertionError(request.url)
 
     memory = TrailpadMemory(
-        "https://memory.example", "test-service-key",
+        "https://memory.example",
+        "test-service-key",
         transport=httpx.MockTransport(handle),
     )
     try:

@@ -134,28 +134,62 @@ class TestMemoryWebhooks(BaseTestCase):
             assert self.deliver(row).status_code == 201
         scope = Scope.from_mapping({"repository": "sourceant/sourceant"})
         page = self.memory.history(scope)
-        comments = [e for e in page.events if e.type == "github.pull_request.review_comment"]
+        comments = [
+            e for e in page.events if e.type == "github.pull_request.review_comment"
+        ]
         assert comments
         parent = next(e for e in page.events if e.type == "github.pull_request")
         repository = rows[0]["payload"]["repository"]
-        assert all(event.title == parent.title for event in page.events if event.part_of == parent.id)
+        assert all(
+            event.title == parent.title
+            for event in page.events
+            if event.part_of == parent.id
+        )
         for comment in comments:
-            captured = next(row["payload"]["comment"] for row in rows if row["type"] == "pull_request_review_comment" and str(row["payload"]["comment"]["id"]) == self.memory.events[comment.id]["source"]["native_id"].split(":")[-1])
+            captured = next(
+                row["payload"]["comment"]
+                for row in rows
+                if row["type"] == "pull_request_review_comment"
+                and str(row["payload"]["comment"]["id"])
+                == self.memory.events[comment.id]["source"]["native_id"].split(":")[-1]
+            )
             assert comment.source["url"] == captured["html_url"]
-            assert comment.actors[0].type == ("bot" if captured["user"]["type"] == "Bot" else "person")
+            assert comment.actors[0].type == (
+                "bot" if captured["user"]["type"] == "Bot" else "person"
+            )
             assert comment.part_of == parent.id
-            assert comment.title == parent.title == next(row["payload"]["pull_request"]["title"] for row in rows if row["payload"].get("pull_request"))
+            assert (
+                comment.title
+                == parent.title
+                == next(
+                    row["payload"]["pull_request"]["title"]
+                    for row in rows
+                    if row["payload"].get("pull_request")
+                )
+            )
             assert comment.actors
-            assert all(actor.name and actor.image and actor.url for actor in comment.actors)
+            assert all(
+                actor.name and actor.image and actor.url for actor in comment.actors
+            )
             assert comment.source == {
-                "system": "github", "container": repository["full_name"],
+                "system": "github",
+                "container": repository["full_name"],
                 "url": self.memory.events[comment.id]["source"]["url"],
                 "container_url": repository["html_url"],
             }
             assert any(subject.type == "code.path" for subject in comment.subjects)
-            assert any(subject.parent == repository["full_name"] for subject in comment.subjects)
-        assert any(actor.type == "bot" for event in page.events for actor in event.actors)
-        assert all(entity["type"] in {"person", "bot"} for entity in self.memory.entities.values() if entity.get("class") == "actor")
+            assert any(
+                subject.parent == repository["full_name"]
+                for subject in comment.subjects
+            )
+        assert any(
+            actor.type == "bot" for event in page.events for actor in event.actors
+        )
+        assert all(
+            entity["type"] in {"person", "bot"}
+            for entity in self.memory.entities.values()
+            if entity.get("class") == "actor"
+        )
         window = self.memory.history(scope, since=comments[0].when.isoformat())
         fetched = next(e for e in window.events if e.id == parent.id)
         assert fetched.outside_window
