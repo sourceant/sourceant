@@ -91,7 +91,7 @@ knowledge while renaming its category column; downgrading restores the old name.
 
 `Memory` is the scope-level service contract. Register one implementation in the
 service registry to replace the default `TrailpadMemory` adapter. Callers pass
-`Remembered`, `KnowledgeChange`, or `RepositoryDelivery` values; bucket bindings,
+`Remembered`, `KnowledgeChange`, or source-neutral `Occurrence` values; bucket bindings,
 entity identifiers, appraisals, and engine filters belong to the adapter.
 
 `remember` accepts what happened, an aware datetime, why, who (defaulting to the
@@ -126,3 +126,47 @@ stable digest. The MCP tools expose these scope-level results without engine rec
 With `MEMORY_ENGINE_URL` and `MEMORY_ENGINE_KEY` set, events use the engine.
 Without both settings, `DisabledMemory` ignores writes and returns empty reads
 with `configured: false`. `InMemoryMemory` implements the contract for tests only.
+
+
+Sources write batches with `Memory.record(scope, occurrences)`. Each occurrence
+has an id stable within its source, type, source binding, timestamps, text,
+actors, subjects, relationships, attributes and optional ratings. Source bindings
+contain system, installation and container identifiers plus source URLs. Actor
+and subject identifiers belong to the source; only the adapter creates engine
+identifiers and records. GitHub translation and stored delivery replay live in
+the GitHub integration. Existing GitHub identifiers and path hashes remain stable
+so replay does not create duplicate history.
+
+The memory package contains the contract, shared engine mapping, HTTP adapter,
+in-process implementation and disabled implementation. Knowledge recording lives
+with knowledge. `record_knowledge_change` remains a convenience for knowledge
+writers, preserving their existing behavior while hiding engine records.
+
+
+Memory persists scope-to-source bindings by workspace and repository in the
+application database. Workers and restarted adapters discover the same source
+buckets for history and recall. Without a database, bindings remain in process.
+Run database migrations before starting the updated application.
+
+Integrations register source resolvers for deliveries recorded before binding
+persistence existed. GitHub contributes its stored repository sources this way;
+the engine adapter does not import integrations or read webhook payloads.
+
+Sources may supply an `id_namespace` to retain existing identifiers. Place
+subjects identify container roots with `container_root` and optional local place
+identifiers with `place_id`. GitHub supplies these values to preserve its existing
+record identifiers. Subject identifiers include their source type to keep file
+names separate from places. A parent must be present among the occurrence's
+subjects; otherwise recording raises `ValueError` before writing records.
+
+
+Memory service setup explicitly registers GitHub's legacy source resolver.
+Importing the GitHub package does not initialise memory services. Source bindings
+are committed before records are sent to the engine, so a failed engine request
+can be retried without losing source discovery.
+
+GitHub ingestion retains only the eight most recently used adapters. Each adapter
+keeps at most 4,096 recent delivery IDs and 1,024 recent branch heads, evicting the
+least recently used entries. Older deliveries remain safe to replay because
+engine record identifiers stay stable. Stored pull requests supply branch context
+when replaying persisted pushes.

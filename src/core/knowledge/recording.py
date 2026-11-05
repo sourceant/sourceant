@@ -89,7 +89,7 @@ class RecordingKnowledge:
             )
 
     def _write(self, scope, event_type, before, after):
-        from .interfaces import KnowledgeChange
+        from src.core.memory.interfaces import KnowledgeChange
 
         memory = (
             memory_services()

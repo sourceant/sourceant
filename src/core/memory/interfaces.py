@@ -4,7 +4,7 @@ from typing import Literal, Protocol, runtime_checkable
 from src.core.knowledge.models import KnowledgeObject
 
 from src.core.scope import Scope
-from .models import MemoryEvent
+from .models import MemoryEvent, Occurrence
 
 
 @dataclass(frozen=True)
@@ -57,14 +57,6 @@ class KnowledgeChange:
     after: KnowledgeObject | None = None
 
 
-@dataclass(frozen=True)
-class RepositoryDelivery:
-    id: str
-    type: str
-    payload: dict
-    stored: bool = True
-
-
 @runtime_checkable
 class Memory(Protocol):
     def remember(self, scope: Scope, observation: Remembered) -> RememberedEvent: ...
@@ -79,6 +71,4 @@ class Memory(Protocol):
     def record_knowledge_change(
         self, scope: Scope, change: KnowledgeChange
     ) -> None: ...
-    def record_repository_event(
-        self, scope: Scope, delivery: RepositoryDelivery
-    ) -> None: ...
+    def record(self, scope: Scope, occurrences: list[Occurrence]) -> None: ...

@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
-from dataclasses import dataclass
-
-
-def subject_id(bucket: str, category: str, name: str) -> str:
-    digest = hashlib.sha256(f"{bucket}\0{category}\0{name}".encode()).hexdigest()
-    return f"sb_{digest[:24]}"
-
-
-BATCH = 100
+from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from src.core.memory.models import (
+    Source,
+    Occurrence,
+    OccurrenceActor,
+    OccurrenceSubject,
+)
 
 
 @dataclass(frozen=True)
-class Bound:
-    """A repository's bucket and the GitHub ids it is bound to."""
-
-    bucket: str
+class Origin:
     installation: str
     container: str
 
@@ -26,8 +21,6 @@ def _instant(value) -> str | None:
     if not value:
         return None
     if isinstance(value, (int, float)):
-        from datetime import datetime, timezone
-
         return (
             datetime.fromtimestamp(value, timezone.utc)
             .isoformat()
@@ -37,109 +30,102 @@ def _instant(value) -> str | None:
 
 
 class _Batch:
-    def __init__(self, bound: Bound):
-        self.bound = bound
-        self.entities: dict[str, dict] = {}
-        self.events: dict[str, dict] = {}
+    def __init__(self, origin: Origin):
+        self.origin = origin
+        self.subjects = {}
+        self.events = {}
 
-    def _entity(self, entity: dict) -> str:
-        self.entities[entity["id"]] = {
-            "bucket": self.bound.bucket,
-            **{k: v for k, v in entity.items() if v not in (None, "", {})},
-        }
-        return entity["id"]
-
-    def actor(self, user: dict | None) -> str | None:
+    def actor(self, user):
         if not user or not user.get("id"):
             return None
         bot = user.get("type") == "Bot" or str(user.get("login", "")).endswith("[bot]")
-        return self._entity(
-            {
-                "id": f"ac_gh_{self.bound.container}_{user['id']}",
-                "class": "actor",
-                "type": "bot" if bot else "person",
-                "name": user.get("login") or "",
-                "image": user.get("avatar_url") or "",
-                "url": user.get("html_url") or "",
-            }
+        return OccurrenceActor(
+            id=str(user["id"]),
+            name=user.get("login") or "",
+            image=user.get("avatar_url") or "",
+            url=user.get("html_url") or "",
+            type="bot" if bot else "person",
         )
 
-    def repository(self, repository: dict) -> str:
-        return self._entity(
-            {
-                "id": f"pl_gh_{self.bound.container}",
-                "class": "place",
-                "type": "github.repository",
-                "name": repository.get("full_name") or "",
-                "url": repository.get("html_url") or "",
-            }
+    def repository(self, repository):
+        subject = OccurrenceSubject(
+            id="github.repository:repository",
+            type="github.repository",
+            name=repository.get("full_name") or "",
+            url=repository.get("html_url") or "",
+            role="place",
+            container_root=True,
         )
+        self.subjects[subject.id] = subject
+        return subject
 
-    def pull_place(self, repository: dict, pull: dict) -> str:
-        return self._entity(
-            {
-                "id": f"pl_gh_{self.bound.container}_pr_{pull['number']}",
-                "class": "place",
-                "type": "github.pull_request",
-                "name": f"#{pull['number']}",
-                "url": pull.get("html_url") or "",
-                "parent": self.repository(repository),
-                "attributes": {"github.title": pull.get("title") or ""},
-            }
+    def pull_place(self, repository, pull):
+        parent = self.repository(repository)
+        subject = OccurrenceSubject(
+            id=f"github.pull_request:pr_{pull['number']}",
+            type="github.pull_request",
+            name=f"#{pull['number']}",
+            url=pull.get("html_url") or "",
+            parent=parent.id,
+            role="place",
+            attributes={"github.title": pull.get("title") or ""},
+            place_id=f"pr_{pull['number']}",
         )
+        self.subjects[subject.id] = subject
+        return subject
 
-    def path(self, path: str) -> str:
-        return self._entity(
-            {
-                "id": subject_id(self.bound.bucket, "path", path),
-                "class": "subject",
-                "type": "code.path",
-                "name": path,
-            }
+    def path(self, path):
+        subject = OccurrenceSubject(id=f"code.path:{path}", type="code.path", name=path)
+        self.subjects[subject.id] = subject
+        return subject
+
+    def event(self, event, native, url=None):
+        place = event.pop("location")
+        subjects = event.pop("subjects", [])
+        subjects += [place]
+        if place.parent:
+            subjects += [self.subjects[place.parent]]
+        event["actors"] = [
+            replace(actor, role=role)
+            for actor, role in event.get("actors", [])
+            if actor
+        ]
+        occurrence = Occurrence(
+            source=Source(
+                system="github",
+                installation=self.origin.installation,
+                container=self.origin.container,
+                url=url or "",
+                container_url=self.subjects["github.repository:repository"].url,
+                native_id=native,
+                id_namespace=f"gh_{self.origin.container}",
+            ),
+            subjects=subjects,
+            **event,
         )
-
-    def event(self, event: dict, native: str, url: str | None = None) -> str:
-        source = {
-            "system": "github",
-            "installation": self.bound.installation,
-            "native_id": native,
-        }
-        if url:
-            source["url"] = url
-        body = {
-            "bucket": self.bound.bucket,
-            **{k: v for k, v in event.items() if v not in (None, [], {}, "")},
-            "source": source,
-        }
-        self.events[body["id"]] = body
-        return body["id"]
+        self.events[occurrence.id] = occurrence
+        return occurrence.id
 
     def pull(self, repository: dict, pull: dict) -> str:
         """The pull request as an event, from facts fixed when it was opened."""
         author = self.actor(pull.get("user"))
         return self.event(
             {
-                "id": f"ev_gh_{self.bound.container}_pr_{pull['number']}",
+                "id": f"pr_{pull['number']}",
                 "type": "github.pull_request",
-                "occurred_at": _instant(pull.get("created_at")),
-                "place": self.pull_place(repository, pull),
-                "participants": [{"actor": author, "role": "author"}] if author else [],
+                "when": _instant(pull.get("created_at")),
+                "location": self.pull_place(repository, pull),
+                "actors": [(author, "author")] if author else [],
             },
             native=f"pull:{pull.get('id') or pull['number']}",
             url=pull.get("html_url"),
         )
 
-    def said(self, speaker: str | None, text: str | None) -> list[dict]:
-        text = (text or "").strip()
-        if not text:
-            return []
-        return [{"speaker": speaker, "text": text} if speaker else {"text": text}]
+    def said(self, text):
+        return (text or "").strip()
 
-    def to_dict(self) -> dict:
-        return {
-            "entities": list(self.entities.values()),
-            "events": list(self.events.values()),
-        }
+    def to_occurrences(self):
+        return list(self.events.values())
 
 
 def _review(b: _Batch, payload: dict) -> None:
@@ -152,14 +138,12 @@ def _review(b: _Batch, payload: dict) -> None:
     reviewer = b.actor(review.get("user"))
     b.event(
         {
-            "id": f"ev_gh_{b.bound.container}_review_{review['id']}",
+            "id": f"review_{review['id']}",
             "type": "github.pull_request.review",
-            "occurred_at": _instant(review.get("submitted_at")),
-            "place": b.pull_place(repository, pull),
-            "participants": (
-                [{"actor": reviewer, "role": "reviewer"}] if reviewer else []
-            ),
-            "content": b.said(reviewer, review.get("body")),
+            "when": _instant(review.get("submitted_at")),
+            "location": b.pull_place(repository, pull),
+            "actors": ([(reviewer, "reviewer")] if reviewer else []),
+            "what": b.said(review.get("body")),
             "part_of": parent,
             "attributes": {"github.state": str(review.get("state") or "").lower()},
         },
@@ -184,17 +168,15 @@ def _comment(b: _Batch, payload: dict) -> None:
     reply = comment.get("in_reply_to_id")
     b.event(
         {
-            "id": f"ev_gh_{b.bound.container}_comment_{comment['id']}",
+            "id": f"comment_{comment['id']}",
             "type": "github.pull_request.review_comment",
-            "occurred_at": _instant(comment.get("created_at")),
-            "place": b.pull_place(repository, pull),
-            "participants": [{"actor": speaker, "role": role}] if speaker else [],
-            "content": b.said(speaker, comment.get("body")),
-            "subjects": [{"subject": b.path(path), "role": "about"}] if path else [],
+            "when": _instant(comment.get("created_at")),
+            "location": b.pull_place(repository, pull),
+            "actors": [(speaker, role)] if speaker else [],
+            "what": b.said(comment.get("body")),
+            "subjects": [b.path(path)] if path else [],
             "part_of": parent,
-            "in_reply_to": (
-                f"ev_gh_{b.bound.container}_comment_{reply}" if reply else None
-            ),
+            "in_reply_to": (f"comment_{reply}" if reply else None),
             "attributes": {"github.path": path} if path else {},
         },
         native=f"comment:{comment['id']}",
@@ -213,11 +195,11 @@ def _ended(b: _Batch, payload: dict) -> None:
             "type": (
                 "github.pull_request.merged" if merged else "github.pull_request.closed"
             ),
-            "occurred_at": _instant(
+            "when": _instant(
                 pull.get("merged_at") if merged else pull.get("closed_at")
             ),
-            "place": b.pull_place(repository, pull),
-            "participants": [{"actor": who, "role": "decider"}] if who else [],
+            "location": b.pull_place(repository, pull),
+            "actors": [(who, "decider")] if who else [],
             "part_of": parent,
         },
         native=f"pull:{pull.get('id') or pull['number']}:{'merged' if merged else 'closed'}",
@@ -257,15 +239,15 @@ def _push(b: _Batch, payload: dict, pull: dict | None) -> None:
     ).hexdigest()[:24]
     b.event(
         {
-            "id": f"ev_gh_{b.bound.container}_push_{pushed}",
+            "id": f"push_{pushed}",
             "type": "github.push",
-            "occurred_at": _instant(head.get("timestamp")),
-            "place": (
+            "when": _instant(head.get("timestamp")),
+            "location": (
                 b.pull_place(repository, pull) if pull else b.repository(repository)
             ),
-            "participants": [{"actor": pusher, "role": "author"}] if pusher else [],
-            "content": b.said(pusher, message),
-            "subjects": [{"subject": b.path(f), "role": "about"} for f in files],
+            "actors": [(pusher, "author")] if pusher else [],
+            "what": b.said(message),
+            "subjects": [b.path(f) for f in files],
             "part_of": b.pull(repository, pull) if pull else None,
             "attributes": {"github.files": files, "github.ref": payload.get("ref")},
         },
@@ -275,21 +257,20 @@ def _push(b: _Batch, payload: dict, pull: dict | None) -> None:
 
 
 def translate(
-    bound: Bound,
+    origin: Origin,
     event_type: str,
     action: str | None,
     payload: dict,
     pull_for_branch=None,
-) -> dict | None:
-    """The engine records one webhook stands for, or None when it records
-    nothing that happened (an edit, a label, a re-run)."""
+) -> list[Occurrence] | None:
+    """Translate a delivery into source facts."""
     if not isinstance(payload.get("repository"), dict):
         return None
     if event_type.startswith("pull_request") and not isinstance(
         payload.get("pull_request"), dict
     ):
         return None
-    b = _Batch(bound)
+    b = _Batch(origin)
     if event_type == "pull_request_review" and action == "submitted":
         _review(b, payload)
     elif event_type == "pull_request_review_comment" and action == "created":
@@ -305,14 +286,4 @@ def translate(
         )
     else:
         return None
-    return b.to_dict()
-
-
-def merge(batches: list[dict]) -> dict:
-    """Several webhooks' records as one write, each record once."""
-    entities: dict[str, dict] = {}
-    events: dict[str, dict] = {}
-    for batch in batches:
-        entities.update({e["id"]: e for e in batch["entities"]})
-        events.update({e["id"]: e for e in batch["events"]})
-    return {"entities": list(entities.values()), "events": list(events.values())}
+    return b.to_occurrences()

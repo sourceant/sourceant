@@ -58,7 +58,7 @@ class KnowledgeBackedRequirements:
 
     def __init__(self, requirements, knowledge: KnowledgeWriter) -> None:
         self._requirements = requirements
-        from src.core.memory.knowledge import recording
+        from src.core.knowledge.recording import recording
 
         self._knowledge = recording(knowledge)
 

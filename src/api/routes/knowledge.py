@@ -35,7 +35,7 @@ from src.core.knowledge import (
 from src.core.responses import success_response
 from src.core.services import service_registry
 
-from src.core.memory.knowledge import recording
+from src.core.knowledge.recording import recording
 
 router = APIRouter()
 

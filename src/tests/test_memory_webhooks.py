@@ -8,7 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from src.core.memory import Memory, InMemoryMemory
-from src.core.memory import history
+from src.integrations.github import memory_history as history
 from src.core.services import service_registry
 from src.tests.base_test import BaseTestCase
 
@@ -45,12 +45,13 @@ class TestMemoryWebhooks(BaseTestCase):
         yield
         engine.dispose()
 
-    def deliver(self, row):
+    def deliver(self, row, delivery_id=None):
         body = json.dumps(row["payload"]).encode()
         return self.client.post(
             "/api/prs/github-webhook",
             content=body,
             headers={
+                **({"X-GitHub-Delivery": delivery_id} if delivery_id else {}),
                 "Content-Type": "application/json",
                 "X-GitHub-Event": row["type"],
                 "X-Hub-Signature-256": "sha256="
@@ -118,7 +119,7 @@ class TestMemoryWebhooks(BaseTestCase):
         assert "part_of" not in before_open
         before = deepcopy(self.memory.events)
         before_entities = deepcopy(self.memory.entities)
-        self.memory._heads.clear()
+        history.ingestion(self.memory).heads.clear()
         result = CliRunner().invoke(cli, ["memory-replay", "sourceant/sourceant"])
         assert result.exit_code == 0, result.output
         assert self.memory.events == before
@@ -222,7 +223,75 @@ class TestMemoryWebhooks(BaseTestCase):
             == 201
         )
         assert self.memory.events == before
-        assert "captured-delivery" in self.memory._deliveries
+        assert "captured-delivery" in history.ingestion(self.memory).deliveries
+
+    def test_unhashable_memory_implementation_records_webhooks(self):
+        class UnhashableMemory:
+            __hash__ = None
+
+            def __init__(self, store):
+                self.store = store
+
+            def __eq__(self, other):
+                return self is other
+
+            def __getattr__(self, name):
+                return getattr(self.store, name)
+
+        memory = UnhashableMemory(self.memory)
+        service_registry.unregister_provider("test")
+        service_registry.register(Memory, memory, "test")
+        rows = json.loads(FIXTURE.read_text())
+        row = next(row for row in rows if row["action"] == "opened")
+        assert self.deliver(row).status_code == 201
+        assert memory.events
+        assert history.ingestion(memory).deliveries
+
+    def test_ingestion_caches_are_bounded_and_keep_recent_entries(self, monkeypatch):
+        monkeypatch.setattr(history, "MAX_DELIVERIES", 3)
+        monkeypatch.setattr(history, "MAX_HEADS", 2)
+        row = deepcopy(
+            next(
+                row
+                for row in json.loads(FIXTURE.read_text())
+                if row["action"] == "opened"
+            )
+        )
+        original_branch = row["payload"]["pull_request"]["head"]["ref"]
+        for index in range(3):
+            row["payload"]["pull_request"]["head"]["ref"] = f"branch-{index}"
+            assert self.deliver(row, f"delivery-{index}").status_code == 201
+        state = history.ingestion(self.memory)
+        container = str(row["payload"]["repository"]["id"])
+        assert len(state.deliveries) == 3
+        assert list(state.heads) == [(container, "branch-1"), (container, "branch-2")]
+        assert state.heads.get((container, "branch-1"))
+        assert self.deliver(row, "delivery-0").status_code == 201
+        row["payload"]["pull_request"]["head"]["ref"] = "branch-3"
+        assert self.deliver(row, "delivery-3").status_code == 201
+        assert list(state.deliveries) == ["delivery-2", "delivery-0", "delivery-3"]
+        assert list(state.heads) == [(container, "branch-1"), (container, "branch-3")]
+
+        pushes = [
+            entry
+            for entry in json.loads(FIXTURE.read_text())
+            if entry["type"] == "push"
+            and entry["payload"]["ref"] == f"refs/heads/{original_branch}"
+        ]
+        push = deepcopy(pushes[-1])
+        push["payload"]["ref"] = "refs/heads/branch-0"
+        assert self.deliver(push, "delivery-push").status_code == 201
+        pushed = next(
+            event
+            for event in self.memory.events.values()
+            if event["type"] == "github.push"
+        )
+        assert (
+            pushed["part_of"]
+            == f"ev_gh_{container}_pr_{row['payload']['pull_request']['number']}"
+        )
+        assert len(state.heads) == 2
+        assert len(state.deliveries) == 3
 
     def test_stateless_deliveries_still_record_events(self, monkeypatch):
         monkeypatch.setattr(
@@ -277,9 +346,6 @@ class TestMemoryWebhooks(BaseTestCase):
 
 
 def test_translation_skips_payloads_without_repository():
-    from src.core.memory.github import Bound, translate
+    from src.integrations.github.memory_source import Origin, translate
 
-    assert (
-        translate(Bound("bucket", "installation", "container"), "push", None, {})
-        is None
-    )
+    assert translate(Origin("installation", "container"), "push", None, {}) is None

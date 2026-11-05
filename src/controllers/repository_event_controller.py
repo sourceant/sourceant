@@ -78,7 +78,7 @@ class RepositoryEventController(BaseController):
                 )
 
             if provider.lower() == "github":
-                from src.core.memory.history import record_webhook
+                from src.integrations.github.memory_history import record_webhook
 
                 record_webhook(type, payload, stored=not STATELESS_MODE)
 

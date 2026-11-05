@@ -96,7 +96,7 @@ def lint_fix_command():
 @click.command(name="memory-replay")
 @click.argument("repositories", nargs=-1)
 def memory_replay_command(repositories):
-    from src.core.memory.history import replay
+    from src.integrations.github.memory_history import replay
 
     try:
         count = replay(list(repositories) or None)

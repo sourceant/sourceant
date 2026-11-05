@@ -91,7 +91,15 @@ def memory_services(registry: ServiceRegistry = service_registry):
 
 def _memory_services(registry):
     import os
-    from src.core.memory import TrailpadMemory, DisabledMemory, Memory
+    from src.integrations.github.memory_history import resolve_sources
+    from src.core.memory import (
+        TrailpadMemory,
+        DisabledMemory,
+        Memory,
+        register_source_resolver,
+    )
+
+    register_source_resolver(resolve_sources)
 
     try:
         return registry.resolve(Memory)

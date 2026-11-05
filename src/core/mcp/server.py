@@ -76,7 +76,7 @@ def create_mcp_server(
     services: ServiceRegistry = service_registry,
     skills: SkillLibrary | None = None,
 ) -> FastMCP:
-    from src.core.memory.knowledge import recording
+    from src.core.knowledge.recording import recording
 
     if knowledge is not None:
         knowledge = recording(knowledge, services)
