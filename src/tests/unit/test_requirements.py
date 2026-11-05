@@ -299,7 +299,7 @@ def test_linking_a_requirement_to_knowledge_connects_them(store):
     knowledge.put(
         SCOPE,
         KnowledgeObject(
-            id="decision:1", kind="decision", status="approved", summary="Use UTC"
+            id="decision:1", type="decision", status="approved", summary="Use UTC"
         ),
     )
 

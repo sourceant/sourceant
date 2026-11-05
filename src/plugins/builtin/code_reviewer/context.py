@@ -210,7 +210,7 @@ def knowledge_section(known) -> Optional[str]:
         "",
     ]
     for item in known.knowledge:
-        lines.append(f"- {item.id} ({item.kind}, {item.status}): {item.summary}")
+        lines.append(f"- {item.id} ({item.type}, {item.status}): {item.summary}")
     lines.append("")
     return "\n".join(lines)
 

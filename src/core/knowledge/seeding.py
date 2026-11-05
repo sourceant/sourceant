@@ -8,7 +8,7 @@ tool can reach.
 This reads those files and nothing else. It does not summarise, infer, or
 decide: every object it makes points at the heading it came from, so a person
 can check it against the source in one step. Judging whether something is worth
-recording, or true, is a different job and needs a different kind of reader.
+recording, or true, is a different job and needs a different type of reader.
 
 What it produces is a starting point, and is marked as one: everything comes
 back `proposed` rather than `accepted`, because nobody has agreed to it yet.
@@ -38,10 +38,10 @@ SOURCES = (
     "README.md",
 )
 
-# A heading only becomes knowledge when it says what kind it is. Anything else
+# A heading only becomes knowledge when it says what type it is. Anything else
 # is prose about the project, and recording it would fill the store with
 # headings like "Installation".
-KINDS = {
+TYPES = {
     "decision": "decision",
     "decisions": "decision",
     "convention": "convention",
@@ -102,11 +102,11 @@ def _sections(text: str) -> list[tuple[str, str]]:
     return sections
 
 
-def _kind_of(heading: str) -> str | None:
+def _type_of(heading: str) -> str | None:
     words = re.findall(r"[a-z-]+", heading.lower())
     for word in words:
-        if word in KINDS:
-            return KINDS[word]
+        if word in TYPES:
+            return TYPES[word]
     return None
 
 
@@ -115,22 +115,22 @@ def from_markdown(path: str, text: str) -> list[Seed]:
 
     An architecture decision record is one decision, whatever its headings say,
     because the file is the unit somebody wrote. Every other file is read by
-    heading, and only headings that name a kind are taken.
+    heading, and only headings that name a type are taken.
     """
     if _is_record(path):
         return _from_record(path, text)
 
     seeds = []
     for heading, body in _sections(text):
-        kind = _kind_of(heading)
+        type = _type_of(heading)
         summary = _paragraph(body)
-        if kind is None or not summary:
+        if type is None or not summary:
             continue
         seeds.append(
             Seed(
                 KnowledgeObject(
                     id=f"{slug(Path(path).stem)}-{slug(heading)}",
-                    kind=kind,
+                    type=type,
                     status="proposed",
                     summary=summary,
                     properties={"source": path, "heading": heading},
@@ -178,7 +178,7 @@ def _from_record(path: str, text: str) -> list[Seed]:
         Seed(
             KnowledgeObject(
                 id=slug(Path(path).stem),
-                kind="decision",
+                type="decision",
                 status="proposed",
                 summary=decided,
                 properties=properties,

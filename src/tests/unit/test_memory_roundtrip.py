@@ -1,0 +1,159 @@
+import json
+from copy import deepcopy
+from dataclasses import asdict, replace
+from datetime import datetime, timedelta, timezone
+
+import httpx
+import pytest
+
+from src.core.memory import (
+    Actor,
+    Event,
+    InMemoryMemory,
+    Source,
+    Subject,
+    TrailpadMemory,
+)
+from src.core.memory.engine import Entity, EventRecord
+from src.core.scope import Scope
+
+
+@pytest.mark.parametrize("adapter", ["in_process", "http"])
+@pytest.mark.parametrize(
+    "offset", [timezone.utc, timezone(timedelta(hours=5, minutes=30))]
+)
+def test_read_views_roundtrip_stored_timestamp_bytes(monkeypatch, adapter, offset):
+    monkeypatch.setattr("src.config.db.get_engine", lambda: None)
+    backend = InMemoryMemory()
+    writes = []
+
+    def handle(request):
+        if request.method == "PUT":
+            binding = json.loads(request.content)["binding"]
+            return httpx.Response(
+                200,
+                json={
+                    "id": backend.bind(
+                        binding["system"], binding["installation"], binding["container"]
+                    )
+                },
+            )
+        if request.url.path == "/v1/records":
+            body = json.loads(request.content)
+            writes.append(body)
+            backend._write_records(
+                [EventRecord.from_dict(event) for event in body["events"]],
+                [Entity.from_dict(entity) for entity in body["entities"]],
+            )
+            return httpx.Response(204)
+        if request.url.path == "/v1/events":
+            buckets = request.url.params.get_list("bucket")
+            return httpx.Response(
+                200,
+                json={
+                    "events": [
+                        event
+                        for event in backend._events.values()
+                        if event["bucket"] in buckets
+                    ],
+                    "entities": list(backend.entities.values()),
+                    "next": None,
+                },
+            )
+        raise AssertionError(request.url)
+
+    memory = (
+        backend
+        if adapter == "in_process"
+        else TrailpadMemory(
+            "https://memory.example",
+            "test-service-key",
+            transport=httpx.MockTransport(handle),
+        )
+    )
+    scope = Scope.from_mapping(
+        {"workspace": "team", "repository": "acme/shop", "branch": "main"}
+    )
+    source = Source.for_scope(scope)
+    event = Event(
+        id="experiment",
+        type="sourceant.observation",
+        source=source,
+        when=datetime(2026, 4, 19, 14, 2, 11, 120000, tzinfo=offset),
+        ended_at=datetime(2026, 4, 19, 15, 2, 11, 123456, tzinfo=offset),
+        what="Retry succeeded",
+        actors=[Actor(id="ana", name="Ana", role="author")],
+        subjects=[Subject(id="path:retry.py", type="code.path", name="retry.py")],
+        valence=1,
+        importance=3,
+    )
+    try:
+        (stored,) = memory.record(scope, [event])
+        before = deepcopy(backend._events[stored.id])
+        (view,) = memory.events(scope).events
+        assert isinstance(view.when, datetime)
+        assert view.when == event.when
+        assert set(asdict(view.source)) == {
+            "system",
+            "installation",
+            "container",
+            "url",
+            "container_url",
+            "native_id",
+            "id_namespace",
+        }
+        (repeated,) = memory.record(
+            scope, [replace(view, score=0.9, outside_window=True)]
+        )
+        assert repeated.id == stored.id
+        assert backend._events[stored.id] == before
+        assert backend._events[stored.id]["occurred_at"] == before["occurred_at"]
+        assert backend._events[stored.id]["ended_at"] == before["ended_at"]
+        assert len(backend._events) == 1
+        if adapter == "http":
+            assert writes[1] == writes[0]
+    finally:
+        if adapter == "http":
+            memory.close()
+
+
+@pytest.mark.parametrize("subject_id", ["sb_customer", "pl_customer"])
+def test_source_subject_ids_are_mapped_without_prefix_ownership(subject_id):
+    memory = InMemoryMemory()
+    for system in ("crm", "billing"):
+        scope = Scope.from_mapping({"repository": system})
+        event = Event(
+            id="created",
+            type="customer.created",
+            source=Source(system, "account", "customers"),
+            subjects=[Subject(id=subject_id, type="customer", name="Customer")],
+        )
+        memory.record(scope, [event])
+    entities = [
+        entity for entity in memory.entities.values() if entity["type"] == "customer"
+    ]
+    assert len(entities) == 2
+    assert len({entity["id"] for entity in entities}) == 2
+    assert all(entity["id"] != subject_id for entity in entities)
+
+
+def test_source_actor_ids_are_mapped_even_when_they_look_mapped():
+    memory = InMemoryMemory()
+    event = Event(
+        id="created",
+        type="customer.created",
+        source=Source("crm", "account", "customers", id_namespace="customers"),
+        actors=[
+            Actor(id="customer", name="First"),
+            Actor(id="ac_customers_customer", name="Second"),
+        ],
+    )
+    memory.record(Scope(), [event])
+    actors = [
+        entity for entity in memory.entities.values() if entity["class"] == "actor"
+    ]
+    assert len(actors) == 2
+    assert {actor["id"] for actor in actors} == {
+        "ac_customers_customer",
+        "ac_customers_ac_customers_customer",
+    }

@@ -46,7 +46,7 @@ knowledge_table = Table(
     metadata,
     Column("scope_id", BigInteger, primary_key=True),
     Column("id", String(255), primary_key=True),
-    Column("kind", String(255), nullable=False),
+    Column("type", String(255), nullable=False),
     Column("status", String(255), nullable=False),
     Column("summary", Text, nullable=False),
     Column("properties", Text, nullable=False),
@@ -87,7 +87,7 @@ class SQLKnowledgeRepository:
     def put(self, scope: Scope, knowledge: KnowledgeObject) -> None:
         values = {
             "id": knowledge.id,
-            "kind": knowledge.kind,
+            "type": knowledge.type,
             "status": knowledge.status,
             "summary": knowledge.summary,
             "properties": self._encode(knowledge.properties),
@@ -274,7 +274,7 @@ class SQLKnowledgeRepository:
             for row in rows:
                 item = KnowledgeObject(
                     row["id"],
-                    row["kind"],
+                    row["type"],
                     row["status"],
                     row["summary"],
                     json.loads(row["properties"]),
@@ -372,7 +372,7 @@ class SQLKnowledgeRepository:
                     scopes.read(row["qualifiers"]),
                     KnowledgeObject(
                         row["id"],
-                        row["kind"],
+                        row["type"],
                         row["status"],
                         row["summary"],
                         json.loads(row["properties"]),

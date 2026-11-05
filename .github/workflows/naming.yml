@@ -1,0 +1,13 @@
+name: Naming
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check-kind.sh

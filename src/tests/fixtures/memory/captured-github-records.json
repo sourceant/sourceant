@@ -1,0 +1,2518 @@
+[
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_c2695b21a891b7957d5e1576",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_line_mapper.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_535bb8658f69401504a0cb02",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/diff_parser.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_5d20de48a50c692ccd37e79a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/line_mapper.py"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_push_190ef72bff8bc18b1d325481",
+        "type": "github.push",
+        "occurred_at": "2026-09-10T05:16:50+01:00",
+        "place": "pl_gh_922971929",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_14317775",
+            "text": "fix(review): Drop suggestions that quote the diff back"
+          }
+        ],
+        "subjects": [
+          {
+            "subject": "sb_c2695b21a891b7957d5e1576",
+            "role": "about"
+          },
+          {
+            "subject": "sb_535bb8658f69401504a0cb02",
+            "role": "about"
+          },
+          {
+            "subject": "sb_5d20de48a50c692ccd37e79a",
+            "role": "about"
+          }
+        ],
+        "attributes": {
+          "github.files": [
+            "src/tests/unit/test_line_mapper.py",
+            "src/utils/diff_parser.py",
+            "src/utils/line_mapper.py"
+          ],
+          "github.ref": "refs/heads/fix/drop-suggestions-that-restate-the-diff"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "push:refs/heads/fix/drop-suggestions-that-restate-the-diff:8484d2183d74f6412ae4383d7f8344d559f109b6",
+          "url": "https://github.com/sourceant/sourceant/commit/8484d2183d74"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_321061736",
+        "class": "actor",
+        "type": "bot",
+        "name": "sourceant-local[bot]",
+        "image": "https://avatars.githubusercontent.com/in/4715543?v=4",
+        "url": "https://github.com/apps/sourceant-local"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_review_5162716156",
+        "type": "github.pull_request.review",
+        "occurred_at": "2026-09-10T04:31:05Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_321061736",
+            "role": "reviewer"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_321061736",
+            "text": "Review complete. See the overview comment for a summary."
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "attributes": {
+          "github.state": "changes_requested"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "review:5162716156",
+          "url": "https://github.com/sourceant/sourceant/pull/155#pullrequestreview-5162716156"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_321061736",
+        "class": "actor",
+        "type": "bot",
+        "name": "sourceant-local[bot]",
+        "image": "https://avatars.githubusercontent.com/in/4715543?v=4",
+        "url": "https://github.com/apps/sourceant-local"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_535bb8658f69401504a0cb02",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/diff_parser.py"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_comment_3975491982",
+        "type": "github.pull_request.review_comment",
+        "occurred_at": "2026-09-10T04:31:05Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_321061736",
+            "role": "reviewer"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_321061736",
+            "text": "By flattening all `line.is_added` lines in a single hunk via `[line.value.strip() for line in hunk if line.is_added]`, you lose the boundaries of contiguous added blocks. If a hunk has multiple disconnected additions separated by context/deleted lines, they will be combined into a single contiguous block. This could result in false positives where a suggestion that spans across unchanged context lines is incorrectly flagged as 'already applied/replayed'. Grouping contiguous additions within each hunk avoids this issue.\n\n```suggestion\n    def contains_suggested_lines(self, suggested_code: str) -> bool:\n        \"\"\"Whether this diff already adds exactly what is being suggested.\n\n        A suggestion is a replacement, so one whose every line is already among\n        the lines the diff adds proposes the code that is there. That holds\n        whatever it claims the existing code is, which is why this asks the\n        diff rather than comparing the two halves of the suggestion against\n        each other.\n        \"\"\"\n        suggested_lines = self._normalize_snippet(suggested_code)\n        if not suggested_lines:\n            return False\n\n        for hunk in self._patched_file:\n            current_block = []\n            for line in hunk:\n                if line.is_added:\n                    current_block.append(line.value.strip())\n                else:\n                    if current_block:\n                        if self._contains_lines(current_block, suggested_lines):\n                            return True\n                        current_block = []\n            if current_block and self._contains_lines(current_block, suggested_lines):\n                return True\n\n        return False\n```"
+          }
+        ],
+        "subjects": [
+          {
+            "subject": "sb_535bb8658f69401504a0cb02",
+            "role": "about"
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "attributes": {
+          "github.path": "src/utils/diff_parser.py"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "comment:3975491982",
+          "url": "https://github.com/sourceant/sourceant/pull/155#discussion_r3975491982"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_321061736",
+        "class": "actor",
+        "type": "bot",
+        "name": "sourceant-local[bot]",
+        "image": "https://avatars.githubusercontent.com/in/4715543?v=4",
+        "url": "https://github.com/apps/sourceant-local"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_535bb8658f69401504a0cb02",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/diff_parser.py"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_comment_3975491988",
+        "type": "github.pull_request.review_comment",
+        "occurred_at": "2026-09-10T04:31:05Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_321061736",
+            "role": "reviewer"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_321061736",
+            "text": "To ensure contract consistency, the added lines from the hunk should be normalized using the exact same normalization function (`_normalize_snippet`) as the suggested code. Doing `.strip()` manually on individual lines bypasses any special normalization logic (such as ignoring empty lines, handling specific whitespace characters, or comments) implemented in `_normalize_snippet`, which can lead to false negatives/positives during comparison.\n\n```suggestion\n        return any(\n            self._contains_lines(\n                self._normalize_snippet(\"\\n\".join(line.value for line in hunk if line.is_added)),\n                suggested_lines,\n            )\n            for hunk in self._patched_file\n        )\n```"
+          }
+        ],
+        "subjects": [
+          {
+            "subject": "sb_535bb8658f69401504a0cb02",
+            "role": "about"
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "attributes": {
+          "github.path": "src/utils/diff_parser.py"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "comment:3975491988",
+          "url": "https://github.com/sourceant/sourceant/pull/155#discussion_r3975491988"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_c2695b21a891b7957d5e1576",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_line_mapper.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_535bb8658f69401504a0cb02",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/diff_parser.py"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_push_81458573ea2107c35dba4dac",
+        "type": "github.push",
+        "occurred_at": "2026-09-10T05:39:46+01:00",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_14317775",
+            "text": "fix(review): Keep each block of changed lines apart"
+          }
+        ],
+        "subjects": [
+          {
+            "subject": "sb_c2695b21a891b7957d5e1576",
+            "role": "about"
+          },
+          {
+            "subject": "sb_535bb8658f69401504a0cb02",
+            "role": "about"
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "attributes": {
+          "github.files": [
+            "src/tests/unit/test_line_mapper.py",
+            "src/utils/diff_parser.py"
+          ],
+          "github.ref": "refs/heads/fix/drop-suggestions-that-restate-the-diff"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "push:refs/heads/fix/drop-suggestions-that-restate-the-diff:5bbfde849190f7af65b1dc012c7115f54fb80a6b",
+          "url": "https://github.com/sourceant/sourceant/compare/8484d2183d74...5bbfde849190"
+        }
+      }
+    ]
+  },
+  null,
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_321061736",
+        "class": "actor",
+        "type": "bot",
+        "name": "sourceant-local[bot]",
+        "image": "https://avatars.githubusercontent.com/in/4715543?v=4",
+        "url": "https://github.com/apps/sourceant-local"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_review_5162791856",
+        "type": "github.pull_request.review",
+        "occurred_at": "2026-09-10T04:41:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_321061736",
+            "role": "reviewer"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_321061736",
+            "text": "Review complete. See the overview comment for a summary."
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "attributes": {
+          "github.state": "changes_requested"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "review:5162791856",
+          "url": "https://github.com/sourceant/sourceant/pull/155#pullrequestreview-5162791856"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_321061736",
+        "class": "actor",
+        "type": "bot",
+        "name": "sourceant-local[bot]",
+        "image": "https://avatars.githubusercontent.com/in/4715543?v=4",
+        "url": "https://github.com/apps/sourceant-local"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_535bb8658f69401504a0cb02",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/diff_parser.py"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_comment_3975584816",
+        "type": "github.pull_request.review_comment",
+        "occurred_at": "2026-09-10T04:41:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_321061736",
+            "role": "reviewer"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_321061736",
+            "text": "If `line.value` retains its trailing newline character (e.g. `\\n` or `\\r\\n`), joining the raw values with `\\n` will introduce extra empty lines when split and normalized in `_normalize_snippet`. Stripping trailing line breaks beforehand ensures that the run is normalized correctly without empty-line artifacts.\n\n```suggestion\n        runs: List[List[str]] = []\n        current: List[str] = []\n        for line in hunk:\n            if line.is_added if added else line.is_removed:\n                current.append(line.value.rstrip(\"\\r\\n\"))\n            elif current:\n                runs.append(current)\n                current = []\n        if current:\n            runs.append(current)\n        return [cls._normalize_snippet(\"\\n\".join(run)) for run in runs]\n```"
+          }
+        ],
+        "subjects": [
+          {
+            "subject": "sb_535bb8658f69401504a0cb02",
+            "role": "about"
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "attributes": {
+          "github.path": "src/utils/diff_parser.py"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "comment:3975584816",
+          "url": "https://github.com/sourceant/sourceant/pull/155#discussion_r3975584816"
+        }
+      }
+    ]
+  },
+  null,
+  null,
+  null,
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_321061736",
+        "class": "actor",
+        "type": "bot",
+        "name": "sourceant-local[bot]",
+        "image": "https://avatars.githubusercontent.com/in/4715543?v=4",
+        "url": "https://github.com/apps/sourceant-local"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_review_5162869429",
+        "type": "github.pull_request.review",
+        "occurred_at": "2026-09-10T04:52:31Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_321061736",
+            "role": "reviewer"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_321061736",
+            "text": "Review complete. No specific code suggestions were generated. See the overview comment for a summary."
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "attributes": {
+          "github.state": "approved"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "review:5162869429",
+          "url": "https://github.com/sourceant/sourceant/pull/155#pullrequestreview-5162869429"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929_pr_155",
+        "class": "place",
+        "type": "github.pull_request",
+        "name": "#155",
+        "url": "https://github.com/sourceant/sourceant/pull/155",
+        "parent": "pl_gh_922971929",
+        "attributes": {
+          "github.title": "fix(review): Drop suggestions that quote the diff back"
+        }
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155",
+        "type": "github.pull_request",
+        "occurred_at": "2026-09-10T04:29:34Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      },
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_pr_155_merged",
+        "type": "github.pull_request.merged",
+        "occurred_at": "2026-09-10T04:55:24Z",
+        "place": "pl_gh_922971929_pr_155",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "decider"
+          }
+        ],
+        "part_of": "ev_gh_922971929_pr_155",
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "pull:4491938915:merged",
+          "url": "https://github.com/sourceant/sourceant/pull/155"
+        }
+      }
+    ]
+  },
+  {
+    "entities": [
+      {
+        "bucket": "captured",
+        "id": "ac_gh_922971929_14317775",
+        "class": "actor",
+        "type": "person",
+        "name": "nfebe",
+        "image": "https://avatars.githubusercontent.com/u/14317775?v=4",
+        "url": "https://github.com/nfebe"
+      },
+      {
+        "bucket": "captured",
+        "id": "pl_gh_922971929",
+        "class": "place",
+        "type": "github.repository",
+        "name": "sourceant/sourceant",
+        "url": "https://github.com/sourceant/sourceant"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_79089773f70ddc4c0ab93efa",
+        "class": "subject",
+        "type": "code.path",
+        "name": "docs/reviews.md"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_2b8badc875c1791350f05980",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/api/routes/review_snapshots.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_bd91f1bf0bddc7781363ccea",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/change_context/git.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_8a904e430644d5c193b62d59",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/change_context/models.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_7b7728c954abeb99af299ba3",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/code_index/scip.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_0b7b1c27affd53bb37a70dc9",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/model/__init__.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_361b94ac6ba445d5b233662f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/parallel.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_1985d521a9aa3fdaaa38d7f2",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/__init__.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_b5b383dade770f15008c8ef7",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/call_context.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_f14209d5fba60c7144494a31",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/calls.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_cdc4d12008ad48f2c2f6fb47",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/checkout.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_e0169e8da86b2319e0c37f22",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/contracts.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_7a28a3a8e88f6929614e98ea",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/evaluation.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_c4305a5d315dadcc2ae20993",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/execution.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_9e54d66c24c6d48d0f59d56e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/interfaces.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_9c6d1947d17b15af366d2e17",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/investigations.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a3afb8054331f0bcd84aec6e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/models.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a79ca5d03b6940933a6f5cc6",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/orchestration.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_88660183190aeb030e66925c",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/planning.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a2b42da488a5c13c7a99eb32",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/snapshot.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_2c458e58befe7be8a1ab4277",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review/source_search.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_9a5cc455f84698b90caadf2e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review_context.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a85a4a84060641e4585363a9",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review_performance.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_1ea3a193d0f700b2ff4ffaba",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/review_trace.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_dda522564720d9e1b90a5d0e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/search/source_text.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_df55fb337a6f6815f2b930eb",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/core/settings/definitions.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_d17d3d4b367343f05d112d6c",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/integrations/github/github.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_b17c64a7a9557fecd054bf46",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/llms/litellm_provider.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_22cb53f56d92715e123d5538",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/models/code_review.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_d182a94a55c72e00c9c95837",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/plugins/builtin/code_reviewer/overview.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_f313f688c5165018d51688c7",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/plugins/builtin/code_reviewer/plugin.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_e103237837ad549c6053d420",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/plugins/builtin/code_reviewer/reviewing.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_2bf635b000002759540ffa9a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/plugins/builtin/code_reviewer/working_tree.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_8d5b8466cc673abbf18267ea",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/prompts/prompts.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_476d1ab494d3f622513f9e9a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/contradictory-evidence-metadata.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_bef83662f127dbb4cf2a9eea",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/indexed-calls.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_46e6bd9d09674081614165da",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/licenses/TechDebtMCP-LICENSE"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_5ca8f51ee65cf2968decc74a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/licenses/node-postgres-LICENSE"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_53c7443399638f1751e4c58f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-cited-evidence.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_f6aa2329054d8b3de1cc8f7f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-evaluator-context-priority.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_1ab54c08433948f20d769ae2",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-packaging-duplicates.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_9bb89a72b7095e354f9b8d4c",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled-full-response.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_cec7e89b9690b264e3324b57",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled-response.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_d4cb485f3c42aa5382cd8582",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_adc953e03ffd26e74477a19b",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/package.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_8ace1998d145420018cfb9fb",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-cursor/index.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_183a942bdf6d589ba1fc80a0",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/diagnostics.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_5a41c7d2b3b2f2b74f78147e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/index.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_e635f7f94a5295788339cbde",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/package.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_3c9b9b7b75c12214af3e9857",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/test/diagnostics.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_f5bd13a5517f55e4b61d3cee",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/client.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_d32c44a3c95925dfb20904ff",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection-parameters.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_55be00baa75cbac44fd09eea",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_ed5d4e49b56daa907aeb12be",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/cert-signatures.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_d4cbcea6dacd56cc87914c33",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/sasl.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_0a4f18c8be8700a7920cc2d4",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-legacy.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_708d738ff9e7e3540660b7ce",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-webcrypto.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_5507a3c9fbac86fcbe7fc706",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a39030ec5d0ee76cd0c725c2",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/defaults.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_b6a19e04e9de44d3fd7b7e74",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/diagnostics.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_bec2bb7415ae6e8c01f9dbf2",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/index.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_88206db73a8f46983a895663",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/client.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a1636d1b58060775d82267e9",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/index.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_71cdd088243bb2073282f08a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/query.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_82adc10cf9ed243fc569c09a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/query.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a68a78a5dffa8b7e66cbad44",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/result.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_e8672fecfe0a983564b95ca0",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/stream.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_61cfdbb6b9606eca2f9b9db1",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/type-overrides.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_affd23fa3d996c3068a61e18",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/utils.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_4d1fa08dab98492d2ed1cd75",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/package.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_70ae7c0c1596fcad7bbfae9f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/cli.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_7f4d3739802bc7b2bd1dc5ee",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/suite.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_371d6c9912b0a77d613276a1",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/test-helper.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_8c1e7cc7dbe6583a6f70645d",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/diagnostics-tests.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_7dc8376057d3f66443ecd79f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/test-helper.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_1199737230096f5a455aca37",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/test-helper.js"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_3a8fade0a54a68d21fcd4efa",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-postgres-tree.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_ec046489bb0ee5967cd56f9c",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/node-remedy-assumption-judgments.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_84da7e7272aaa9f0e1e2d385",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/provenance.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_6fb451533a36c26dfd6d81e3",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/specialist-policy-conflict.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_21b9be828f0d2c583d273cd7",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-discovery-dependencies.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_48e6bd5fc2c19bcf78b12c9f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-input.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_50aa52b7c4cbd0d4de2b7a8f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-response.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_6dea290c93ee7ddac6d2e18f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final-response.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_eb12ed076146703261f3bb54",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_f6cd8014ccf8e8f89ce36def",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/ARCHITECTURE.md"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_40b5dc6c1258eff901bb3075",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/CHANGELOG.md"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_a552fe3edfd01211e581f587",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/CLAUDE.md"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_6c24846bf3cb9e2f35ff5354",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/CONTRIBUTING.md"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_5ed2c146880ef777e5dea58f",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/package.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_900fc9af0a74cb78db55cd10",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/analyzers/index.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_0627019f6fbfcfb5c244175a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/core/__tests__/customRulesEngine.test.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_741d83280298f623d2ca2454",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/core/analysisEngine.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_eeffb47d31b5a2e27487b43a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/core/customRulesEngine.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_c15b8c59d157d70c1e546e1e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/server/__tests__/handlers.test.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_b12b82ce86e2751a28f76bc3",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/server/configValidator.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_2f031e290ebabbdbb47efe5e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/server/handlers.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_5cf5fb7d18f3f7f1558331a3",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/types/index.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_42be5039eb4404833936d7a7",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-final/src/utils/fileUtils.ts"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_49ca2b45d2cefc0b71a8f289",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-numeric-flags-candidate.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_2a8bf072b58e565fa802b8d0",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-relative-path-candidate.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_e478097a0e68e01ee4dfde9e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-contracts/techdebt-unresolved-duplicate-response.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_0c012e21246afeaac247f069",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-overview/README.md"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_eb56b9625aae02e36187625b",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/review-overview/large.diff"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_e697579aad32acc9610170d5",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/scip/calls-go.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_1138aa1ac52a7fce767242b3",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/scip/calls-python.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_c8d9adb6cc37eb700ee5fdfa",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/scip/calls-sources.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_c915adcda3e31cb28036d74b",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/fixtures/scip/calls-typescript.json"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_f0cabe8b3bbdd7342d81b06c",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/test_local_review_api.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_8242d3f546582d60c2af723e",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/test_review_overview_settings.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_ffddb66c82f4a8b2f16a0e21",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/test_review_performance_delivery.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_0796db0988fdfe2a937a1ad7",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_github_tree_listing.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_78428ad4bf568161c6d975e7",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_json_control_escaping.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_c2695b21a891b7957d5e1576",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_line_mapper.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_30a18c1b6585a0d91951de30",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_model_output_budget.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_f1c47eeb30548e2bf945c47a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_call_context.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_dba254b7beb4af2886cf3534",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_calls.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_bd08fb3050563e6eaba57842",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_change_context.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_8ebab694698829953891541b",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_contracts.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_d7b819096956db9d482cbc41",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_investigations.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_2b5ac01c0fdf17fccc3ab469",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_model_routing.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_addebb3abd63043c40d557af",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_orchestration.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_22eaece828465fc298d14fc9",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_performance.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_d770265377146d58700a4352",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_review_trace.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_0dcbb250ed62de8ca1788202",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_scip_calls.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_6dfe5a94646f744c196c97fe",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/tests/unit/test_snapshot_search.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_5d20de48a50c692ccd37e79a",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/line_mapper.py"
+      },
+      {
+        "bucket": "captured",
+        "id": "sb_b3ba812800e2f851c41208a2",
+        "class": "subject",
+        "type": "code.path",
+        "name": "src/utils/suggestion_filter.py"
+      }
+    ],
+    "events": [
+      {
+        "bucket": "captured",
+        "id": "ev_gh_922971929_push_ec1fbe10904602871f0fa45f",
+        "type": "github.push",
+        "occurred_at": "2026-10-19T18:42:09+01:00",
+        "place": "pl_gh_922971929",
+        "participants": [
+          {
+            "actor": "ac_gh_922971929_14317775",
+            "role": "author"
+          }
+        ],
+        "content": [
+          {
+            "speaker": "ac_gh_922971929_14317775",
+            "text": "feat(review): Speed up and trace premium reviews\nfeat(review): Add evaluation policies and doubt handling\nfeat(review): Add investigation discovery for large changes\nfeat(review): Add repository context, change digest and callers\nfeat(index): Derive calls from SCIP indexes\nfeat(review): Raise the default reading budget to 50,000 tokens\nrefactor(review): Name settings for what they do\nMerge pull request #209 from sourceant/feat/review-context-and-scale"
+          }
+        ],
+        "subjects": [
+          {
+            "subject": "sb_79089773f70ddc4c0ab93efa",
+            "role": "about"
+          },
+          {
+            "subject": "sb_2b8badc875c1791350f05980",
+            "role": "about"
+          },
+          {
+            "subject": "sb_bd91f1bf0bddc7781363ccea",
+            "role": "about"
+          },
+          {
+            "subject": "sb_8a904e430644d5c193b62d59",
+            "role": "about"
+          },
+          {
+            "subject": "sb_7b7728c954abeb99af299ba3",
+            "role": "about"
+          },
+          {
+            "subject": "sb_0b7b1c27affd53bb37a70dc9",
+            "role": "about"
+          },
+          {
+            "subject": "sb_361b94ac6ba445d5b233662f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_1985d521a9aa3fdaaa38d7f2",
+            "role": "about"
+          },
+          {
+            "subject": "sb_b5b383dade770f15008c8ef7",
+            "role": "about"
+          },
+          {
+            "subject": "sb_f14209d5fba60c7144494a31",
+            "role": "about"
+          },
+          {
+            "subject": "sb_cdc4d12008ad48f2c2f6fb47",
+            "role": "about"
+          },
+          {
+            "subject": "sb_e0169e8da86b2319e0c37f22",
+            "role": "about"
+          },
+          {
+            "subject": "sb_7a28a3a8e88f6929614e98ea",
+            "role": "about"
+          },
+          {
+            "subject": "sb_c4305a5d315dadcc2ae20993",
+            "role": "about"
+          },
+          {
+            "subject": "sb_9e54d66c24c6d48d0f59d56e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_9c6d1947d17b15af366d2e17",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a3afb8054331f0bcd84aec6e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a79ca5d03b6940933a6f5cc6",
+            "role": "about"
+          },
+          {
+            "subject": "sb_88660183190aeb030e66925c",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a2b42da488a5c13c7a99eb32",
+            "role": "about"
+          },
+          {
+            "subject": "sb_2c458e58befe7be8a1ab4277",
+            "role": "about"
+          },
+          {
+            "subject": "sb_9a5cc455f84698b90caadf2e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a85a4a84060641e4585363a9",
+            "role": "about"
+          },
+          {
+            "subject": "sb_1ea3a193d0f700b2ff4ffaba",
+            "role": "about"
+          },
+          {
+            "subject": "sb_dda522564720d9e1b90a5d0e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_df55fb337a6f6815f2b930eb",
+            "role": "about"
+          },
+          {
+            "subject": "sb_d17d3d4b367343f05d112d6c",
+            "role": "about"
+          },
+          {
+            "subject": "sb_b17c64a7a9557fecd054bf46",
+            "role": "about"
+          },
+          {
+            "subject": "sb_22cb53f56d92715e123d5538",
+            "role": "about"
+          },
+          {
+            "subject": "sb_d182a94a55c72e00c9c95837",
+            "role": "about"
+          },
+          {
+            "subject": "sb_f313f688c5165018d51688c7",
+            "role": "about"
+          },
+          {
+            "subject": "sb_e103237837ad549c6053d420",
+            "role": "about"
+          },
+          {
+            "subject": "sb_2bf635b000002759540ffa9a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_8d5b8466cc673abbf18267ea",
+            "role": "about"
+          },
+          {
+            "subject": "sb_476d1ab494d3f622513f9e9a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_bef83662f127dbb4cf2a9eea",
+            "role": "about"
+          },
+          {
+            "subject": "sb_46e6bd9d09674081614165da",
+            "role": "about"
+          },
+          {
+            "subject": "sb_5ca8f51ee65cf2968decc74a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_53c7443399638f1751e4c58f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_f6aa2329054d8b3de1cc8f7f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_1ab54c08433948f20d769ae2",
+            "role": "about"
+          },
+          {
+            "subject": "sb_9bb89a72b7095e354f9b8d4c",
+            "role": "about"
+          },
+          {
+            "subject": "sb_cec7e89b9690b264e3324b57",
+            "role": "about"
+          },
+          {
+            "subject": "sb_d4cb485f3c42aa5382cd8582",
+            "role": "about"
+          },
+          {
+            "subject": "sb_adc953e03ffd26e74477a19b",
+            "role": "about"
+          },
+          {
+            "subject": "sb_8ace1998d145420018cfb9fb",
+            "role": "about"
+          },
+          {
+            "subject": "sb_183a942bdf6d589ba1fc80a0",
+            "role": "about"
+          },
+          {
+            "subject": "sb_5a41c7d2b3b2f2b74f78147e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_e635f7f94a5295788339cbde",
+            "role": "about"
+          },
+          {
+            "subject": "sb_3c9b9b7b75c12214af3e9857",
+            "role": "about"
+          },
+          {
+            "subject": "sb_f5bd13a5517f55e4b61d3cee",
+            "role": "about"
+          },
+          {
+            "subject": "sb_d32c44a3c95925dfb20904ff",
+            "role": "about"
+          },
+          {
+            "subject": "sb_55be00baa75cbac44fd09eea",
+            "role": "about"
+          },
+          {
+            "subject": "sb_ed5d4e49b56daa907aeb12be",
+            "role": "about"
+          },
+          {
+            "subject": "sb_d4cbcea6dacd56cc87914c33",
+            "role": "about"
+          },
+          {
+            "subject": "sb_0a4f18c8be8700a7920cc2d4",
+            "role": "about"
+          },
+          {
+            "subject": "sb_708d738ff9e7e3540660b7ce",
+            "role": "about"
+          },
+          {
+            "subject": "sb_5507a3c9fbac86fcbe7fc706",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a39030ec5d0ee76cd0c725c2",
+            "role": "about"
+          },
+          {
+            "subject": "sb_b6a19e04e9de44d3fd7b7e74",
+            "role": "about"
+          },
+          {
+            "subject": "sb_bec2bb7415ae6e8c01f9dbf2",
+            "role": "about"
+          },
+          {
+            "subject": "sb_88206db73a8f46983a895663",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a1636d1b58060775d82267e9",
+            "role": "about"
+          },
+          {
+            "subject": "sb_71cdd088243bb2073282f08a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_82adc10cf9ed243fc569c09a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a68a78a5dffa8b7e66cbad44",
+            "role": "about"
+          },
+          {
+            "subject": "sb_e8672fecfe0a983564b95ca0",
+            "role": "about"
+          },
+          {
+            "subject": "sb_61cfdbb6b9606eca2f9b9db1",
+            "role": "about"
+          },
+          {
+            "subject": "sb_affd23fa3d996c3068a61e18",
+            "role": "about"
+          },
+          {
+            "subject": "sb_4d1fa08dab98492d2ed1cd75",
+            "role": "about"
+          },
+          {
+            "subject": "sb_70ae7c0c1596fcad7bbfae9f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_7f4d3739802bc7b2bd1dc5ee",
+            "role": "about"
+          },
+          {
+            "subject": "sb_371d6c9912b0a77d613276a1",
+            "role": "about"
+          },
+          {
+            "subject": "sb_8c1e7cc7dbe6583a6f70645d",
+            "role": "about"
+          },
+          {
+            "subject": "sb_7dc8376057d3f66443ecd79f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_1199737230096f5a455aca37",
+            "role": "about"
+          },
+          {
+            "subject": "sb_3a8fade0a54a68d21fcd4efa",
+            "role": "about"
+          },
+          {
+            "subject": "sb_ec046489bb0ee5967cd56f9c",
+            "role": "about"
+          },
+          {
+            "subject": "sb_84da7e7272aaa9f0e1e2d385",
+            "role": "about"
+          },
+          {
+            "subject": "sb_6fb451533a36c26dfd6d81e3",
+            "role": "about"
+          },
+          {
+            "subject": "sb_21b9be828f0d2c583d273cd7",
+            "role": "about"
+          },
+          {
+            "subject": "sb_48e6bd5fc2c19bcf78b12c9f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_50aa52b7c4cbd0d4de2b7a8f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_6dea290c93ee7ddac6d2e18f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_eb12ed076146703261f3bb54",
+            "role": "about"
+          },
+          {
+            "subject": "sb_f6cd8014ccf8e8f89ce36def",
+            "role": "about"
+          },
+          {
+            "subject": "sb_40b5dc6c1258eff901bb3075",
+            "role": "about"
+          },
+          {
+            "subject": "sb_a552fe3edfd01211e581f587",
+            "role": "about"
+          },
+          {
+            "subject": "sb_6c24846bf3cb9e2f35ff5354",
+            "role": "about"
+          },
+          {
+            "subject": "sb_5ed2c146880ef777e5dea58f",
+            "role": "about"
+          },
+          {
+            "subject": "sb_900fc9af0a74cb78db55cd10",
+            "role": "about"
+          },
+          {
+            "subject": "sb_0627019f6fbfcfb5c244175a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_741d83280298f623d2ca2454",
+            "role": "about"
+          },
+          {
+            "subject": "sb_eeffb47d31b5a2e27487b43a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_c15b8c59d157d70c1e546e1e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_b12b82ce86e2751a28f76bc3",
+            "role": "about"
+          },
+          {
+            "subject": "sb_2f031e290ebabbdbb47efe5e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_5cf5fb7d18f3f7f1558331a3",
+            "role": "about"
+          },
+          {
+            "subject": "sb_42be5039eb4404833936d7a7",
+            "role": "about"
+          },
+          {
+            "subject": "sb_49ca2b45d2cefc0b71a8f289",
+            "role": "about"
+          },
+          {
+            "subject": "sb_2a8bf072b58e565fa802b8d0",
+            "role": "about"
+          },
+          {
+            "subject": "sb_e478097a0e68e01ee4dfde9e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_0c012e21246afeaac247f069",
+            "role": "about"
+          },
+          {
+            "subject": "sb_eb56b9625aae02e36187625b",
+            "role": "about"
+          },
+          {
+            "subject": "sb_e697579aad32acc9610170d5",
+            "role": "about"
+          },
+          {
+            "subject": "sb_1138aa1ac52a7fce767242b3",
+            "role": "about"
+          },
+          {
+            "subject": "sb_c8d9adb6cc37eb700ee5fdfa",
+            "role": "about"
+          },
+          {
+            "subject": "sb_c915adcda3e31cb28036d74b",
+            "role": "about"
+          },
+          {
+            "subject": "sb_f0cabe8b3bbdd7342d81b06c",
+            "role": "about"
+          },
+          {
+            "subject": "sb_8242d3f546582d60c2af723e",
+            "role": "about"
+          },
+          {
+            "subject": "sb_ffddb66c82f4a8b2f16a0e21",
+            "role": "about"
+          },
+          {
+            "subject": "sb_0796db0988fdfe2a937a1ad7",
+            "role": "about"
+          },
+          {
+            "subject": "sb_78428ad4bf568161c6d975e7",
+            "role": "about"
+          },
+          {
+            "subject": "sb_c2695b21a891b7957d5e1576",
+            "role": "about"
+          },
+          {
+            "subject": "sb_30a18c1b6585a0d91951de30",
+            "role": "about"
+          },
+          {
+            "subject": "sb_f1c47eeb30548e2bf945c47a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_dba254b7beb4af2886cf3534",
+            "role": "about"
+          },
+          {
+            "subject": "sb_bd08fb3050563e6eaba57842",
+            "role": "about"
+          },
+          {
+            "subject": "sb_8ebab694698829953891541b",
+            "role": "about"
+          },
+          {
+            "subject": "sb_d7b819096956db9d482cbc41",
+            "role": "about"
+          },
+          {
+            "subject": "sb_2b5ac01c0fdf17fccc3ab469",
+            "role": "about"
+          },
+          {
+            "subject": "sb_addebb3abd63043c40d557af",
+            "role": "about"
+          },
+          {
+            "subject": "sb_22eaece828465fc298d14fc9",
+            "role": "about"
+          },
+          {
+            "subject": "sb_d770265377146d58700a4352",
+            "role": "about"
+          },
+          {
+            "subject": "sb_0dcbb250ed62de8ca1788202",
+            "role": "about"
+          },
+          {
+            "subject": "sb_6dfe5a94646f744c196c97fe",
+            "role": "about"
+          },
+          {
+            "subject": "sb_5d20de48a50c692ccd37e79a",
+            "role": "about"
+          },
+          {
+            "subject": "sb_b3ba812800e2f851c41208a2",
+            "role": "about"
+          }
+        ],
+        "attributes": {
+          "github.files": [
+            "docs/reviews.md",
+            "src/api/routes/review_snapshots.py",
+            "src/core/change_context/git.py",
+            "src/core/change_context/models.py",
+            "src/core/code_index/scip.py",
+            "src/core/model/__init__.py",
+            "src/core/parallel.py",
+            "src/core/review/__init__.py",
+            "src/core/review/call_context.py",
+            "src/core/review/calls.py",
+            "src/core/review/checkout.py",
+            "src/core/review/contracts.py",
+            "src/core/review/evaluation.py",
+            "src/core/review/execution.py",
+            "src/core/review/interfaces.py",
+            "src/core/review/investigations.py",
+            "src/core/review/models.py",
+            "src/core/review/orchestration.py",
+            "src/core/review/planning.py",
+            "src/core/review/snapshot.py",
+            "src/core/review/source_search.py",
+            "src/core/review_context.py",
+            "src/core/review_performance.py",
+            "src/core/review_trace.py",
+            "src/core/search/source_text.py",
+            "src/core/settings/definitions.py",
+            "src/integrations/github/github.py",
+            "src/llms/litellm_provider.py",
+            "src/models/code_review.py",
+            "src/plugins/builtin/code_reviewer/overview.py",
+            "src/plugins/builtin/code_reviewer/plugin.py",
+            "src/plugins/builtin/code_reviewer/reviewing.py",
+            "src/plugins/builtin/code_reviewer/working_tree.py",
+            "src/prompts/prompts.py",
+            "src/tests/fixtures/review-contracts/contradictory-evidence-metadata.json",
+            "src/tests/fixtures/review-contracts/indexed-calls.json",
+            "src/tests/fixtures/review-contracts/licenses/TechDebtMCP-LICENSE",
+            "src/tests/fixtures/review-contracts/licenses/node-postgres-LICENSE",
+            "src/tests/fixtures/review-contracts/node-cited-evidence.json",
+            "src/tests/fixtures/review-contracts/node-evaluator-context-priority.json",
+            "src/tests/fixtures/review-contracts/node-packaging-duplicates.json",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled-full-response.json",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled-response.json",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled.json",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/package.json",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-cursor/index.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/diagnostics.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/index.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/package.json",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/test/diagnostics.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/client.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection-parameters.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/cert-signatures.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/sasl.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-legacy.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-webcrypto.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/defaults.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/diagnostics.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/index.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/client.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/index.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/query.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/query.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/result.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/stream.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/type-overrides.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/utils.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/package.json",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/cli.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/suite.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/test-helper.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/diagnostics-tests.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/test-helper.js",
+            "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/test-helper.js",
+            "src/tests/fixtures/review-contracts/node-postgres-tree.json",
+            "src/tests/fixtures/review-contracts/node-remedy-assumption-judgments.json",
+            "src/tests/fixtures/review-contracts/provenance.json",
+            "src/tests/fixtures/review-contracts/specialist-policy-conflict.json",
+            "src/tests/fixtures/review-contracts/techdebt-discovery-dependencies.json",
+            "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-input.json",
+            "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-response.json",
+            "src/tests/fixtures/review-contracts/techdebt-final-response.json",
+            "src/tests/fixtures/review-contracts/techdebt-final.json",
+            "src/tests/fixtures/review-contracts/techdebt-final/ARCHITECTURE.md",
+            "src/tests/fixtures/review-contracts/techdebt-final/CHANGELOG.md",
+            "src/tests/fixtures/review-contracts/techdebt-final/CLAUDE.md",
+            "src/tests/fixtures/review-contracts/techdebt-final/CONTRIBUTING.md",
+            "src/tests/fixtures/review-contracts/techdebt-final/package.json",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/analyzers/index.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/core/__tests__/customRulesEngine.test.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/core/analysisEngine.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/core/customRulesEngine.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/server/__tests__/handlers.test.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/server/configValidator.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/server/handlers.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/types/index.ts",
+            "src/tests/fixtures/review-contracts/techdebt-final/src/utils/fileUtils.ts",
+            "src/tests/fixtures/review-contracts/techdebt-numeric-flags-candidate.json",
+            "src/tests/fixtures/review-contracts/techdebt-relative-path-candidate.json",
+            "src/tests/fixtures/review-contracts/techdebt-unresolved-duplicate-response.json",
+            "src/tests/fixtures/review-overview/README.md",
+            "src/tests/fixtures/review-overview/large.diff",
+            "src/tests/fixtures/scip/calls-go.json",
+            "src/tests/fixtures/scip/calls-python.json",
+            "src/tests/fixtures/scip/calls-sources.json",
+            "src/tests/fixtures/scip/calls-typescript.json",
+            "src/tests/test_local_review_api.py",
+            "src/tests/test_review_overview_settings.py",
+            "src/tests/test_review_performance_delivery.py",
+            "src/tests/unit/test_github_tree_listing.py",
+            "src/tests/unit/test_json_control_escaping.py",
+            "src/tests/unit/test_line_mapper.py",
+            "src/tests/unit/test_model_output_budget.py",
+            "src/tests/unit/test_review_call_context.py",
+            "src/tests/unit/test_review_calls.py",
+            "src/tests/unit/test_review_change_context.py",
+            "src/tests/unit/test_review_contracts.py",
+            "src/tests/unit/test_review_investigations.py",
+            "src/tests/unit/test_review_model_routing.py",
+            "src/tests/unit/test_review_orchestration.py",
+            "src/tests/unit/test_review_performance.py",
+            "src/tests/unit/test_review_trace.py",
+            "src/tests/unit/test_scip_calls.py",
+            "src/tests/unit/test_snapshot_search.py",
+            "src/utils/line_mapper.py",
+            "src/utils/suggestion_filter.py"
+          ],
+          "github.ref": "refs/heads/main"
+        },
+        "source": {
+          "system": "github",
+          "installation": "installation",
+          "native_id": "push:refs/heads/main:39177189cad5fc154c493ebab86542fae1c796c2",
+          "url": "https://github.com/sourceant/sourceant/compare/85f67473d67a...39177189cad5"
+        }
+      }
+    ]
+  }
+]
