@@ -151,6 +151,10 @@ Run database migrations before starting the updated application.
 Integrations register source resolvers for deliveries recorded before binding
 persistence existed. GitHub contributes its stored repository sources this way;
 the engine adapter does not import integrations or read webhook payloads.
+Discovery reads deliveries of every type, so repositories with only push history
+remain visible after upgrades. It selects distinct source identifiers and
+workspace values from stored JSON without loading complete webhook payloads.
+Pull request head lookup continues to read only pull request deliveries.
 
 Sources may supply an `id_namespace` to retain existing identifiers. Place
 subjects identify container roots with `container_root` and optional local place

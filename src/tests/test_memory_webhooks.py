@@ -127,6 +127,42 @@ class TestMemoryWebhooks(BaseTestCase):
         assert all(self.deliver(row).status_code == 201 for row in rows)
         assert self.memory.events == before
 
+    def test_push_only_repository_remains_visible_without_persisted_bindings(
+        self, monkeypatch
+    ):
+        from sqlalchemy import delete, func, select
+        from src.config.db import get_engine
+        from src.core.memory.bindings import SourceBindings, source_bindings
+        from src.core.scope import Scope
+        from src.models.repository_event import RepositoryEvent
+
+        engine = get_engine()
+        source_bindings.create(engine)
+        monkeypatch.setattr(self.memory, "_source_bindings", SourceBindings())
+        row = next(
+            row for row in json.loads(FIXTURE.read_text()) if row["type"] == "push"
+        )
+        repository = row["payload"]["repository"]["full_name"]
+        scope = Scope.from_mapping({"repository": repository})
+        assert self.deliver(row, "push-only-first").status_code == 201
+        assert self.deliver(row, "push-only-repeat").status_code == 201
+        recorded = set(self.memory.events)
+        assert recorded
+        with engine.begin() as connection:
+            assert (
+                connection.scalar(select(func.count()).select_from(source_bindings))
+                == 1
+            )
+            connection.execute(delete(source_bindings))
+            assert set(connection.scalars(select(RepositoryEvent.type))) == {"push"}
+        page = self.memory.history(scope)
+        assert {event.id for event in page.events} == recorded
+        assert all(event.type == "github.push" for event in page.events)
+        assert len(history.resolve_sources(scope)) == 1
+        assert not history._stored(repository, type="pull_request")
+        assert self.memory.recall(scope, page.events[0].what).results[0].id in recorded
+        assert not self.memory.history(scope.extend({"workspace": "other"})).events
+
     def test_history_resolves_timeline_and_missing_parents(self):
         from src.core.scope import Scope
 

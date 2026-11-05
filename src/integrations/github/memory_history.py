@@ -54,7 +54,7 @@ def ingestion(memory):
         return entry[1]
 
 
-def _stored(full_name: str) -> list:
+def _stored(full_name: str, type: str | None = None, *, columns=None) -> list:
     from sqlmodel import Session, select
     from src.config.db import get_engine
     from src.models.repository_event import RepositoryEvent
@@ -62,18 +62,17 @@ def _stored(full_name: str) -> list:
     engine = get_engine()
     if engine is None:
         return []
+    query = select(RepositoryEvent) if columns is None else select(*columns).distinct()
+    query = query.where(
+        RepositoryEvent.repository_full_name == full_name,
+        RepositoryEvent.provider.in_(["github", "GitHub"]),
+    )
+    if type is not None:
+        query = query.where(RepositoryEvent.type == type)
+    if columns is None:
+        query = query.order_by(RepositoryEvent.id)
     with Session(engine) as session:
-        return list(
-            session.exec(
-                select(RepositoryEvent)
-                .where(
-                    RepositoryEvent.repository_full_name == full_name,
-                    RepositoryEvent.type == "pull_request",
-                    RepositoryEvent.provider.in_(["github", "GitHub"]),
-                )
-                .order_by(RepositoryEvent.id)
-            ).all()
-        )
+        return list(session.exec(query).all())
 
 
 def record_webhook(
@@ -115,7 +114,7 @@ def record_webhook(
                 return
             if event_type == "push" and stored:
                 branch = str(payload.get("ref") or "").removeprefix("refs/heads/")
-                for row in _stored(repository["full_name"]):
+                for row in _stored(repository["full_name"], type="pull_request"):
                     head(row.payload or {}, wanted=branch)
             head(payload)
             occurrences = translate(
@@ -170,33 +169,37 @@ def replay(full_names: list[str] | None = None) -> int:
 
 def resolve_sources(scope):
     from src.core.memory.models import Source
+    from src.models.repository_event import RepositoryEvent
+    from sqlalchemy import String
 
     repository = scope.get("repository")
     if not repository:
         return []
-    sources = []
+    payload = RepositoryEvent.payload
+    columns = (
+        payload["installation"]["id"].cast(String).label("installation"),
+        payload["repository"]["owner"]["id"].cast(String).label("owner"),
+        payload["repository"]["id"].cast(String).label("container"),
+        payload["repository"]["full_name"].cast(String).label("full_name"),
+        payload["sourceant_workspace_id"].cast(String).label("workspace"),
+    )
     try:
-        rows = _stored(repository)
+        rows = _stored(repository, columns=columns)
     except Exception:
         return []
+    sources = {}
     for row in rows:
-        payload = row.payload or {}
-        if scope.get("workspace") and str(
-            payload.get("sourceant_workspace_id")
-        ) != scope.get("workspace"):
-            continue
-        container = payload.get("repository")
-        if not isinstance(container, dict):
-            continue
-        sources.append(
-            Source(
-                system="github",
-                installation=str(
-                    (payload.get("installation") or {}).get("id")
-                    or (container.get("owner") or {}).get("id")
-                    or "local"
-                ),
-                container=str(container.get("id") or container.get("full_name")),
-            )
+        installation, owner, container, full_name, workspace = (
+            json.loads(value) if value is not None else None for value in row
         )
-    return sources
+        if scope.get("workspace") and str(workspace) != scope.get("workspace"):
+            continue
+        if container is None and not full_name:
+            continue
+        source = Source(
+            system="github",
+            installation=str(installation or owner or "local"),
+            container=str(container or full_name),
+        )
+        sources[(source.installation, source.container)] = source
+    return list(sources.values())

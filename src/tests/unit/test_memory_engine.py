@@ -679,8 +679,12 @@ def test_source_bindings_survive_a_fresh_http_adapter(tmp_path, monkeypatch):
         engine.dispose()
 
 
-def test_registered_resolver_preserves_history_for_old_deliveries(monkeypatch):
-    from src.integrations.github import memory_history
+def test_registered_resolver_preserves_history_for_old_deliveries(
+    monkeypatch, tmp_path
+):
+    from sqlalchemy import create_engine
+    from sqlmodel import Session
+    from src.core.memory.bindings import source_bindings
     from src.models.repository_event import RepositoryEvent
     from src.core.services import memory_services, ServiceRegistry
 
@@ -690,9 +694,21 @@ def test_registered_resolver_preserves_history_for_old_deliveries(monkeypatch):
     )
     row = next(row for row in rows if row["action"] == "opened")
     payload = row["payload"]
-    monkeypatch.setattr(
-        memory_history, "_stored", lambda repository: [RepositoryEvent(payload=payload)]
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    RepositoryEvent.__table__.create(engine)
+    source_bindings.create(engine)
+    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
+    with Session(engine) as session:
+        session.add(
+            RepositoryEvent(
+                provider="GitHub",
+                type=row["type"],
+                action=row["action"],
+                repository_full_name=payload["repository"]["full_name"],
+                payload=payload,
+            )
+        )
+        session.commit()
     calls = []
 
     def handle(request):
@@ -720,6 +736,7 @@ def test_registered_resolver_preserves_history_for_old_deliveries(monkeypatch):
         )
     finally:
         memory.close()
+        engine.dispose()
     assert any(
         source["system"] == "github"
         and source["container"] == str(payload["repository"]["id"])
