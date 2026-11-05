@@ -53,7 +53,7 @@ class TestKnowledgeMemory(BaseTestCase):
             ).status_code
             == 200
         )
-        events = list(memory.events.values())
+        events = list(memory._events.values())
         assert [event["type"] for event in events] == [
             "knowledge.captured",
             "knowledge.updated",
@@ -64,6 +64,50 @@ class TestKnowledgeMemory(BaseTestCase):
         assert events[-1]["attributes"]["knowledge.summary_before"] == "Retry twice"
         assert events[-1]["attributes"]["knowledge.status_after"] is None
         assert memory.entities[events[0]["participants"][0]["actor"]]["name"] == "local"
+
+    def test_repeated_http_write_records_after_engine_failure(
+        self, monkeypatch, tmp_path
+    ):
+        from src.core.knowledge import KnowledgeRepository, InMemoryKnowledgeRepository
+        from src.cli.local_index import add_repository
+
+        monkeypatch.setattr(service_registry, "_registrations", {})
+        memory = InMemoryMemory()
+        service_registry.register(Memory, memory, "test")
+        service_registry.register(
+            KnowledgeRepository, InMemoryKnowledgeRepository(), "test"
+        )
+        monkeypatch.setattr("src.api.routes.code.LOCAL_MODE", True)
+        monkeypatch.setenv("SOURCEANT_HOME", str(tmp_path))
+        repository = tmp_path / "checkout"
+        repository.mkdir()
+        add_repository(str(repository), name="acme/shop")
+        write = memory._write_records
+        attempts = []
+
+        def fail_once(events, entities):
+            attempts.append(events)
+            if len(attempts) == 1:
+                raise ConnectionError("Engine unavailable")
+            write(events, entities)
+
+        monkeypatch.setattr(memory, "_write_records", fail_once)
+        body = {
+            "repository": "acme/shop",
+            "id": "retry",
+            "type": "decision",
+            "status": "accepted",
+            "summary": "Retry three times",
+        }
+        response = self.client.put("/api/knowledge", json=body)
+        assert response.status_code == 200, response.text
+        assert memory._events == {}
+        response = self.client.put("/api/knowledge", json=body)
+        assert response.status_code == 200, response.text
+        assert len(attempts) == 2
+        (event,) = memory._events.values()
+        assert event["type"] == "knowledge.updated"
+        assert event["content"][0]["text"] == body["summary"]
 
     def test_requirements_record_the_authenticated_actor(self, monkeypatch, tmp_path):
         import time
@@ -114,7 +158,7 @@ class TestKnowledgeMemory(BaseTestCase):
         finally:
             app.dependency_overrides.pop(requirements.get_requirements, None)
             engine.dispose()
-        events = list(memory.events.values())
+        events = list(memory._events.values())
         assert [event["type"] for event in events] == [
             "knowledge.captured",
             "knowledge.removed",

@@ -1,8 +1,10 @@
+from datetime import datetime, timezone
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from src.core.scope import Scope
+from src.core.memory.models import Actor
 
 from .characteristics import KnowledgeApplicability, KnowledgeBasis, KnowledgeImportance
 
@@ -146,3 +148,17 @@ class KnowledgeSubgraph:
     items: tuple[KnowledgeObject, ...]
     relationships: tuple[KnowledgeRelationship, ...]
     truncated: bool
+
+
+@dataclass(frozen=True)
+class KnowledgeChange:
+    type: Literal[
+        "knowledge.captured",
+        "knowledge.updated",
+        "knowledge.status_changed",
+        "knowledge.removed",
+    ]
+    actor: Actor
+    before: KnowledgeObject | None = None
+    after: KnowledgeObject | None = None
+    when: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

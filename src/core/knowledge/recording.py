@@ -1,35 +1,32 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from contextvars import ContextVar
+from uuid import uuid4
 
-from src.core.knowledge import KnowledgeQuery
+from src.core.knowledge.models import KnowledgeChange, KnowledgeQuery
+from src.core.memory import Event, Actor, Subject, Source
+from src.core.principal import actor_in, actor_type_in
 from src.core.services import memory_services
 from src.utils.logger import logger
 
-_actor: ContextVar[str | None] = ContextVar("memory_actor", default=None)
 
-
-@contextmanager
-def acting_as(actor: str):
-    token = _actor.set(actor)
-    try:
-        yield
-    finally:
-        _actor.reset(token)
-
-
-def actor_in(scope):
-    from mcp.server.auth.middleware.auth_context import get_access_token
-
-    token = get_access_token()
-    return (
-        (token.subject if token else None)
-        or _actor.get()
-        or scope.get("actor")
-        or scope.get("agent")
-        or scope.get("user")
-        or "local"
+def event_for_change(scope, change):
+    item = change.after or change.before
+    return Event(
+        id=uuid4().hex,
+        type=change.type,
+        source=Source.for_scope(scope),
+        when=change.when,
+        what=item.summary,
+        actors=[change.actor],
+        subjects=[Subject(id=item.id, type="knowledge.item", name=item.summary)],
+        attributes={
+            "knowledge.status_before": change.before.status if change.before else None,
+            "knowledge.status_after": change.after.status if change.after else None,
+            "knowledge.summary_before": (
+                change.before.summary if change.before else None
+            ),
+            "knowledge.summary_after": change.after.summary if change.after else None,
+        },
     )
 
 
@@ -89,16 +86,19 @@ class RecordingKnowledge:
             )
 
     def _write(self, scope, event_type, before, after):
-        from src.core.memory.interfaces import KnowledgeChange
-
         memory = (
             memory_services()
             if self.services is None
             else memory_services(self.services)
         )
-        memory.record_knowledge_change(
-            scope, KnowledgeChange(event_type, actor_in(scope), before, after)
+        actor = actor_in(scope)
+        change = KnowledgeChange(
+            event_type,
+            Actor(id=actor, name=actor, type=actor_type_in(scope), role="author"),
+            before,
+            after,
         )
+        memory.record(scope, [event_for_change(scope, change)])
 
 
 def recording(store, services=None):

@@ -55,7 +55,7 @@ async def test_knowledge_tools_record_changes_with_actor(monkeypatch, category_f
             result = await session.call_tool(tool, sent)
             assert not result.isError, result
             assert result.structuredContent["type"] == "decision"
-    events = list(memory.events.values())
+    events = list(memory._events.values())
     assert [event["type"] for event in events] == [
         "knowledge.captured",
         "knowledge.updated",
@@ -109,7 +109,7 @@ async def test_remember_then_recall_returns_when_why_who_and_paths():
     assert event["subjects"][0]["name"] == "src/retry.py"
     assert event["valence"] == 2
     assert event["importance"] == 4
-    stored = memory.events[event["id"]]
+    stored = memory._events[event["id"]]
     assert memory.entities[stored["subjects"][0]["subject"]]["name"] == "src/retry.py"
     assert stored["appraisals"][0]["valence"] == 2
     assert stored["appraisals"][0]["importance"] == 4
@@ -125,11 +125,18 @@ async def test_remember_then_recall_returns_when_why_who_and_paths():
         {"importance": 0},
     ],
 )
-async def test_remember_rejects_invalid_observations(changes):
+@pytest.mark.parametrize("configured", [True, False])
+@pytest.mark.parametrize("event_type", ["sourceant.observation", "custom.experiment"])
+async def test_remember_rejects_invalid_observations(changes, configured, event_type):
     memory, registry = services()
+    if not configured:
+        from src.core.memory import DisabledMemory
+
+        registry = registry.with_service(Memory, DisabledMemory(), "test")
     server = create_mcp_server(DefaultContextProvider(), services=registry)
     arguments = {
         "scope": {"actor": "Ana"},
+        "type": event_type,
         "text": "Retry succeeded",
         "when": "2026-04-19T14:02:11Z",
         **changes,
@@ -137,7 +144,7 @@ async def test_remember_rejects_invalid_observations(changes):
     async with create_connected_server_and_client_session(server) as session:
         result = await session.call_tool("remember", arguments)
     assert result.isError
-    assert memory.events == {}
+    assert memory._events == {}
 
 
 @pytest.mark.asyncio
@@ -160,3 +167,110 @@ async def test_unconfigured_memory_is_explicit_and_does_not_store(monkeypatch):
         assert result.structuredContent["configured"] is False
         recalled = await session.call_tool("recall", {"scope": {}, "query": "Retry"})
         assert recalled.structuredContent == {"results": [], "configured": False}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("marker", ["scope", "token"])
+async def test_remember_records_agent_callers(monkeypatch, marker):
+    from mcp.server.auth.provider import AccessToken
+
+    scope = {"repository": "acme/shop"}
+    if marker == "scope":
+        scope["agent"] = "worker"
+    else:
+        monkeypatch.setattr(
+            "mcp.server.auth.middleware.auth_context.get_access_token",
+            lambda: AccessToken(
+                token="test",
+                client_id="worker",
+                subject="worker",
+                scopes=[],
+                claims={"type": "agent"},
+            ),
+        )
+    memory, registry = services()
+    server = create_mcp_server(DefaultContextProvider(), services=registry)
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "remember",
+            {"scope": scope, "text": "Retry succeeded", "when": "2026-04-19T14:02:11Z"},
+        )
+    assert not result.isError, result
+    stored = memory._events[result.structuredContent["id"]]
+    actor = memory.entities[stored["participants"][0]["actor"]]
+    assert actor["name"] == "worker"
+    assert actor["type"] == "agent"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("configured", [True, False])
+@pytest.mark.parametrize(
+    "changes", [{"query": ""}, {"query": " "}, {"limit": 0}, {"limit": 101}]
+)
+async def test_recall_validates_at_the_mcp_boundary(configured, changes):
+    memory, registry = services()
+    if not configured:
+        from src.core.memory import DisabledMemory
+
+        registry = registry.with_service(Memory, DisabledMemory(), "test")
+    server = create_mcp_server(DefaultContextProvider(), services=registry)
+    async with create_connected_server_and_client_session(server) as session:
+        result = await session.call_tool(
+            "recall", {"scope": {}, "query": "retry", **changes}
+        )
+    assert result.isError, result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persist", [False, True])
+@pytest.mark.parametrize("dimension", ["branch", "environment"])
+async def test_remember_keeps_every_application_scope_dimension_isolated(
+    monkeypatch, tmp_path, persist, dimension
+):
+    from sqlalchemy import create_engine
+    from src.core.memory.bindings import SourceBindings, source_bindings
+    from src.core.scope import Scope
+
+    memory, registry = services()
+    engine = create_engine(f"sqlite:///{tmp_path / 'scope.db'}")
+    source_bindings.create(engine)
+    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
+    memory._source_bindings = SourceBindings(persist=persist)
+    first = {
+        "workspace": "team",
+        "repository": "acme/shop",
+        dimension: "A",
+        "actor": "Ana",
+    }
+    other = {**first, dimension: "B"}
+    server = create_mcp_server(DefaultContextProvider(), services=registry)
+    try:
+        async with create_connected_server_and_client_session(server) as session:
+            written = await session.call_tool(
+                "remember",
+                {
+                    "scope": first,
+                    "text": "Retry succeeded",
+                    "when": "2026-04-19T14:02:11Z",
+                },
+            )
+            assert not written.isError, written
+            hidden = await session.call_tool(
+                "recall", {"scope": other, "query": "Retry"}
+            )
+            assert not hidden.isError, hidden
+            assert hidden.structuredContent["results"] == []
+            visible = await session.call_tool(
+                "recall", {"scope": {**first, "actor": "Other"}, "query": "Retry"}
+            )
+            assert (
+                visible.structuredContent["results"][0]["id"]
+                == written.structuredContent["id"]
+            )
+        assert memory.events(Scope.from_mapping(other)).events == []
+        assert (
+            memory.events(Scope.from_mapping(first)).events[0].id
+            == written.structuredContent["id"]
+        )
+    finally:
+        engine.dispose()

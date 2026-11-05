@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from src.auth import get_current_user
 from src.api.routes.knowledge import get_knowledge
-from src.core.knowledge.recording import acting_as
+from src.core.principal import acting_as
 from src.api.routes.topology import get_scope
 from src.config.db import get_engine
 from src.core.requirements import (

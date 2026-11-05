@@ -1,11 +1,19 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 import pytest
 
-from src.core.memory import TrailpadMemory, InMemoryMemory
-from src.core.memory.engine import Entity, Event
+from src.core.memory import (
+    TrailpadMemory,
+    InMemoryMemory,
+    Event,
+    Actor,
+    Subject,
+    Source,
+)
+from src.core.memory.engine import Entity, EventRecord
 from src.core.scope import Scope
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "memory"
@@ -74,17 +82,19 @@ def test_engine_uses_exact_record_shapes_and_bearer_headers():
         transport=httpx.MockTransport(handle),
     )
     try:
-        memory._write_records([Event.from_dict(event)], [Entity.from_dict(entity)])
+        memory._write_records(
+            [EventRecord.from_dict(event)], [Entity.from_dict(entity)]
+        )
         assert memory.event(event["id"]).to_dict() == event
         assert memory.entity(entity["id"]).to_dict() == entity
-        recalled = memory.recall(Scope.from_mapping({}), "retry").results[0]
+        recalled = memory.recall(Scope.from_mapping({}), "retry")[0]
         assert recalled.what == event["content"][0]["text"]
         assert recalled.why == event["why"]
-        assert recalled.who == entity["name"]
+        assert ", ".join(actor.name for actor in recalled.actors) == entity["name"]
         assert recalled.score == 1.0
         assert recalled.actors[0].type == entity["type"]
-        assert recalled.source["url"] == event["source"]["url"]
-        assert recalled.source["container_url"] == ""
+        assert recalled.source.url == event["source"]["url"]
+        assert recalled.source.container_url == ""
         memory.use([event["id"]])
     finally:
         memory.close()
@@ -130,7 +140,7 @@ def test_engine_preserves_service_and_group_actors_and_delegation():
         transport=httpx.MockTransport(handle),
     )
     try:
-        recalled = memory.recall(Scope.from_mapping({}), "retry").results[0]
+        recalled = memory.recall(Scope.from_mapping({}), "retry")[0]
         assert [(actor.type, actor.role) for actor in recalled.actors] == [
             ("service", "author"),
             ("group", "on_behalf_of"),
@@ -166,11 +176,13 @@ def test_engine_caches_bucket_binding_and_forwards_listing_filters():
     try:
         scope = Scope.from_mapping({"repository": "acme/shop"})
         memory.bucket(scope)
-        page = memory.history(
+        page = memory.events(
             scope, "2026-04-01T00:00:00Z", "2026-05-01T00:00:00Z", "previous"
         )
         assert page.events[0].what == event["content"][0]["text"]
-        assert page.events[0].who == entity["name"]
+        assert (
+            ", ".join(actor.name for actor in page.events[0].actors) == entity["name"]
+        )
         assert page.next == event["id"]
         assert len(bindings) == 1
         assert bindings[0]["binding"]["system"] == "sourceant"
@@ -191,7 +203,7 @@ def test_engine_propagates_conflicts():
     try:
         with pytest.raises(httpx.HTTPStatusError):
             memory._write_records(
-                [Event.from_dict(example("event.review-comment.json"))], []
+                [EventRecord.from_dict(example("event.review-comment.json"))], []
             )
     finally:
         memory.close()
@@ -199,14 +211,14 @@ def test_engine_propagates_conflicts():
 
 def test_in_memory_records_are_idempotent_and_defensively_copied():
     memory = InMemoryMemory()
-    event = Event.from_dict(example("event.review-comment.json"))
+    event = EventRecord.from_dict(example("event.review-comment.json"))
     memory._write_records([event], [])
     memory._write_records([event], [])
-    assert len(memory.events) == 1
+    assert len(memory._events) == 1
     event.content[0]["text"] = "Changed"
     with pytest.raises(ValueError):
         memory._write_records([event], [])
-    assert memory.events[event.id]["content"][0]["text"] != "Changed"
+    assert memory._events[event.id]["content"][0]["text"] != "Changed"
 
 
 def test_in_memory_listing_filters_scope_time_and_cursor():
@@ -215,7 +227,7 @@ def test_in_memory_listing_filters_scope_time_and_cursor():
     memory = InMemoryMemory()
     scope = Scope.from_mapping({"repository": "acme/shop"})
     other = Scope.from_mapping({"repository": "acme/other"})
-    original = Event.from_dict(example("event.review-comment.json"))
+    original = EventRecord.from_dict(example("event.review-comment.json"))
     first = replace(original, bucket=memory.bucket(scope), id="first")
     second = replace(first, id="second", occurred_at="2026-04-20T10:00:00+02:00")
     foreign = replace(first, bucket=memory.bucket(other), id="foreign")
@@ -228,12 +240,11 @@ def test_in_memory_listing_filters_scope_time_and_cursor():
         for event in memory.list(scope, until="2026-04-20T08:00:00Z")["events"]
     ] == ["first"]
     page["events"][0]["content"][0]["text"] = "Changed"
-    assert memory.events["second"]["content"][0]["text"] != "Changed"
+    assert memory._events["second"]["content"][0]["text"] != "Changed"
 
 
-def test_remember_constructs_engine_records_from_scope_observation():
+def test_record_constructs_engine_records_and_returns_stored_views():
     from datetime import datetime
-    from src.core.memory import Remembered
 
     event = example("event.review-comment.json")
     actor = example("entity.actor.json")
@@ -252,22 +263,28 @@ def test_remember_constructs_engine_records_from_scope_observation():
         transport=httpx.MockTransport(handle),
     )
     try:
-        observation = Remembered(
-            event["content"][0]["text"],
-            datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00")),
+        observation = Event(
+            id="experiment",
+            type="sourceant.observation",
+            source=Source("sourceant", "local", "shop"),
+            what=event["content"][0]["text"],
+            when=datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00")),
             why=event["why"],
+            actors=[Actor(id=actor["name"], name=actor["name"], role="author")],
         )
-        result = memory.remember(
-            Scope.from_mapping({"actor": actor["name"]}), observation
+        (result,) = memory.record(
+            Scope.from_mapping({"actor": actor["name"]}), [observation]
         )
         assert result.what == observation.what
-        assert result.who == actor["name"]
+        assert ", ".join(actor.name for actor in result.actors) == actor["name"]
         assert result.when == observation.when
         stored = records[0]["events"][0]
         assert stored["id"] == result.id
         assert stored["type"] == observation.type
         assert stored["content"][0]["text"] == observation.what
-        assert records[0]["entities"][0]["name"] == result.who
+        assert records[0]["entities"][0]["name"] == ", ".join(
+            actor.name for actor in result.actors
+        )
         assert stored["participants"][0]["actor"] == records[0]["entities"][0]["id"]
     finally:
         memory.close()
@@ -296,7 +313,7 @@ def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
     mapped = InMemoryMemory()
     mapped.bind = lambda *args: "captured"
     mapped.record(Scope.from_mapping({}), occurrences)
-    events = mapped.events
+    events = mapped._events
     entities = mapped.entities
     comment = next(
         event
@@ -352,10 +369,11 @@ def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
     )
     try:
         scope = Scope.from_mapping({})
-        page = memory.history(scope)
-        view, context = page.events
+        page = memory.events(scope)
+        view = next(event for event in page.events if event.id == comment["id"])
+        context = next(event for event in page.events if event.id == parent["id"])
         assert page.next == comment["id"]
-        assert page.configured
+        assert memory.configured
         assert view.part_of == context.id == parent["id"]
         assert not view.outside_window
         assert context.outside_window
@@ -364,13 +382,13 @@ def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
         assert view.actors[0].image == user["avatar_url"]
         assert view.actors[0].url == user["html_url"]
         repository = row["payload"]["repository"]
-        assert view.source["container"] == repository["full_name"]
-        assert view.source["container_url"] == repository["html_url"]
-        assert view.source["url"] == row["payload"]["comment"]["html_url"]
+        assert view.source.container == repository["full_name"]
+        assert view.source.container_url == repository["html_url"]
+        assert view.source.url == row["payload"]["comment"]["html_url"]
         assert view.title == context.title == row["payload"]["pull_request"]["title"]
         assert view.actors[0].type == ("bot" if user["type"] == "Bot" else "person")
         assert any(s.name == row["payload"]["comment"]["path"] for s in view.subjects)
-        recalled = memory.recall(scope, view.what).results[0]
+        recalled = memory.recall(scope, view.what)[0]
         assert recalled.actors == view.actors
         assert recalled.subjects == view.subjects
         assert recalled.score == 0.75
@@ -408,7 +426,7 @@ def test_captured_github_translation_preserves_original_records():
         memory = InMemoryMemory()
         memory.bind = lambda *args: "captured"
         memory.record(Scope.from_mapping({}), occurrences)
-        assert memory.events == {event["id"]: event for event in original["events"]}
+        assert memory._events == {event["id"]: event for event in original["events"]}
         assert memory.entities == {
             entity["id"]: entity for entity in original["entities"]
         }
@@ -420,7 +438,7 @@ def test_history_resolves_buckets_once_for_several_external_parents(monkeypatch)
     memory = InMemoryMemory()
     scope = Scope.from_mapping({})
     bucket = memory.bucket(scope)
-    original = Event.from_dict(example("event.review-comment.json"))
+    original = EventRecord.from_dict(example("event.review-comment.json"))
     parents = [
         replace(
             original,
@@ -440,7 +458,7 @@ def test_history_resolves_buckets_once_for_several_external_parents(monkeypatch)
     monkeypatch.setattr(
         memory, "buckets", lambda scope: calls.append(scope) or [bucket]
     )
-    page = memory.history(scope, since="2026-01-01T00:00:00Z")
+    page = memory.events(scope, since="2026-01-01T00:00:00Z")
     assert sum(event.outside_window for event in page.events) == 3
     assert calls == [scope]
 
@@ -467,11 +485,11 @@ def test_github_source_does_not_import_adapter():
 def test_source_neutral_occurrences_are_visible_without_a_repository():
     from datetime import datetime, timezone
     from dataclasses import replace
-    from src.core.memory import Occurrence, Source, OccurrenceActor
+    from src.core.memory import Event, Source, Actor
 
     scope = Scope.from_mapping({"workspace": "team"})
     memory = InMemoryMemory()
-    occurrence = Occurrence(
+    occurrence = Event(
         "meeting-1",
         "calendar.meeting",
         Source(
@@ -484,19 +502,19 @@ def test_source_neutral_occurrences_are_visible_without_a_repository():
         when=datetime(2026, 4, 20, tzinfo=timezone.utc),
         what="Discuss release",
         title="Release",
-        actors=[OccurrenceActor("user-1", "Alex", role="organiser")],
+        actors=[Actor("user-1", "Alex", role="organiser")],
         valence=1,
         importance=3,
     )
     memory.record(scope, [occurrence])
     memory.record(scope, [occurrence])
-    (view,) = memory.history(scope).events
+    (view,) = memory.events(scope).events
     assert view.what == occurrence.what
     assert view.title == occurrence.title
     assert view.actors[0].name == "Alex"
-    assert view.source["system"] == "calendar"
-    assert view.source["url"] == occurrence.source.url
-    assert view.source["container_url"] == occurrence.source.container_url
+    assert view.source.system == "calendar"
+    assert view.source.url == occurrence.source.url
+    assert view.source.container_url == occurrence.source.container_url
     assert (view.valence, view.importance) == (1, 3)
     memory.record(
         scope,
@@ -507,25 +525,25 @@ def test_source_neutral_occurrences_are_visible_without_a_repository():
             )
         ],
     )
-    assert len(memory.history(scope).events) == 2
-    assert not memory.history(Scope.from_mapping({"workspace": "other"})).events
+    assert len(memory.events(scope).events) == 2
+    assert not memory.events(Scope.from_mapping({"workspace": "other"})).events
 
 
 def test_subject_parent_must_be_in_the_occurrence():
-    from src.core.memory import Occurrence, OccurrenceSubject, Source
+    from src.core.memory import Event, Subject, Source
 
     memory = InMemoryMemory()
-    occurrence = Occurrence(
+    occurrence = Event(
         id="entry",
         type="calendar.meeting",
         source=Source(system="calendar", installation="account", container="calendar"),
-        subjects=[OccurrenceSubject(id="child", type="agenda.item", parent="missing")],
+        subjects=[Subject(id="child", type="agenda.item", parent="missing")],
     )
     with pytest.raises(
         ValueError, match="Subject 'child' has missing parent 'missing'"
     ):
         memory.record(Scope(), [occurrence])
-    assert not memory.events
+    assert not memory._events
     assert not memory.entities
 
 
@@ -557,17 +575,17 @@ def test_path_names_do_not_overwrite_place_subjects(path):
     assert memory.entities["pl_gh_922971929_pr_155"]["parent"] == "pl_gh_922971929"
     comment = next(
         event
-        for event in memory.history(scope).events
+        for event in memory.events(scope).events
         if event.type == "github.pull_request.review_comment"
     )
     assert any(
         subject.name == path and subject.type == "code.path"
         for subject in comment.subjects
     )
-    assert comment.source["container"] == row["payload"]["repository"]["full_name"]
+    assert comment.source.container == str(row["payload"]["repository"]["id"])
 
 
-def test_adapter_modules_do_not_import_integrations():
+def test_adapter_modules_do_not_import_integrations_or_knowledge():
     import ast
     import src.core.memory as memory
 
@@ -575,11 +593,28 @@ def test_adapter_modules_do_not_import_integrations():
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                assert not (node.module or "").startswith("src.integrations"), path
+                assert not (node.module or "").startswith(
+                    ("src.integrations", "src.core.knowledge")
+                ), path
             elif isinstance(node, ast.Import):
                 assert not any(
-                    alias.name.startswith("src.integrations") for alias in node.names
+                    alias.name.startswith(("src.integrations", "src.core.knowledge"))
+                    for alias in node.names
                 ), path
+
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import src.core.memory; assert not any(name.startswith(('src.integrations', 'src.core.knowledge')) for name in sys.modules)",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_source_bindings_survive_a_fresh_http_adapter(tmp_path, monkeypatch):
@@ -588,7 +623,7 @@ def test_source_bindings_survive_a_fresh_http_adapter(tmp_path, monkeypatch):
     from alembic.operations import Operations
     from src.migrations.versions import memory_source_bindings as migration
     from src.core.memory.bindings import source_bindings
-    from src.core.memory import Occurrence, Source
+    from src.core.memory import Event, Source
 
     engine = create_engine(f"sqlite:///{tmp_path / 'bindings.db'}")
     with engine.begin() as connection:
@@ -596,11 +631,11 @@ def test_source_bindings_survive_a_fresh_http_adapter(tmp_path, monkeypatch):
             migration.upgrade()
     monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
     scope = Scope.from_mapping({"workspace": "team", "repository": "calendar/release"})
-    occurrence = Occurrence(
+    occurrence = Event(
         id="meeting-1",
         type="calendar.meeting",
         source=Source(system="calendar", installation="account", container="release"),
-        when="2026-04-20T00:00:00Z",
+        when=datetime(2026, 4, 20, tzinfo=timezone.utc),
         what="Discuss release",
     )
     saved = {"events": [], "entities": []}
@@ -660,9 +695,9 @@ def test_source_bindings_survive_a_fresh_http_adapter(tmp_path, monkeypatch):
             transport=httpx.MockTransport(handle),
         )
         try:
-            (view,) = fresh.history(scope).events
+            (view,) = fresh.events(scope).events
             assert view.what == occurrence.what
-            assert fresh.recall(scope, "release").results[0].id == view.id
+            assert fresh.recall(scope, "release")[0].id == view.id
             assert (
                 len(
                     fresh.buckets(
@@ -731,7 +766,7 @@ def test_registered_resolver_preserves_history_for_old_deliveries(
         transport=httpx.MockTransport(handle),
     )
     try:
-        memory.history(
+        memory.events(
             Scope.from_mapping({"repository": payload["repository"]["full_name"]})
         )
     finally:
@@ -747,17 +782,17 @@ def test_registered_resolver_preserves_history_for_old_deliveries(
 def test_source_binding_is_durable_when_engine_write_fails(tmp_path, monkeypatch):
     from sqlalchemy import create_engine, select
     from src.core.memory.bindings import source_bindings
-    from src.core.memory import Occurrence, Source
+    from src.core.memory import Event, Source
 
     engine = create_engine(f"sqlite:///{tmp_path / 'bindings.db'}")
     source_bindings.create(engine)
     monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
     scope = Scope.from_mapping({"workspace": "team", "repository": "calendar/release"})
-    occurrence = Occurrence(
+    occurrence = Event(
         id="meeting-1",
         type="calendar.meeting",
         source=Source(system="calendar", installation="account", container="release"),
-        when="2026-04-20T00:00:00Z",
+        when=datetime(2026, 4, 20, tzinfo=timezone.utc),
     )
 
     def handle(request):
@@ -839,3 +874,68 @@ def test_memory_service_setup_registers_resolvers_idempotently(monkeypatch):
     assert memory_services(registry) is memory
     assert memory_services(registry) is memory
     assert bindings._resolvers == [resolve_sources]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"what": " "},
+        {"when": datetime(2026, 4, 19, 14, 2, 11)},
+        {"when": "2026-04-19T14:02:11Z"},
+        {"ended_at": datetime(2026, 4, 19, 14, 2, 11)},
+        {"valence": 3},
+        {"importance": 0},
+        {"importance": 6},
+    ],
+)
+def test_record_validates_events_from_every_source(changes):
+    from dataclasses import replace
+
+    memory = InMemoryMemory()
+    event = Event(
+        id="observation",
+        type="sourceant.observation",
+        source=Source("calendar", "account", "calendar"),
+        when=datetime(2026, 4, 19, 14, 2, 11, tzinfo=timezone.utc),
+        what="Retry succeeded",
+    )
+    with pytest.raises(ValueError):
+        memory.record(Scope(), [replace(event, **changes)])
+    assert memory._events == {}
+
+
+def test_record_returns_one_event_type_and_ignores_read_extras_on_write():
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    memory = InMemoryMemory()
+    event = Event(
+        id="observation",
+        type="sourceant.observation",
+        source=Source("sourceant", "local", "repo"),
+        when=datetime(2026, 4, 19, 14, 2, 11, tzinfo=timezone.utc),
+        what="Retry succeeded",
+        actors=[Actor(id="ana", name="Ana")],
+        subjects=[Subject(id="retry.py", type="code.path", name="retry.py")],
+        valence=1,
+    )
+    (stored,) = memory.record(Scope(), [event])
+    assert isinstance(stored, Event)
+    assert stored.id in memory._events
+    assert stored.actors[0].id in memory.entities
+    assert stored.subjects[0].id in memory.entities
+    (again,) = memory.record(Scope(), [replace(stored, score=0.9, outside_window=True)])
+    assert again.id == stored.id
+    assert again.score == 0.0
+    assert not again.outside_window
+    assert len(memory._events) == 1
+
+
+def test_disabled_memory_has_only_empty_event_operations():
+    from src.core.memory import DisabledMemory, EventPage
+
+    memory = DisabledMemory()
+    assert not memory.configured
+    assert memory.record(Scope(), []) == []
+    assert memory.events(Scope()) == EventPage()
+    assert memory.recall(Scope(), "retry") == []

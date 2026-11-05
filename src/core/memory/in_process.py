@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .engine import Entity, Event, _ScopeMemory, binding, _at, _time
+from .engine import Entity, EventRecord, _ScopeMemory, binding, _at, _time
 from copy import deepcopy
 from hashlib import sha256
 from threading import RLock
@@ -10,8 +10,9 @@ from .bindings import SourceBindings
 
 class _InMemoryRecords:
     def __init__(self):
+        self._sources_by_bucket = {}
         self._source_bindings = SourceBindings(persist=False)
-        self.events: dict[str, dict] = {}
+        self._events: dict[str, dict] = {}
         self.entities: dict[str, dict] = {}
         self._lock = RLock()
 
@@ -29,16 +30,16 @@ class _InMemoryRecords:
 
         return repository_buckets(scope, self)
 
-    def _write_records(self, events: list[Event], entities: list[Entity]) -> None:
+    def _write_records(self, events: list[EventRecord], entities: list[Entity]) -> None:
         with self._lock:
             pending = {}
             for event in events:
                 body = event.to_dict()
-                previous = pending.get(event.id, self.events.get(event.id))
+                previous = pending.get(event.id, self._events.get(event.id))
                 if previous is not None and previous != body:
                     raise ValueError("An event with this id has different content")
                 pending[event.id] = body
-            self.events.update(deepcopy(pending))
+            self._events.update(deepcopy(pending))
             self.entities.update(
                 {entity.id: deepcopy(entity.to_dict()) for entity in entities}
             )
@@ -51,12 +52,12 @@ class _InMemoryRecords:
             ordered = sorted(
                 (
                     event
-                    for event in self.events.values()
+                    for event in self._events.values()
                     if event["bucket"] in buckets and event.get("occurred_at")
                 ),
                 key=lambda event: (_at(event), event["id"]),
             )
-            cursor = self.events.get(after) if after else None
+            cursor = self._events.get(after) if after else None
             if after and (cursor is None or cursor["bucket"] not in buckets):
                 return {"events": [], "entities": [], "next": None}
             events = [
@@ -107,7 +108,7 @@ class _InMemoryRecords:
         with self._lock:
             events = [
                 deepcopy(event)
-                for event in self.events.values()
+                for event in self._events.values()
                 if (not buckets or event["bucket"] in buckets)
                 and (
                     not text
@@ -135,4 +136,4 @@ class InMemoryMemory(_ScopeMemory, _InMemoryRecords):
         return Entity.from_dict(deepcopy(self.entities[id]))
 
     def event(self, id):
-        return Event.from_dict(deepcopy(self.events[id]))
+        return EventRecord.from_dict(deepcopy(self._events[id]))

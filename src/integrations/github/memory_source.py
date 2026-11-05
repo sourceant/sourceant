@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, replace
 from src.core.memory.models import (
     Source,
-    Occurrence,
-    OccurrenceActor,
-    OccurrenceSubject,
+    Event,
+    Actor,
+    Subject,
 )
 
 
@@ -17,16 +17,12 @@ class Origin:
     container: str
 
 
-def _instant(value) -> str | None:
+def _instant(value) -> datetime | None:
     if not value:
         return None
     if isinstance(value, (int, float)):
-        return (
-            datetime.fromtimestamp(value, timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
-    return str(value).replace("+00:00", "Z")
+        return datetime.fromtimestamp(value, timezone.utc)
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
 class _Batch:
@@ -39,7 +35,7 @@ class _Batch:
         if not user or not user.get("id"):
             return None
         bot = user.get("type") == "Bot" or str(user.get("login", "")).endswith("[bot]")
-        return OccurrenceActor(
+        return Actor(
             id=str(user["id"]),
             name=user.get("login") or "",
             image=user.get("avatar_url") or "",
@@ -48,34 +44,32 @@ class _Batch:
         )
 
     def repository(self, repository):
-        subject = OccurrenceSubject(
-            id="github.repository:repository",
+        subject = Subject(
+            id=self.origin.container,
             type="github.repository",
             name=repository.get("full_name") or "",
             url=repository.get("html_url") or "",
             role="place",
-            container_root=True,
         )
         self.subjects[subject.id] = subject
         return subject
 
     def pull_place(self, repository, pull):
         parent = self.repository(repository)
-        subject = OccurrenceSubject(
-            id=f"github.pull_request:pr_{pull['number']}",
+        subject = Subject(
+            id=f"pr_{pull['number']}",
             type="github.pull_request",
             name=f"#{pull['number']}",
             url=pull.get("html_url") or "",
             parent=parent.id,
             role="place",
             attributes={"github.title": pull.get("title") or ""},
-            place_id=f"pr_{pull['number']}",
         )
         self.subjects[subject.id] = subject
         return subject
 
     def path(self, path):
-        subject = OccurrenceSubject(id=f"code.path:{path}", type="code.path", name=path)
+        subject = Subject(id=f"path:{path}", type="code.path", name=path)
         self.subjects[subject.id] = subject
         return subject
 
@@ -90,13 +84,13 @@ class _Batch:
             for actor, role in event.get("actors", [])
             if actor
         ]
-        occurrence = Occurrence(
+        occurrence = Event(
             source=Source(
                 system="github",
                 installation=self.origin.installation,
                 container=self.origin.container,
                 url=url or "",
-                container_url=self.subjects["github.repository:repository"].url,
+                container_url=self.subjects[self.origin.container].url,
                 native_id=native,
                 id_namespace=f"gh_{self.origin.container}",
             ),
@@ -214,12 +208,8 @@ def _push(b: _Batch, payload: dict, pull: dict | None) -> None:
         return
     repository = payload["repository"]
     if pull and pull.get("created_at") and head.get("timestamp"):
-        created = datetime.fromisoformat(
-            _instant(pull["created_at"]).replace("Z", "+00:00")
-        )
-        pushed_at = datetime.fromisoformat(
-            _instant(head["timestamp"]).replace("Z", "+00:00")
-        )
+        created = _instant(pull["created_at"])
+        pushed_at = _instant(head["timestamp"])
         if pushed_at < created:
             pull = None
     files = sorted(
@@ -262,7 +252,7 @@ def translate(
     action: str | None,
     payload: dict,
     pull_for_branch=None,
-) -> list[Occurrence] | None:
+) -> list[Event] | None:
     """Translate a delivery into source facts."""
     if not isinstance(payload.get("repository"), dict):
         return None

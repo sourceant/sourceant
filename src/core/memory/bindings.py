@@ -105,4 +105,11 @@ class SourceBindings:
             resolvers = tuple(_resolvers)
         for resolver in resolvers:
             sources.extend(resolver(scope))
-        return sources
+        application = Source.for_scope(scope)
+        return [
+            source
+            for source in sources
+            if source.system != application.system
+            or (source.installation, source.container)
+            == (application.installation, application.container)
+        ]

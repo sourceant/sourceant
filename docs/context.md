@@ -89,88 +89,71 @@ knowledge while renaming its category column; downgrading restores the old name.
 
 ### Event memory
 
-`Memory` is the scope-level service contract. Register one implementation in the
-service registry to replace the default `TrailpadMemory` adapter. Callers pass
-`Remembered`, `KnowledgeChange`, or source-neutral `Occurrence` values; bucket bindings,
-entity identifiers, appraisals, and engine filters belong to the adapter.
+`Memory` has three operations and one configuration flag:
 
-`remember` accepts what happened, an aware datetime, why, who (defaulting to the
-scope actor), paths, optional valence from -2 to 2, optional importance from 1 to 5,
-and a type defaulting to `sourceant.observation`. Empty text, missing timezones,
-and out-of-range ratings are rejected by the memory implementation.
+```python
+configured: bool
+record(scope, events: list[Event]) -> list[Event]
+events(scope, since=None, until=None, after=None) -> EventPage
+recall(scope, text, limit=10) -> list[Event]
+```
 
-`recall` returns full event views in `results`: `id`, `type`, `when`,
-`ended_at`, `why`, joined content in `what`, `title`, and `part_of`.
-Each view includes resolved `actors` (name, image, URL, role, type),
-`subjects` (type, name, URL, role, parent name), repository `source`
-(system, container, event URL in `url`, repository URL in `container_url`),
-copied `attributes`, `valence`, `importance`, and `score`. Titles use the title
-attribute, the pull request place title for pull requests and their child
-events, or the first content line.
-Recall requests filter by bucket, and the engine returns only events. Each engine
-result contains `id`, `record`, and `score`, plus explanation fields when requested.
-Actor types pass through from the engine: person, agent, bot, service, group,
-and organisation. The engine reads legacy team actors as group. An
-`on_behalf_of` participant appears in `actors` with that role, identifying the
-actor another participant acted for.
-Stored `software.bot` actors are returned as `bot`. MCP authentication does
-not distinguish coding agents, so `remember` records its actor as `person`.
-`history` returns the same views with a `next` cursor and `configured`.
-Parents missing from the page are included with `outside_window: true`,
-so comments can be grouped without another call. Regular page events have
-`outside_window: false`. `remember` retains its existing response.
-Knowledge changes include the actor and before/after values. Repository deliveries
-are idempotent on their delivery ID; historical deliveries without an ID use a
-stable digest. The MCP tools expose these scope-level results without engine records.
+`Event` is the same type for writing and reading. It contains a stable source id,
+type, source, timestamps, text, title, explanation, actors, subjects, relationships,
+attributes and optional valence and importance. `record` returns stored views with
+engine ids. Read scores and `outside_window` are ignored on write. Actor and
+subject views include their ids; subject parents reference ids in the same event.
+`Source` contains system, installation and container ids plus source URLs and an
+optional id namespace. Container names remain available on the root place subject.
 
-With `MEMORY_ENGINE_URL` and `MEMORY_ENGINE_KEY` set, events use the engine.
-Without both settings, `DisabledMemory` ignores writes and returns empty reads
-with `configured: false`. `InMemoryMemory` implements the contract for tests only.
+`record` validates observation text, supplied timestamps, actor types, ratings
+and subject parents before writing. Timestamps must include a timezone, valence
+must be between -2 and 2, and importance must be between 1 and 5. Every subject
+parent must be included among the event's subjects.
 
+`events` returns an `EventPage` containing time-ordered events and a `next` cursor.
+Missing parent events are included with `outside_window: true`. `recall` returns
+events directly, with search scores. `configured` belongs to the implementation,
+not individual events or pages. With both `MEMORY_ENGINE_URL` and
+`MEMORY_ENGINE_KEY`, the default is `TrailpadMemory`. Without them, `DisabledMemory`
+returns empty results and ignores writes. `InMemoryMemory` is the test double.
 
-Sources write batches with `Memory.record(scope, occurrences)`. Each occurrence
-has an id stable within its source, type, source binding, timestamps, text,
-actors, subjects, relationships, attributes and optional ratings. Source bindings
-contain system, installation and container identifiers plus source URLs. Actor
-and subject identifiers belong to the source; only the adapter creates engine
-identifiers and records. GitHub translation and stored delivery replay live in
-the GitHub integration. Existing GitHub identifiers and path hashes remain stable
-so replay does not create duplicate history.
+The MCP `remember` and `recall` tools retain their existing arguments and response
+shapes. The caller builds observation events, actors and path subjects before
+recording. Actors are agents when the scope or token marks an agent, otherwise
+people. The MCP boundary validates observation text, timestamps, ratings and recall
+queries even when memory is disabled or an observation uses a custom type.
+Knowledge recording builds a new event for each write attempt. Repeated identical
+writes attempt recording again, so a swallowed engine failure does not suppress
+the next attempt.
 
-The memory package contains the contract, shared engine mapping, HTTP adapter,
-in-process implementation and disabled implementation. Knowledge recording lives
-with knowledge. `record_knowledge_change` remains a convenience for knowledge
-writers, preserving their existing behavior while hiding engine records.
+The adapter owns engine records, identifier mapping and bucket binding. Source
+integrations supply events without importing it. Existing GitHub event ids, place
+ids and path hashes remain unchanged, so replay does not duplicate recorded data.
+Source id namespaces preserve those identities without adapter branches for
+specific sources. A place whose source id equals its source container is the root
+place; other place ids are local suffixes. GitHub path ids use a separate `path:`
+namespace. Source ids are always mapped, regardless of their spelling. Memory imports neither integrations nor knowledge.
 
+Scope-to-source bindings persist by workspace and repository in the application
+database before engine writes. Without a database, bindings remain in process.
+Run migrations before starting the updated application. Memory service setup
+explicitly registers legacy source resolvers; importing the GitHub package does
+not initialise memory services. GitHub discovery reads deliveries of every type,
+selecting distinct source identifiers from JSON instead of complete payloads.
+Pull request head lookup reads only pull request deliveries.
 
-Memory persists scope-to-source bindings by workspace and repository in the
-application database. Workers and restarted adapters discover the same source
-buckets for history and recall. Without a database, bindings remain in process.
-Run database migrations before starting the updated application.
-
-Integrations register source resolvers for deliveries recorded before binding
-persistence existed. GitHub contributes its stored repository sources this way;
-the engine adapter does not import integrations or read webhook payloads.
-Discovery reads deliveries of every type, so repositories with only push history
-remain visible after upgrades. It selects distinct source identifiers and
-workspace values from stored JSON without loading complete webhook payloads.
-Pull request head lookup continues to read only pull request deliveries.
-
-Sources may supply an `id_namespace` to retain existing identifiers. Place
-subjects identify container roots with `container_root` and optional local place
-identifiers with `place_id`. GitHub supplies these values to preserve its existing
-record identifiers. Subject identifiers include their source type to keep file
-names separate from places. A parent must be present among the occurrence's
-subjects; otherwise recording raises `ValueError` before writing records.
+GitHub ingestion retains the eight most recently used adapters. Each retains at
+most 4,096 delivery ids and 1,024 branch heads, evicting the least recently used
+entries. Stored pull requests restore branch context when replaying pushes.
 
 
-Memory service setup explicitly registers GitHub's legacy source resolver.
-Importing the GitHub package does not initialise memory services. Source bindings
-are committed before records are sent to the engine, so a failed engine request
-can be retried without losing source discovery.
+Application writers use `Source.for_scope(scope)`. Its identity includes every
+scope dimension except actor, principal, user and agent. Branch and environment
+scopes stay isolated while principals share events within the same application
+scope. Application binding lookup enforces the same identity.
 
-GitHub ingestion retains only the eight most recently used adapters. Each adapter
-keeps at most 4,096 recent delivery IDs and 1,024 recent branch heads, evicting the
-least recently used entries. Older deliveries remain safe to replay because
-engine record identifiers stay stable. Stored pull requests supply branch context
-when replaying persisted pushes.
+Event timestamps are timezone-aware `datetime` values. Integrations parse external
+timestamps before recording. Read views retain private adapter provenance so
+writing a read view back preserves stored identities and timestamp bytes without
+adding engine-specific fields to the public models.

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from .engine import Entity, Event, _ScopeMemory, binding
+from .engine import Entity, EventRecord, _ScopeMemory, binding
 from threading import RLock
 from urllib.parse import quote
 import httpx
 from src.core.scope import Scope
 from .bindings import SourceBindings
+from .models import Source
 
 
 class _EngineRecords:
@@ -27,6 +28,7 @@ class _EngineRecords:
             timeout=5,
         )
         self._buckets: dict[tuple[str, str, str], str] = {}
+        self._sources_by_bucket = {}
         self._source_bindings = SourceBindings()
         self._lock = RLock()
 
@@ -58,7 +60,7 @@ class _EngineRecords:
                 self._buckets[key] = response["id"]
             return self._buckets[key]
 
-    def _write_records(self, events: list[Event], entities: list[Entity]) -> None:
+    def _write_records(self, events: list[EventRecord], entities: list[Entity]) -> None:
         self._request(
             "POST",
             "v1/records",
@@ -86,8 +88,10 @@ class _EngineRecords:
     def _recall(self, query: dict) -> dict:
         return self._request("POST", "v1/recall", json=query)
 
-    def event(self, id: str) -> Event:
-        return Event.from_dict(self._request("GET", "v1/events/" + quote(id, safe="")))
+    def event(self, id: str) -> EventRecord:
+        return EventRecord.from_dict(
+            self._request("GET", "v1/events/" + quote(id, safe=""))
+        )
 
     def entity(self, id: str) -> Entity:
         return Entity.from_dict(
@@ -107,8 +111,10 @@ class TrailpadMemory(_ScopeMemory, _EngineRecords):
 
 def repository_buckets(scope: Scope, binder) -> list[str]:
     buckets = [binder.bucket(scope)]
+    binder._sources_by_bucket[buckets[0]] = Source.for_scope(scope)
     for source in binder._source_bindings.sources(scope):
         bucket = binder.bind(source.system, source.installation, source.container)
+        binder._sources_by_bucket[bucket] = source
         if bucket not in buckets:
             buckets.append(bucket)
     return buckets

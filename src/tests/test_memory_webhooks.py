@@ -66,7 +66,7 @@ class TestMemoryWebhooks(BaseTestCase):
         for row in rows:
             response = self.deliver(row)
             assert response.status_code == 201, response.text
-        events = list(self.memory.events.values())
+        events = list(self.memory._events.values())
         parents = [event for event in events if event["type"] == "github.pull_request"]
         assert len(parents) == 1
         parent = parents[0]
@@ -117,15 +117,15 @@ class TestMemoryWebhooks(BaseTestCase):
             and event["occurred_at"] == "2026-09-10T05:16:50+01:00"
         )
         assert "part_of" not in before_open
-        before = deepcopy(self.memory.events)
+        before = deepcopy(self.memory._events)
         before_entities = deepcopy(self.memory.entities)
         history.ingestion(self.memory).heads.clear()
         result = CliRunner().invoke(cli, ["memory-replay", "sourceant/sourceant"])
         assert result.exit_code == 0, result.output
-        assert self.memory.events == before
+        assert self.memory._events == before
         assert self.memory.entities == before_entities
         assert all(self.deliver(row).status_code == 201 for row in rows)
-        assert self.memory.events == before
+        assert self.memory._events == before
 
     def test_push_only_repository_remains_visible_without_persisted_bindings(
         self, monkeypatch
@@ -146,7 +146,7 @@ class TestMemoryWebhooks(BaseTestCase):
         scope = Scope.from_mapping({"repository": repository})
         assert self.deliver(row, "push-only-first").status_code == 201
         assert self.deliver(row, "push-only-repeat").status_code == 201
-        recorded = set(self.memory.events)
+        recorded = set(self.memory._events)
         assert recorded
         with engine.begin() as connection:
             assert (
@@ -155,13 +155,13 @@ class TestMemoryWebhooks(BaseTestCase):
             )
             connection.execute(delete(source_bindings))
             assert set(connection.scalars(select(RepositoryEvent.type))) == {"push"}
-        page = self.memory.history(scope)
+        page = self.memory.events(scope)
         assert {event.id for event in page.events} == recorded
         assert all(event.type == "github.push" for event in page.events)
         assert len(history.resolve_sources(scope)) == 1
         assert not history._stored(repository, type="pull_request")
-        assert self.memory.recall(scope, page.events[0].what).results[0].id in recorded
-        assert not self.memory.history(scope.extend({"workspace": "other"})).events
+        assert self.memory.recall(scope, page.events[0].what)[0].id in recorded
+        assert not self.memory.events(scope.extend({"workspace": "other"})).events
 
     def test_history_resolves_timeline_and_missing_parents(self):
         from src.core.scope import Scope
@@ -170,7 +170,7 @@ class TestMemoryWebhooks(BaseTestCase):
         for row in rows:
             assert self.deliver(row).status_code == 201
         scope = Scope.from_mapping({"repository": "sourceant/sourceant"})
-        page = self.memory.history(scope)
+        page = self.memory.events(scope)
         comments = [
             e for e in page.events if e.type == "github.pull_request.review_comment"
         ]
@@ -188,9 +188,9 @@ class TestMemoryWebhooks(BaseTestCase):
                 for row in rows
                 if row["type"] == "pull_request_review_comment"
                 and str(row["payload"]["comment"]["id"])
-                == self.memory.events[comment.id]["source"]["native_id"].split(":")[-1]
+                == self.memory._events[comment.id]["source"]["native_id"].split(":")[-1]
             )
-            assert comment.source["url"] == captured["html_url"]
+            assert comment.source.url == captured["html_url"]
             assert comment.actors[0].type == (
                 "bot" if captured["user"]["type"] == "Bot" else "person"
             )
@@ -208,15 +208,17 @@ class TestMemoryWebhooks(BaseTestCase):
             assert all(
                 actor.name and actor.image and actor.url for actor in comment.actors
             )
-            assert comment.source == {
-                "system": "github",
-                "container": repository["full_name"],
-                "url": self.memory.events[comment.id]["source"]["url"],
-                "container_url": repository["html_url"],
-            }
+            assert comment.source.system == "github"
+            assert comment.source.container == str(repository["id"])
+            assert (
+                comment.source.url == self.memory._events[comment.id]["source"]["url"]
+            )
+            assert comment.source.container_url == repository["html_url"]
             assert any(subject.type == "code.path" for subject in comment.subjects)
+            subjects = {subject.id: subject for subject in comment.subjects}
             assert any(
-                subject.parent == repository["full_name"]
+                subject.parent in subjects
+                and subjects[subject.parent].name == repository["full_name"]
                 for subject in comment.subjects
             )
         assert any(
@@ -227,12 +229,14 @@ class TestMemoryWebhooks(BaseTestCase):
             for entity in self.memory.entities.values()
             if entity.get("class") == "actor"
         )
-        window = self.memory.history(scope, since=comments[0].when.isoformat())
+        window = self.memory.events(scope, since=comments[0].when.isoformat())
         fetched = next(e for e in window.events if e.id == parent.id)
         assert fetched.outside_window
         assert all(not e.outside_window for e in window.events if e.id != parent.id)
         comments[0].attributes["changed"] = True
-        assert "changed" not in self.memory.events[comments[0].id].get("attributes", {})
+        assert "changed" not in self.memory._events[comments[0].id].get(
+            "attributes", {}
+        )
 
     def test_delivery_id_is_idempotent(self):
         rows = json.loads(FIXTURE.read_text())
@@ -251,14 +255,14 @@ class TestMemoryWebhooks(BaseTestCase):
             ).status_code
             == 201
         )
-        before = deepcopy(self.memory.events)
+        before = deepcopy(self.memory._events)
         assert (
             self.client.post(
                 "/api/prs/github-webhook", content=body, headers=headers
             ).status_code
             == 201
         )
-        assert self.memory.events == before
+        assert self.memory._events == before
         assert "captured-delivery" in history.ingestion(self.memory).deliveries
 
     def test_unhashable_memory_implementation_records_webhooks(self):
@@ -280,7 +284,7 @@ class TestMemoryWebhooks(BaseTestCase):
         rows = json.loads(FIXTURE.read_text())
         row = next(row for row in rows if row["action"] == "opened")
         assert self.deliver(row).status_code == 201
-        assert memory.events
+        assert memory._events
         assert history.ingestion(memory).deliveries
 
     def test_ingestion_caches_are_bounded_and_keep_recent_entries(self, monkeypatch):
@@ -319,7 +323,7 @@ class TestMemoryWebhooks(BaseTestCase):
         assert self.deliver(push, "delivery-push").status_code == 201
         pushed = next(
             event
-            for event in self.memory.events.values()
+            for event in self.memory._events.values()
             if event["type"] == "github.push"
         )
         assert (
@@ -338,9 +342,9 @@ class TestMemoryWebhooks(BaseTestCase):
             assert self.deliver(row).status_code == 201
         assert any(
             event["type"] == "github.pull_request"
-            for event in self.memory.events.values()
+            for event in self.memory._events.values()
         )
-        assert any(event.get("part_of") for event in self.memory.events.values())
+        assert any(event.get("part_of") for event in self.memory._events.values())
 
     def test_recording_failure_does_not_fail_the_webhook(self, monkeypatch, caplog):
         def fail(events, entities):

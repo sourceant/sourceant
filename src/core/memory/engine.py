@@ -3,19 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha256
-from uuid import uuid4
-from .interfaces import (
-    Remembered,
-    RememberedEvent,
-    RecallResult,
-    HistoryPage,
-    KnowledgeChange,
-)
 
 import httpx
 
 from src.core.scope import Scope
-from .models import MemoryEvent, Actor, Subject, Occurrence
+from .models import Event, EventPage, Actor, Subject, Source
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -51,7 +43,7 @@ class Entity:
 
 
 @dataclass(frozen=True)
-class Event:
+class EventRecord:
     bucket: str
     id: str
     type: str
@@ -75,7 +67,7 @@ class Event:
         return compact(asdict(self))
 
     @classmethod
-    def from_dict(cls, body: dict) -> Event:
+    def from_dict(cls, body: dict) -> EventRecord:
         return cls(**body)
 
 
@@ -86,17 +78,8 @@ def compact(body: dict) -> dict:
 
 
 def binding(scope: Scope) -> tuple[str, str, str]:
-    return (
-        "sourceant",
-        scope.get("workspace", "local"),
-        repr(
-            tuple(
-                (key, value)
-                for key, value in scope.values
-                if key not in {"actor", "principal", "user", "agent"}
-            )
-        ),
-    )
+    source = Source.for_scope(scope)
+    return source.system, source.installation, source.container
 
 
 def _time(value) -> datetime:
@@ -109,24 +92,64 @@ def _at(event: dict) -> datetime:
     return _time(event["occurred_at"])
 
 
-def _actors(event):
-    speakers = [
-        item["speaker"] for item in event.get("content", []) if item.get("speaker")
-    ]
-    return list(
-        dict.fromkeys(speakers or [p["actor"] for p in event.get("participants", [])])
+def _title(attributes, place_attributes, content):
+    return (
+        attributes.get("title")
+        or next(
+            (
+                value
+                for key, value in place_attributes.items()
+                if key.endswith(".title")
+            ),
+            None,
+        )
+        or (content.splitlines()[0] if content else "")
     )
 
 
-def _validate(observation):
-    if not observation.what.strip():
+def _ratings(record):
+    return {
+        name: next(
+            (
+                item[name]
+                for item in reversed(record.get("appraisals", []))
+                if name in item
+            ),
+            None,
+        )
+        for name in ("valence", "importance")
+    }
+
+
+def _validate(event):
+    if event.type == "sourceant.observation" and not event.what.strip():
         raise ValueError("text must not be empty")
-    if observation.when.tzinfo is None or observation.when.utcoffset() is None:
-        raise ValueError("when must include a timezone")
-    if observation.valence is not None and not -2 <= observation.valence <= 2:
+    for name in ("when", "ended_at"):
+        value = getattr(event, name)
+        if value is None:
+            continue
+        if (
+            not isinstance(value, datetime)
+            or value.tzinfo is None
+            or value.utcoffset() is None
+        ):
+            raise ValueError(f"{name} must be a timezone-aware datetime")
+    if event.valence is not None and not -2 <= event.valence <= 2:
         raise ValueError("valence must be between -2 and 2")
-    if observation.importance is not None and not 1 <= observation.importance <= 5:
+    if event.importance is not None and not 1 <= event.importance <= 5:
         raise ValueError("importance must be between 1 and 5")
+    for actor in event.actors:
+        if actor.type not in {
+            "person",
+            "agent",
+            "bot",
+            "service",
+            "group",
+            "organisation",
+        }:
+            raise ValueError(
+                "actor type must be person, agent, bot, service, group or organisation"
+            )
 
 
 def _validate_recall(text, limit):
@@ -134,19 +157,30 @@ def _validate_recall(text, limit):
         raise ValueError("recall needs a query and a limit between 1 and 100")
 
 
+@dataclass(frozen=True)
+class _StoredView:
+    record: dict
+    entities: frozenset[str]
+
+
 class _ScopeMemory:
-    def record(self, scope: Scope, occurrences: list[Occurrence]) -> None:
-        for occurrence in occurrences:
-            subjects = {subject.id for subject in occurrence.subjects}
-            for subject in occurrence.subjects:
+    configured = True
+
+    def record(self, scope: Scope, events: list[Event]) -> list[Event]:
+        source_events = events
+        for source_event in source_events:
+            _validate(source_event)
+            subjects = {subject.id for subject in source_event.subjects}
+            for subject in source_event.subjects:
                 if subject.parent and subject.parent not in subjects:
                     raise ValueError(
                         f"Subject {subject.id!r} has missing parent {subject.parent!r}"
                     )
-        events, entities = {}, {}
-        for occurrence in occurrences:
-            source = occurrence.source
+        records, entities = {}, {}
+        for source_event in source_events:
+            source = source_event.source
             bucket = self.bind(source.system, source.installation, source.container)
+            self._sources_by_bucket[bucket] = source
             namespace = (
                 source.id_namespace
                 or sha256(
@@ -157,13 +191,32 @@ class _ScopeMemory:
             )
             prefix = namespace + "_"
 
+            stored = getattr(source, "_stored_view", None)
+            if (
+                not isinstance(stored, _StoredView)
+                or stored.record["bucket"] != bucket
+                or stored.record["id"] != source_event.id
+            ):
+                stored = None
+            references = (
+                {stored.record.get(name) for name in ("id", "part_of", "in_reply_to")}
+                if stored
+                else set()
+            )
+
             def event_id(value):
-                return "ev_" + prefix + value
+                return value if value in references else "ev_" + prefix + value
 
             def actor_id(value):
-                return "ac_" + prefix + value
+                return (
+                    value
+                    if stored and value in stored.entities
+                    else "ac_" + prefix + value
+                )
 
             def subject_id(subject):
+                if stored and subject.id in stored.entities:
+                    return subject.id
                 if subject.type == "code.path":
                     return (
                         "sb_"
@@ -171,10 +224,12 @@ class _ScopeMemory:
                             f"{bucket}\0path\0{subject.name}".encode()
                         ).hexdigest()[:24]
                     )
-                if subject.container_root:
-                    return "pl_" + namespace
-                if subject.place_id is not None:
-                    return "pl_" + prefix + subject.place_id
+                if subject.role == "place":
+                    return (
+                        "pl_" + namespace
+                        if subject.id == source.container
+                        else "pl_" + prefix + subject.id
+                    )
                 return (
                     "sb_"
                     + sha256(
@@ -182,8 +237,8 @@ class _ScopeMemory:
                     ).hexdigest()[:24]
                 )
 
-            subjects = {subject.id: subject for subject in occurrence.subjects}
-            for actor in occurrence.actors:
+            subjects = {subject.id: subject for subject in source_event.subjects}
+            for actor in source_event.actors:
                 entity = Entity(
                     bucket,
                     actor_id(actor.id),
@@ -194,7 +249,7 @@ class _ScopeMemory:
                     image=actor.image,
                 )
                 entities[entity.id] = entity
-            for subject in occurrence.subjects:
+            for subject in source_event.subjects:
                 entity = Entity(
                     bucket,
                     subject_id(subject),
@@ -211,14 +266,14 @@ class _ScopeMemory:
             place = next(
                 (
                     subject_id(subject)
-                    for subject in occurrence.subjects
+                    for subject in source_event.subjects
                     if subject.role == "place"
                 ),
                 "",
             )
 
-            if not place:
-                place = "pl_" + prefix + "container"
+            if not place and not stored:
+                place = "pl_" + namespace
                 entities[place] = Entity(
                     bucket,
                     place,
@@ -228,126 +283,108 @@ class _ScopeMemory:
                     url=source.container_url,
                 )
 
-            def instant(value):
-                return value.isoformat() if isinstance(value, datetime) else value
+            def instant(value, original=None):
+                if value is None:
+                    return None
+                if original is not None and _time(original) == value:
+                    return deepcopy(original)
+                return value.isoformat().replace("+00:00", "Z")
 
             content = []
-            if occurrence.what:
-                content = [{"text": occurrence.what}]
-                if occurrence.actors:
-                    content[0]["speaker"] = actor_id(occurrence.actors[0].id)
-            attributes = dict(occurrence.attributes)
-            if occurrence.title:
-                attributes["title"] = occurrence.title
+            if source_event.what:
+                content = [{"text": source_event.what}]
+                if source_event.actors:
+                    content[0]["speaker"] = actor_id(source_event.actors[0].id)
+            attributes = dict(source_event.attributes)
+            place_attributes = next(
+                (
+                    subject.attributes
+                    for subject in source_event.subjects
+                    if subject.role == "place"
+                ),
+                {},
+            )
+            if source_event.title and source_event.title != _title(
+                attributes, place_attributes, source_event.what
+            ):
+                attributes["title"] = source_event.title
             ratings = {
-                name: getattr(occurrence, name)
+                name: getattr(source_event, name)
                 for name in ("valence", "importance")
-                if getattr(occurrence, name) is not None
+                if getattr(source_event, name) is not None
             }
             appraisals = []
             if ratings:
                 appraisals = [
                     {
                         "bucket": bucket,
-                        "id": "ap_" + prefix + occurrence.id,
-                        "target": event_id(occurrence.id),
-                        "at": instant(occurrence.when),
+                        "id": "ap_" + prefix + source_event.id,
+                        "target": event_id(source_event.id),
+                        "at": instant(source_event.when),
                         **ratings,
                     }
                 ]
-                if occurrence.actors:
-                    appraisals[0]["by"] = actor_id(occurrence.actors[0].id)
-            event = Event(
+                if source_event.actors:
+                    appraisals[0]["by"] = actor_id(source_event.actors[0].id)
+            if stored and ratings == {
+                name: value
+                for name, value in _ratings(stored.record).items()
+                if value is not None
+            }:
+                appraisals = deepcopy(stored.record.get("appraisals", []))
+            event = EventRecord(
                 bucket,
-                event_id(occurrence.id),
-                occurrence.type,
-                occurred_at=instant(occurrence.when),
-                ended_at=instant(occurrence.ended_at),
-                why=occurrence.why,
+                event_id(source_event.id),
+                source_event.type,
+                occurred_at=instant(
+                    source_event.when,
+                    stored.record.get("occurred_at") if stored else None,
+                ),
+                ended_at=instant(
+                    source_event.ended_at,
+                    stored.record.get("ended_at") if stored else None,
+                ),
+                why=source_event.why,
                 place=place,
                 participants=[
                     {"actor": actor_id(actor.id), "role": actor.role}
-                    for actor in occurrence.actors
+                    for actor in source_event.actors
                 ],
                 content=content,
                 subjects=[
                     {"subject": subject_id(subject), "role": subject.role}
-                    for subject in occurrence.subjects
+                    for subject in source_event.subjects
                     if subject.role != "place"
                 ],
-                part_of=event_id(occurrence.part_of) if occurrence.part_of else "",
+                part_of=event_id(source_event.part_of) if source_event.part_of else "",
                 in_reply_to=(
-                    event_id(occurrence.in_reply_to) if occurrence.in_reply_to else ""
+                    event_id(source_event.in_reply_to)
+                    if source_event.in_reply_to
+                    else ""
                 ),
                 attributes=attributes,
                 appraisals=appraisals,
-                source=compact(
-                    {
-                        "system": source.system,
-                        "installation": source.installation,
-                        "native_id": source.native_id or occurrence.id,
-                        "url": source.url,
-                    }
+                source=(
+                    deepcopy(stored.record.get("source"))
+                    if stored
+                    else compact(
+                        {
+                            "system": source.system,
+                            "installation": source.installation,
+                            "native_id": source.native_id or source_event.id,
+                            "url": source.url,
+                        }
+                    )
                 ),
             )
-            events[event.id] = event
-        if events:
+            records[event.id] = event
+        if records:
             self._source_bindings.remember(
-                scope, [occurrence.source for occurrence in occurrences]
+                scope, [source_event.source for source_event in source_events]
             )
-            self._write_records(list(events.values()), list(entities.values()))
-
-    def remember(self, scope: Scope, observation: Remembered) -> RememberedEvent:
-        from src.core.knowledge.recording import actor_in
-
-        _validate(observation)
-        bucket = self.bucket(scope)
-        actor = observation.who or actor_in(scope)
-        actor_id = "ac_" + sha256(f"{bucket}\0{actor}".encode()).hexdigest()[:24]
-        entities = [Entity(bucket, actor_id, "person", "actor", actor)]
-        subjects = []
-        for path in observation.paths:
-            subject = (
-                "sb_" + sha256(f"{bucket}\0path\0{path}".encode()).hexdigest()[:24]
-            )
-            entities.append(Entity(bucket, subject, "code.path", "subject", path))
-            subjects.append({"subject": subject, "role": "about"})
-        event_id = "ev_" + uuid4().hex
-        appraisals = []
-        when = observation.when.isoformat()
-        if observation.valence is not None or observation.importance is not None:
-            appraisal = {
-                "bucket": bucket,
-                "id": "ap_" + uuid4().hex,
-                "target": event_id,
-                "by": actor_id,
-                "at": when,
-            }
-            for name in ("valence", "importance"):
-                value = getattr(observation, name)
-                if value is not None:
-                    appraisal[name] = value
-            appraisals.append(appraisal)
-        event = Event(
-            bucket,
-            event_id,
-            observation.type,
-            occurred_at=when,
-            why=observation.why,
-            participants=[{"actor": actor_id, "role": "author"}],
-            content=[{"speaker": actor_id, "text": observation.what}],
-            subjects=subjects,
-            appraisals=appraisals,
-        )
-        self._write_records([event], entities)
-        return RememberedEvent(
-            event_id,
-            observation.when,
-            observation.why,
-            actor,
-            observation.what,
-            observation.type,
-        )
+            self._write_records(list(records.values()), list(entities.values()))
+        entity_views = [entity.to_dict() for entity in entities.values()]
+        return [self._view(event.to_dict(), entity_views) for event in records.values()]
 
     def _view(self, event, entities, score=0.0, outside_window=False):
         resolved = {entity["id"]: entity for entity in entities}
@@ -373,6 +410,7 @@ class _ScopeMemory:
             if actor:
                 actors.append(
                     Actor(
+                        id=actor["id"],
                         name=actor.get("name", ""),
                         image=actor.get("image", ""),
                         url=actor.get("url", ""),
@@ -393,54 +431,62 @@ class _ScopeMemory:
         while repository.get("parent") and repository["parent"] not in seen:
             seen.add(repository["parent"])
             repository = resolve(repository["parent"])
+        known = {ref["subject"] for ref in references}
+        for reference in references:
+            subject = resolve(reference.get("subject"))
+            if subject.get("parent") and subject["parent"] not in known:
+                known.add(subject["parent"])
+                references.append({"subject": subject["parent"], "role": "place"})
         subjects = []
         for reference in references:
             subject = resolve(reference.get("subject"))
             if subject:
-                parent = resolve(subject.get("parent"))
                 subjects.append(
                     Subject(
+                        id=subject["id"],
                         type=subject.get("type", ""),
                         name=subject.get("name", ""),
                         url=subject.get("url", ""),
                         role=reference.get("role", ""),
-                        parent=parent.get("name") or None,
+                        parent=subject.get("parent") or None,
+                        attributes=deepcopy(subject.get("attributes", {})),
                     )
                 )
         content = "\n".join(c["text"] for c in event.get("content", []))
         attributes = deepcopy(event.get("attributes", {}))
         source = event.get("source") or {}
-        ratings = {
-            name: next(
-                (a[name] for a in reversed(event.get("appraisals", [])) if name in a),
-                None,
-            )
-            for name in ("valence", "importance")
-        }
-        return MemoryEvent(
+        ratings = _ratings(event)
+        bound = self._sources_by_bucket.get(event["bucket"])
+        if bound and source.get("system") and bound.system != source["system"]:
+            bound = None
+        view = Event(
             id=event["id"],
             type=event["type"],
             when=_time(event["occurred_at"]) if event.get("occurred_at") else None,
             ended_at=_time(event["ended_at"]) if event.get("ended_at") else None,
             why=event.get("why", ""),
             what=content,
-            title=attributes.get("title")
-            or next(
-                (
-                    value
-                    for key, value in place.get("attributes", {}).items()
-                    if key.endswith(".title")
-                ),
-                None,
-            )
-            or (content.splitlines()[0] if content else ""),
+            title=_title(attributes, place.get("attributes", {}), content),
             part_of=event.get("part_of") or None,
-            source={
-                "system": source.get("system", ""),
-                "container": repository.get("name", ""),
-                "url": source.get("url", ""),
-                "container_url": repository.get("url", ""),
-            },
+            in_reply_to=event.get("in_reply_to") or None,
+            source=Source(
+                system=source.get("system") or (bound.system if bound else ""),
+                installation=source.get("installation")
+                or (bound.installation if bound else ""),
+                container=(bound.container if bound else repository.get("name", "")),
+                url=source.get("url", ""),
+                container_url=repository.get("url", ""),
+                native_id=source.get("native_id", ""),
+                id_namespace=(
+                    bound.id_namespace
+                    if bound and bound.id_namespace
+                    else (
+                        repository.get("id", "").removeprefix("pl_")
+                        if repository.get("type") == f"{source.get('system')}.container"
+                        else repository.get("id", "").removeprefix("pl_")
+                    )
+                ),
+            ),
             actors=actors,
             subjects=subjects,
             attributes=attributes,
@@ -448,8 +494,21 @@ class _ScopeMemory:
             outside_window=outside_window,
             **ratings,
         )
+        # Source retains provenance when callers replace read-only event fields.
+        object.__setattr__(
+            view.source,
+            "_stored_view",
+            _StoredView(
+                deepcopy(event),
+                frozenset(
+                    [actor.id for actor in actors]
+                    + [subject.id for subject in subjects]
+                ),
+            ),
+        )
+        return view
 
-    def recall(self, scope: Scope, text: str, limit: int = 10) -> RecallResult:
+    def recall(self, scope: Scope, text: str, limit: int = 10) -> list[Event]:
         _validate_recall(text, limit)
         result = self._recall(
             {
@@ -463,9 +522,9 @@ class _ScopeMemory:
             event = item["record"]
             entities = result.get("entities", [])
             events.append(self._view(event, entities, item.get("score", 0.0)))
-        return RecallResult(events)
+        return events
 
-    def history(self, scope: Scope, since=None, until=None, after=None) -> HistoryPage:
+    def events(self, scope: Scope, since=None, until=None, after=None) -> EventPage:
         buckets = self.buckets(scope)
         page = self.list(scope, since, until, after, buckets=buckets)
         records = list(page["events"])
@@ -493,43 +552,10 @@ class _ScopeMemory:
                         outside_window=True,
                     )
                 )
-        return HistoryPage(views, page.get("next"))
-
-    def record_knowledge_change(self, scope: Scope, change: KnowledgeChange) -> None:
-        before, after, event_type = change.before, change.after, change.type
-        bucket = self.bucket(scope)
-        item = after or before
-        subject = (
-            "sb_" + sha256(f"{bucket}\0knowledge\0{item.id}".encode()).hexdigest()[:24]
+        views.sort(
+            key=lambda event: (
+                event.when or datetime.min.replace(tzinfo=timezone.utc),
+                event.id,
+            )
         )
-        actor = change.actor
-        actor_id = "ac_" + sha256(f"{bucket}\0{actor}".encode()).hexdigest()[:24]
-        self._write_records(
-            [
-                Event(
-                    bucket=bucket,
-                    id="ev_" + uuid4().hex,
-                    type=event_type,
-                    occurred_at=datetime.now(timezone.utc).isoformat(),
-                    participants=[{"actor": actor_id, "role": "author"}],
-                    content=[{"speaker": actor_id, "text": item.summary}],
-                    subjects=[{"subject": subject, "role": "about"}],
-                    attributes={
-                        "knowledge.status_before": before.status if before else None,
-                        "knowledge.status_after": after.status if after else None,
-                        "knowledge.summary_before": before.summary if before else None,
-                        "knowledge.summary_after": after.summary if after else None,
-                    },
-                )
-            ],
-            [
-                Entity(bucket, subject, "knowledge.item", "subject", item.summary),
-                Entity(
-                    bucket,
-                    actor_id,
-                    "agent" if scope.get("agent") else "person",
-                    "actor",
-                    actor,
-                ),
-            ],
-        )
+        return EventPage(views, page.get("next"))

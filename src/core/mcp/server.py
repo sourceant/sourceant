@@ -375,25 +375,50 @@ def create_mcp_server(
         type: str = "sourceant.observation",
     ) -> dict[str, Any]:
         from datetime import datetime
-        from src.core.memory.interfaces import Remembered
+        from uuid import uuid4
+        from src.core.memory import Event, Actor, Subject, Source
+        from src.core.principal import actor_in, actor_type_in
         from src.core.services import memory_services
 
         active = resolve_scope(Scope.from_mapping(scope))
-        return asdict(
-            memory_services(services).remember(
-                active,
-                Remembered(
-                    text,
-                    datetime.fromisoformat(when.replace("Z", "+00:00")),
-                    why,
-                    who,
-                    paths or [],
-                    valence,
-                    importance,
-                    type,
-                ),
-            )
+        memory = memory_services(services)
+        instant = datetime.fromisoformat(when.replace("Z", "+00:00"))
+        if not text.strip():
+            raise ValueError("text must not be empty")
+        if instant.tzinfo is None or instant.utcoffset() is None:
+            raise ValueError("when must include a timezone")
+        if valence is not None and not -2 <= valence <= 2:
+            raise ValueError("valence must be between -2 and 2")
+        if importance is not None and not 1 <= importance <= 5:
+            raise ValueError("importance must be between 1 and 5")
+        actor = who or actor_in(active)
+        event = Event(
+            id=uuid4().hex,
+            type=type,
+            source=Source.for_scope(active),
+            when=instant,
+            why=why,
+            what=text,
+            actors=[
+                Actor(id=actor, name=actor, type=actor_type_in(active), role="author")
+            ],
+            subjects=[
+                Subject(id=path, type="code.path", name=path) for path in paths or []
+            ],
+            valence=valence,
+            importance=importance,
         )
+        stored = memory.record(active, [event])
+        return {
+            "id": stored[0].id if stored else "",
+            "when": instant,
+            "why": why,
+            "who": actor if memory.configured else who,
+            "what": text,
+            "type": type,
+            "configured": memory.configured,
+            "score": 0.0,
+        }
 
     @server.tool(
         name="recall",
@@ -404,8 +429,16 @@ def create_mcp_server(
     def recall(scope: dict[str, str], query: str, limit: int = 10) -> dict[str, Any]:
         from src.core.services import memory_services
 
+        if not query.strip() or not 1 <= limit <= 100:
+            raise ValueError("recall needs a query and a limit between 1 and 100")
         active = resolve_scope(Scope.from_mapping(scope))
-        return asdict(memory_services(services).recall(active, query, limit))
+        memory = memory_services(services)
+        return {
+            "results": [
+                _event_response(event) for event in memory.recall(active, query, limit)
+            ],
+            "configured": memory.configured,
+        }
 
     @server.tool(
         name="put_knowledge_relationship",
@@ -1028,3 +1061,64 @@ def _add_registered_tools(
             provider.add_tools(server, surface)
         except Exception as error:  # noqa: BLE001 - one bad provider is not all of them
             logger.warning(f"MCP tools from {provider.name} were not added: {error}")
+
+
+def _event_response(event):
+    subjects = {subject.id: subject for subject in event.subjects}
+    root = next(
+        (
+            subject
+            for subject in event.subjects
+            if subject.role == "place" and not subject.parent
+        ),
+        None,
+    )
+    nested_place = any(
+        subject.role == "place" and subject.parent for subject in event.subjects
+    )
+    return {
+        "id": event.id,
+        "type": event.type,
+        "when": event.when,
+        "ended_at": event.ended_at,
+        "why": event.why,
+        "what": event.what,
+        "title": event.title,
+        "part_of": event.part_of,
+        "source": {
+            "system": event.source.system,
+            "container": root.name if root else event.source.container,
+            "url": event.source.url,
+            "container_url": event.source.container_url,
+        },
+        "actors": [
+            {
+                "name": actor.name,
+                "image": actor.image,
+                "url": actor.url,
+                "role": actor.role,
+                "type": actor.type,
+            }
+            for actor in event.actors
+        ],
+        "subjects": [
+            {
+                "type": subject.type,
+                "name": subject.name,
+                "url": subject.url,
+                "role": subject.role,
+                "parent": (
+                    subjects[subject.parent].name
+                    if subject.parent in subjects
+                    else None
+                ),
+            }
+            for subject in event.subjects
+            if not (subject.role == "place" and not subject.parent and nested_place)
+        ],
+        "attributes": event.attributes,
+        "valence": event.valence,
+        "importance": event.importance,
+        "score": event.score,
+        "outside_window": event.outside_window,
+    }
