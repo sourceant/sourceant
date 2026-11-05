@@ -144,6 +144,13 @@ class LiteLLMProvider(LLMInterface):
             try:
                 return litellm.completion(**kwargs)
             except Exception as error:
+                from src.core.notifications import report_failure
+
+                report_failure(
+                    error,
+                    workspace=self._attribution.get("workspace"),
+                    model=self.model,
+                )
                 trace_emit(
                     TraceKind.EXCHANGE,
                     call_purpose.get(),
