@@ -5,13 +5,10 @@ from copy import deepcopy
 from hashlib import sha256
 from threading import RLock
 from src.core.scope import Scope
-from .bindings import SourceBindings
 
 
 class _InMemoryRecords:
     def __init__(self):
-        self._sources_by_bucket = {}
-        self._source_bindings = SourceBindings(persist=False)
         self._events: dict[str, dict] = {}
         self.entities: dict[str, dict] = {}
         self._lock = RLock()
@@ -25,29 +22,54 @@ class _InMemoryRecords:
     def bucket(self, scope: Scope) -> str:
         return self.bind(*binding(scope))
 
-    def buckets(self, scope: Scope) -> list[str]:
-        from .trailpad import repository_buckets
-
-        return repository_buckets(scope, self)
-
     def _write_records(self, events: list[EventRecord], entities: list[Entity]) -> None:
         with self._lock:
             pending = {}
-            for event in events:
-                body = event.to_dict()
-                previous = pending.get(event.id, self._events.get(event.id))
+            captures = {
+                self._capture_identity(body): body
+                for body in self._events.values()
+                if body.get("source")
+            }
+            bodies = [event.to_dict() for event in events]
+            aliases = {}
+            for body in bodies:
+                if body.get("source", {}).get("native_id"):
+                    identity = self._capture_identity(body)
+                    captured = captures.setdefault(identity, body)
+                    aliases[body["id"]] = captured["id"]
+
+            for body in bodies:
+                for key in ("id", "part_of", "in_reply_to"):
+                    if key in body:
+                        body[key] = aliases.get(body[key], body[key])
+                for appraisal in body.get("appraisals", []):
+                    if "target" in appraisal:
+                        appraisal["target"] = aliases.get(
+                            appraisal["target"], appraisal["target"]
+                        )
+                previous = pending.get(body["id"], self._events.get(body["id"]))
                 if previous is not None and previous != body:
                     raise ValueError("An event with this id has different content")
-                pending[event.id] = body
+                pending[body["id"]] = body
             self._events.update(deepcopy(pending))
             self.entities.update(
                 {entity.id: deepcopy(entity.to_dict()) for entity in entities}
             )
 
+    @staticmethod
+    def _capture_identity(body):
+        source = body["source"]
+        return (
+            body["bucket"],
+            source.get("system", ""),
+            source.get("installation", ""),
+            source.get("native_id", ""),
+        )
+
     def list(
         self, scope: Scope, since=None, until=None, after=None, *, buckets=None
     ) -> dict:
-        buckets = buckets if buckets is not None else self.buckets(scope)
+        buckets = buckets if buckets is not None else [self.bucket(scope)]
         with self._lock:
             ordered = sorted(
                 (

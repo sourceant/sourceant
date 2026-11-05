@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -229,7 +230,9 @@ def test_in_memory_listing_filters_scope_time_and_cursor():
     other = Scope.from_mapping({"repository": "acme/other"})
     original = EventRecord.from_dict(example("event.review-comment.json"))
     first = replace(original, bucket=memory.bucket(scope), id="first")
-    second = replace(first, id="second", occurred_at="2026-04-20T10:00:00+02:00")
+    second = replace(
+        first, id="second", occurred_at="2026-04-20T10:00:00+02:00", source=None
+    )
     foreign = replace(first, bucket=memory.bucket(other), id="foreign")
     memory._write_records([first, second, foreign], [])
     page = memory.list(scope, "2026-04-19T00:00:00Z", "2026-04-21T00:00:00Z", "first")
@@ -382,7 +385,7 @@ def test_engine_maps_captured_delivery_page_and_fetches_parent(legacy_bot):
         assert view.actors[0].image == user["avatar_url"]
         assert view.actors[0].url == user["html_url"]
         repository = row["payload"]["repository"]
-        assert view.source.container == repository["full_name"]
+        assert view.source.container == str(repository["id"])
         assert view.source.container_url == repository["html_url"]
         assert view.source.url == row["payload"]["comment"]["html_url"]
         assert view.title == context.title == row["payload"]["pull_request"]["title"]
@@ -424,12 +427,41 @@ def test_captured_github_translation_preserves_original_records():
             assert occurrences is None
             continue
         memory = InMemoryMemory()
-        memory.bind = lambda *args: "captured"
-        memory.record(Scope.from_mapping({}), occurrences)
-        assert memory._events == {event["id"]: event for event in original["events"]}
-        assert memory.entities == {
-            entity["id"]: entity for entity in original["entities"]
-        }
+        scopes = [
+            Scope(),
+            Scope.from_mapping({"workspace": "first"}),
+            Scope.from_mapping({"workspace": "second"}),
+        ]
+        ids = []
+        for scope in scopes:
+            views = memory.record(scope, occurrences)
+            before = deepcopy(memory._events)
+            assert [view.id for view in memory.record(scope, occurrences)] == [
+                view.id for view in views
+            ]
+            assert memory._events == before
+            ids.append({view.id for view in views})
+            assert len(views) == len(original["events"])
+            for occurrence, view in zip(occurrences, views, strict=True):
+                assert view.source.system == occurrence.source.system
+                assert view.source.installation == occurrence.source.installation
+                assert view.source.container == "922971929"
+                assert view.source.native_id == occurrence.source.native_id
+                assert view.source.url == occurrence.source.url
+                assert view.what == occurrence.what
+                assert "sourceant.source" not in memory._events[view.id].get(
+                    "attributes", {}
+                )
+            stored = deepcopy(memory._events)
+            entities = deepcopy(memory.entities)
+            memory.record(scope, memory.events(scope).events)
+            assert memory._events == stored
+            assert memory.entities == entities
+        assert all(
+            left.isdisjoint(right)
+            for i, left in enumerate(ids)
+            for right in ids[i + 1 :]
+        )
 
 
 def test_history_resolves_buckets_once_for_several_external_parents(monkeypatch):
@@ -446,18 +478,19 @@ def test_history_resolves_buckets_once_for_several_external_parents(monkeypatch)
             id=f"parent-{i}",
             occurred_at="2020-01-01T00:00:00Z",
             part_of="",
+            source=None,
         )
         for i in range(3)
     ]
     children = [
-        replace(original, bucket=bucket, id=f"child-{i}", part_of=parent.id)
+        replace(
+            original, bucket=bucket, id=f"child-{i}", part_of=parent.id, source=None
+        )
         for i, parent in enumerate(parents)
     ]
     memory._write_records(parents + children, [])
     calls = []
-    monkeypatch.setattr(
-        memory, "buckets", lambda scope: calls.append(scope) or [bucket]
-    )
+    monkeypatch.setattr(memory, "bucket", lambda scope: calls.append(scope) or bucket)
     page = memory.events(scope, since="2026-01-01T00:00:00Z")
     assert sum(event.outside_window for event in page.events) == 3
     assert calls == [scope]
@@ -465,9 +498,12 @@ def test_history_resolves_buckets_once_for_several_external_parents(monkeypatch)
 
 def test_github_source_does_not_import_adapter():
     import ast
-    from src.integrations.github import memory_source
+    from importlib.util import find_spec
 
-    tree = ast.parse(Path(memory_source.__file__).read_text())
+    origin = Path(find_spec("src.integrations.github.memory_source").origin)
+    if origin.suffix != ".py":
+        pytest.skip("compiled builds do not ship module source")
+    tree = ast.parse(origin.read_text())
     imports = [
         node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     ]
@@ -476,9 +512,8 @@ def test_github_source_does_not_import_adapter():
     ] == ["src.core.memory.models"]
     assert not any(
         isinstance(node, ast.Import)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
         and any(alias.name.startswith("src.core.memory") for alias in node.names)
+        for node in ast.walk(tree)
     )
 
 
@@ -571,8 +606,17 @@ def test_path_names_do_not_overwrite_place_subjects(path):
     memory.record(scope, occurrences)
     expected = "sb_" + sha256(f"captured\0path\0{path}".encode()).hexdigest()[:24]
     assert memory.entities[expected]["type"] == "code.path"
-    assert memory.entities["pl_gh_922971929"]["type"] == "github.repository"
-    assert memory.entities["pl_gh_922971929_pr_155"]["parent"] == "pl_gh_922971929"
+    repository = next(
+        entity
+        for entity in memory.entities.values()
+        if entity["type"] == "github.repository"
+    )
+    pull = next(
+        entity
+        for entity in memory.entities.values()
+        if entity["type"] == "github.pull_request"
+    )
+    assert pull["parent"] == repository["id"]
     comment = next(
         event
         for event in memory.events(scope).events
@@ -617,216 +661,6 @@ def test_adapter_modules_do_not_import_integrations_or_knowledge():
     assert result.returncode == 0, result.stderr
 
 
-def test_source_bindings_survive_a_fresh_http_adapter(tmp_path, monkeypatch):
-    from sqlalchemy import create_engine, func, select
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-    from src.migrations.versions import memory_source_bindings as migration
-    from src.core.memory.bindings import source_bindings
-    from src.core.memory import Event, Source
-
-    engine = create_engine(f"sqlite:///{tmp_path / 'bindings.db'}")
-    with engine.begin() as connection:
-        with Operations.context(MigrationContext.configure(connection)):
-            migration.upgrade()
-    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
-    scope = Scope.from_mapping({"workspace": "team", "repository": "calendar/release"})
-    occurrence = Event(
-        id="meeting-1",
-        type="calendar.meeting",
-        source=Source(system="calendar", installation="account", container="release"),
-        when=datetime(2026, 4, 20, tzinfo=timezone.utc),
-        what="Discuss release",
-    )
-    saved = {"events": [], "entities": []}
-    from hashlib import sha256
-
-    def handle(request):
-        if request.method == "PUT":
-            values = json.loads(request.content)["binding"]
-            identity = tuple(
-                values[name] for name in ("system", "installation", "container")
-            )
-            return httpx.Response(
-                200,
-                json={"id": "bk_" + sha256(repr(identity).encode()).hexdigest()[:24]},
-            )
-        if request.url.path == "/v1/records":
-            saved.update(json.loads(request.content))
-            return httpx.Response(204)
-        if request.url.path == "/v1/events":
-            assert saved["events"][0]["bucket"] in request.url.params.get_list("bucket")
-            return httpx.Response(200, json={**saved, "next": None})
-        if request.url.path == "/v1/recall":
-            assert (
-                saved["events"][0]["bucket"]
-                in json.loads(request.content)["filters"]["buckets"]
-            )
-            return httpx.Response(
-                200,
-                json={
-                    "results": [
-                        {"record": event, "score": 1.0} for event in saved["events"]
-                    ],
-                    "entities": saved["entities"],
-                },
-            )
-        raise AssertionError(request.url)
-
-    try:
-        first = TrailpadMemory(
-            "https://memory.example",
-            "test-service-key",
-            transport=httpx.MockTransport(handle),
-        )
-        try:
-            first.record(scope, [occurrence])
-            first.record(scope, [occurrence])
-        finally:
-            first.close()
-        with engine.connect() as connection:
-            assert (
-                connection.scalar(select(func.count()).select_from(source_bindings))
-                == 1
-            )
-        fresh = TrailpadMemory(
-            "https://memory.example",
-            "test-service-key",
-            transport=httpx.MockTransport(handle),
-        )
-        try:
-            (view,) = fresh.events(scope).events
-            assert view.what == occurrence.what
-            assert fresh.recall(scope, "release")[0].id == view.id
-            assert (
-                len(
-                    fresh.buckets(
-                        Scope.from_mapping(
-                            {"workspace": "other", "repository": "calendar/release"}
-                        )
-                    )
-                )
-                == 1
-            )
-        finally:
-            fresh.close()
-    finally:
-        engine.dispose()
-
-
-def test_registered_resolver_preserves_history_for_old_deliveries(
-    monkeypatch, tmp_path
-):
-    from sqlalchemy import create_engine
-    from sqlmodel import Session
-    from src.core.memory.bindings import source_bindings
-    from src.models.repository_event import RepositoryEvent
-    from src.core.services import memory_services, ServiceRegistry
-
-    memory_services(ServiceRegistry())
-    rows = json.loads(
-        (FIXTURES.parent / "github" / "pull-155-webhooks.json").read_text()
-    )
-    row = next(row for row in rows if row["action"] == "opened")
-    payload = row["payload"]
-    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
-    RepositoryEvent.__table__.create(engine)
-    source_bindings.create(engine)
-    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
-    with Session(engine) as session:
-        session.add(
-            RepositoryEvent(
-                provider="GitHub",
-                type=row["type"],
-                action=row["action"],
-                repository_full_name=payload["repository"]["full_name"],
-                payload=payload,
-            )
-        )
-        session.commit()
-    calls = []
-
-    def handle(request):
-        if request.method == "PUT":
-            source = json.loads(request.content)["binding"]
-            calls.append(source)
-            return httpx.Response(200, json={"id": source["container"]})
-        if request.url.path == "/v1/events":
-            assert str(payload["repository"]["id"]) in request.url.params.get_list(
-                "bucket"
-            )
-            return httpx.Response(
-                200, json={"events": [], "entities": [], "next": None}
-            )
-        raise AssertionError(request.url)
-
-    memory = TrailpadMemory(
-        "https://memory.example",
-        "test-service-key",
-        transport=httpx.MockTransport(handle),
-    )
-    try:
-        memory.events(
-            Scope.from_mapping({"repository": payload["repository"]["full_name"]})
-        )
-    finally:
-        memory.close()
-        engine.dispose()
-    assert any(
-        source["system"] == "github"
-        and source["container"] == str(payload["repository"]["id"])
-        for source in calls
-    )
-
-
-def test_source_binding_is_durable_when_engine_write_fails(tmp_path, monkeypatch):
-    from sqlalchemy import create_engine, select
-    from src.core.memory.bindings import source_bindings
-    from src.core.memory import Event, Source
-
-    engine = create_engine(f"sqlite:///{tmp_path / 'bindings.db'}")
-    source_bindings.create(engine)
-    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
-    scope = Scope.from_mapping({"workspace": "team", "repository": "calendar/release"})
-    occurrence = Event(
-        id="meeting-1",
-        type="calendar.meeting",
-        source=Source(system="calendar", installation="account", container="release"),
-        when=datetime(2026, 4, 20, tzinfo=timezone.utc),
-    )
-
-    def handle(request):
-        if request.method == "PUT":
-            return httpx.Response(200, json={"id": "captured"})
-        assert request.url.path == "/v1/records"
-        with engine.connect() as connection:
-            row = connection.execute(select(source_bindings)).one()
-            assert (
-                row.workspace,
-                row.repository,
-                row.system,
-                row.installation,
-                row.container,
-            ) == ("team", "calendar/release", "calendar", "account", "release")
-        return httpx.Response(503)
-
-    memory = TrailpadMemory(
-        "https://memory.example",
-        "test-service-key",
-        transport=httpx.MockTransport(handle),
-    )
-    try:
-        with pytest.raises(httpx.HTTPStatusError):
-            memory.record(scope, [occurrence])
-        with engine.connect() as connection:
-            assert (
-                connection.execute(select(source_bindings)).one().container == "release"
-            )
-    finally:
-        memory.close()
-        engine.dispose()
-
-
 def test_ingestion_registry_is_bounded_and_keeps_recent_adapters(monkeypatch):
     from src.integrations.github import memory_history
 
@@ -860,20 +694,6 @@ def test_github_package_import_does_not_load_memory_or_services():
         text=True,
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_memory_service_setup_registers_resolvers_idempotently(monkeypatch):
-    from src.core.memory import Memory, bindings
-    from src.core.services import ServiceRegistry, memory_services
-    from src.integrations.github.memory_history import resolve_sources
-
-    monkeypatch.setattr(bindings, "_resolvers", [])
-    registry = ServiceRegistry()
-    memory = InMemoryMemory()
-    registry.register(Memory, memory, "test")
-    assert memory_services(registry) is memory
-    assert memory_services(registry) is memory
-    assert bindings._resolvers == [resolve_sources]
 
 
 @pytest.mark.parametrize(
@@ -941,99 +761,129 @@ def test_disabled_memory_has_only_empty_event_operations():
     assert memory.recall(Scope(), "retry") == []
 
 
-def test_long_source_binding_roundtrip(tmp_path, monkeypatch):
-    from sqlalchemy import create_engine, func, select
-    from src.core.memory.bindings import SourceBindings, source_bindings
+@pytest.mark.parametrize("dimension", ["workspace", "branch", "environment"])
+def test_captured_delivery_is_isolated_between_scopes(dimension):
+    from src.integrations.github.memory_source import Origin, translate
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'long-bindings.db'}")
-    source_bindings.create(engine)
-    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
-    scope = Scope.from_mapping(
-        {"workspace": "team", "repository": "acme/shop", "branch": "long/" * 100}
+    rows = json.loads(
+        (FIXTURES.parent / "github" / "pull-155-webhooks.json").read_text()
     )
-    source = Source.for_scope(scope)
-    assert len(source.container) > 255
-    SourceBindings().remember(scope, [source, source])
-    SourceBindings().remember(scope, [source])
-    assert SourceBindings().sources(scope) == [source]
-    assert (
-        SourceBindings().sources(Scope.from_mapping({"repository": "acme/shop"})) == []
+    row = next(row for row in rows if row["type"] == "pull_request_review_comment")
+    occurrences = translate(
+        Origin("installation", "922971929"),
+        row["type"],
+        row["action"],
+        row["payload"],
     )
-    with engine.connect() as connection:
-        assert connection.scalar(select(func.count()).select_from(source_bindings)) == 1
-
-
-def test_source_binding_digest_lookups_preserve_scope_values(tmp_path, monkeypatch):
-    from sqlalchemy import create_engine
-    from src.core.memory.bindings import SourceBindings, source_bindings
-
-    engine = create_engine(f"sqlite:///{tmp_path / 'scope-bindings.db'}")
-    source_bindings.create(engine)
-    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
-    repository = "repo/" * 100
-    sources = [
-        Source("calendar", "account", "one"),
-        Source("calendar", "account", "two"),
-    ]
-    for workspace, source in zip(("team/" * 100, "other"), sources):
-        scope = Scope.from_mapping({"workspace": workspace, "repository": repository})
-        SourceBindings().remember(scope, [source])
-        assert SourceBindings().sources(scope) == [source]
-    assert set(
-        SourceBindings().sources(Scope.from_mapping({"repository": repository}))
-    ) == set(sources)
-    assert SourceBindings().sources(Scope.from_mapping({"repository": "other"})) == []
-
-
-@pytest.mark.parametrize("legacy", [False, True])
-def test_source_binding_schema_upgrade_and_downgrade(legacy):
-    import sqlalchemy as sa
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-    from src.migrations.versions import memory_source_bindings as first
-    from src.migrations.versions import memory_source_binding_keys as second
-    from src.core.memory.bindings import binding_digest, source_bindings
-
-    engine = sa.create_engine("sqlite://")
-    values = dict(
-        zip(first.DIMENSIONS, ("team", "acme/shop", "calendar", "a", "x" * 600))
-    )
-    with engine.begin() as connection:
-        with Operations.context(MigrationContext.configure(connection)):
-            if legacy:
-                old = sa.Table(
-                    "memory_source_bindings",
-                    sa.MetaData(),
-                    *(
-                        sa.Column(name, sa.String(255), primary_key=True)
-                        for name in first.DIMENSIONS
-                    ),
-                )
-                old.create(connection)
-                connection.execute(old.insert().values(**values))
-            else:
-                first.upgrade()
-            second.upgrade()
-            inspector = sa.inspect(connection)
-            assert inspector.get_pk_constraint("memory_source_bindings")[
-                "constrained_columns"
-            ] == ["id"]
-            columns = {
-                c["name"]: c["type"]
-                for c in inspector.get_columns("memory_source_bindings")
+    memory = InMemoryMemory()
+    first = Scope.from_mapping({dimension: "A"})
+    other = Scope.from_mapping({dimension: "B"})
+    written = memory.record(first, occurrences)
+    assert memory.events(other).events == []
+    assert memory.recall(other, written[-1].what) == []
+    repeated = memory.record(other, occurrences)
+    assert {event.id for event in written}.isdisjoint(event.id for event in repeated)
+    assert len(memory.events(first).events) == len(written)
+    assert len(memory.events(other).events) == len(repeated)
+    assert memory.recall(first, written[-1].what)
+    assert memory.recall(other, repeated[-1].what)
+    before = deepcopy(memory._events)
+    memory.record(first, occurrences)
+    memory.record(other, occurrences)
+    assert memory._events == before
+    for scope in (first, other):
+        for view in memory.events(scope).events:
+            assert view.source.container == "922971929"
+            assert view.source.native_id in {
+                event.source.native_id for event in occurrences
             }
-            assert all(isinstance(columns[name], sa.Text) for name in first.DIMENSIONS)
-            assert inspector.get_indexes("memory_source_bindings")[0][
-                "column_names"
-            ] == ["repository_digest", "workspace_digest"]
-            if legacy:
-                row = connection.execute(sa.select(source_bindings)).mappings().one()
-                assert all(row[name] == value for name, value in values.items())
-                assert row["id"] == binding_digest(
-                    *(values[name] for name in first.DIMENSIONS)
-                )
-                assert row["repository_digest"] == binding_digest(values["repository"])
-            second.downgrade()
-            assert sa.inspect(connection).has_table("memory_source_bindings")
-            first.downgrade()
-            assert not sa.inspect(connection).has_table("memory_source_bindings")
+    records = list(memory._events.values())
+    identities = {
+        (
+            event["bucket"],
+            event["source"]["system"],
+            event["source"]["installation"],
+            event["source"]["native_id"],
+        )
+        for event in records
+    }
+    assert len(identities) == len(records)
+    assert {event["bucket"] for event in records} == {
+        memory.bucket(first),
+        memory.bucket(other),
+    }
+
+
+def test_webhook_delivery_can_be_recorded_for_two_workspaces(monkeypatch):
+    from copy import deepcopy
+    from src.integrations.github import memory_history
+
+    row = next(
+        row
+        for row in json.loads(
+            (FIXTURES.parent / "github" / "pull-155-webhooks.json").read_text()
+        )
+        if row["type"] == "pull_request_review_comment"
+    )
+    memory = InMemoryMemory()
+    monkeypatch.setattr(memory_history, "memory_services", lambda: memory)
+    scopes = []
+    for workspace in ("first", "second"):
+        payload = deepcopy(row["payload"])
+        payload["sourceant_workspace_id"] = workspace
+        payload["sourceant_delivery_id"] = "same-captured-delivery"
+        scope = Scope.from_mapping(
+            {
+                "workspace": workspace,
+                "repository": payload["repository"]["full_name"],
+            }
+        )
+        scopes.append(scope)
+        memory_history.record_webhook(row["type"], payload, stored=False, strict=True)
+        assert memory.events(scope).events
+    first, second = (memory.events(scope).events for scope in scopes)
+    assert {event.id for event in first}.isdisjoint(event.id for event in second)
+
+
+def test_in_memory_capture_identity_includes_bucket():
+    from dataclasses import replace
+
+    memory = InMemoryMemory()
+    original = EventRecord.from_dict(example("event.review-comment.json"))
+    memory._write_records([original], [])
+    memory._write_records([original], [])
+    memory._write_records([replace(original, id="different")], [])
+    assert list(memory._events) == [original.id]
+    memory._write_records([replace(original, bucket="other", id="other")], [])
+    assert len(memory._events) == 2
+
+
+def test_one_captured_github_event_in_two_workspaces():
+    from src.integrations.github.memory_source import Origin, translate
+
+    row = next(
+        row
+        for row in json.loads(
+            (FIXTURES.parent / "github" / "pull-155-webhooks.json").read_text()
+        )
+        if row["type"] == "pull_request"
+    )
+    occurrences = translate(
+        Origin("installation", "922971929"),
+        row["type"],
+        row["action"],
+        row["payload"],
+    )
+    assert len(occurrences) == 1
+    memory = InMemoryMemory()
+    scopes = [Scope.from_mapping({"workspace": value}) for value in ("first", "second")]
+    for scope in scopes:
+        memory.record(scope, occurrences)
+        memory.record(scope, occurrences)
+    assert len(memory._events) == 2
+    ids = []
+    for scope in scopes:
+        (view,) = memory.events(scope).events
+        ids.append(view.id)
+        assert view.source == occurrences[0].source
+    assert ids[0] != ids[1]

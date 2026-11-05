@@ -54,7 +54,7 @@ def ingestion(memory):
         return entry[1]
 
 
-def _stored(full_name: str, type: str | None = None, *, columns=None) -> list:
+def _stored(full_name: str, type: str | None = None) -> list:
     from sqlmodel import Session, select
     from src.config.db import get_engine
     from src.models.repository_event import RepositoryEvent
@@ -62,15 +62,14 @@ def _stored(full_name: str, type: str | None = None, *, columns=None) -> list:
     engine = get_engine()
     if engine is None:
         return []
-    query = select(RepositoryEvent) if columns is None else select(*columns).distinct()
+    query = select(RepositoryEvent)
     query = query.where(
         RepositoryEvent.repository_full_name == full_name,
         RepositoryEvent.provider.in_(["github", "GitHub"]),
     )
     if type is not None:
         query = query.where(RepositoryEvent.type == type)
-    if columns is None:
-        query = query.order_by(RepositoryEvent.id)
+    query = query.order_by(RepositoryEvent.id)
     with Session(engine) as session:
         return list(session.exec(query).all())
 
@@ -109,8 +108,13 @@ def record_webhook(
             ).hexdigest()
         )
         with state.lock:
-            if delivery_id in state.deliveries:
-                state.deliveries.move_to_end(delivery_id)
+            delivery_key = (
+                str(payload.get("sourceant_workspace_id") or ""),
+                repository["full_name"],
+                delivery_id,
+            )
+            if delivery_key in state.deliveries:
+                state.deliveries.move_to_end(delivery_key)
                 return
             if event_type == "push" and stored:
                 branch = str(payload.get("ref") or "").removeprefix("refs/heads/")
@@ -138,7 +142,7 @@ def record_webhook(
                     ),
                     occurrences,
                 )
-            state.deliveries[delivery_id] = None
+            state.deliveries[delivery_key] = None
     except Exception:
         logger.warning(
             "Could not record a %s webhook in memory", event_type, exc_info=True
@@ -165,41 +169,3 @@ def replay(full_names: list[str] | None = None) -> int:
     for row in rows:
         record_webhook(row.type, row.payload or {}, stored=True, strict=True)
     return len(rows)
-
-
-def resolve_sources(scope):
-    from src.core.memory.models import Source
-    from src.models.repository_event import RepositoryEvent
-    from sqlalchemy import String
-
-    repository = scope.get("repository")
-    if not repository:
-        return []
-    payload = RepositoryEvent.payload
-    columns = (
-        payload["installation"]["id"].cast(String).label("installation"),
-        payload["repository"]["owner"]["id"].cast(String).label("owner"),
-        payload["repository"]["id"].cast(String).label("container"),
-        payload["repository"]["full_name"].cast(String).label("full_name"),
-        payload["sourceant_workspace_id"].cast(String).label("workspace"),
-    )
-    try:
-        rows = _stored(repository, columns=columns)
-    except Exception:
-        return []
-    sources = {}
-    for row in rows:
-        installation, owner, container, full_name, workspace = (
-            json.loads(value) if value is not None else None for value in row
-        )
-        if scope.get("workspace") and str(workspace) != scope.get("workspace"):
-            continue
-        if container is None and not full_name:
-            continue
-        source = Source(
-            system="github",
-            installation=str(installation or owner or "local"),
-            container=str(container or full_name),
-        )
-        sources[(source.installation, source.container)] = source
-    return list(sources.values())

@@ -161,6 +161,7 @@ def _validate_recall(text, limit):
 class _StoredView:
     record: dict
     entities: frozenset[str]
+    entity_sources: dict[str, dict]
 
 
 class _ScopeMemory:
@@ -177,10 +178,10 @@ class _ScopeMemory:
                         f"Subject {subject.id!r} has missing parent {subject.parent!r}"
                     )
         records, entities = {}, {}
+        bucket = self.bucket(scope)
+        scope_namespace = sha256(repr(binding(scope)).encode()).hexdigest()[:24]
         for source_event in source_events:
             source = source_event.source
-            bucket = self.bind(source.system, source.installation, source.container)
-            self._sources_by_bucket[bucket] = source
             namespace = (
                 source.id_namespace
                 or sha256(
@@ -189,6 +190,7 @@ class _ScopeMemory:
                     ).encode()
                 ).hexdigest()[:24]
             )
+            namespace += "_" + scope_namespace
             prefix = namespace + "_"
 
             stored = getattr(source, "_stored_view", None)
@@ -261,6 +263,22 @@ class _ScopeMemory:
                     ),
                     url=subject.url,
                     attributes=subject.attributes,
+                    source=(
+                        stored.entity_sources.get(subject.id)
+                        if stored
+                        else (
+                            compact(
+                                {
+                                    "system": source.system,
+                                    "installation": source.installation,
+                                    "native_id": source.container,
+                                    "url": source.container_url,
+                                }
+                            )
+                            if subject.id == source.container
+                            else None
+                        )
+                    ),
                 )
                 entities[entity.id] = entity
             place = next(
@@ -281,6 +299,14 @@ class _ScopeMemory:
                     "place",
                     source.container,
                     url=source.container_url,
+                    source=compact(
+                        {
+                            "system": source.system,
+                            "installation": source.installation,
+                            "native_id": source.container,
+                            "url": source.container_url,
+                        }
+                    ),
                 )
 
             def instant(value, original=None):
@@ -379,9 +405,6 @@ class _ScopeMemory:
             )
             records[event.id] = event
         if records:
-            self._source_bindings.remember(
-                scope, [source_event.source for source_event in source_events]
-            )
             self._write_records(list(records.values()), list(entities.values()))
         entity_views = [entity.to_dict() for entity in entities.values()]
         return [self._view(event.to_dict(), entity_views) for event in records.values()]
@@ -456,9 +479,6 @@ class _ScopeMemory:
         attributes = deepcopy(event.get("attributes", {}))
         source = event.get("source") or {}
         ratings = _ratings(event)
-        bound = self._sources_by_bucket.get(event["bucket"])
-        if bound and source.get("system") and bound.system != source["system"]:
-            bound = None
         view = Event(
             id=event["id"],
             type=event["type"],
@@ -469,23 +489,18 @@ class _ScopeMemory:
             title=_title(attributes, place.get("attributes", {}), content),
             part_of=event.get("part_of") or None,
             in_reply_to=event.get("in_reply_to") or None,
-            source=Source(
-                system=source.get("system") or (bound.system if bound else ""),
-                installation=source.get("installation")
-                or (bound.installation if bound else ""),
-                container=(bound.container if bound else repository.get("name", "")),
-                url=source.get("url", ""),
-                container_url=repository.get("url", ""),
-                native_id=source.get("native_id", ""),
-                id_namespace=(
-                    bound.id_namespace
-                    if bound and bound.id_namespace
-                    else (
-                        repository.get("id", "").removeprefix("pl_")
-                        if repository.get("type") == f"{source.get('system')}.container"
-                        else repository.get("id", "").removeprefix("pl_")
-                    )
-                ),
+            source=(
+                Source(
+                    system=source.get("system", ""),
+                    installation=source.get("installation", ""),
+                    container=(repository.get("source") or {}).get("native_id", ""),
+                    url=source.get("url", ""),
+                    container_url=repository.get("url", ""),
+                    native_id=source.get("native_id", ""),
+                    id_namespace=repository.get("id", "")
+                    .removeprefix("pl_")
+                    .rsplit("_", 1)[0],
+                )
             ),
             actors=actors,
             subjects=subjects,
@@ -504,6 +519,11 @@ class _ScopeMemory:
                     [actor.id for actor in actors]
                     + [subject.id for subject in subjects]
                 ),
+                {
+                    ref: deepcopy(entity["source"])
+                    for ref, entity in resolved.items()
+                    if entity.get("source")
+                },
             ),
         )
         return view
@@ -513,7 +533,7 @@ class _ScopeMemory:
         result = self._recall(
             {
                 "context": {"text": text},
-                "filters": {"buckets": self.buckets(scope)},
+                "filters": {"buckets": [self.bucket(scope)]},
                 "limit": limit,
             }
         )
@@ -525,7 +545,7 @@ class _ScopeMemory:
         return events
 
     def events(self, scope: Scope, since=None, until=None, after=None) -> EventPage:
-        buckets = self.buckets(scope)
+        buckets = [self.bucket(scope)]
         page = self.list(scope, since, until, after, buckets=buckets)
         records = list(page["events"])
         ids = {event["id"] for event in records}

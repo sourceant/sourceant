@@ -222,20 +222,11 @@ async def test_recall_validates_at_the_mcp_boundary(configured, changes):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("persist", [False, True])
 @pytest.mark.parametrize("dimension", ["branch", "environment"])
-async def test_remember_keeps_every_application_scope_dimension_isolated(
-    monkeypatch, tmp_path, persist, dimension
-):
-    from sqlalchemy import create_engine
-    from src.core.memory.bindings import SourceBindings, source_bindings
+async def test_remember_keeps_every_application_scope_dimension_isolated(dimension):
     from src.core.scope import Scope
 
     memory, registry = services()
-    engine = create_engine(f"sqlite:///{tmp_path / 'scope.db'}")
-    source_bindings.create(engine)
-    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
-    memory._source_bindings = SourceBindings(persist=persist)
     first = {
         "workspace": "team",
         "repository": "acme/shop",
@@ -244,33 +235,28 @@ async def test_remember_keeps_every_application_scope_dimension_isolated(
     }
     other = {**first, dimension: "B"}
     server = create_mcp_server(DefaultContextProvider(), services=registry)
-    try:
-        async with create_connected_server_and_client_session(server) as session:
-            written = await session.call_tool(
-                "remember",
-                {
-                    "scope": first,
-                    "text": "Retry succeeded",
-                    "when": "2026-04-19T14:02:11Z",
-                },
-            )
-            assert not written.isError, written
-            hidden = await session.call_tool(
-                "recall", {"scope": other, "query": "Retry"}
-            )
-            assert not hidden.isError, hidden
-            assert hidden.structuredContent["results"] == []
-            visible = await session.call_tool(
-                "recall", {"scope": {**first, "actor": "Other"}, "query": "Retry"}
-            )
-            assert (
-                visible.structuredContent["results"][0]["id"]
-                == written.structuredContent["id"]
-            )
-        assert memory.events(Scope.from_mapping(other)).events == []
+    async with create_connected_server_and_client_session(server) as session:
+        written = await session.call_tool(
+            "remember",
+            {
+                "scope": first,
+                "text": "Retry succeeded",
+                "when": "2026-04-19T14:02:11Z",
+            },
+        )
+        assert not written.isError, written
+        hidden = await session.call_tool("recall", {"scope": other, "query": "Retry"})
+        assert not hidden.isError, hidden
+        assert hidden.structuredContent["results"] == []
+        visible = await session.call_tool(
+            "recall", {"scope": {**first, "actor": "Other"}, "query": "Retry"}
+        )
         assert (
-            memory.events(Scope.from_mapping(first)).events[0].id
+            visible.structuredContent["results"][0]["id"]
             == written.structuredContent["id"]
         )
-    finally:
-        engine.dispose()
+    assert memory.events(Scope.from_mapping(other)).events == []
+    assert (
+        memory.events(Scope.from_mapping(first)).events[0].id
+        == written.structuredContent["id"]
+    )
