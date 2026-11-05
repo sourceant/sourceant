@@ -5,8 +5,6 @@ from threading import RLock
 from urllib.parse import quote
 import httpx
 from src.core.scope import Scope
-from .bindings import SourceBindings
-from .models import Source
 
 
 class _EngineRecords:
@@ -28,8 +26,6 @@ class _EngineRecords:
             timeout=5,
         )
         self._buckets: dict[tuple[str, str, str], str] = {}
-        self._sources_by_bucket = {}
-        self._source_bindings = SourceBindings()
         self._lock = RLock()
 
     def _request(self, method: str, path: str, **kwargs):
@@ -39,9 +35,6 @@ class _EngineRecords:
 
     def bucket(self, scope: Scope) -> str:
         return self.bind(*binding(scope))
-
-    def buckets(self, scope: Scope) -> list[str]:
-        return repository_buckets(scope, self)
 
     def bind(self, system: str, installation: str, container: str) -> str:
         key = (system, installation, container)
@@ -74,7 +67,7 @@ class _EngineRecords:
         self, scope: Scope, since=None, until=None, after=None, *, buckets=None
     ) -> dict:
         params = {
-            "bucket": buckets if buckets is not None else self.buckets(scope),
+            "bucket": buckets if buckets is not None else [self.bucket(scope)],
             "from": since,
             "to": until,
             "after": after,
@@ -107,14 +100,3 @@ class _EngineRecords:
 
 class TrailpadMemory(_ScopeMemory, _EngineRecords):
     pass
-
-
-def repository_buckets(scope: Scope, binder) -> list[str]:
-    buckets = [binder.bucket(scope)]
-    binder._sources_by_bucket[buckets[0]] = Source.for_scope(scope)
-    for source in binder._source_bindings.sources(scope):
-        bucket = binder.bind(source.system, source.installation, source.container)
-        binder._sources_by_bucket[bucket] = source
-        if bucket not in buckets:
-            buckets.append(bucket)
-    return buckets

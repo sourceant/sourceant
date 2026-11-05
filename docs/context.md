@@ -128,30 +128,37 @@ writes attempt recording again, so a swallowed engine failure does not suppress
 the next attempt.
 
 The adapter owns engine records, identifier mapping and bucket binding. Source
-integrations supply events without importing it. Existing GitHub event ids, place
-ids and path hashes remain unchanged, so replay does not duplicate recorded data.
+integrations supply events without importing it. Event, actor and place IDs
+include the scope, and path hashes include the scope bucket.
 Source id namespaces preserve those identities without adapter branches for
 specific sources. A place whose source id equals its source container is the root
 place; other place ids are local suffixes. GitHub path ids use a separate `path:`
-namespace. Source ids are always mapped, regardless of their spelling. Memory imports neither integrations nor knowledge.
+namespace. Source ids are always mapped, regardless of their spelling. Memory
+imports neither integrations nor knowledge.
 
-Scope-to-source bindings persist by workspace and repository in the application
-database before engine writes. Without a database, bindings remain in process.
-Run migrations before starting the updated application. Memory service setup
-explicitly registers legacy source resolvers; importing the GitHub package does
-not initialise memory services. GitHub discovery reads deliveries of every type,
-selecting distinct source identifiers from JSON instead of complete payloads.
-Pull request head lookup reads only pull request deliveries.
+Each scope writes and reads exactly one engine bucket using its application
+scope binding. Sources remain provenance and never select buckets. Reads need
+neither a binding table nor a source resolver. Pull request head lookup reads only
+pull request deliveries.
+
+Record IDs are unique within an engine workspace and include every application
+scope, including the empty scope. Captures are identified by engine workspace,
+bucket, source system, installation and native ID. The same delivery can be
+recorded in two scope buckets; replaying it within one bucket does not duplicate
+it. Engine sources keep their real native IDs. Public sources use the event's
+engine source and the root entity's source container ID and URL. History in
+older source buckets must be replayed into scope buckets before it can be read.
 
 GitHub ingestion retains the eight most recently used adapters. Each retains at
 most 4,096 delivery ids and 1,024 branch heads, evicting the least recently used
-entries. Stored pull requests restore branch context when replaying pushes.
-
+entries. Delivery deduplication includes workspace and repository, so one
+delivery can be recorded in multiple scopes. Stored pull requests restore branch
+context when replaying pushes.
 
 Application writers use `Source.for_scope(scope)`. Its identity includes every
 scope dimension except actor, principal, user and agent. Branch and environment
 scopes stay isolated while principals share events within the same application
-scope. Application binding lookup enforces the same identity.
+scope. Bucket binding enforces the same identity.
 
 Event timestamps are timezone-aware `datetime` values. Integrations parse external
 timestamps before recording. Read views retain private adapter provenance so

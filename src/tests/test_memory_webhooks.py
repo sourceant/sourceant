@@ -16,6 +16,24 @@ FIXTURE = Path(__file__).parent / "fixtures" / "github" / "pull-155-webhooks.jso
 SECRET = "memory-webhook-test-secret"
 
 
+def gateway(workspace):
+    import os
+    import time
+
+    import jwt
+
+    token = jwt.encode(
+        {
+            "sub": "gateway",
+            "exp": int(time.time()) + 300,
+            "scope": {"workspace_id": workspace},
+        },
+        os.environ["JWT_SECRET"],
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestMemoryWebhooks(BaseTestCase):
     @pytest.fixture(autouse=True)
     def memory_store(self, monkeypatch, tmp_path):
@@ -45,13 +63,14 @@ class TestMemoryWebhooks(BaseTestCase):
         yield
         engine.dispose()
 
-    def deliver(self, row, delivery_id=None):
+    def deliver(self, row, delivery_id=None, workspace=None):
         body = json.dumps(row["payload"]).encode()
         return self.client.post(
             "/api/prs/github-webhook",
             content=body,
             headers={
                 **({"X-GitHub-Delivery": delivery_id} if delivery_id else {}),
+                **(gateway(workspace) if workspace else {}),
                 "Content-Type": "application/json",
                 "X-GitHub-Event": row["type"],
                 "X-Hub-Signature-256": "sha256="
@@ -70,7 +89,8 @@ class TestMemoryWebhooks(BaseTestCase):
         parents = [event for event in events if event["type"] == "github.pull_request"]
         assert len(parents) == 1
         parent = parents[0]
-        assert parent["id"] == "ev_gh_922971929_pr_155"
+        assert parent["id"].startswith("ev_gh_922971929_")
+        assert parent["id"].endswith("_pr_155")
         parts = [event for event in events if event.get("part_of") == parent["id"]]
         assert (
             len(
@@ -127,18 +147,39 @@ class TestMemoryWebhooks(BaseTestCase):
         assert all(self.deliver(row).status_code == 201 for row in rows)
         assert self.memory._events == before
 
-    def test_push_only_repository_remains_visible_without_persisted_bindings(
-        self, monkeypatch
-    ):
-        from sqlalchemy import delete, func, select
-        from src.config.db import get_engine
-        from src.core.memory.bindings import SourceBindings, source_bindings
+    def test_one_delivery_to_two_workspaces_is_kept_in_each(self, monkeypatch):
         from src.core.scope import Scope
-        from src.models.repository_event import RepositoryEvent
 
-        engine = get_engine()
-        source_bindings.create(engine)
-        monkeypatch.setattr(self.memory, "_source_bindings", SourceBindings())
+        monkeypatch.setenv("JWT_SECRET", "memory-webhook-gateway-secret")
+        row = next(
+            row
+            for row in json.loads(FIXTURE.read_text())
+            if row["type"] == "pull_request_review_comment"
+        )
+        for workspace in ("first", "second"):
+            for _ in range(2):
+                response = self.deliver(row, "same-delivery", workspace)
+                assert response.status_code == 201, response.text
+        repository = row["payload"]["repository"]
+        views = [
+            self.memory.events(
+                Scope.from_mapping(
+                    {"workspace": workspace, "repository": repository["full_name"]}
+                )
+            ).events
+            for workspace in ("first", "second", "third")
+        ]
+        first, second, third = views
+        assert first and second and not third
+        assert len(first) == len(second)
+        assert {event.id for event in first}.isdisjoint(event.id for event in second)
+        for event in first + second:
+            assert event.source.system == "github"
+            assert event.source.container == str(repository["id"])
+
+    def test_push_only_repository_remains_visible(self):
+        from src.core.scope import Scope
+
         row = next(
             row for row in json.loads(FIXTURE.read_text()) if row["type"] == "push"
         )
@@ -148,17 +189,9 @@ class TestMemoryWebhooks(BaseTestCase):
         assert self.deliver(row, "push-only-repeat").status_code == 201
         recorded = set(self.memory._events)
         assert recorded
-        with engine.begin() as connection:
-            assert (
-                connection.scalar(select(func.count()).select_from(source_bindings))
-                == 1
-            )
-            connection.execute(delete(source_bindings))
-            assert set(connection.scalars(select(RepositoryEvent.type))) == {"push"}
         page = self.memory.events(scope)
         assert {event.id for event in page.events} == recorded
         assert all(event.type == "github.push" for event in page.events)
-        assert len(history.resolve_sources(scope)) == 1
         assert not history._stored(repository, type="pull_request")
         assert self.memory.recall(scope, page.events[0].what)[0].id in recorded
         assert not self.memory.events(scope.extend({"workspace": "other"})).events
@@ -263,7 +296,9 @@ class TestMemoryWebhooks(BaseTestCase):
             == 201
         )
         assert self.memory._events == before
-        assert "captured-delivery" in history.ingestion(self.memory).deliveries
+        assert ("", "sourceant/sourceant", "captured-delivery") in history.ingestion(
+            self.memory
+        ).deliveries
 
     def test_unhashable_memory_implementation_records_webhooks(self):
         class UnhashableMemory:
@@ -309,7 +344,10 @@ class TestMemoryWebhooks(BaseTestCase):
         assert self.deliver(row, "delivery-0").status_code == 201
         row["payload"]["pull_request"]["head"]["ref"] = "branch-3"
         assert self.deliver(row, "delivery-3").status_code == 201
-        assert list(state.deliveries) == ["delivery-2", "delivery-0", "delivery-3"]
+        assert list(state.deliveries) == [
+            ("", row["payload"]["repository"]["full_name"], delivery)
+            for delivery in ["delivery-2", "delivery-0", "delivery-3"]
+        ]
         assert list(state.heads) == [(container, "branch-1"), (container, "branch-3")]
 
         pushes = [
@@ -326,9 +364,10 @@ class TestMemoryWebhooks(BaseTestCase):
             for event in self.memory._events.values()
             if event["type"] == "github.push"
         )
-        assert (
-            pushed["part_of"]
-            == f"ev_gh_{container}_pr_{row['payload']['pull_request']['number']}"
+        assert pushed["part_of"] == next(
+            event["id"]
+            for event in self.memory._events.values()
+            if event["type"] == "github.pull_request"
         )
         assert len(state.heads) == 2
         assert len(state.deliveries) == 3
@@ -381,7 +420,12 @@ class TestMemoryWebhooks(BaseTestCase):
                 },
             )
         assert not result.isError, result
-        expected = f"ev_gh_922971929_review_{review['payload']['review']['id']}"
+        expected = next(
+            event["id"]
+            for event in self.memory._events.values()
+            if event["type"] == "github.pull_request.review"
+            and event["id"].endswith(f"_review_{review['payload']['review']['id']}")
+        )
         assert expected in {item["id"] for item in result.structuredContent["results"]}
 
 

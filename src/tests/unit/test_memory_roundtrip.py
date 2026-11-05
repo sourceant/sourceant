@@ -153,7 +153,7 @@ def test_source_actor_ids_are_mapped_even_when_they_look_mapped():
         entity for entity in memory.entities.values() if entity["class"] == "actor"
     ]
     assert len(actors) == 2
-    assert {actor["id"] for actor in actors} == {
-        "ac_customers_customer",
-        "ac_customers_ac_customers_customer",
-    }
+    assert len({actor["id"] for actor in actors}) == 2
+    assert all(
+        actor["id"] not in {"customer", "ac_customers_customer"} for actor in actors
+    )
