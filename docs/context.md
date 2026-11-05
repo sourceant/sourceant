@@ -157,3 +157,9 @@ Event timestamps are timezone-aware `datetime` values. Integrations parse extern
 timestamps before recording. Read views retain private adapter provenance so
 writing a read view back preserves stored identities and timestamp bytes without
 adding engine-specific fields to the public models.
+
+### Durable memory source bindings
+
+Memory source bindings preserve full scope values, including containers longer than 255 characters. Binding identities use a SHA-256 digest of all five values. Repository and workspace lookups use an index on fixed length digests, keeping index sizes within MySQL utf8mb4 limits without shortening scope values.
+
+Database upgrades preserve existing bindings from the original schema. Fresh installations create the digest schema directly. Downgrading to `memory_sources_001` retains that schema; downgrading past it removes the bindings table.

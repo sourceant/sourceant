@@ -939,3 +939,101 @@ def test_disabled_memory_has_only_empty_event_operations():
     assert memory.record(Scope(), []) == []
     assert memory.events(Scope()) == EventPage()
     assert memory.recall(Scope(), "retry") == []
+
+
+def test_long_source_binding_roundtrip(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine, func, select
+    from src.core.memory.bindings import SourceBindings, source_bindings
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'long-bindings.db'}")
+    source_bindings.create(engine)
+    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
+    scope = Scope.from_mapping(
+        {"workspace": "team", "repository": "acme/shop", "branch": "long/" * 100}
+    )
+    source = Source.for_scope(scope)
+    assert len(source.container) > 255
+    SourceBindings().remember(scope, [source, source])
+    SourceBindings().remember(scope, [source])
+    assert SourceBindings().sources(scope) == [source]
+    assert (
+        SourceBindings().sources(Scope.from_mapping({"repository": "acme/shop"})) == []
+    )
+    with engine.connect() as connection:
+        assert connection.scalar(select(func.count()).select_from(source_bindings)) == 1
+
+
+def test_source_binding_digest_lookups_preserve_scope_values(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine
+    from src.core.memory.bindings import SourceBindings, source_bindings
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'scope-bindings.db'}")
+    source_bindings.create(engine)
+    monkeypatch.setattr("src.config.db.get_engine", lambda: engine)
+    repository = "repo/" * 100
+    sources = [
+        Source("calendar", "account", "one"),
+        Source("calendar", "account", "two"),
+    ]
+    for workspace, source in zip(("team/" * 100, "other"), sources):
+        scope = Scope.from_mapping({"workspace": workspace, "repository": repository})
+        SourceBindings().remember(scope, [source])
+        assert SourceBindings().sources(scope) == [source]
+    assert set(
+        SourceBindings().sources(Scope.from_mapping({"repository": repository}))
+    ) == set(sources)
+    assert SourceBindings().sources(Scope.from_mapping({"repository": "other"})) == []
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_source_binding_schema_upgrade_and_downgrade(legacy):
+    import sqlalchemy as sa
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from src.migrations.versions import memory_source_bindings as first
+    from src.migrations.versions import memory_source_binding_keys as second
+    from src.core.memory.bindings import binding_digest, source_bindings
+
+    engine = sa.create_engine("sqlite://")
+    values = dict(
+        zip(first.DIMENSIONS, ("team", "acme/shop", "calendar", "a", "x" * 600))
+    )
+    with engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            if legacy:
+                old = sa.Table(
+                    "memory_source_bindings",
+                    sa.MetaData(),
+                    *(
+                        sa.Column(name, sa.String(255), primary_key=True)
+                        for name in first.DIMENSIONS
+                    ),
+                )
+                old.create(connection)
+                connection.execute(old.insert().values(**values))
+            else:
+                first.upgrade()
+            second.upgrade()
+            inspector = sa.inspect(connection)
+            assert inspector.get_pk_constraint("memory_source_bindings")[
+                "constrained_columns"
+            ] == ["id"]
+            columns = {
+                c["name"]: c["type"]
+                for c in inspector.get_columns("memory_source_bindings")
+            }
+            assert all(isinstance(columns[name], sa.Text) for name in first.DIMENSIONS)
+            assert inspector.get_indexes("memory_source_bindings")[0][
+                "column_names"
+            ] == ["repository_digest", "workspace_digest"]
+            if legacy:
+                row = connection.execute(sa.select(source_bindings)).mappings().one()
+                assert all(row[name] == value for name, value in values.items())
+                assert row["id"] == binding_digest(
+                    *(values[name] for name in first.DIMENSIONS)
+                )
+                assert row["repository_digest"] == binding_digest(values["repository"])
+            second.downgrade()
+            assert sa.inspect(connection).has_table("memory_source_bindings")
+            first.downgrade()
+            assert not sa.inspect(connection).has_table("memory_source_bindings")

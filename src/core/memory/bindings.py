@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from threading import RLock
+from hashlib import sha256
+import json
 
-from sqlalchemy import Column, MetaData, String, Table, insert, select
+from sqlalchemy import Column, Index, MetaData, String, Table, Text, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from src.core.scope import Scope
@@ -13,11 +15,20 @@ metadata = MetaData()
 source_bindings = Table(
     "memory_source_bindings",
     metadata,
+    Column("id", String(64), primary_key=True),
+    Column("repository_digest", String(64), nullable=False),
+    Column("workspace_digest", String(64), nullable=False),
     *(
-        Column(name, String(255), primary_key=True)
+        Column(name, Text, nullable=False)
         for name in ("workspace", "repository", "system", "installation", "container")
     ),
+    Index("ix_memory_source_bindings_scope", "repository_digest", "workspace_digest"),
 )
+
+
+def binding_digest(*values: str) -> str:
+    return sha256(json.dumps(values, ensure_ascii=True).encode("ascii")).hexdigest()
+
 
 SourceResolver = Callable[[Scope], Iterable[Source]]
 _resolvers: list[SourceResolver] = []
@@ -57,6 +68,11 @@ class SourceBindings:
         with engine.begin() as connection:
             for system, installation, container in unique:
                 values = dict(
+                    id=binding_digest(
+                        workspace, repository, system, installation, container
+                    ),
+                    repository_digest=binding_digest(repository),
+                    workspace_digest=binding_digest(workspace),
                     workspace=workspace,
                     repository=repository,
                     system=system,
@@ -88,10 +104,14 @@ class SourceBindings:
                 ]
         else:
             query = select(source_bindings).where(
-                source_bindings.c.repository == repository
+                source_bindings.c.repository_digest == binding_digest(repository),
+                source_bindings.c.repository == repository,
             )
             if workspace:
-                query = query.where(source_bindings.c.workspace == workspace)
+                query = query.where(
+                    source_bindings.c.workspace_digest == binding_digest(workspace),
+                    source_bindings.c.workspace == workspace,
+                )
             with engine.connect() as connection:
                 sources = [
                     Source(
