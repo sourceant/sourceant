@@ -732,6 +732,7 @@ class CodeReviewer:
                     read_content,
                     file_limit,
                     code_scope,
+                    coverage=coverage,
                 )
 
             batches = shared(
@@ -760,6 +761,7 @@ class CodeReviewer:
                 file_limit,
                 code_scope,
                 revision=revision,
+                coverage=coverage,
             )
 
         focused = [skill for skill in selected if skill.type == SkillType.REVIEW_PASS]
@@ -865,7 +867,19 @@ class CodeReviewer:
             code_suggestions=unique,
             scores=answer.scores,
         )
-        return also_reported(review, analysis)
+        review = also_reported(review, analysis)
+        gaps = [
+            attempt.reason
+            for attempt in coverage.attempts
+            if attempt.method == "batch recovery" and not attempt.answered
+        ]
+        if gaps:
+            if review.verdict == Verdict.APPROVE:
+                review.verdict = Verdict.COMMENT
+            review.summary.minor_suggestions.append(
+                "Review coverage is incomplete: " + "; ".join(dict.fromkeys(gaps))
+            )
+        return review
 
     @staticmethod
     def _beyond(analysis, suggestions):
@@ -1052,59 +1066,26 @@ class CodeReviewer:
         read_content,
         file_limit,
         code_scope,
+        coverage=None,
     ) -> CodeReview:
-        suggestion_filter = SuggestionFilter()
-        code_context = self._context(
+        return self._in_batches(
+            provider,
             changes,
+            parsed_files,
+            [parsed_files],
+            line_mapper,
             readers,
-            [one.file_path for one in parsed_files],
+            evidence,
+            metadata,
+            existing_comments,
+            previous_summary,
+            sections,
             read_content,
             file_limit,
             code_scope,
+            coverage=coverage,
+            revision=changes.revision,
         )
-
-        full_review = provider.generate_code_review(
-            diff=changes.diff,
-            parsed_files=parsed_files,
-            pr_metadata=metadata,
-            existing_comments=list(existing_comments or []) or None,
-            previous_summary=previous_summary,
-            code_context=code_context,
-            requirements=sections.requirements,
-            knowledge=sections.knowledge,
-            impact=sections.impact,
-            related_code=sections.related_code,
-            analysis=sections.analysis,
-        )
-
-        suggestions: List = []
-        rejections: List[str] = []
-        if full_review and full_review.code_suggestions:
-            for suggestion in full_review.code_suggestions:
-                trace_finding("discovery", "raw", suggestion)
-            suggestions = self.process(
-                full_review.code_suggestions,
-                suggestion_filter,
-                line_mapper,
-                evidence=evidence,
-                evidence_rejections=rejections,
-                read_content=(
-                    read_content
-                    if changes.configuration.value("review.finding_scope")
-                    == "repository"
-                    else None
-                ),
-            )
-
-        verdict = verdict_from(suggestions)
-        if full_review:
-            return CodeReview(
-                summary=summary_from(suggestions, full_review.summary),
-                verdict=verdict,
-                code_suggestions=suggestions,
-                scores=full_review.scores,
-            )
-        return CodeReview(summary=None, verdict=verdict, code_suggestions=suggestions)
 
     def _in_batches(
         self,
@@ -1123,6 +1104,7 @@ class CodeReviewer:
         file_limit,
         code_scope,
         revision="",
+        coverage=None,
     ) -> CodeReview | None:
         """Read the change in parts and put what each said together.
 
@@ -1183,10 +1165,34 @@ class CodeReviewer:
                 )
             return answer
 
-        answers = parallel_map(read, batches, MAX_AT_ONCE)
+        from src.core.review.batch_recovery import recover_batch
+
+        outcomes = parallel_map(
+            lambda batch: recover_batch(
+                read, batch, stopped=lambda: _stopped(changes, metadata, revision)
+            ),
+            batches,
+            MAX_AT_ONCE,
+        )
+        gaps = [gap for outcome in outcomes for gap in outcome.gaps]
+        for gap in gaps:
+            if coverage is not None:
+                coverage.record(
+                    "investigation", "batch recovery", answered=False, reason=gap
+                )
+            logger.warning(
+                "review_batch_incomplete session=%s reason=%s", session_id(), gap
+            )
+        answers = [answer for outcome in outcomes for answer in outcome.answers]
 
         if _stopped(changes, metadata, revision):
             return None
+
+        if not answers:
+            errors = [error for outcome in outcomes for error in outcome.errors]
+            if errors:
+                raise errors[0]
+            raise RuntimeError("No review batches completed: " + "; ".join(gaps))
 
         for answer in answers:
             if answer and answer.code_suggestions:
@@ -1209,9 +1215,16 @@ class CodeReviewer:
                 )
 
         return CodeReview(
-            summary=summary_from(suggestions),
-            verdict=verdict_from(suggestions),
+            summary=summary_from(
+                suggestions, answers[0].summary if len(answers) == 1 else None
+            ),
+            verdict=(
+                Verdict.COMMENT
+                if gaps and not suggestions
+                else verdict_from(suggestions)
+            ),
             code_suggestions=suggestions,
+            scores=answers[0].scores if len(answers) == 1 else None,
         )
 
     @staticmethod
