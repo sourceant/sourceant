@@ -157,3 +157,56 @@ def test_source_actor_ids_are_mapped_even_when_they_look_mapped():
     assert all(
         actor["id"] not in {"customer", "ac_customers_customer"} for actor in actors
     )
+
+
+def test_engine_links_are_read_from_the_captured_engine_response():
+    from pathlib import Path
+
+    captured = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "fixtures"
+            / "memory"
+            / "engine-event-links.json"
+        ).read_text()
+    )
+    bucket = captured["request"]["buckets"][0]
+    asked = []
+
+    def handle(request):
+        if request.method == "PUT":
+            return httpx.Response(200, json={"id": bucket})
+        if request.url.path == "/v1/events/links":
+            asked.append(json.loads(request.content))
+            return httpx.Response(200, json=captured["response"])
+        raise AssertionError(request.url)
+
+    memory = TrailpadMemory(
+        "http://memory.test", "key", transport=httpx.MockTransport(handle)
+    )
+    scope = Scope.from_mapping(
+        {"provider": "github", "repository": "sourceant/sourceant"}
+    )
+    links = memory.links(
+        scope, since="2000-01-01T00:00:00Z", until="2100-01-01T00:00:00Z"
+    )
+
+    assert asked == [captured["request"]]
+    expected = captured["response"]["links"]
+    assert len(links) == len(expected)
+    assert (links[0].source, links[0].target) == (
+        expected[0]["from"],
+        expected[0]["to"],
+    )
+    assert links[0].because == expected[0]["because"]
+    types = {event["id"]: event["type"] for event in captured["response"]["events"]}
+    knowledge = next(id for id, type in types.items() if type == "knowledge.captured")
+    about_file = [
+        link
+        for link in links
+        if knowledge in (link.source, link.target) and "subject" in link.because
+    ]
+    assert about_file and {
+        types[link.target if link.source == knowledge else link.source]
+        for link in about_file
+    } == {"github.push"}

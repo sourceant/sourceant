@@ -81,6 +81,14 @@ class Event:
 
 
 @dataclass(frozen=True)
+class EventLink:
+    source: str
+    target: str
+    score: float
+    because: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class EventPage:
     events: list[Event] = field(default_factory=list)
     next: str | None = None

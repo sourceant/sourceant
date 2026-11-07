@@ -81,6 +81,9 @@ class _EngineRecords:
     def _recall(self, query: dict) -> dict:
         return self._request("POST", "v1/recall", json=query)
 
+    def _links(self, query: dict) -> dict:
+        return self._request("POST", "v1/events/links", json=query)
+
     def event(self, id: str) -> EventRecord:
         return EventRecord.from_dict(
             self._request("GET", "v1/events/" + quote(id, safe=""))

@@ -152,6 +152,71 @@ class _InMemoryRecords:
             ]
         }
 
+    def _links(self, query: dict) -> dict:
+        """Links events by thread and shared subjects only; the engine adds people, time, text and stored links."""
+        buckets = query["buckets"]
+        wanted = set(query.get("approaches") or ("thread", "subject"))
+        with self._lock:
+            events = [
+                event
+                for event in self._events.values()
+                if event["bucket"] in buckets
+                and event.get("occurred_at")
+                and _time(query["from"]) <= _at(event) < _time(query["to"])
+            ]
+        ids = {event["id"] for event in events}
+        about = {
+            event["id"]: {
+                *(s["subject"] for s in event.get("subjects", [])),
+                *(i["entity"] for i in event.get("involves", [])),
+            }
+            for event in events
+        }
+        spread = {}
+        for refs in about.values():
+            for ref in refs:
+                spread[ref] = spread.get(ref, 0) + 1
+        pairs = {}
+
+        def link(a, b, approach, evidence):
+            if a == b or a not in ids or b not in ids:
+                return
+            key = tuple(sorted((a, b)))
+            pairs.setdefault(key, {})[approach] = evidence
+
+        for event in events:
+            parents = [event.get(name) for name in ("part_of", "in_reply_to")]
+            for parent in filter(None, parents):
+                if "thread" in wanted:
+                    link(event["id"], parent, "thread", {"score": 1.0})
+            if "subject" not in wanted:
+                continue
+            for other in events:
+                shared = sorted(
+                    ref
+                    for ref in about[event["id"]] & about[other["id"]]
+                    if spread[ref] < len(events)
+                )
+                if shared and event["id"] < other["id"]:
+                    score = min(1.0, sum(1 / spread[ref] for ref in shared))
+                    link(
+                        event["id"],
+                        other["id"],
+                        "subject",
+                        {"score": score, "shared": shared},
+                    )
+        links = [
+            {
+                "from": a,
+                "to": b,
+                "score": sum(e["score"] for e in because.values()) / len(wanted),
+                "because": because,
+            }
+            for (a, b), because in pairs.items()
+        ]
+        links.sort(key=lambda item: (-item["score"], item["from"], item["to"]))
+        return {"links": links[: query.get("limit", 500)]}
+
 
 class InMemoryMemory(_ScopeMemory, _InMemoryRecords):
     def entity(self, id):

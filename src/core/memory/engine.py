@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 
 import httpx
 
 from src.core.scope import Scope
-from .models import Event, EventPage, Actor, Subject, Source
+from .models import Event, EventLink, EventPage, Actor, Subject, Source
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -86,6 +86,10 @@ def _time(value) -> datetime:
     if isinstance(value, dict):
         value = value["at"]
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def _instant(value):
+    return value.isoformat() if isinstance(value, datetime) else value
 
 
 def _at(event: dict) -> datetime:
@@ -579,3 +583,34 @@ class _ScopeMemory:
             )
         )
         return EventPage(views, page.get("next"))
+
+    def links(
+        self,
+        scope: Scope,
+        since=None,
+        until=None,
+        *,
+        approaches: list[str] | None = None,
+        min_score: float = 0.0,
+        limit: int = 500,
+    ) -> list[EventLink]:
+        now = datetime.now(timezone.utc)
+        query = {
+            "buckets": [self.bucket(scope)],
+            "from": _instant(since) or "1970-01-01T00:00:00Z",
+            "to": _instant(until) or (now + timedelta(days=1)).isoformat(),
+            "limit": limit,
+        }
+        if approaches:
+            query["approaches"] = approaches
+        if min_score:
+            query["min_score"] = min_score
+        return [
+            EventLink(
+                source=link["from"],
+                target=link["to"],
+                score=link["score"],
+                because=link.get("because") or {},
+            )
+            for link in self._links(query).get("links", [])
+        ]

@@ -12,3 +12,6 @@ class DisabledMemory:
 
     def recall(self, scope, text, limit=10):
         return []
+
+    def links(self, scope, since=None, until=None, **options):
+        return []

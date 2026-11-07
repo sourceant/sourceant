@@ -1,0 +1,3166 @@
+{
+ "request": {
+  "buckets": [
+   "bk_4a912037406e078c2d4a"
+  ],
+  "from": "2000-01-01T00:00:00Z",
+  "to": "2100-01-01T00:00:00Z",
+  "limit": 500
+ },
+ "response": {
+  "events": [
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "type": "github.push",
+    "occurred_at": "2026-09-10T05:16:50+01:00",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "role": "author"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "text": "fix(review): Drop suggestions that quote the diff back"
+     }
+    ],
+    "subjects": [
+     {
+      "subject": "sb_e0393a2d3e8d530cc35ccb58",
+      "role": "about"
+     },
+     {
+      "subject": "sb_b4fd21b364f9738f24cf73ee",
+      "role": "about"
+     },
+     {
+      "subject": "sb_24dd1d7415d5270ae6f10979",
+      "role": "about"
+     }
+    ],
+    "attributes": {
+     "github.files": [
+      "src/tests/unit/test_line_mapper.py",
+      "src/utils/diff_parser.py",
+      "src/utils/line_mapper.py"
+     ],
+     "github.ref": "refs/heads/fix/drop-suggestions-that-restate-the-diff"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "push:refs/heads/fix/drop-suggestions-that-restate-the-diff:8484d2183d74f6412ae4383d7f8344d559f109b6",
+     "url": "https://github.com/sourceant/sourceant/commit/8484d2183d74"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "type": "github.pull_request",
+    "occurred_at": "2026-09-10T04:29:34Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "role": "author"
+     }
+    ],
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "pull:4491938915",
+     "url": "https://github.com/sourceant/sourceant/pull/155"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "type": "github.pull_request.review_comment",
+    "occurred_at": "2026-09-10T04:31:05Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "role": "reviewer"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "text": "By flattening all `line.is_added` lines in a single hunk via `[line.value.strip() for line in hunk if line.is_added]`, you lose the boundaries of contiguous added blocks. If a hunk has multiple disconnected additions separated by context/deleted lines, they will be combined into a single contiguous block. This could result in false positives where a suggestion that spans across unchanged context lines is incorrectly flagged as 'already applied/replayed'. Grouping contiguous additions within each hunk avoids this issue.\n\n```suggestion\n    def contains_suggested_lines(self, suggested_code: str) -> bool:\n        \"\"\"Whether this diff already adds exactly what is being suggested.\n\n        A suggestion is a replacement, so one whose every line is already among\n        the lines the diff adds proposes the code that is there. That holds\n        whatever it claims the existing code is, which is why this asks the\n        diff rather than comparing the two halves of the suggestion against\n        each other.\n        \"\"\"\n        suggested_lines = self._normalize_snippet(suggested_code)\n        if not suggested_lines:\n            return False\n\n        for hunk in self._patched_file:\n            current_block = []\n            for line in hunk:\n                if line.is_added:\n                    current_block.append(line.value.strip())\n                else:\n                    if current_block:\n                        if self._contains_lines(current_block, suggested_lines):\n                            return True\n                        current_block = []\n            if current_block and self._contains_lines(current_block, suggested_lines):\n                return True\n\n        return False\n```"
+     }
+    ],
+    "subjects": [
+     {
+      "subject": "sb_b4fd21b364f9738f24cf73ee",
+      "role": "about"
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "attributes": {
+     "github.path": "src/utils/diff_parser.py"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "comment:3975491982",
+     "url": "https://github.com/sourceant/sourceant/pull/155#discussion_r3975491982"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "type": "github.pull_request.review_comment",
+    "occurred_at": "2026-09-10T04:31:05Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "role": "reviewer"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "text": "To ensure contract consistency, the added lines from the hunk should be normalized using the exact same normalization function (`_normalize_snippet`) as the suggested code. Doing `.strip()` manually on individual lines bypasses any special normalization logic (such as ignoring empty lines, handling specific whitespace characters, or comments) implemented in `_normalize_snippet`, which can lead to false negatives/positives during comparison.\n\n```suggestion\n        return any(\n            self._contains_lines(\n                self._normalize_snippet(\"\\n\".join(line.value for line in hunk if line.is_added)),\n                suggested_lines,\n            )\n            for hunk in self._patched_file\n        )\n```"
+     }
+    ],
+    "subjects": [
+     {
+      "subject": "sb_b4fd21b364f9738f24cf73ee",
+      "role": "about"
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "attributes": {
+     "github.path": "src/utils/diff_parser.py"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "comment:3975491988",
+     "url": "https://github.com/sourceant/sourceant/pull/155#discussion_r3975491988"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "type": "github.pull_request.review",
+    "occurred_at": "2026-09-10T04:31:05Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "role": "reviewer"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "text": "Review complete. See the overview comment for a summary."
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "attributes": {
+     "github.state": "changes_requested"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "review:5162716156",
+     "url": "https://github.com/sourceant/sourceant/pull/155#pullrequestreview-5162716156"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "type": "github.push",
+    "occurred_at": "2026-09-10T05:39:46+01:00",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "role": "author"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "text": "fix(review): Keep each block of changed lines apart"
+     }
+    ],
+    "subjects": [
+     {
+      "subject": "sb_e0393a2d3e8d530cc35ccb58",
+      "role": "about"
+     },
+     {
+      "subject": "sb_b4fd21b364f9738f24cf73ee",
+      "role": "about"
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "attributes": {
+     "github.files": [
+      "src/tests/unit/test_line_mapper.py",
+      "src/utils/diff_parser.py"
+     ],
+     "github.ref": "refs/heads/fix/drop-suggestions-that-restate-the-diff"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "push:refs/heads/fix/drop-suggestions-that-restate-the-diff:5bbfde849190f7af65b1dc012c7115f54fb80a6b",
+     "url": "https://github.com/sourceant/sourceant/compare/8484d2183d74...5bbfde849190"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "type": "github.pull_request.review_comment",
+    "occurred_at": "2026-09-10T04:41:34Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "role": "reviewer"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "text": "If `line.value` retains its trailing newline character (e.g. `\\n` or `\\r\\n`), joining the raw values with `\\n` will introduce extra empty lines when split and normalized in `_normalize_snippet`. Stripping trailing line breaks beforehand ensures that the run is normalized correctly without empty-line artifacts.\n\n```suggestion\n        runs: List[List[str]] = []\n        current: List[str] = []\n        for line in hunk:\n            if line.is_added if added else line.is_removed:\n                current.append(line.value.rstrip(\"\\r\\n\"))\n            elif current:\n                runs.append(current)\n                current = []\n        if current:\n            runs.append(current)\n        return [cls._normalize_snippet(\"\\n\".join(run)) for run in runs]\n```"
+     }
+    ],
+    "subjects": [
+     {
+      "subject": "sb_b4fd21b364f9738f24cf73ee",
+      "role": "about"
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "attributes": {
+     "github.path": "src/utils/diff_parser.py"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "comment:3975584816",
+     "url": "https://github.com/sourceant/sourceant/pull/155#discussion_r3975584816"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "type": "github.pull_request.review",
+    "occurred_at": "2026-09-10T04:41:34Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "role": "reviewer"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "text": "Review complete. See the overview comment for a summary."
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "attributes": {
+     "github.state": "changes_requested"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "review:5162791856",
+     "url": "https://github.com/sourceant/sourceant/pull/155#pullrequestreview-5162791856"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "type": "github.pull_request.review",
+    "occurred_at": "2026-09-10T04:52:31Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "role": "reviewer"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+      "text": "Review complete. No specific code suggestions were generated. See the overview comment for a summary."
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "attributes": {
+     "github.state": "approved"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "review:5162869429",
+     "url": "https://github.com/sourceant/sourceant/pull/155#pullrequestreview-5162869429"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "type": "github.pull_request.merged",
+    "occurred_at": "2026-09-10T04:55:24Z",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "role": "decider"
+     }
+    ],
+    "part_of": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "pull:4491938915:merged",
+     "url": "https://github.com/sourceant/sourceant/pull/155"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "type": "github.push",
+    "occurred_at": "2026-10-19T18:42:09+01:00",
+    "place": "pl_gh_922971929_bd658d723ba429c7ae3f8021",
+    "participants": [
+     {
+      "actor": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "role": "author"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+      "text": "feat(review): Speed up and trace premium reviews\nfeat(review): Add evaluation policies and doubt handling\nfeat(review): Add investigation discovery for large changes\nfeat(review): Add repository context, change digest and callers\nfeat(index): Derive calls from SCIP indexes\nfeat(review): Raise the default reading budget to 50,000 tokens\nrefactor(review): Name settings for what they do\nMerge pull request #209 from sourceant/feat/review-context-and-scale"
+     }
+    ],
+    "subjects": [
+     {
+      "subject": "sb_a4ebdf3a78c73bb5edb899e0",
+      "role": "about"
+     },
+     {
+      "subject": "sb_c36d97c891f3123258124d74",
+      "role": "about"
+     },
+     {
+      "subject": "sb_6c8ac53b021201c74402872e",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a05dd9096d5c0bafc1c4b3f2",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7e71fe369019375717585f6c",
+      "role": "about"
+     },
+     {
+      "subject": "sb_05773bdfd715b5dfd0c172dd",
+      "role": "about"
+     },
+     {
+      "subject": "sb_49e3f3e6dcb4e5d0232edcdd",
+      "role": "about"
+     },
+     {
+      "subject": "sb_0265d076d2999f82386e5641",
+      "role": "about"
+     },
+     {
+      "subject": "sb_bb0fae83590e79979cf994c7",
+      "role": "about"
+     },
+     {
+      "subject": "sb_920f7cd56a335c933e7e9546",
+      "role": "about"
+     },
+     {
+      "subject": "sb_d489f204011e3b5777eca43b",
+      "role": "about"
+     },
+     {
+      "subject": "sb_b4d8249af3b503e815188f11",
+      "role": "about"
+     },
+     {
+      "subject": "sb_30f69059882c18016a9fbae0",
+      "role": "about"
+     },
+     {
+      "subject": "sb_810a7500996b0967ed63c6d6",
+      "role": "about"
+     },
+     {
+      "subject": "sb_75cc18a2c484edceca1c3dc6",
+      "role": "about"
+     },
+     {
+      "subject": "sb_58d10e0a8d08d2475b94a553",
+      "role": "about"
+     },
+     {
+      "subject": "sb_4f05c4da15918f47c7b0e0fb",
+      "role": "about"
+     },
+     {
+      "subject": "sb_e82e8ceaf10187fc1cb5073c",
+      "role": "about"
+     },
+     {
+      "subject": "sb_c0a2858bc98332fc862327d2",
+      "role": "about"
+     },
+     {
+      "subject": "sb_89cb7265e78e388d15dccb0a",
+      "role": "about"
+     },
+     {
+      "subject": "sb_dc72c5d3096c082ad3a7e4b2",
+      "role": "about"
+     },
+     {
+      "subject": "sb_3f1eadd06cffd8f32ccdfdf9",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7ebc8d3c1a3e6ea885105082",
+      "role": "about"
+     },
+     {
+      "subject": "sb_acbb923f92fbc641b062ed97",
+      "role": "about"
+     },
+     {
+      "subject": "sb_28f14bbc70b23b360ba489f2",
+      "role": "about"
+     },
+     {
+      "subject": "sb_65ee9de05e78d7f4e6cf61a1",
+      "role": "about"
+     },
+     {
+      "subject": "sb_cb985fb35901f16268ba5bf8",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7da8020d1e6fecca0d6c8e4c",
+      "role": "about"
+     },
+     {
+      "subject": "sb_6623efc4c9e6d7e7fa539ba8",
+      "role": "about"
+     },
+     {
+      "subject": "sb_ec66f2ef53032ae239eddd59",
+      "role": "about"
+     },
+     {
+      "subject": "sb_5ab75af63b4264b1be62baa4",
+      "role": "about"
+     },
+     {
+      "subject": "sb_89a92a25b91144bc64e97a23",
+      "role": "about"
+     },
+     {
+      "subject": "sb_df589b88778b959fce014356",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7bc9fb851641c12d005decde",
+      "role": "about"
+     },
+     {
+      "subject": "sb_3292e855bb31237af5f3bf42",
+      "role": "about"
+     },
+     {
+      "subject": "sb_9d15bd8295a72ac73b060b46",
+      "role": "about"
+     },
+     {
+      "subject": "sb_fb7365b1a8f6eee6348f97e6",
+      "role": "about"
+     },
+     {
+      "subject": "sb_00d02f7f2aaa0b2d1ede9dc6",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7b1e1836859354e3df30a9e4",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a8dbaddaf6d8bf22b5637592",
+      "role": "about"
+     },
+     {
+      "subject": "sb_96b0b8ba45c16c2fbf04844f",
+      "role": "about"
+     },
+     {
+      "subject": "sb_0e5ba14360eb3a54907723a5",
+      "role": "about"
+     },
+     {
+      "subject": "sb_81474e728631e19de06ff960",
+      "role": "about"
+     },
+     {
+      "subject": "sb_06ae8d35e0b866870ccaa642",
+      "role": "about"
+     },
+     {
+      "subject": "sb_748b1df8b373e1adcf97a87a",
+      "role": "about"
+     },
+     {
+      "subject": "sb_9770fcbf9b1c19c86a9ee0c0",
+      "role": "about"
+     },
+     {
+      "subject": "sb_f62e262d588191247ea17e07",
+      "role": "about"
+     },
+     {
+      "subject": "sb_963d57688101c2efe6160187",
+      "role": "about"
+     },
+     {
+      "subject": "sb_77794d4db9ed91c50491d313",
+      "role": "about"
+     },
+     {
+      "subject": "sb_8139ee28cda468bcde499d9e",
+      "role": "about"
+     },
+     {
+      "subject": "sb_f02a47d3b3ec9096ccadce06",
+      "role": "about"
+     },
+     {
+      "subject": "sb_83934068184e23863b5c41d7",
+      "role": "about"
+     },
+     {
+      "subject": "sb_fab067cc6e20e69ef750786e",
+      "role": "about"
+     },
+     {
+      "subject": "sb_3f729570884b4d02e309aed7",
+      "role": "about"
+     },
+     {
+      "subject": "sb_b46838757ce9e1be14dd3284",
+      "role": "about"
+     },
+     {
+      "subject": "sb_09da5f06d0a4ef08f786d1ee",
+      "role": "about"
+     },
+     {
+      "subject": "sb_c738e8f6ce4c1b1ca5d6ca66",
+      "role": "about"
+     },
+     {
+      "subject": "sb_60f28b010864558db97d5bf4",
+      "role": "about"
+     },
+     {
+      "subject": "sb_f69ec0160814ae5fa5cb5e1a",
+      "role": "about"
+     },
+     {
+      "subject": "sb_5a3042026999941ed05fcdda",
+      "role": "about"
+     },
+     {
+      "subject": "sb_ea7dc8f267e65750ec2ffa56",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7b57a3df469547f0edbba304",
+      "role": "about"
+     },
+     {
+      "subject": "sb_596a06f4dbf4e09baa2dcc10",
+      "role": "about"
+     },
+     {
+      "subject": "sb_fa96fdfda73d0410b39acc1f",
+      "role": "about"
+     },
+     {
+      "subject": "sb_13d20b6c86d69563019ee8c3",
+      "role": "about"
+     },
+     {
+      "subject": "sb_67848a6eb01cf1625b44e1b9",
+      "role": "about"
+     },
+     {
+      "subject": "sb_24c3765f3872f616d39c13a8",
+      "role": "about"
+     },
+     {
+      "subject": "sb_37ee877eb76c8ea925e67ccc",
+      "role": "about"
+     },
+     {
+      "subject": "sb_ae0afc275cf11ce1da07d442",
+      "role": "about"
+     },
+     {
+      "subject": "sb_d8569f992559b042e3ab8563",
+      "role": "about"
+     },
+     {
+      "subject": "sb_576d6899d0c292137e54c10b",
+      "role": "about"
+     },
+     {
+      "subject": "sb_0b3862e66e26061761c2821d",
+      "role": "about"
+     },
+     {
+      "subject": "sb_ae3901bff9e1b717d7d7274a",
+      "role": "about"
+     },
+     {
+      "subject": "sb_30e90bcdacea110f968ec8f1",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a5ca7124676960dd2d453a11",
+      "role": "about"
+     },
+     {
+      "subject": "sb_641e7a6c1688747aa22b0ea9",
+      "role": "about"
+     },
+     {
+      "subject": "sb_9b5969b8726139683981b734",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7fc44a7faec21db7e13ea473",
+      "role": "about"
+     },
+     {
+      "subject": "sb_841077ebbf54a3c7d88e2bf9",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a4cb2aaa086039061ab765ba",
+      "role": "about"
+     },
+     {
+      "subject": "sb_0fb2e9c40ea09847b28085de",
+      "role": "about"
+     },
+     {
+      "subject": "sb_c69359fd7b058e93fbc65616",
+      "role": "about"
+     },
+     {
+      "subject": "sb_d5b8fde7e89a1453318c67e0",
+      "role": "about"
+     },
+     {
+      "subject": "sb_7b7ae42c22fd247c135cf0c9",
+      "role": "about"
+     },
+     {
+      "subject": "sb_b719eb7a469c564e526c40fa",
+      "role": "about"
+     },
+     {
+      "subject": "sb_831829d005eb16eae34a89ce",
+      "role": "about"
+     },
+     {
+      "subject": "sb_d4a5c4bd698dff2982e66ddc",
+      "role": "about"
+     },
+     {
+      "subject": "sb_121fe1030746a9e19b9bddac",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a24d08c0b9035f4dd3679132",
+      "role": "about"
+     },
+     {
+      "subject": "sb_0ddb18f50ba0f036dd2a13c4",
+      "role": "about"
+     },
+     {
+      "subject": "sb_2d855ef4117a25cbcb4603f3",
+      "role": "about"
+     },
+     {
+      "subject": "sb_8dc65b323c3c2d8bbf54bb7b",
+      "role": "about"
+     },
+     {
+      "subject": "sb_35051ae73341dbc43282173d",
+      "role": "about"
+     },
+     {
+      "subject": "sb_84bfbd31f706fcd6302bd3c1",
+      "role": "about"
+     },
+     {
+      "subject": "sb_fe009d17b8f64f58ae45cf92",
+      "role": "about"
+     },
+     {
+      "subject": "sb_2c194a43f7b58ca9a2fec62d",
+      "role": "about"
+     },
+     {
+      "subject": "sb_36bf15e9da1842534fd79ff3",
+      "role": "about"
+     },
+     {
+      "subject": "sb_520323a31200338dfd899f7d",
+      "role": "about"
+     },
+     {
+      "subject": "sb_cef80a701503cd11938c7a00",
+      "role": "about"
+     },
+     {
+      "subject": "sb_e75f1bdcce7059e77ed16443",
+      "role": "about"
+     },
+     {
+      "subject": "sb_b48f5f597cde27978f57bc86",
+      "role": "about"
+     },
+     {
+      "subject": "sb_c591e489dcf8fe03aa1ce387",
+      "role": "about"
+     },
+     {
+      "subject": "sb_157252a30b47bf2d8d45af89",
+      "role": "about"
+     },
+     {
+      "subject": "sb_502e080eb26b5185de3efbbf",
+      "role": "about"
+     },
+     {
+      "subject": "sb_048168ac849f4fdc882f4b09",
+      "role": "about"
+     },
+     {
+      "subject": "sb_c1648c7a583699dbbff0c3ed",
+      "role": "about"
+     },
+     {
+      "subject": "sb_8db5afd1f5e03ff323efed08",
+      "role": "about"
+     },
+     {
+      "subject": "sb_fda7a0c9254fe02bc9be2a0a",
+      "role": "about"
+     },
+     {
+      "subject": "sb_3911db49cabe6a177a58553e",
+      "role": "about"
+     },
+     {
+      "subject": "sb_01f2949e1111056dfc0c39ea",
+      "role": "about"
+     },
+     {
+      "subject": "sb_43f1b95e113bfa57aaee6e9a",
+      "role": "about"
+     },
+     {
+      "subject": "sb_b5550916e935917c42655a3b",
+      "role": "about"
+     },
+     {
+      "subject": "sb_d0e957e2029f1cf80bb0cc29",
+      "role": "about"
+     },
+     {
+      "subject": "sb_e0393a2d3e8d530cc35ccb58",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a629c8c49d94fa8a227750aa",
+      "role": "about"
+     },
+     {
+      "subject": "sb_ddd2581149955ee464a105c1",
+      "role": "about"
+     },
+     {
+      "subject": "sb_bfb5db563d76d797eab781fb",
+      "role": "about"
+     },
+     {
+      "subject": "sb_4aaa01e519335553756be03c",
+      "role": "about"
+     },
+     {
+      "subject": "sb_95c30d46dd35166fbcad0388",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a8c1fccf7e6e306a1689e003",
+      "role": "about"
+     },
+     {
+      "subject": "sb_3df0d5db7321edf0ffe9cce3",
+      "role": "about"
+     },
+     {
+      "subject": "sb_eaca34df2da964ef81a73e95",
+      "role": "about"
+     },
+     {
+      "subject": "sb_c7bd72cf7df054dc23922b92",
+      "role": "about"
+     },
+     {
+      "subject": "sb_0153a5b76910948ce80dbc81",
+      "role": "about"
+     },
+     {
+      "subject": "sb_19ba23e104d21e86145fb188",
+      "role": "about"
+     },
+     {
+      "subject": "sb_177e7b0b68597cf47a900188",
+      "role": "about"
+     },
+     {
+      "subject": "sb_24dd1d7415d5270ae6f10979",
+      "role": "about"
+     },
+     {
+      "subject": "sb_dba011ad64c1db7ebc9511f1",
+      "role": "about"
+     }
+    ],
+    "attributes": {
+     "github.files": [
+      "docs/reviews.md",
+      "src/api/routes/review_snapshots.py",
+      "src/core/change_context/git.py",
+      "src/core/change_context/models.py",
+      "src/core/code_index/scip.py",
+      "src/core/model/__init__.py",
+      "src/core/parallel.py",
+      "src/core/review/__init__.py",
+      "src/core/review/call_context.py",
+      "src/core/review/calls.py",
+      "src/core/review/checkout.py",
+      "src/core/review/contracts.py",
+      "src/core/review/evaluation.py",
+      "src/core/review/execution.py",
+      "src/core/review/interfaces.py",
+      "src/core/review/investigations.py",
+      "src/core/review/models.py",
+      "src/core/review/orchestration.py",
+      "src/core/review/planning.py",
+      "src/core/review/snapshot.py",
+      "src/core/review/source_search.py",
+      "src/core/review_context.py",
+      "src/core/review_performance.py",
+      "src/core/review_trace.py",
+      "src/core/search/source_text.py",
+      "src/core/settings/definitions.py",
+      "src/integrations/github/github.py",
+      "src/llms/litellm_provider.py",
+      "src/models/code_review.py",
+      "src/plugins/builtin/code_reviewer/overview.py",
+      "src/plugins/builtin/code_reviewer/plugin.py",
+      "src/plugins/builtin/code_reviewer/reviewing.py",
+      "src/plugins/builtin/code_reviewer/working_tree.py",
+      "src/prompts/prompts.py",
+      "src/tests/fixtures/review-contracts/contradictory-evidence-metadata.json",
+      "src/tests/fixtures/review-contracts/indexed-calls.json",
+      "src/tests/fixtures/review-contracts/licenses/TechDebtMCP-LICENSE",
+      "src/tests/fixtures/review-contracts/licenses/node-postgres-LICENSE",
+      "src/tests/fixtures/review-contracts/node-cited-evidence.json",
+      "src/tests/fixtures/review-contracts/node-evaluator-context-priority.json",
+      "src/tests/fixtures/review-contracts/node-packaging-duplicates.json",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled-full-response.json",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled-response.json",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled.json",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/package.json",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-cursor/index.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/diagnostics.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/index.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/package.json",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/test/diagnostics.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/client.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection-parameters.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/cert-signatures.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/sasl.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-legacy.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-webcrypto.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/defaults.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/diagnostics.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/index.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/client.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/index.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/query.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/query.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/result.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/stream.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/type-overrides.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/utils.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/package.json",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/cli.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/suite.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/test-helper.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/diagnostics-tests.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/test-helper.js",
+      "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/test-helper.js",
+      "src/tests/fixtures/review-contracts/node-postgres-tree.json",
+      "src/tests/fixtures/review-contracts/node-remedy-assumption-judgments.json",
+      "src/tests/fixtures/review-contracts/provenance.json",
+      "src/tests/fixtures/review-contracts/specialist-policy-conflict.json",
+      "src/tests/fixtures/review-contracts/techdebt-discovery-dependencies.json",
+      "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-input.json",
+      "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-response.json",
+      "src/tests/fixtures/review-contracts/techdebt-final-response.json",
+      "src/tests/fixtures/review-contracts/techdebt-final.json",
+      "src/tests/fixtures/review-contracts/techdebt-final/ARCHITECTURE.md",
+      "src/tests/fixtures/review-contracts/techdebt-final/CHANGELOG.md",
+      "src/tests/fixtures/review-contracts/techdebt-final/CLAUDE.md",
+      "src/tests/fixtures/review-contracts/techdebt-final/CONTRIBUTING.md",
+      "src/tests/fixtures/review-contracts/techdebt-final/package.json",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/analyzers/index.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/core/__tests__/customRulesEngine.test.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/core/analysisEngine.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/core/customRulesEngine.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/server/__tests__/handlers.test.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/server/configValidator.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/server/handlers.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/types/index.ts",
+      "src/tests/fixtures/review-contracts/techdebt-final/src/utils/fileUtils.ts",
+      "src/tests/fixtures/review-contracts/techdebt-numeric-flags-candidate.json",
+      "src/tests/fixtures/review-contracts/techdebt-relative-path-candidate.json",
+      "src/tests/fixtures/review-contracts/techdebt-unresolved-duplicate-response.json",
+      "src/tests/fixtures/review-overview/README.md",
+      "src/tests/fixtures/review-overview/large.diff",
+      "src/tests/fixtures/scip/calls-go.json",
+      "src/tests/fixtures/scip/calls-python.json",
+      "src/tests/fixtures/scip/calls-sources.json",
+      "src/tests/fixtures/scip/calls-typescript.json",
+      "src/tests/test_local_review_api.py",
+      "src/tests/test_review_overview_settings.py",
+      "src/tests/test_review_performance_delivery.py",
+      "src/tests/unit/test_github_tree_listing.py",
+      "src/tests/unit/test_json_control_escaping.py",
+      "src/tests/unit/test_line_mapper.py",
+      "src/tests/unit/test_model_output_budget.py",
+      "src/tests/unit/test_review_call_context.py",
+      "src/tests/unit/test_review_calls.py",
+      "src/tests/unit/test_review_change_context.py",
+      "src/tests/unit/test_review_contracts.py",
+      "src/tests/unit/test_review_investigations.py",
+      "src/tests/unit/test_review_model_routing.py",
+      "src/tests/unit/test_review_orchestration.py",
+      "src/tests/unit/test_review_performance.py",
+      "src/tests/unit/test_review_trace.py",
+      "src/tests/unit/test_scip_calls.py",
+      "src/tests/unit/test_snapshot_search.py",
+      "src/utils/line_mapper.py",
+      "src/utils/suggestion_filter.py"
+     ],
+     "github.ref": "refs/heads/main"
+    },
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "push:refs/heads/main:39177189cad5fc154c493ebab86542fae1c796c2",
+     "url": "https://github.com/sourceant/sourceant/compare/85f67473d67a...39177189cad5"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ev_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021_ecaf6db5e07948ffb002f76808718a21",
+    "type": "knowledge.captured",
+    "occurred_at": "2026-11-07T12:48:30.593675Z",
+    "place": "pl_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021",
+    "participants": [
+     {
+      "actor": "ac_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021_ana",
+      "role": "author"
+     }
+    ],
+    "content": [
+     {
+      "speaker": "ac_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021_ana",
+      "text": "Keep this module small"
+     }
+    ],
+    "subjects": [
+     {
+      "subject": "sb_3dcf16bc687657e616965f62",
+      "role": "about"
+     },
+     {
+      "subject": "sb_a4ebdf3a78c73bb5edb899e0",
+      "role": "about"
+     }
+    ],
+    "attributes": {
+     "knowledge.status_after": "active",
+     "knowledge.status_before": null,
+     "knowledge.summary_after": "Keep this module small",
+     "knowledge.summary_before": null
+    },
+    "source": {
+     "system": "sourceant",
+     "installation": "local",
+     "native_id": "ecaf6db5e07948ffb002f76808718a21"
+    }
+   }
+  ],
+  "entities": [
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ac_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021_ana",
+    "class": "actor",
+    "type": "person",
+    "name": "ana"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775",
+    "class": "actor",
+    "type": "person",
+    "name": "nfebe",
+    "url": "https://github.com/nfebe",
+    "image": "https://avatars.githubusercontent.com/u/14317775?v=4"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736",
+    "class": "actor",
+    "type": "bot",
+    "name": "sourceant-local[bot]",
+    "url": "https://github.com/apps/sourceant-local",
+    "image": "https://avatars.githubusercontent.com/in/4715543?v=4"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "pl_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021",
+    "class": "place",
+    "type": "sourceant.container",
+    "name": "sourceant/sourceant",
+    "source": {
+     "system": "sourceant",
+     "installation": "local",
+     "native_id": "sourceant/sourceant"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "pl_gh_922971929_bd658d723ba429c7ae3f8021",
+    "class": "place",
+    "type": "github.repository",
+    "name": "sourceant/sourceant",
+    "url": "https://github.com/sourceant/sourceant",
+    "source": {
+     "system": "github",
+     "installation": "156515082",
+     "native_id": "922971929",
+     "url": "https://github.com/sourceant/sourceant"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "pl_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "class": "place",
+    "type": "github.pull_request",
+    "name": "#155",
+    "parent": "pl_gh_922971929_bd658d723ba429c7ae3f8021",
+    "url": "https://github.com/sourceant/sourceant/pull/155",
+    "attributes": {
+     "github.title": "fix(review): Drop suggestions that quote the diff back"
+    }
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_00d02f7f2aaa0b2d1ede9dc6",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/licenses/node-postgres-LICENSE"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_0153a5b76910948ce80dbc81",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_trace.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_01f2949e1111056dfc0c39ea",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/test_review_overview_settings.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_0265d076d2999f82386e5641",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/__init__.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_048168ac849f4fdc882f4b09",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/scip/calls-go.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_05773bdfd715b5dfd0c172dd",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/model/__init__.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_06ae8d35e0b866870ccaa642",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_09da5f06d0a4ef08f786d1ee",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-legacy.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_0b3862e66e26061761c2821d",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/suite.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_0ddb18f50ba0f036dd2a13c4",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/package.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_0e5ba14360eb3a54907723a5",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled-full-response.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_0fb2e9c40ea09847b28085de",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-discovery-dependencies.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_121fe1030746a9e19b9bddac",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/CLAUDE.md"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_13d20b6c86d69563019ee8c3",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/query.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_157252a30b47bf2d8d45af89",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-overview/README.md"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_177e7b0b68597cf47a900188",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_snapshot_search.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_19ba23e104d21e86145fb188",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_scip_calls.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_24c3765f3872f616d39c13a8",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/stream.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_24dd1d7415d5270ae6f10979",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/utils/line_mapper.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_28f14bbc70b23b360ba489f2",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/search/source_text.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_2c194a43f7b58ca9a2fec62d",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/server/configValidator.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_2d855ef4117a25cbcb4603f3",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/analyzers/index.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_30e90bcdacea110f968ec8f1",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/diagnostics-tests.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_30f69059882c18016a9fbae0",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/evaluation.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_3292e855bb31237af5f3bf42",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/contradictory-evidence-metadata.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_35051ae73341dbc43282173d",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/core/analysisEngine.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_36bf15e9da1842534fd79ff3",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/server/handlers.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_37ee877eb76c8ea925e67ccc",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/type-overrides.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_3911db49cabe6a177a58553e",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/test_local_review_api.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_3dcf16bc687657e616965f62",
+    "class": "subject",
+    "type": "knowledge.item",
+    "name": "Keep this module small"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_3df0d5db7321edf0ffe9cce3",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_model_routing.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_3f1eadd06cffd8f32ccdfdf9",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review_context.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_3f729570884b4d02e309aed7",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/cert-signatures.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_43f1b95e113bfa57aaee6e9a",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/test_review_performance_delivery.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_49e3f3e6dcb4e5d0232edcdd",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/parallel.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_4aaa01e519335553756be03c",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_change_context.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_4f05c4da15918f47c7b0e0fb",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/models.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_502e080eb26b5185de3efbbf",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-overview/large.diff"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_520323a31200338dfd899f7d",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/types/index.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_576d6899d0c292137e54c10b",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/cli.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_58d10e0a8d08d2475b94a553",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/investigations.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_596a06f4dbf4e09baa2dcc10",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/index.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_5a3042026999941ed05fcdda",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/diagnostics.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_5ab75af63b4264b1be62baa4",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/plugins/builtin/code_reviewer/plugin.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_60f28b010864558db97d5bf4",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_641e7a6c1688747aa22b0ea9",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/test-helper.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_65ee9de05e78d7f4e6cf61a1",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/settings/definitions.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_6623efc4c9e6d7e7fa539ba8",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/models/code_review.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_67848a6eb01cf1625b44e1b9",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/result.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_6c8ac53b021201c74402872e",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/change_context/git.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_748b1df8b373e1adcf97a87a",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/package.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_75cc18a2c484edceca1c3dc6",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/interfaces.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_77794d4db9ed91c50491d313",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/package.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7b1e1836859354e3df30a9e4",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-cited-evidence.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7b57a3df469547f0edbba304",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/client.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7b7ae42c22fd247c135cf0c9",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final-response.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7bc9fb851641c12d005decde",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/prompts/prompts.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7da8020d1e6fecca0d6c8e4c",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/llms/litellm_provider.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7e71fe369019375717585f6c",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/code_index/scip.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7ebc8d3c1a3e6ea885105082",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review_performance.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_7fc44a7faec21db7e13ea473",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-remedy-assumption-judgments.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_810a7500996b0967ed63c6d6",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/execution.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_8139ee28cda468bcde499d9e",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/test/diagnostics.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_81474e728631e19de06ff960",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled-response.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_831829d005eb16eae34a89ce",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/ARCHITECTURE.md"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_83934068184e23863b5c41d7",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection-parameters.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_841077ebbf54a3c7d88e2bf9",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/provenance.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_84bfbd31f706fcd6302bd3c1",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/core/customRulesEngine.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_89a92a25b91144bc64e97a23",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/plugins/builtin/code_reviewer/reviewing.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_89cb7265e78e388d15dccb0a",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/snapshot.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_8db5afd1f5e03ff323efed08",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/scip/calls-sources.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_8dc65b323c3c2d8bbf54bb7b",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/core/__tests__/customRulesEngine.test.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_920f7cd56a335c933e7e9546",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/calls.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_95c30d46dd35166fbcad0388",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_contracts.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_963d57688101c2efe6160187",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/index.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_96b0b8ba45c16c2fbf04844f",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-packaging-duplicates.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_9770fcbf9b1c19c86a9ee0c0",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-cursor/index.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_9b5969b8726139683981b734",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-tree.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_9d15bd8295a72ac73b060b46",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/indexed-calls.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a05dd9096d5c0bafc1c4b3f2",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/change_context/models.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a24d08c0b9035f4dd3679132",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/CONTRIBUTING.md"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a4cb2aaa086039061ab765ba",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/specialist-policy-conflict.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a4ebdf3a78c73bb5edb899e0",
+    "class": "subject",
+    "type": "code.path",
+    "name": "docs/reviews.md"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a5ca7124676960dd2d453a11",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/unit/client/test-helper.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a629c8c49d94fa8a227750aa",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_model_output_budget.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a8c1fccf7e6e306a1689e003",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_investigations.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_a8dbaddaf6d8bf22b5637592",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-evaluator-context-priority.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_acbb923f92fbc641b062ed97",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review_trace.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_ae0afc275cf11ce1da07d442",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/utils.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_ae3901bff9e1b717d7d7274a",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/test/test-helper.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_b46838757ce9e1be14dd3284",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/sasl.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_b48f5f597cde27978f57bc86",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-relative-path-candidate.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_b4d8249af3b503e815188f11",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/contracts.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_b4fd21b364f9738f24cf73ee",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/utils/diff_parser.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_b5550916e935917c42655a3b",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_github_tree_listing.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_b719eb7a469c564e526c40fa",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_bb0fae83590e79979cf994c7",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/call_context.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_bfb5db563d76d797eab781fb",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_calls.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_c0a2858bc98332fc862327d2",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/planning.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_c1648c7a583699dbbff0c3ed",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/scip/calls-python.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_c36d97c891f3123258124d74",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/api/routes/review_snapshots.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_c591e489dcf8fe03aa1ce387",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-unresolved-duplicate-response.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_c69359fd7b058e93fbc65616",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-input.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_c738e8f6ce4c1b1ca5d6ca66",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/crypto/utils-webcrypto.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_c7bd72cf7df054dc23922b92",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_performance.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_cb985fb35901f16268ba5bf8",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/integrations/github/github.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_cef80a701503cd11938c7a00",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/utils/fileUtils.ts"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_d0e957e2029f1cf80bb0cc29",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_json_control_escaping.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_d489f204011e3b5777eca43b",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/checkout.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_d4a5c4bd698dff2982e66ddc",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/CHANGELOG.md"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_d5b8fde7e89a1453318c67e0",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-evaluation-batch-response.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_d8569f992559b042e3ab8563",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/package.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_dba011ad64c1db7ebc9511f1",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/utils/suggestion_filter.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_dc72c5d3096c082ad3a7e4b2",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/source_search.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_ddd2581149955ee464a105c1",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_call_context.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_df589b88778b959fce014356",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/plugins/builtin/code_reviewer/working_tree.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_e0393a2d3e8d530cc35ccb58",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_line_mapper.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_e75f1bdcce7059e77ed16443",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-numeric-flags-candidate.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_e82e8ceaf10187fc1cb5073c",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/core/review/orchestration.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_ea7dc8f267e65750ec2ffa56",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/index.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_eaca34df2da964ef81a73e95",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/unit/test_review_orchestration.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_ec66f2ef53032ae239eddd59",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/plugins/builtin/code_reviewer/overview.py"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_f02a47d3b3ec9096ccadce06",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/client.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_f62e262d588191247ea17e07",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg-pool/diagnostics.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_f69ec0160814ae5fa5cb5e1a",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/defaults.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_fa96fdfda73d0410b39acc1f",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/native/query.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_fab067cc6e20e69ef750786e",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/node-postgres-controlled/packages/pg/lib/connection.js"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_fb7365b1a8f6eee6348f97e6",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/licenses/TechDebtMCP-LICENSE"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_fda7a0c9254fe02bc9be2a0a",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/scip/calls-typescript.json"
+   },
+   {
+    "bucket": "bk_4a912037406e078c2d4a",
+    "id": "sb_fe009d17b8f64f58ae45cf92",
+    "class": "subject",
+    "type": "code.path",
+    "name": "src/tests/fixtures/review-contracts/techdebt-final/src/server/__tests__/handlers.test.ts"
+   }
+  ],
+  "links": [
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "score": 0.5302456480774882,
+    "because": {
+     "people": {
+      "score": 1,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.8333333134651184
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988"
+      ]
+     },
+     "time": {
+      "score": 1,
+      "gap_seconds": 0
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "score": 0.5288892377005887,
+    "because": {
+     "people": {
+      "score": 0.9992793775367779,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.8275862336158752
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816"
+      ]
+     },
+     "time": {
+      "score": 0.9604345840474272,
+      "gap_seconds": 629
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "score": 0.5264893384222203,
+    "because": {
+     "people": {
+      "score": 0.9992793775367779,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.7435897588729858
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816"
+      ]
+     },
+     "time": {
+      "score": 0.9604345840474272,
+      "gap_seconds": 629
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "score": 0.4388298854472806,
+    "because": {
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.6666666865348816
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac"
+      ]
+     },
+     "time": {
+      "score": 0.967114934872973,
+      "gap_seconds": 521
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "score": 0.4293060756396394,
+    "because": {
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.3333333432674408
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac"
+      ]
+     },
+     "time": {
+      "score": 0.967114934872973,
+      "gap_seconds": 521
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "score": 0.42868774751916316,
+    "because": {
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.2857142984867096
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac"
+      ]
+     },
+     "time": {
+      "score": 0.9930924954370359,
+      "gap_seconds": 108
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.4151927071585016,
+    "because": {
+     "people": {
+      "score": 0.9985272309702811,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.6153846383094788
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9207784193272325,
+      "gap_seconds": 1286
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.40952207761879317,
+    "because": {
+     "people": {
+      "score": 0.9992793775367779,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.375
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856"
+      ]
+     },
+     "time": {
+      "score": 0.9604345840474272,
+      "gap_seconds": 629
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.40947006056361046,
+    "because": {
+     "people": {
+      "score": 0.9992473110289228,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.375
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9587101866395968,
+      "gap_seconds": 657
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.4083245746353736,
+    "because": {
+     "people": {
+      "score": 0.9985272309702811,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.375
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9207784193272325,
+      "gap_seconds": 1286
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.4083245746353736,
+    "because": {
+     "people": {
+      "score": 0.9985272309702811,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.375
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9207784193272325,
+      "gap_seconds": 1286
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.40259740267481126,
+    "because": {
+     "people": {
+      "score": 1,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.09090909361839294
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156"
+      ]
+     },
+     "time": {
+      "score": 1,
+      "gap_seconds": 0
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.4014051945793187,
+    "because": {
+     "people": {
+      "score": 0.9992793775367779,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.09090909361839294
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856"
+      ]
+     },
+     "time": {
+      "score": 0.9604345840474272,
+      "gap_seconds": 629
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.40135317752413596,
+    "because": {
+     "people": {
+      "score": 0.9992473110289228,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "text": {
+      "score": 0.09090909361839294
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9587101866395968,
+      "gap_seconds": 657
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.4,
+    "because": {
+     "people": {
+      "score": 1,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156"
+      ]
+     },
+     "time": {
+      "score": 1,
+      "gap_seconds": 0
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.4,
+    "because": {
+     "people": {
+      "score": 1,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856"
+      ]
+     },
+     "time": {
+      "score": 1,
+      "gap_seconds": 0
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "score": 0.39883941695579195,
+    "because": {
+     "people": {
+      "score": 0.9992988469900219,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac"
+      ]
+     },
+     "time": {
+      "score": 0.9614830524826531,
+      "gap_seconds": 612
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.39880779190450744,
+    "because": {
+     "people": {
+      "score": 0.9992793775367779,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856"
+      ]
+     },
+     "time": {
+      "score": 0.9604345840474272,
+      "gap_seconds": 629
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.39880779190450744,
+    "because": {
+     "people": {
+      "score": 0.9992793775367779,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_321061736"
+      ]
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156"
+      ]
+     },
+     "time": {
+      "score": 0.9604345840474272,
+      "gap_seconds": 629
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "score": 0.39823862347348,
+    "because": {
+     "people": {
+      "score": 0.9989255576941097,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac"
+      ]
+     },
+     "time": {
+      "score": 0.9415751484894705,
+      "gap_seconds": 938
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "score": 0.3971424006288351,
+    "because": {
+     "people": {
+      "score": 0.9982251580325885,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged"
+      ]
+     },
+     "time": {
+      "score": 0.9053085479114635,
+      "gap_seconds": 1550
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "score": 0.3601151529840439,
+    "because": {
+     "people": {
+      "score": 0.9984242412915991,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     },
+     "subject": {
+      "score": 0.9442090958933019,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee",
+       "sb_e0393a2d3e8d530cc35ccb58"
+      ]
+     },
+     "text": {
+      "score": 0.1666666716337204
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.31668575968729795,
+    "because": {
+     "text": {
+      "score": 0.09090909361839294
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856"
+      ]
+     },
+     "time": {
+      "score": 0.9930924954370359,
+      "gap_seconds": 108
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.3159435436711818,
+    "because": {
+     "text": {
+      "score": 0.09090909361839294
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156"
+      ]
+     },
+     "time": {
+      "score": 0.967114934872973,
+      "gap_seconds": 521
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.31551419957912047,
+    "because": {
+     "text": {
+      "score": 0.09090909361839294
+     },
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9520878916508236,
+      "gap_seconds": 765
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "score": 0.31411933186348556,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155"
+      ]
+     },
+     "time": {
+      "score": 0.9941766152219957,
+      "gap_seconds": 91
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "score": 0.31411933186348556,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155"
+      ]
+     },
+     "time": {
+      "score": 0.9941766152219957,
+      "gap_seconds": 91
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.31411933186348556,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156"
+      ]
+     },
+     "time": {
+      "score": 0.9941766152219957,
+      "gap_seconds": 91
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.31397023491352777,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9889582219734724,
+      "gap_seconds": 173
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "score": 0.31299547439744047,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155"
+      ]
+     },
+     "time": {
+      "score": 0.9548416039104165,
+      "gap_seconds": 720
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.31299547439744047,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856"
+      ]
+     },
+     "time": {
+      "score": 0.9548416039104165,
+      "gap_seconds": 720
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "score": 0.31280355204477006,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged"
+      ]
+     },
+     "time": {
+      "score": 0.9481243215669516,
+      "gap_seconds": 830
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.31280355204477006,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856"
+      ]
+     },
+     "time": {
+      "score": 0.9481243215669516,
+      "gap_seconds": 830
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.31186903920846304,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429"
+      ]
+     },
+     "time": {
+      "score": 0.9154163722962074,
+      "gap_seconds": 1377
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "score": 0.3117317539545544,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged"
+      ]
+     },
+     "time": {
+      "score": 0.9106113884094043,
+      "gap_seconds": 1459
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "score": 0.3117317539545544,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged"
+      ]
+     },
+     "time": {
+      "score": 0.9106113884094043,
+      "gap_seconds": 1459
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.3117317539545544,
+    "because": {
+     "thread": {
+      "score": 1,
+      "path": [
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+       "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156"
+      ]
+     },
+     "time": {
+      "score": 0.9106113884094043,
+      "gap_seconds": 1459
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "score": 0.29918443017579255,
+    "because": {
+     "people": {
+      "score": 0.019896781670383737,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     },
+     "subject": {
+      "score": 1,
+      "shared": [
+       "sb_24dd1d7415d5270ae6f10979",
+       "sb_e0393a2d3e8d530cc35ccb58"
+      ]
+     },
+     "text": {
+      "score": 0.4117647111415863
+     }
+    }
+   },
+   {
+    "from": "ev_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021_ecaf6db5e07948ffb002f76808718a21",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "score": 0.2085033844493372,
+    "because": {
+     "subject": {
+      "score": 0.7297618455726802,
+      "shared": [
+       "sb_a4ebdf3a78c73bb5edb899e0"
+      ]
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "score": 0.1785798674922928,
+    "because": {
+     "people": {
+      "score": 0.019928183679359102,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     },
+     "subject": {
+      "score": 0.5716826589686053,
+      "shared": [
+       "sb_e0393a2d3e8d530cc35ccb58"
+      ]
+     },
+     "text": {
+      "score": 0.4736842215061188
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "score": 0.1235789826596807,
+    "because": {
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.6000000238418579
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "score": 0.11302953146178403,
+    "because": {
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.23076923191547394
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975584816",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "score": 0.10903352751043885,
+    "because": {
+     "subject": {
+      "score": 0.37252643692469667,
+      "shared": [
+       "sb_b4fd21b364f9738f24cf73ee"
+      ]
+     },
+     "text": {
+      "score": 0.09090909361839294
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "score": 0.08563926691190464,
+    "because": {
+     "people": {
+      "score": 0.9991247806388877,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "score": 0.08548727074693105,
+    "because": {
+     "people": {
+      "score": 0.9973514920475289,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.011764706032616753,
+    "because": {
+     "text": {
+      "score": 0.4117647111415863
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.011764706032616753,
+    "because": {
+     "text": {
+      "score": 0.4117647111415863
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.011764706032616753,
+    "because": {
+     "text": {
+      "score": 0.4117647111415863
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491982",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "score": 0.008163265671048846,
+    "because": {
+     "text": {
+      "score": 0.2857142984867096
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162869429",
+    "score": 0.0047619049038205834,
+    "because": {
+     "text": {
+      "score": 0.1666666716337204
+     }
+    }
+   },
+   {
+    "from": "ev_bd658d723ba429c7ae3f8021_bd658d723ba429c7ae3f8021_ecaf6db5e07948ffb002f76808718a21",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_81458573ea2107c35dba4dac",
+    "score": 0.002597402674811227,
+    "because": {
+     "text": {
+      "score": 0.09090909361839294
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_comment_3975491988",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "score": 0.002597402674811227,
+    "because": {
+     "text": {
+      "score": 0.09090909361839294
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162716156",
+    "score": 0.002597402674811227,
+    "because": {
+     "text": {
+      "score": 0.09090909361839294
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_190ef72bff8bc18b1d325481",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_review_5162791856",
+    "score": 0.002597402674811227,
+    "because": {
+     "text": {
+      "score": 0.09090909361839294
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155_merged",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "score": 0.0017099672908583374,
+    "because": {
+     "people": {
+      "score": 0.01994961839334727,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     }
+    }
+   },
+   {
+    "from": "ev_gh_922971929_bd658d723ba429c7ae3f8021_pr_155",
+    "to": "ev_gh_922971929_bd658d723ba429c7ae3f8021_push_ec1fbe10904602871f0fa45f",
+    "score": 0.001706932369147621,
+    "because": {
+     "people": {
+      "score": 0.019914210973388913,
+      "shared": [
+       "ac_gh_922971929_bd658d723ba429c7ae3f8021_14317775"
+      ]
+     }
+    }
+   }
+  ]
+ }
+}

@@ -212,6 +212,61 @@ class TestMemoryWebhooks(BaseTestCase):
             read_as_plugin.extend({"workspace": "other"})
         ).events
 
+    def test_links_connect_threads_and_knowledge_about_touched_files(self):
+        from src.core.knowledge import KnowledgeObject
+        from src.core.knowledge.models import KnowledgeChange
+        from src.core.knowledge.recording import event_for_change
+        from src.core.memory import Actor
+        from src.core.scope import Scope
+
+        rows = json.loads(FIXTURE.read_text())
+        for index, row in enumerate(rows):
+            assert self.deliver(row, f"links-{index}").status_code == 201
+        touched = next(
+            path
+            for row in rows
+            if row["type"] == "push"
+            for commit in row["payload"]["commits"]
+            for path in commit["added"] + commit["modified"]
+        )
+        scope = Scope.from_mapping(
+            {
+                "provider": "github",
+                "repository": rows[0]["payload"]["repository"]["full_name"],
+            }
+        )
+        change = KnowledgeChange(
+            "knowledge.captured",
+            Actor(id="ana", name="ana", role="author"),
+            after=KnowledgeObject(
+                id="small-module",
+                type="decision",
+                status="active",
+                summary="Keep this module small",
+                properties={"paths": [touched, "docs/**"]},
+            ),
+        )
+        self.memory.record(scope, [event_for_change(scope, change)])
+
+        types = {event.id: event.type for event in self.memory.events(scope).events}
+        links = self.memory.links(scope)
+        knowledge = next(
+            id for id, type in types.items() if type == "knowledge.captured"
+        )
+        linked_to_knowledge = {
+            types[link.target if link.source == knowledge else link.source]
+            for link in links
+            if knowledge in (link.source, link.target)
+        }
+        assert linked_to_knowledge == {"github.push"}
+        assert any(
+            "thread" in link.because
+            and {types[link.source], types[link.target]}
+            == {"github.pull_request", "github.pull_request.review"}
+            for link in links
+        )
+        assert all(link.source in types and link.target in types for link in links)
+
     def test_push_only_repository_remains_visible(self):
         from src.core.scope import Scope
 

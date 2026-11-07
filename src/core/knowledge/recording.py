@@ -18,7 +18,14 @@ def event_for_change(scope, change):
         when=change.when,
         what=item.summary,
         actors=[change.actor],
-        subjects=[Subject(id=item.id, type="knowledge.item", name=item.summary)],
+        subjects=[
+            Subject(id=item.id, type="knowledge.item", name=item.summary),
+            *(
+                Subject(id=f"path:{path}", type="code.path", name=path)
+                for path in item.properties.get("paths", ())
+                if not any(mark in path for mark in "*?[") and not path.endswith("/")
+            ),
+        ],
         attributes={
             "knowledge.status_before": change.before.status if change.before else None,
             "knowledge.status_after": change.after.status if change.after else None,
