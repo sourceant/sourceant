@@ -177,6 +177,41 @@ class TestMemoryWebhooks(BaseTestCase):
             assert event.source.system == "github"
             assert event.source.container == str(repository["id"])
 
+    def test_webhooks_and_knowledge_changes_share_the_repository_bucket(
+        self, monkeypatch
+    ):
+        from src.core.knowledge import KnowledgeObject
+        from src.core.knowledge.models import KnowledgeChange
+        from src.core.knowledge.recording import event_for_change
+        from src.core.memory import Actor
+        from src.core.scope import Scope
+
+        monkeypatch.setenv("JWT_SECRET", "memory-webhook-gateway-secret")
+        row = next(
+            row for row in json.loads(FIXTURE.read_text()) if row["type"] == "push"
+        )
+        repository = row["payload"]["repository"]["full_name"]
+        assert self.deliver(row, "shared-bucket", "team").status_code == 201
+        read_as_plugin = Scope.from_mapping(
+            {"provider": "github", "repository": repository, "workspace": "team"}
+        )
+        change = KnowledgeChange(
+            "knowledge.captured",
+            Actor(id="ana", name="ana"),
+            after=KnowledgeObject(
+                id="retries", type="decision", status="active", summary="Retry twice"
+            ),
+        )
+        self.memory.record(read_as_plugin, [event_for_change(read_as_plugin, change)])
+
+        events = self.memory.events(read_as_plugin).events
+        assert {event.type for event in events} == {"github.push", "knowledge.captured"}
+        knowledge = next(e for e in events if e.type == "knowledge.captured")
+        assert knowledge.source.container == repository
+        assert not self.memory.events(
+            read_as_plugin.extend({"workspace": "other"})
+        ).events
+
     def test_push_only_repository_remains_visible(self):
         from src.core.scope import Scope
 
