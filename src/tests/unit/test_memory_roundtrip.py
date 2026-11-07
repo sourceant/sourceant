@@ -198,7 +198,8 @@ def test_engine_links_are_read_from_the_captured_engine_response():
         expected[0]["from"],
         expected[0]["to"],
     )
-    assert links[0].because == expected[0]["because"]
+    assert links[0].because.keys() == expected[0]["because"].keys()
+    assert links[0].because["thread"] == expected[0]["because"]["thread"]
     types = {event["id"]: event["type"] for event in captured["response"]["events"]}
     knowledge = next(id for id, type in types.items() if type == "knowledge.captured")
     about_file = [
@@ -210,3 +211,4 @@ def test_engine_links_are_read_from_the_captured_engine_response():
         types[link.target if link.source == knowledge else link.source]
         for link in about_file
     } == {"github.push"}
+    assert about_file[0].because["subject"]["names"] == ["docs/reviews.md"]

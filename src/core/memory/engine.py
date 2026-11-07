@@ -605,12 +605,27 @@ class _ScopeMemory:
             query["approaches"] = approaches
         if min_score:
             query["min_score"] = min_score
+        found = self._links(query)
+        names = {
+            entity["id"]: entity.get("name") or entity["id"]
+            for entity in found.get("entities", [])
+        }
         return [
             EventLink(
                 source=link["from"],
                 target=link["to"],
                 score=link["score"],
-                because=link.get("because") or {},
+                because={
+                    approach: (
+                        {
+                            **evidence,
+                            "names": [names.get(id, id) for id in evidence["shared"]],
+                        }
+                        if evidence.get("shared")
+                        else evidence
+                    )
+                    for approach, evidence in (link.get("because") or {}).items()
+                },
             )
-            for link in self._links(query).get("links", [])
+            for link in found.get("links", [])
         ]

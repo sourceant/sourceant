@@ -215,7 +215,18 @@ class _InMemoryRecords:
             for (a, b), because in pairs.items()
         ]
         links.sort(key=lambda item: (-item["score"], item["from"], item["to"]))
-        return {"links": links[: query.get("limit", 500)]}
+        with self._lock:
+            entities = [
+                deepcopy(self.entities[ref])
+                for ref in {
+                    r
+                    for e in pairs.values()
+                    for v in e.values()
+                    for r in v.get("shared", ())
+                }
+                if ref in self.entities
+            ]
+        return {"links": links[: query.get("limit", 500)], "entities": entities}
 
 
 class InMemoryMemory(_ScopeMemory, _InMemoryRecords):
