@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .engine import Entity, EventRecord, _ScopeMemory, binding, _at, _time
 from copy import deepcopy
+import math
 from hashlib import sha256
 from threading import RLock
 from src.core.scope import Scope
@@ -192,13 +193,16 @@ class _InMemoryRecords:
             if "subject" not in wanted:
                 continue
             for other in events:
-                shared = sorted(
-                    ref
-                    for ref in about[event["id"]] & about[other["id"]]
-                    if spread[ref] < len(events)
-                )
+                shared = sorted(about[event["id"]] & about[other["id"]])
                 if shared and event["id"] < other["id"]:
-                    score = min(1.0, sum(1 / spread[ref] for ref in shared))
+                    total = len(events)
+                    score = min(
+                        1.0,
+                        sum(
+                            math.log((total + 1) / spread[ref]) / math.log(total + 1)
+                            for ref in shared
+                        ),
+                    )
                     link(
                         event["id"],
                         other["id"],
