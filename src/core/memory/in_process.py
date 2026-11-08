@@ -154,7 +154,7 @@ class _InMemoryRecords:
         }
 
     def _links(self, query: dict) -> dict:
-        """Links events by thread and shared subjects only; the engine adds people, time, text and stored links."""
+        """Links events by thread and shared subjects only, combined the way the engine combines approaches; the engine adds people, time, meaning, text and stored links."""
         buckets = query["buckets"]
         wanted = set(query.get("approaches") or ("thread", "subject"))
         with self._lock:
@@ -209,11 +209,16 @@ class _InMemoryRecords:
                         "subject",
                         {"score": score, "shared": shared},
                     )
+        weights = {"thread": 1.0, "subject": 0.9}
         links = [
             {
                 "from": a,
                 "to": b,
-                "score": sum(e["score"] for e in because.values()) / len(wanted),
+                "score": 1
+                - math.prod(
+                    1 - weights[approach] * evidence["score"]
+                    for approach, evidence in because.items()
+                ),
                 "because": because,
             }
             for (a, b), because in pairs.items()

@@ -170,7 +170,8 @@ def test_engine_links_are_read_from_the_captured_engine_response():
             / "engine-event-links.json"
         ).read_text()
     )
-    bucket = captured["request"]["buckets"][0]
+    pages = captured["pages"]
+    bucket = pages[0]["request"]["buckets"][0]
     asked = []
 
     def handle(request):
@@ -178,7 +179,7 @@ def test_engine_links_are_read_from_the_captured_engine_response():
             return httpx.Response(200, json={"id": bucket})
         if request.url.path == "/v1/events/links":
             asked.append(json.loads(request.content))
-            return httpx.Response(200, json=captured["response"])
+            return httpx.Response(200, json=pages[len(asked) - 1]["response"])
         raise AssertionError(request.url)
 
     memory = TrailpadMemory(
@@ -188,27 +189,32 @@ def test_engine_links_are_read_from_the_captured_engine_response():
         {"provider": "github", "repository": "sourceant/sourceant"}
     )
     links = memory.links(
-        scope, since="2000-01-01T00:00:00Z", until="2100-01-01T00:00:00Z"
+        scope,
+        since="2000-01-01T00:00:00Z",
+        until="2100-01-01T00:00:00Z",
+        page_size=pages[0]["request"]["anchors_limit"],
     )
 
-    assert asked == [captured["request"]]
-    expected = captured["response"]["links"]
-    assert len(links) == len(expected)
-    assert (links[0].source, links[0].target) == (
-        expected[0]["from"],
-        expected[0]["to"],
+    assert asked == [page["request"] for page in pages]
+    pairs = {(link.source, link.target): link for link in links}
+    every = [link for page in pages for link in page["response"]["links"]]
+    assert set(pairs) == {(link["from"], link["to"]) for link in every}
+    for link in every:
+        assert pairs[(link["from"], link["to"])].score >= link["score"]
+    assert [link.score for link in links] == sorted(
+        (link.score for link in links), reverse=True
     )
-    assert links[0].because.keys() == expected[0]["because"].keys()
-    assert links[0].because["thread"] == expected[0]["because"]["thread"]
-    types = {event["id"]: event["type"] for event in captured["response"]["events"]}
-    knowledge = next(id for id, type in types.items() if type == "knowledge.captured")
+    stored = pairs[tuple(sorted((captured["decision"], captured["push"])))]
+    assert stored.score == 1
+    assert stored.because["explicit"]["links"][0]["type"] == "derived_from"
     about_file = [
         link
         for link in links
-        if knowledge in (link.source, link.target) and "subject" in link.because
+        if captured["decision"] in (link.source, link.target)
+        and "subject" in link.because
     ]
-    assert about_file and {
-        types[link.target if link.source == knowledge else link.source]
-        for link in about_file
-    } == {"github.push"}
-    assert about_file[0].because["subject"]["names"] == ["docs/reviews.md"]
+    assert about_file
+    assert all(
+        link.because["subject"]["names"] == captured["touched"] for link in about_file
+    )
+    assert any("meaning" in link.because for link in links)

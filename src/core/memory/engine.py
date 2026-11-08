@@ -593,6 +593,7 @@ class _ScopeMemory:
         approaches: list[str] | None = None,
         min_score: float = 0.0,
         limit: int = 500,
+        page_size: int | None = None,
     ) -> list[EventLink]:
         now = datetime.now(timezone.utc)
         query = {
@@ -605,7 +606,24 @@ class _ScopeMemory:
             query["approaches"] = approaches
         if min_score:
             query["min_score"] = min_score
-        found = self._links(query)
+        if page_size:
+            query["anchors_limit"] = page_size
+        found = {"links": [], "entities": []}
+        strongest = {}
+        while True:
+            page = self._links(query)
+            found["entities"].extend(page.get("entities", []))
+            for link in page.get("links", []):
+                key = (link["from"], link["to"])
+                if key not in strongest or link["score"] > strongest[key]["score"]:
+                    strongest[key] = link
+            if not page.get("next"):
+                break
+            query = {**query, "after": page["next"]}
+        found["links"] = sorted(
+            strongest.values(),
+            key=lambda link: (-link["score"], link["from"], link["to"]),
+        )[:limit]
         names = {
             entity["id"]: entity.get("name") or entity["id"]
             for entity in found.get("entities", [])
