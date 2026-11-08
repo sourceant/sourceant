@@ -21,14 +21,19 @@ class Source:
         return cls(
             system="sourceant",
             installation=scope.get("workspace", "local"),
-            container=repr(
-                tuple(
-                    (key, value)
-                    for key, value in scope.values
-                    if key not in {"actor", "principal", "user", "agent"}
-                )
-            ),
+            container=container_of(scope),
         )
+
+
+NOT_PLACES = {"actor", "principal", "user", "agent", "provider", "workspace"}
+
+
+def container_of(scope: Scope) -> str:
+    """Names the place a scope's memory lives, so every writer and reader of one repository meets in the same bucket."""
+    place = [(key, value) for key, value in scope.values if key not in NOT_PLACES]
+    if [key for key, _ in place] == ["repository"]:
+        return place[0][1]
+    return ",".join(f"{key}={value}" for key, value in place) or "workspace"
 
 
 @dataclass(frozen=True)
