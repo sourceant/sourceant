@@ -209,3 +209,26 @@ def test_json_migration_round_trip_preserves_progress_and_saved_responses(
     assert reopened.progress("run")["model_calls"] == 1
     assert reopened.response("run", "request") == captured
     assert reopened.answers("run")[chunk.id]["review"] == captured
+
+
+def test_cancelled_review_cannot_replay_a_completed_chunk(tmp_path):
+    import pytest
+
+    store = SQLReviewWork(
+        create_engine("sqlite:///" + str(tmp_path / "cancel-replay.sqlite")),
+        create_schema=True,
+    )
+    store.open(
+        "run",
+        workspace="ours",
+        repository="owner/repo",
+        revision="head",
+        plan={"parts": [{"id": "first"}]},
+        maximum_calls=3,
+    )
+    lease = store.claim("run", "first")
+    assert store.finish("run", "first", lease, {"review": None, "coverage": []})
+    assert store.answer("run", "first") == {"review": None, "coverage": []}
+    store.cancel("run")
+    with pytest.raises(RuntimeError, match="no longer active"):
+        store.answer("run", "first")

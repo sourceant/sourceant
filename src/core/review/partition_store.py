@@ -175,6 +175,7 @@ class SQLReviewWork:
             return result.rowcount == 1
 
     def answer(self, identifier, chunk_id):
+        self.ensure_active(identifier)
         with self.engine.connect() as connection:
             return connection.execute(
                 select(chunks.c.result).where(
