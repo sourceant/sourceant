@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
+from threading import RLock
 
 T = TypeVar("T")
 
@@ -78,3 +79,32 @@ class ServiceRegistry:
 
 
 service_registry = ServiceRegistry()
+
+
+_memory_lock = RLock()
+
+
+def memory_services(registry: ServiceRegistry = service_registry):
+    with _memory_lock:
+        return _memory_services(registry)
+
+
+def _memory_services(registry):
+    import os
+    from src.core.memory import (
+        TrailpadMemory,
+        DisabledMemory,
+        Memory,
+    )
+
+    try:
+        return registry.resolve(Memory)
+    except LookupError:
+        url, key = os.getenv("MEMORY_ENGINE_URL"), os.getenv("MEMORY_ENGINE_KEY")
+        if bool(url) != bool(key):
+            raise ValueError(
+                "MEMORY_ENGINE_URL and MEMORY_ENGINE_KEY must be configured together"
+            )
+        memory = TrailpadMemory(url, key) if url else DisabledMemory()
+        registry.register(Memory, memory, "core.memory")
+        return memory

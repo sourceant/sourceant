@@ -2,6 +2,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Barrier, Lock, Event, BoundedSemaphore
@@ -144,6 +145,12 @@ class WebhookDeliveryTests(unittest.TestCase):
 
     def _webhook_delivery(self, experts, expert_count, rejected=True, capacity=None):
         with ExitStack() as stack:
+            if capacity is not None:
+                stack.enter_context(
+                    patch.dict(
+                        os.environ, {"SOURCEANT_LARGE_REVIEW_MAXIMUM_CALLS": "1000"}
+                    )
+                )
             folder = stack.enter_context(TemporaryDirectory())
             engine = create_engine(
                 f"sqlite:///{folder}/test.db", connect_args={"check_same_thread": False}
@@ -152,6 +159,9 @@ class WebhookDeliveryTests(unittest.TestCase):
             for model in (Config, RepositoryEvent, ReviewRecord):
                 model.__table__.create(engine)
             store = SQLJobStore(engine, create_schema=True)
+            from src.core.review.partition_store import SQLReviewWork
+
+            SQLReviewWork(engine, create_schema=True)
             replacements = {
                 "src.config.db.engine": engine,
                 "src.core.jobs._core": store,
@@ -245,7 +255,7 @@ class WebhookDeliveryTests(unittest.TestCase):
                 prompts.append(json.dumps(kwargs["messages"]))
                 if capacity is None:
                     barrier.wait(timeout=10)
-                else:
+                elif '"CodeReviewFindings"' in kwargs["messages"][-1]["content"]:
                     with lock:
                         active += 1
                         peak = max(peak, active)
@@ -280,6 +290,8 @@ class WebhookDeliveryTests(unittest.TestCase):
             for key, value in [
                 ("review.plan", "standard"),
                 ("review.maximum_model_calls", 1000),
+                ("review.large_change_maximum_model_calls", 1000),
+                ("review.concurrency", capacity or 6),
                 ("model.name", "deepseek/deepseek-v4-flash"),
                 ("model.api_key", "your-api-key-here"),
                 ("review.exclude_patterns", "src/migrations/*"),
@@ -309,25 +321,11 @@ class WebhookDeliveryTests(unittest.TestCase):
                 self.assertEqual(calls, 2 + expert_count)
             else:
                 self.assertEqual(peak, capacity)
-                configuration = Mock()
-                configuration.value.return_value = "src/migrations/*"
-                filtered, _ = review_diff(github.get_diff.return_value, configuration)
-                from src.plugins.builtin.code_reviewer.reviewing import _batched
-                from src.llms.litellm_provider import LiteLLMProvider
-
-                batches = len(
-                    _batched(
-                        parse_diff(filtered),
-                        2000,
-                        LiteLLMProvider(
-                            "deepseek/deepseek-v4-flash", 131072
-                        ).count_tokens,
-                    )
-                )
                 review_prompts = [
                     prompt for prompt in prompts if "CodeReviewFindings" in prompt
                 ]
-                self.assertEqual(len(review_prompts), batches)
+                self.assertGreater(len(review_prompts), capacity)
+                self.assertLessEqual(calls, 1000)
             self.assertTrue(
                 all("create_requirement_tables.py" not in prompt for prompt in prompts)
             )

@@ -54,7 +54,7 @@ def served(tmp_path, monkeypatch):
         Scope.from_mapping({"provider": "github", "repository": "acme/shop"}),
         KnowledgeObject(
             id="signed-requests",
-            kind="decision",
+            type="decision",
             status="approved",
             summary="Use signed requests",
         ),

@@ -101,7 +101,7 @@ def told(recorded, skills) -> tuple[Told, ...]:
         ]
         for item in recorded:
             why = dict(item.properties).get("why", "")
-            lines.append(f"- **{item.id}** ({item.kind}): {item.summary}")
+            lines.append(f"- **{item.id}** ({item.type}): {item.summary}")
             if why:
                 lines.append(f"  Why: {why}")
         sections.append(Told("What this team has already decided", "\n".join(lines)))
@@ -439,7 +439,7 @@ class WorkingTreeReviews:
             "commits": commits_in(root, changes.base_revision),
             "skills": [skill_payload(skill) for skill in chosen],
             "knowledge": [
-                {"id": item.id, "kind": item.kind, "summary": item.summary}
+                {"id": item.id, "type": item.type, "summary": item.summary}
                 for item in recorded
             ],
             "verdicts": [],

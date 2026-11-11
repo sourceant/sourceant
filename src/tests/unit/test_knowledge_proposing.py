@@ -24,7 +24,7 @@ def answering(payload):
 def one(**overrides):
     item = {
         "id": "retry-limit",
-        "kind": "decision",
+        "type": "decision",
         "summary": "A failed charge is retried three times and then left alone.",
         "why": "The provider rate limits after four.",
     }
@@ -38,7 +38,7 @@ class TestWhatComesBack:
 
         assert len(proposals) == 1
         assert proposals[0].knowledge.id == "retry-limit"
-        assert proposals[0].knowledge.kind == "decision"
+        assert proposals[0].knowledge.type == "decision"
         assert proposals[0].knowledge.properties["why"] == (
             "The provider rate limits after four."
         )
@@ -58,6 +58,21 @@ class TestWhatComesBack:
 
 
 class TestReadingTheAnswer:
+    def test_legacy_category_is_still_read(self):
+        payload = json.loads(one())
+        payload[0]["kind"] = payload[0].pop("type")
+        proposals = propose(
+            "acme/billing", LAYOUT, PROSE, [], answering(json.dumps(payload))
+        )
+        assert proposals[0].knowledge.type == "decision"
+
+    def test_type_takes_precedence_and_is_requested_in_the_prompt(self):
+        ask = answering(one(kind="constraint"))
+        proposals = propose("acme/billing", LAYOUT, PROSE, [], ask)
+        assert proposals[0].knowledge.type == "decision"
+        assert '"type":' in ask.asked["prompt"]
+        assert '"kind":' not in ask.asked["prompt"]
+
     """Models fence JSON, preface it, and apologise around it."""
 
     def test_a_fenced_answer_is_read(self):
@@ -90,7 +105,7 @@ class TestRefusals:
 
     def test_a_kind_nobody_asked_for_is_dropped(self):
         assert (
-            propose("acme/billing", LAYOUT, PROSE, [], answering(one(kind="vibe")))
+            propose("acme/billing", LAYOUT, PROSE, [], answering(one(type="vibe")))
             == []
         )
 
@@ -104,12 +119,12 @@ class TestRefusals:
             [
                 {
                     "id": "retry",
-                    "kind": "decision",
+                    "type": "decision",
                     "summary": "Charges retry three times.",
                 },
                 {
                     "id": "retry",
-                    "kind": "decision",
+                    "type": "decision",
                     "summary": "Charges retry three times.",
                 },
             ]
@@ -122,7 +137,7 @@ class TestRefusals:
         known = [
             KnowledgeObject(
                 id="retry-limit",
-                kind="decision",
+                type="decision",
                 status="accepted",
                 summary="Charges retry three times.",
             )
@@ -138,7 +153,7 @@ class TestRefusals:
             [
                 {
                     "id": f"thing-{n}",
-                    "kind": "convention",
+                    "type": "convention",
                     "summary": f"Rule {n} holds.",
                 }
                 for n in range(20)
@@ -169,7 +184,7 @@ class TestHowSureAModelSaidItWas:
                 [
                     {
                         "id": "retry-limit",
-                        "kind": "decision",
+                        "type": "decision",
                         "summary": "Charges retry three times, then stop.",
                         "why": "The provider rate limits after four.",
                         "sure": 0.9,
@@ -192,7 +207,7 @@ class TestHowSureAModelSaidItWas:
                 [
                     {
                         "id": "retry-limit",
-                        "kind": "decision",
+                        "type": "decision",
                         "summary": "Charges retry three times, then stop.",
                         "why": "The provider rate limits after four.",
                     }
@@ -212,7 +227,7 @@ class TestHowSureAModelSaidItWas:
                 [
                     {
                         "id": "retry-limit",
-                        "kind": "decision",
+                        "type": "decision",
                         "summary": "Charges retry three times, then stop.",
                         "why": "The provider rate limits after four.",
                         "sure": "very",

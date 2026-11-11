@@ -1,6 +1,10 @@
+from contextvars import ContextVar
+
+running_preview = ContextVar("running_review_preview", default=False)
+review_run_key = ContextVar("review_run_key", default="")
+
 import asyncio
 import json
-import time
 from uuid import uuid4
 
 from src.core.cache import cache, Owner
@@ -19,7 +23,19 @@ def key_for(workspace, repo, number, revision, post=False):
     return "preview:" + keyed(str(workspace), repo, str(number), revision, str(post))
 
 
-def request_for(repo, pull_request, metadata, workspace, user, post=False):
+def request_for(
+    repo,
+    pull_request,
+    metadata,
+    workspace,
+    user,
+    post=False,
+    *,
+    run_key="",
+    event_type=None,
+    completion_event=None,
+    revision=None,
+):
     key = key_for(workspace, repo, pull_request.number, pull_request.head_sha, post)
     return JobRequest(
         lane=INTERACTIVE,
@@ -31,10 +47,13 @@ def request_for(repo, pull_request, metadata, workspace, user, post=False):
             "workspace": workspace,
             "user": user,
             "post": post,
-            "request_id": uuid4().hex,
+            "request_id": run_key or uuid4().hex,
+            "event_type": event_type,
+            "completion_event": completion_event,
+            "revision": pull_request.head_sha if revision is None else revision,
         },
         deadline_seconds=1800,
-        max_attempts=1,
+        max_attempts=1000,
         exclusive_key=key,
         dedupe_slot=key,
         coalesce_running=True,
@@ -58,19 +77,35 @@ class ReviewPreviews:
         owner, _, name = repo.partition("/")
         repository = Repository(name=name, owner=owner)
         pull_request = PullRequest(**payload["pull_request"])
-        result = asyncio.run(
-            plugin.generate_review(
-                repository,
-                pull_request,
-                pr_metadata=payload["metadata"],
-                event_type=None,
-                repository_full_name=repo,
-                post=payload["post"],
-                workspace=payload["workspace"],
-                user=payload["user"],
-                revision=pull_request.head_sha or "",
-            )
-        )
+        waiting_delivery = cache().get("review.preview-delivery", str(job.id))
+        if waiting_delivery:
+            result = {"status": "pending", "posting_job_id": int(waiting_delivery)}
+        else:
+            preview_token = running_preview.set(job.id)
+            run_token = review_run_key.set(payload["request_id"])
+            try:
+                result = asyncio.run(
+                    plugin.generate_review(
+                        repository,
+                        pull_request,
+                        pr_metadata=payload["metadata"],
+                        event_type=payload.get("event_type"),
+                        repository_full_name=repo,
+                        post=payload["post"],
+                        workspace=payload["workspace"],
+                        user=payload["user"],
+                        revision=payload.get("revision", pull_request.head_sha) or "",
+                        completion_event=payload.get("completion_event"),
+                    )
+                )
+            finally:
+                running_preview.reset(preview_token)
+                review_run_key.reset(run_token)
+        if result.get("continuation"):
+            current = job_store().read(job.id)
+            if current is None or current.state != "running":
+                return JobOutcome.failed("Review was stopped")
+            return JobOutcome.failed("Review is continuing", retry=True, retry_in=15)
         if result.get("status") == "pending" and result.get("posting_job_id"):
             cache().set(
                 "review.preview-delivery",
@@ -80,13 +115,14 @@ class ReviewPreviews:
                 scope=Owner("workspace", payload["workspace"]),
             )
             posting = job_store().read(result["posting_job_id"])
-            while posting is not None and posting.state in ("queued", "running"):
+            if posting is not None and posting.state in ("queued", "running"):
                 current = job_store().read(job.id)
                 if current is None or current.state != "running":
                     job_store().cancel(posting.id)
                     return JobOutcome.failed("Review was stopped")
-                time.sleep(0.25)
-                posting = job_store().read(posting.id)
+                return JobOutcome.failed(
+                    "Review delivery is queued", retry=True, retry_in=15
+                )
             if posting is None or posting.state != "succeeded":
                 return JobOutcome.failed(
                     posting.error if posting else "Review delivery was lost"

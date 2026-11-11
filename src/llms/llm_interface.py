@@ -15,6 +15,9 @@ class LLMInterface(ABC):
     def count_tokens(self, text: str) -> int:
         pass
 
+    def review_input_tokens(self, diff: str) -> int:
+        return self.count_tokens(diff)
+
     @abstractmethod
     def generate_code_review(
         self,

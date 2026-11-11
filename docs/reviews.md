@@ -44,6 +44,10 @@ With the database queue, generation and posting are separate jobs. Rate limits d
 | Already said | A suggestion matching one SourceAnt already posted on the pull request is dropped, and the verdict is recalculated from what survives |
 | Repeat approval | A second approval on a pull request SourceAnt has already approved is downgraded to a comment |
 
+### Large pull requests
+
+Large changes are planned before paid review and continue within a shared allowance. See [Large pull requests](large-reviews.md) for partitioning, continuation, artifact checks and deployment requirements.
+
 ### Expert passes
 
 `review.expert_passes` controls which expert reviews run. Its default, `auto`, keeps automatic skill selection. Set exact skill IDs, one per line, to run only those passes; set an empty string to disable expert passes. The general review and guidance still run. Named passes are not restricted by the automatic selector's five-skill limit, but their file patterns still apply. Unknown IDs fail the review with an error naming them.

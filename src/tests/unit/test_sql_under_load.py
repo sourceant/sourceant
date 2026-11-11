@@ -127,7 +127,7 @@ def test_knowledge_for_thousands_of_changed_paths(tmp_path):
     store = SQLKnowledgeRepository(_engine(tmp_path, "know.db"), create_schema=True)
     store.put(
         SCOPE,
-        KnowledgeObject(id="d1", kind="decision", status="approved", summary="x"),
+        KnowledgeObject(id="d1", type="decision", status="approved", summary="x"),
     )
     store.put_link(
         SCOPE,

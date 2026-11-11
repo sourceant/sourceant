@@ -97,6 +97,7 @@ def process_github_webhook(
     provider = get_provider_from_headers(request.headers)
 
     enhanced_payload = payload.model_dump()
+    enhanced_payload["sourceant_delivery_id"] = request.headers.get("X-GitHub-Delivery")
     enhanced_payload["sourceant_auth_type"] = auth_type
     enhanced_payload["sourceant_workspace_id"] = (scope or {}).get("workspace_id")
     enhanced_payload["sourceant_owner_id"] = (scope or {}).get("owner_id")

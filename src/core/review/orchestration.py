@@ -73,7 +73,45 @@ class ParallelReviewOrchestrator:
         def read(task):
             participant, repetition = task
             identity = f"{participant.name}:{repetition}"
+            lease = part_id = None
+            from src.core.review_performance import current_budget
+
+            active_budget = current_budget()
+            journal = active_budget.work if active_budget else None
             try:
+                if (
+                    journal is not None
+                    and participant.name == "review-0"
+                    and participant.investigations
+                    and participant.investigations[repetition - 1].diff
+                ):
+                    from hashlib import sha256
+
+                    investigation = participant.investigations[repetition - 1]
+                    part_id = sha256(investigation.diff.encode()).hexdigest()
+                    saved = journal.answers(active_budget.run_id).get(part_id)
+                    if saved is not None:
+                        for attempt in saved["coverage"]:
+                            question, method = attempt.pop("question"), attempt.pop(
+                                "method"
+                            )
+                            coverage_by_pass[identity].record(
+                                question, method, **attempt
+                            )
+                        answer = (
+                            CodeReview.model_validate(saved["review"])
+                            if saved["review"]
+                            else None
+                        )
+                        return ParticipantOutcome(participant.name, repetition, answer)
+                    lease = journal.claim(active_budget.run_id, part_id)
+                    if lease is None:
+                        from src.core.review_budget import ReviewContinuation
+
+                        active_budget.continuation = True
+                        raise ReviewContinuation(
+                            "Another worker owns this review chunk"
+                        )
                 options = dict(request.options)
                 if participant.investigations:
                     investigation = participant.investigations[repetition - 1]
@@ -125,8 +163,29 @@ class ParallelReviewOrchestrator:
                     )
                 if answer is not None and not isinstance(answer, CodeReview):
                     raise ValueError("A reviewer must return CodeReview or None")
+                if lease:
+                    from dataclasses import asdict
+
+                    persisted = journal.finish(
+                        active_budget.run_id,
+                        part_id,
+                        lease,
+                        {
+                            "review": (
+                                answer.model_dump(mode="json") if answer else None
+                            ),
+                            "coverage": [
+                                asdict(attempt)
+                                for attempt in coverage_by_pass[identity].attempts
+                            ],
+                        },
+                    )
+                    if not persisted:
+                        raise RuntimeError("The review chunk lease is no longer active")
                 return ParticipantOutcome(participant.name, repetition, answer)
             except Exception as error:
+                if lease:
+                    journal.release(active_budget.run_id, part_id, lease)
                 logger.warning(
                     "review_participant_failed session=%s stage=discovery participant=%s repetition=%s error=%s reason=%s",
                     session_id(),
@@ -189,11 +248,55 @@ class ParallelReviewOrchestrator:
             if isinstance(deterministic.result, ReviewEvaluation)
             else Analysis(unavailable=("deterministic",))
         )
+        integration_provider = getattr(plan, "integration_provider", None)
+        if integration_provider is not None and not any(
+            outcome.error for outcome in reviews
+        ):
+            try:
+                from .partitioning import integration_packet
+
+                from .contracts import review_context_provider
+                from src.core.services import service_registry
+
+                services = getattr(self.deterministic, "services", service_registry)
+                contracts = review_context_provider(services).prepare(
+                    request, request.changes.paths
+                )
+                with stage("integration"):
+                    integrated = integration_provider.generate_code_review(
+                        diff=integration_packet(request, reviews, integration_provider),
+                        pr_metadata={"title": request.changes.title},
+                        related_code=contracts.rendered(),
+                        code_context=None,
+                        requirements=None,
+                        knowledge=None,
+                        impact=None,
+                        analysis=(
+                            request.analysis.rendered()
+                            if request.analysis is not None
+                            else None
+                        ),
+                    )
+                if not isinstance(integrated, CodeReview):
+                    raise ValueError("The integration reviewer must return CodeReview")
+                reviews = (*reviews, ParticipantOutcome("integration", 1, integrated))
+            except Exception as error:
+                reviews = (
+                    *reviews,
+                    ParticipantOutcome("integration", 1, error=type(error).__name__),
+                )
         candidates, producers, seen = [], [], {}
         for outcome in reviews:
             if not isinstance(outcome.result, CodeReview):
                 continue
             for finding in outcome.result.code_suggestions or ():
+                if (
+                    outcome.participant == "integration"
+                    and request.changes.configuration.value("review.include_nitpicks")
+                    is not True
+                    and is_nitpick(finding)
+                ):
+                    continue
                 key = (
                     finding.start_line,
                     finding.end_line,

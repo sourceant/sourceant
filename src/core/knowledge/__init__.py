@@ -10,6 +10,7 @@ from .interfaces import (
 )
 from .memory import InMemoryKnowledgeRepository
 from .models import (
+    KnowledgeChange,
     KnowledgeLink,
     KnowledgeObject,
     KnowledgeQuery,
@@ -23,6 +24,7 @@ from .selection import LinkedKnowledgeSelector
 from .sql import SQLKnowledgeRepository
 
 __all__ = [
+    "KnowledgeChange",
     "KnowledgeApplicability",
     "KnowledgeBasis",
     "KnowledgeImportance",

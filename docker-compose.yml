@@ -18,6 +18,8 @@ services:
       - sourceant-network
     environment:
       - PYTHONDONTWRITEBYTECODE=1
+      - MEMORY_ENGINE_URL=${MEMORY_ENGINE_URL:-}
+      - MEMORY_ENGINE_KEY=${MEMORY_ENGINE_KEY:-}
     env_file:
       - .env
 
@@ -30,6 +32,34 @@ services:
       POSTGRES_PASSWORD: admin
     volumes:
       - db-data:/var/lib/postgresql/data
+    networks:
+      - sourceant-network
+
+  memory:
+    image: ghcr.io/trailpad/memory:latest
+    profiles: [memory]
+    environment:
+      MEMORY_DATABASE_URL: postgres://memory:${MEMORY_DB_PASSWORD:-your-database-password-here}@memory-db:5432/memory?sslmode=disable
+    depends_on:
+      memory-db:
+        condition: service_healthy
+    networks:
+      - sourceant-network
+
+  memory-db:
+    image: postgres:17
+    profiles: [memory]
+    environment:
+      POSTGRES_DB: memory
+      POSTGRES_USER: memory
+      POSTGRES_PASSWORD: ${MEMORY_DB_PASSWORD:-your-database-password-here}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memory -d memory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - memory-data:/var/lib/postgresql/data
     networks:
       - sourceant-network
 
@@ -50,3 +80,4 @@ networks:
 volumes:
   db-data:
   redis-data:
+  memory-data:

@@ -394,7 +394,7 @@ def _knowledge(tmp_path, *, linked_path="test.py"):
         SCOPE,
         KnowledgeObject(
             id="d1",
-            kind="decision",
+            type="decision",
             status="approved",
             summary="Retries are capped at three attempts",
         ),
@@ -521,7 +521,7 @@ def test_a_registered_knowledge_selector_decides_instead_of_the_links(
             return (
                 KnowledgeObject(
                     id="d9",
-                    kind="constraint",
+                    type="constraint",
                     status="approved",
                     summary="Nothing links this to the change",
                 ),
@@ -600,7 +600,9 @@ def test_a_change_with_nothing_readable_still_reviews(
     )
 
     assert result["status"] == "success"
-    assert instance.generate_code_review.call_args.kwargs["requirements"] is None
+    instance.generate_code_review.assert_not_called()
+    assert result["verdict"] == "COMMENT"
+    assert result["review"]["execution"]["artifacts"]
 
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")
@@ -765,7 +767,7 @@ def test_knowledge_survives_a_change_touching_thousands_of_files(tmp_path):
     )
     store.put(
         SCOPE,
-        KnowledgeObject(id="d1", kind="decision", status="approved", summary="Use UTC"),
+        KnowledgeObject(id="d1", type="decision", status="approved", summary="Use UTC"),
     )
     store.put_link(
         SCOPE,

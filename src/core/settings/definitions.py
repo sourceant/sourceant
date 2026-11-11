@@ -200,6 +200,17 @@ SETTINGS: tuple[Setting, ...] = (
         group="Review",
     ),
     Setting(
+        key="review.large_change_maximum_model_calls",
+        label="Model calls for large PRs",
+        description="Total model-call ceiling for all chunks, summaries, evaluations and recovery in a large review.",
+        type=ConfigType.INT,
+        scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
+        default=256,
+        minimum=1,
+        maximum=1000,
+        group="Review",
+    ),
+    Setting(
         key="review.maximum_model_calls",
         label="Model calls per review",
         description="Maximum model requests across all readings and evaluations. Reaching the limit stops the review without publishing a partial result.",

@@ -24,7 +24,7 @@ from src.core.initialization.policy import DefaultInitializationCandidatePolicy
 
 from .models import KnowledgeObject
 
-KINDS = ("decision", "convention", "constraint", "pattern", "workaround")
+TYPES = ("decision", "convention", "constraint", "pattern", "workaround")
 
 # Enough for a model to see the shape of a repository without paying to send it
 # the repository.
@@ -46,7 +46,7 @@ Already recorded, so do not repeat any of it:
 
 Answer with a JSON array, at most {limit} entries, each an object with:
   "id":      a short kebab-case name, unique
-  "kind":    one of {kinds}
+  "type":    one of {types}
   "summary": one sentence stating what is true, in the present tense
   "why":     one sentence on why it is that way, or "" if the code does not say
   "sure":    how certain you are, from 0 to 1. Above 0.8 only where the code
@@ -120,7 +120,7 @@ def propose(
         prose=_shorten(prose, MAX_EVIDENCE) or "Nothing.",
         known="\n".join(f"- {summary}" for summary in recorded) or "Nothing yet.",
         limit=limit,
-        kinds=", ".join(KINDS),
+        types=", ".join(TYPES),
     )
 
     policy = DefaultInitializationCandidatePolicy()
@@ -130,8 +130,8 @@ def propose(
     for item in _parse(ask(prompt))[:limit]:
         identifier = str(item.get("id") or "").strip()
         summary = str(item.get("summary") or "").strip()
-        kind = str(item.get("kind") or "").strip().lower()
-        if not identifier or not summary or kind not in KINDS or identifier in seen:
+        type = str(item.get("type", item.get("kind")) or "").strip().lower()
+        if not identifier or not summary or type not in TYPES or identifier in seen:
             continue
         why = str(item.get("why") or "").strip()
         try:
@@ -142,7 +142,7 @@ def propose(
         # PostgreSQL. The same rule that rejects that from anywhere else
         # rejects it here.
         candidate = InitializationCandidate(
-            kind=kind,
+            kind=type,
             slug=identifier,
             summary=summary,
             rationale=why,
@@ -162,7 +162,7 @@ def propose(
             Proposal(
                 KnowledgeObject(
                     id=identifier,
-                    kind=kind,
+                    type=type,
                     status="proposed",
                     summary=summary,
                     properties=properties,

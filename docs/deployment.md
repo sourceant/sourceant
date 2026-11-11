@@ -42,6 +42,37 @@ docker compose exec -T app sourceant db upgrade head
 
 Copy `docker-compose.override.yml.example` to `docker-compose.override.yml` to mount local plugin directories into the app container.
 
+### Event memory
+
+Compose includes the AGPL memory engine and its own PostgreSQL volume, under the
+`memory` profile. Knowledge
+stays in SourceAnt's knowledge store; memory records events from GitHub,
+knowledge changes, and the MCP `remember` tool.
+
+Set `MEMORY_DB_PASSWORD` in `.env`, start the services, then create an engine
+workspace and a service key. Register the GitHub installation IDs that send
+webhooks to this deployment:
+
+If the `ghcr.io/trailpad/memory` image cannot be pulled, build it from a checkout
+of the engine with `docker build -t ghcr.io/trailpad/memory:latest .`.
+
+```bash
+docker compose --profile memory up -d memory
+docker compose exec memory /memoryd workspace -id sourceant
+docker compose exec memory /memoryd service -workspace sourceant -id sourceant -actions read,write,sync -installations sourceant/local,github/your-installation-id
+```
+
+Put the returned key in `MEMORY_ENGINE_KEY` and set
+`MEMORY_ENGINE_URL=http://memory:8080` in `.env`, then recreate the app. The
+`sourceant/local` installation covers local knowledge and MCP events. For hosted
+workspace scopes, register `sourceant/your-workspace-id` too. Do not publish the
+engine port. With neither engine setting configured, memory is disabled: writes do nothing and reads return empty results with
+`configured: false`. In-process storage is reserved for tests. Both settings must
+be supplied together.
+
+Replay stored GitHub deliveries with `sourceant memory-replay`, optionally
+followed by repository names. Repeating a replay preserves existing events.
+
 ### Building your own image
 
 ```bash

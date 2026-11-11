@@ -75,6 +75,7 @@ class ReviewInvestigation:
     name: str
     targets: tuple[ReviewTarget, ...]
     question: str
+    diff: str = ""
 
     def __post_init__(self):
         if not self.name or not self.targets or not self.question.strip():
@@ -109,6 +110,7 @@ class ParallelReviewPlan:
     concurrency: int = 6
     minimum_support: int = 0
     maximum_rejections: int = 0
+    integration_provider: Any = None
 
     def __post_init__(self) -> None:
         if not self.reviewers:

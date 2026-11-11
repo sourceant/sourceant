@@ -17,7 +17,7 @@ from .models import (
     RequirementLink,
 )
 
-KIND = "requirement"
+TYPE = "requirement"
 
 
 def as_knowledge(requirement: Requirement) -> KnowledgeObject:
@@ -27,7 +27,7 @@ def as_knowledge(requirement: Requirement) -> KnowledgeObject:
         properties["external_ref"] = requirement.external_ref
     return KnowledgeObject(
         id=knowledge_id(requirement.id),
-        kind=KIND,
+        type=TYPE,
         status=requirement.status,
         summary=requirement.summary,
         properties=properties,
@@ -58,7 +58,9 @@ class KnowledgeBackedRequirements:
 
     def __init__(self, requirements, knowledge: KnowledgeWriter) -> None:
         self._requirements = requirements
-        self._knowledge = knowledge
+        from src.core.knowledge.recording import recording
+
+        self._knowledge = recording(knowledge)
 
     def put(self, scope: Scope, requirement: Requirement) -> None:
         self._requirements.put(scope, requirement)
@@ -73,7 +75,7 @@ class KnowledgeBackedRequirements:
                 scope,
                 KnowledgeObject(
                     id=link.target_id,
-                    kind="artifact",
+                    type="artifact",
                     status="active",
                     summary=str(link.properties.get("name") or link.target_id),
                     properties=dict(link.properties),

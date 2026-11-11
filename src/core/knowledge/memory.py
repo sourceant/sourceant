@@ -96,7 +96,7 @@ class InMemoryKnowledgeRepository:
             for (scope, _), knowledge in self._knowledge.items()
             if scope == query.scope
             and (not query.ids or knowledge.id in query.ids)
-            and (not query.kinds or knowledge.kind in query.kinds)
+            and (not query.types or knowledge.type in query.types)
             and (not query.statuses or knowledge.status in query.statuses)
             and all(
                 knowledge.properties.get(key) == value

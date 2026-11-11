@@ -2,6 +2,14 @@ from threading import Lock
 from time import monotonic
 
 
+class ReviewStopped(RuntimeError):
+    pass
+
+
+class ReviewContinuation(RuntimeError):
+    pass
+
+
 class ReviewBudgetExceeded(RuntimeError):
     pass
 
@@ -13,13 +21,52 @@ class ReviewBudget:
 
         self.maximum_calls = int(value("review.maximum_model_calls", 64) or 64)
         self.output_tokens = int(value("review.output_tokens", 8192) or 8192)
-        self.deadline = monotonic() + int(value("review.time_budget", 900) or 900)
+        duration = int(value("review.time_budget", 900) or 900)
+        self.deadline = monotonic() + duration
+        self.continuation_margin = min(60, duration / 10)
         self.calls = 0
         self.exhausted = False
         self.lock = Lock()
+        self.work = None
+        self.run_id = ""
+        self.continuation = False
+        self.cancelled = False
+        self.stopped = None
+
+    def plan_parts(self, count, configuration, *, calls_per_part=1, extra_calls=0):
+        if count < 1 or calls_per_part < 1:
+            raise ValueError("A review needs a positive planned workload")
+        if count == 1 and extra_calls == 0:
+            return
+        import os
+
+        ceiling = min(
+            int(configuration.value("review.large_change_maximum_model_calls") or 256),
+            int(os.getenv("SOURCEANT_LARGE_REVIEW_MAXIMUM_CALLS", "256")),
+        )
+        required = count * calls_per_part + extra_calls + 2
+        if required > ceiling:
+            raise ReviewBudgetExceeded(
+                f"The plan needs at least {required} model calls, exceeding the large-PR ceiling of {ceiling} before discovery"
+            )
+        with self.lock:
+            self.maximum_calls = ceiling
+
+    def check_current(self):
+        if self.stopped is not None and self.stopped():
+            self.cancelled = True
+            if self.work is not None:
+                self.work.cancel(self.run_id)
+            raise ReviewStopped("Review no longer wanted")
 
     def remaining(self):
+        self.check_current()
         remaining = self.deadline - monotonic()
+        if self.work is not None and remaining <= self.continuation_margin:
+            self.continuation = True
+            raise ReviewContinuation(
+                "The review will continue in another worker window"
+            )
         if remaining <= 0:
             self.exhausted = True
             raise ReviewBudgetExceeded(
@@ -35,4 +82,10 @@ class ReviewBudget:
                 raise ReviewBudgetExceeded(
                     "The review reached its model-call budget. Split the change or increase the review budget in its repository settings."
                 )
+            if self.work is not None:
+                try:
+                    self.work.reserve_call(self.run_id)
+                except RuntimeError as error:
+                    self.exhausted = True
+                    raise ReviewBudgetExceeded(str(error)) from error
             self.calls += 1

@@ -10,6 +10,8 @@ from .execution import (
     ParallelReviewPlan,
     ReviewInput,
     ReviewParticipant,
+    ReviewInvestigation,
+    ReviewTarget,
 )
 
 READING_FOCUSES = (
@@ -28,14 +30,95 @@ def evaluated(configuration) -> bool:
     )
 
 
+def discovery_models(configuration, services, provider):
+    choices = configuration.value("model.purposes") or {}
+    try:
+        services.resolve(ModelRouter)
+        routed = True
+    except LookupError:
+        routed = False
+    return (
+        providers_for(configuration, "review", services)
+        if routed or "review" in choices
+        else (provider,)
+    )
+
+
 class SettingsReviewPlanSource:
     def __init__(self, services: ServiceRegistry = service_registry):
         self.services = services
 
     def plan_for(self, request: ReviewInput, reviewer, provider):
         configuration = request.changes.configuration
+        from src.core.review.partitioning import (
+            partition_source,
+            change_map,
+            relationships,
+            review_cost,
+            reading_budget,
+        )
+        from src.core.review_performance import current_budget
+
+        planned_models = (
+            discovery_models(configuration, self.services, provider)
+            if configuration.value("review.plan") == "premium"
+            else (provider,)
+        )
+        if not planned_models:
+            raise ValueError("A review model is required")
+        budget = min(reading_budget(configuration, model) for model in planned_models)
+        costs = tuple(review_cost(model) for model in planned_models)
+        partitions = partition_source(self.services).partition(
+            getattr(request.changes, "diff", ""),
+            cost=lambda text: max(cost(text) for cost in costs),
+            input_budget=budget,
+            maximum_parts=int(configuration.value("review.maximum_parts") or 64),
+            adjacency=(
+                relationships(self.services, request.changes.code_scope)
+                if hasattr(request.changes, "code_scope")
+                else {}
+            ),
+        )
+        investigations = ()
+        if len(partitions.chunks) > 1:
+            inventory = change_map(partitions)
+            investigations = tuple(
+                ReviewInvestigation(
+                    f"partition-{index}",
+                    tuple(
+                        ReviewTarget(file.file_path, tuple(file.hunk_ranges))
+                        for file in chunk.files
+                    ),
+                    "Review these exact ranges in the context of the whole change. "
+                    "Check interactions with sibling files and report concrete defects.\n"
+                    + request.changes.title[:2000]
+                    + "\n"
+                    + request.changes.description[:6000]
+                    + "\nChanged files:\n"
+                    + inventory[:16000],
+                    "\n".join(file.diff_text for file in chunk.files),
+                )
+                for index, chunk in enumerate(partitions.chunks)
+            )
         if configuration.value("review.plan") != "premium":
-            return None
+            if not investigations:
+                return None
+            active = current_budget()
+            if active is not None:
+                active.plan_parts(len(investigations), configuration)
+            return ParallelReviewPlan(
+                reviewers=(
+                    ReviewParticipant(
+                        "review-0",
+                        reviewer,
+                        provider,
+                        len(investigations),
+                        investigations=investigations,
+                    ),
+                ),
+                concurrency=configuration.value("review.concurrency"),
+                integration_provider=provider,
+            )
         choices = configuration.value("model.purposes") or {}
         try:
             self.services.resolve(ModelRouter)
@@ -65,8 +148,10 @@ class SettingsReviewPlanSource:
         support = configuration.value("review.minimum_support")
         if support > len(evaluation) * repetitions:
             raise ValueError("Required support exceeds the configured evaluations")
-        investigations = ()
-        if configuration.value("review.split_large_changes") is True:
+        if (
+            not investigations
+            and configuration.value("review.split_large_changes") is True
+        ):
             try:
                 source = self.services.resolve(ReviewInvestigationSource)
             except LookupError:
@@ -81,6 +166,13 @@ class SettingsReviewPlanSource:
                 )
             if not investigations:
                 raise ValueError("The change has no investigation targets")
+        active = current_budget()
+        if active is not None and investigations:
+            active.plan_parts(
+                len(investigations),
+                configuration,
+                calls_per_part=max(1, len(discovery) + len(evaluation) * repetitions),
+            )
         return ParallelReviewPlan(
             reviewers=tuple(
                 ReviewParticipant(
@@ -119,4 +211,5 @@ class SettingsReviewPlanSource:
             concurrency=configuration.value("review.concurrency"),
             minimum_support=support,
             maximum_rejections=configuration.value("review.maximum_rejections"),
+            integration_provider=provider if len(partitions.chunks) > 1 else None,
         )

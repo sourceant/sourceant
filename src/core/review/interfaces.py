@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, Sequence, runtime_checkable
+from typing import Any, Callable, Protocol, Sequence, runtime_checkable, TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from .partitioning import ReviewPartition
 
 from src.core.analysis import Analysis
 from src.core.review_coverage import Coverage
@@ -165,3 +168,16 @@ class FindingStore(FindingReader, FindingWriter, Protocol):
     Registered by whoever can keep them. Unregistered, a review still runs and
     simply forgets, which is what it did before this existed.
     """
+
+
+@runtime_checkable
+class ReviewPartitionSource(Protocol):
+    def partition(
+        self,
+        diff: str,
+        *,
+        cost: Callable[[str], int],
+        input_budget: int,
+        maximum_parts: int = 200,
+        adjacency=None,
+    ) -> ReviewPartition: ...

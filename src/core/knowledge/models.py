@@ -1,8 +1,10 @@
+from datetime import datetime, timezone
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from src.core.scope import Scope
+from src.core.memory.models import Actor
 
 from .characteristics import KnowledgeApplicability, KnowledgeBasis, KnowledgeImportance
 
@@ -10,7 +12,7 @@ from .characteristics import KnowledgeApplicability, KnowledgeBasis, KnowledgeIm
 @dataclass(frozen=True)
 class KnowledgeObject:
     id: str
-    kind: str
+    type: str
     status: str
     summary: str
     properties: Mapping[str, Any] = field(default_factory=dict)
@@ -96,8 +98,11 @@ class KnowledgeQuery:
     properties: Mapping[str, Any] = field(default_factory=dict)
     limit: int = 50
     offset: int = 0
+    types: frozenset[str] | None = None
 
     def __post_init__(self) -> None:
+        if self.types is None:
+            object.__setattr__(self, "types", self.kinds)
         if not 1 <= self.limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         if self.offset < 0:
@@ -143,3 +148,17 @@ class KnowledgeSubgraph:
     items: tuple[KnowledgeObject, ...]
     relationships: tuple[KnowledgeRelationship, ...]
     truncated: bool
+
+
+@dataclass(frozen=True)
+class KnowledgeChange:
+    type: Literal[
+        "knowledge.captured",
+        "knowledge.updated",
+        "knowledge.status_changed",
+        "knowledge.removed",
+    ]
+    actor: Actor
+    before: KnowledgeObject | None = None
+    after: KnowledgeObject | None = None
+    when: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

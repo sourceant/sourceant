@@ -77,6 +77,11 @@ class RepositoryEventController(BaseController):
                     f"Repository event processed (not persisted): {event_model}"
                 )
 
+            if provider.lower() == "github":
+                from src.integrations.github.memory_history import record_webhook
+
+                record_webhook(type, payload, stored=not STATELESS_MODE)
+
             dispatcher.dispatch(RepositoryEvent(event_model))
 
             return cls().success(

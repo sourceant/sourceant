@@ -28,6 +28,7 @@ from .interfaces import (
     ReviewPlanSource,
     ReviewContextProvider,
     ReviewInvestigationSource,
+    ReviewPartitionSource,
     ReviewTraceSink,
 )
 from .execution import (
@@ -123,6 +124,12 @@ __all__ = [
     "ReviewPlan",
     "review_orchestrator",
     "ReviewPlanSource",
+    "ReviewPartitionSource",
+    "ReviewPartition",
+    "ReviewChunk",
+    "ArtifactTarget",
+    "DefaultReviewPartitionSource",
+    "partition_source",
     "SettingsReviewPlanSource",
     "review_plan_source",
     "EvaluationParticipant",
@@ -166,3 +173,11 @@ __all__ = [
     "reviewer",
     "working_tree_reviewer",
 ]
+
+from .partitioning import (
+    ReviewPartition,
+    ReviewChunk,
+    ArtifactTarget,
+    DefaultReviewPartitionSource,
+    partition_source,
+)

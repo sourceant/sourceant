@@ -733,8 +733,10 @@ class TestLocalReview(BaseTestCase):
             tasks = response.json()["data"]["review"]["review"]["execution"][
                 "investigations"
             ]
-            assert len(model.told) == len(tasks) > 1
-            for call in model.told:
+            discovery_calls = [call for call in model.told if call.get("parsed_files")]
+            assert len(discovery_calls) == len(tasks) > 1
+            assert len(model.told) == len(discovery_calls) + 1
+            for call in discovery_calls:
                 files = call["parsed_files"]
                 assert (
                     len(files) == 1

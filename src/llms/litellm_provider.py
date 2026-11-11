@@ -134,6 +134,64 @@ class LiteLLMProvider(LLMInterface):
                         **kwargs.get("extra_body", {}),
                         "reasoning_effort": self._reasoning_effort,
                     }
+        response_key = None
+        if budget and budget.work is not None:
+            budget.check_current()
+            from hashlib import sha256
+            from src.core.review_performance import reading_identity, expert_identity
+
+            response_key = sha256(
+                json.dumps(
+                    [
+                        kwargs,
+                        self.model,
+                        self._api_key,
+                        self._api_base,
+                        reading_identity.get(),
+                        expert_identity.get(),
+                        call_purpose.get(),
+                    ],
+                    sort_keys=True,
+                    default=lambda value: (
+                        value.model_json_schema()
+                        if hasattr(value, "model_json_schema")
+                        else str(value)
+                    ),
+                ).encode()
+            ).hexdigest()
+            budget.work.ensure_active(budget.run_id)
+            cached = budget.work.response(budget.run_id, response_key)
+            if cached is not None:
+                replayed = litellm.ModelResponse(**json.loads(cached))
+                replayed._hidden_params["sourceant_replayed"] = True
+                return replayed
+        if budget:
+            prompt_tokens = litellm.token_counter(
+                model=self.model,
+                messages=kwargs.get("messages", ()),
+                tools=kwargs.get("tools"),
+                tool_choice=kwargs.get("tool_choice"),
+            )
+            response_format = kwargs.get("response_format")
+            if response_format is not None:
+                schema = (
+                    response_format.model_json_schema()
+                    if hasattr(response_format, "model_json_schema")
+                    else response_format
+                )
+                prompt_tokens += self.count_tokens(json.dumps(schema, sort_keys=True))
+            reserve = int(
+                kwargs.get("max_tokens")
+                or kwargs.get("max_completion_tokens")
+                or output_limit
+                or budget.output_tokens
+            )
+            if prompt_tokens + reserve > self.token_limit:
+                from src.core.review.partitioning import PartitionCapacityError
+
+                raise PartitionCapacityError(
+                    "The complete model prompt and output reserve exceed the model context window"
+                )
         with model_call(self.model):
             if budget:
                 kwargs["timeout"] = min(
@@ -142,7 +200,12 @@ class LiteLLMProvider(LLMInterface):
                 )
             trace_request(kwargs, call_purpose.get())
             try:
-                return litellm.completion(**kwargs)
+                response = litellm.completion(**kwargs)
+                if response_key is not None:
+                    budget.work.save_response(
+                        budget.run_id, response_key, response.model_dump_json()
+                    )
+                return response
             except Exception as error:
                 trace_emit(
                     TraceKind.EXCHANGE,
@@ -159,6 +222,9 @@ class LiteLLMProvider(LLMInterface):
         taken from the prompt here would see neither the system prompt nor the
         answer, and the answer is the expensive half.
         """
+        hidden = getattr(response, "_hidden_params", {})
+        if isinstance(hidden, dict) and hidden.get("sourceant_replayed"):
+            return
         from src.core.usage import record_completion
 
         trace_exchange(response, purpose)
@@ -222,6 +288,11 @@ class LiteLLMProvider(LLMInterface):
 
     def count_tokens(self, text: str) -> int:
         return litellm.token_counter(model=self.model, text=text)
+
+    def review_input_tokens(self, diff: str) -> int:
+        from src.utils.diff_parser import parse_diff
+
+        return self.count_tokens(self._build_decoupled_diff(parse_diff(diff)))
 
     def _caches_prompts(self) -> bool:
         """Whether this model can be told which part of a prompt to keep."""
