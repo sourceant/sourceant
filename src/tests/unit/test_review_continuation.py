@@ -198,3 +198,26 @@ def test_validation_retry_is_fresh_and_both_attempts_survive_continuation(
     assert completion.call_count == 2
     assert usage.call_count == 2
     assert store.progress("run")["model_calls"] == 2
+
+
+def test_planned_allowance_grows_with_work_without_resetting_spend(monkeypatch):
+    from src.core.review_budget import ReviewBudget
+
+    monkeypatch.setenv("SOURCEANT_LARGE_REVIEW_MAXIMUM_CALLS", "256")
+    config = SimpleNamespace(
+        value=lambda key: {
+            "review.maximum_model_calls": 8,
+            "review.large_change_maximum_model_calls": 256,
+        }.get(key)
+    )
+    budget = ReviewBudget(config)
+    budget.reserve()
+    budget.plan_parts(3, config, extra_calls=5)
+    assert budget.maximum_calls == 3 * 8 + 5 + 2
+    assert budget.calls == 1
+    budget.plan_parts(3, config)
+    assert budget.maximum_calls == 31
+    budget.plan_parts(40, config)
+    assert budget.planned_calls == 322
+    assert budget.maximum_calls == 256
+    assert budget.calls == 1

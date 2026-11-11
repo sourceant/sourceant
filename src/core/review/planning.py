@@ -80,7 +80,10 @@ class SettingsReviewPlanSource:
             ),
         )
         investigations = ()
-        if len(partitions.chunks) > 1:
+        active = current_budget()
+        if len(partitions.chunks) > 1 or (
+            active is not None and active.work is not None
+        ):
             inventory = change_map(partitions)
             investigations = tuple(
                 ReviewInvestigation(
@@ -117,7 +120,7 @@ class SettingsReviewPlanSource:
                     ),
                 ),
                 concurrency=configuration.value("review.concurrency"),
-                integration_provider=provider,
+                integration_provider=provider if len(partitions.chunks) > 1 else None,
             )
         choices = configuration.value("model.purposes") or {}
         try:

@@ -1,4 +1,5 @@
-from threading import Lock
+from contextlib import contextmanager
+from threading import BoundedSemaphore, Lock
 from time import monotonic
 
 
@@ -20,6 +21,10 @@ class ReviewBudget:
             return configuration.value(key) if configuration is not None else fallback
 
         self.maximum_calls = int(value("review.maximum_model_calls", 64) or 64)
+        self.standard_calls = self.maximum_calls
+        self.planned_calls = self.maximum_calls
+        self.concurrency = int(value("review.concurrency", 6) or 6)
+        self.slots = BoundedSemaphore(self.concurrency)
         self.output_tokens = int(value("review.output_tokens", 8192) or 8192)
         duration = int(value("review.time_budget", 900) or 900)
         self.deadline = monotonic() + duration
@@ -34,7 +39,7 @@ class ReviewBudget:
         self.stopped = None
 
     def plan_parts(self, count, configuration, *, calls_per_part=1, extra_calls=0):
-        if count < 1 or calls_per_part < 1:
+        if count < 1 or calls_per_part < 1 or extra_calls < 0:
             raise ValueError("A review needs a positive planned workload")
         if count == 1 and extra_calls == 0:
             return
@@ -44,13 +49,26 @@ class ReviewBudget:
             int(configuration.value("review.large_change_maximum_model_calls") or 256),
             int(os.getenv("SOURCEANT_LARGE_REVIEW_MAXIMUM_CALLS", "256")),
         )
+        requested = count * self.standard_calls + extra_calls + 2
         required = count * calls_per_part + extra_calls + 2
-        if required > ceiling:
+        available = min(max(self.planned_calls, requested), ceiling)
+        if required > available:
             raise ReviewBudgetExceeded(
-                f"The plan needs at least {required} model calls, exceeding the large-PR ceiling of {ceiling} before discovery"
+                f"The plan needs at least {required} model calls, exceeding the planned allowance of {available} (large-PR ceiling {ceiling}) before discovery"
             )
         with self.lock:
-            self.maximum_calls = ceiling
+            self.planned_calls = max(self.planned_calls, requested)
+            self.maximum_calls = min(self.planned_calls, ceiling)
+
+    @contextmanager
+    def model_slot(self):
+        if not self.slots.acquire(timeout=self.remaining()):
+            self.remaining()
+            raise TimeoutError("No review model slot became available")
+        try:
+            yield
+        finally:
+            self.slots.release()
 
     def check_current(self):
         if self.stopped is not None and self.stopped():

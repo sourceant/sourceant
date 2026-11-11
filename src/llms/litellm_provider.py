@@ -164,7 +164,7 @@ class LiteLLMProvider(LLMInterface):
             budget.work.ensure_active(budget.run_id)
             cached = budget.work.response(budget.run_id, response_key)
             if cached is not None:
-                replayed = litellm.ModelResponse(**json.loads(cached))
+                replayed = litellm.ModelResponse(**cached)
                 replayed._hidden_params["sourceant_replayed"] = True
                 return replayed
         if budget:
@@ -205,7 +205,7 @@ class LiteLLMProvider(LLMInterface):
                 response = litellm.completion(**kwargs)
                 if response_key is not None:
                     budget.work.save_response(
-                        budget.run_id, response_key, response.model_dump_json()
+                        budget.run_id, response_key, response.model_dump(mode="json")
                     )
                 return response
             except Exception as error:

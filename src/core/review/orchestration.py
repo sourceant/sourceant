@@ -89,7 +89,7 @@ class ParallelReviewOrchestrator:
 
                     investigation = participant.investigations[repetition - 1]
                     part_id = sha256(investigation.diff.encode()).hexdigest()
-                    saved = journal.answers(active_budget.run_id).get(part_id)
+                    saved = journal.answer(active_budget.run_id, part_id)
                     if saved is not None:
                         for attempt in saved["coverage"]:
                             question, method = attempt.pop("question"), attempt.pop(

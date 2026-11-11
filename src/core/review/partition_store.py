@@ -9,7 +9,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
-    Text,
+    JSON,
     and_,
     insert,
     or_,
@@ -26,20 +26,23 @@ runs = Table(
     Column("workspace", String(255), nullable=False),
     Column("repository", String(500), nullable=False),
     Column("revision", String(255), nullable=False),
-    Column("plan", Text, nullable=False),
+    Column("plan", JSON, nullable=False),
     Column("maximum_calls", Integer, nullable=False),
     Column("calls", Integer, nullable=False),
     Column("state", String(32), nullable=False),
 )
-parts = Table(
-    "review_partition_parts",
+chunks = Table(
+    "review_chunks",
     metadata,
-    Column("run_id", String(64), primary_key=True),
+    Column("review_id", String(64), primary_key=True),
     Column("id", String(128), primary_key=True),
-    Column("state", String(32), nullable=False),
+    Column("status", String(32), nullable=False),
     Column("lease", String(64), nullable=False),
     Column("leased_until", DateTime, nullable=True),
-    Column("answer", Text, nullable=True),
+    Column("result", JSON, nullable=True),
+    Column("group", String(500), nullable=False),
+    Column("files", JSON, nullable=False),
+    Column("attempts", Integer, nullable=False),
 )
 
 responses = Table(
@@ -47,7 +50,7 @@ responses = Table(
     metadata,
     Column("run_id", String(64), primary_key=True),
     Column("id", String(64), primary_key=True),
-    Column("answer", Text, nullable=False),
+    Column("answer", JSON, nullable=False),
 )
 
 
@@ -58,6 +61,9 @@ class SQLReviewWork:
             metadata.create_all(engine)
 
     def open(self, identifier, *, workspace, repository, revision, plan, maximum_calls):
+        from .chunks import group_for
+
+        plan = json.loads(json.dumps(plan))
         with self.engine.begin() as connection:
             try:
                 with connection.begin_nested():
@@ -67,7 +73,7 @@ class SQLReviewWork:
                             workspace=workspace,
                             repository=repository,
                             revision=revision,
-                            plan=json.dumps(plan, sort_keys=True),
+                            plan=plan,
                             maximum_calls=maximum_calls,
                             calls=0,
                             state="running",
@@ -75,10 +81,15 @@ class SQLReviewWork:
                     )
                     for part in plan["parts"]:
                         connection.execute(
-                            insert(parts).values(
-                                run_id=identifier,
+                            insert(chunks).values(
+                                review_id=identifier,
                                 id=part["id"],
-                                state="queued",
+                                status="pending",
+                                group=part.get(
+                                    "group", group_for(part.get("targets", []))
+                                ),
+                                files=part.get("targets", []),
+                                attempts=0,
                                 lease="",
                             )
                         )
@@ -97,7 +108,7 @@ class SQLReviewWork:
                     workspace,
                     repository,
                     revision,
-                    json.dumps(plan, sort_keys=True),
+                    plan,
                 ):
                     raise ValueError("A persisted review plan cannot change identity")
 
@@ -124,21 +135,22 @@ class SQLReviewWork:
                 .exists()
             )
             result = connection.execute(
-                update(parts)
+                update(chunks)
                 .where(
-                    parts.c.run_id == identifier,
-                    parts.c.id == part_id,
+                    chunks.c.review_id == identifier,
+                    chunks.c.id == part_id,
                     active,
                     or_(
-                        parts.c.state == "queued",
+                        chunks.c.status == "pending",
                         and_(
-                            parts.c.state == "running",
-                            parts.c.leased_until < datetime.utcnow(),
+                            chunks.c.status == "running",
+                            chunks.c.leased_until < datetime.utcnow(),
                         ),
                     ),
                 )
                 .values(
-                    state="running",
+                    status="running",
+                    attempts=chunks.c.attempts + 1,
                     lease=lease,
                     leased_until=datetime.utcnow() + timedelta(seconds=seconds),
                 )
@@ -148,30 +160,66 @@ class SQLReviewWork:
     def finish(self, identifier, part_id, lease, answer):
         with self.engine.begin() as connection:
             result = connection.execute(
-                update(parts)
+                update(chunks)
                 .where(
-                    parts.c.run_id == identifier,
-                    parts.c.id == part_id,
+                    chunks.c.review_id == identifier,
+                    chunks.c.id == part_id,
                     select(runs.c.id)
                     .where(runs.c.id == identifier, runs.c.state == "running")
                     .exists(),
-                    parts.c.lease == lease,
-                    parts.c.state == "running",
+                    chunks.c.lease == lease,
+                    chunks.c.status == "running",
                 )
-                .values(state="done", answer=json.dumps(answer), leased_until=None)
+                .values(status="done", result=answer, leased_until=None)
             )
             return result.rowcount == 1
+
+    def answer(self, identifier, chunk_id):
+        with self.engine.connect() as connection:
+            return connection.execute(
+                select(chunks.c.result).where(
+                    chunks.c.review_id == identifier,
+                    chunks.c.id == chunk_id,
+                    chunks.c.status == "done",
+                )
+            ).scalar_one_or_none()
 
     def answers(self, identifier):
         with self.engine.connect() as connection:
             return {
-                row["id"]: json.loads(row["answer"])
+                row["id"]: row["result"]
                 for row in connection.execute(
-                    select(parts).where(
-                        parts.c.run_id == identifier, parts.c.state == "done"
+                    select(chunks).where(
+                        chunks.c.review_id == identifier, chunks.c.status == "done"
                     )
                 ).mappings()
             }
+
+    def chunks(self, identifier):
+        from .chunks import ReviewChunk
+        from .execution import ReviewTarget
+
+        with self.engine.connect() as connection:
+            return tuple(
+                ReviewChunk(
+                    id=row["id"],
+                    review_id=row["review_id"],
+                    group=row["group"],
+                    files=tuple(
+                        ReviewTarget(
+                            file["path"],
+                            tuple(tuple(range_) for range_ in file.get("ranges", [])),
+                        )
+                        for file in row["files"]
+                    ),
+                    status=row["status"],
+                    attempts=row["attempts"],
+                    result=row["result"],
+                )
+                for row in connection.execute(
+                    select(chunks).where(chunks.c.review_id == identifier)
+                ).mappings()
+            )
 
     def cancel(self, identifier):
         with self.engine.begin() as connection:
@@ -217,7 +265,7 @@ class SQLReviewWork:
                 return None
             states = list(
                 connection.execute(
-                    select(parts.c.state).where(parts.c.run_id == identifier)
+                    select(chunks.c.status).where(chunks.c.review_id == identifier)
                 ).scalars()
             )
             return {
@@ -226,7 +274,7 @@ class SQLReviewWork:
                 "model_calls": run["calls"],
                 "maximum_model_calls": run["maximum_calls"],
                 "chunks": {
-                    state: states.count(state)
+                    state: states.count("pending" if state == "queued" else state)
                     for state in ("queued", "running", "done", "failed")
                 },
             }
@@ -234,14 +282,14 @@ class SQLReviewWork:
     def release(self, identifier, part_id, lease):
         with self.engine.begin() as connection:
             connection.execute(
-                update(parts)
+                update(chunks)
                 .where(
-                    parts.c.run_id == identifier,
-                    parts.c.id == part_id,
-                    parts.c.state == "running",
-                    parts.c.lease == lease,
+                    chunks.c.review_id == identifier,
+                    chunks.c.id == part_id,
+                    chunks.c.status == "running",
+                    chunks.c.lease == lease,
                 )
-                .values(state="queued", lease="", leased_until=None)
+                .values(status="pending", lease="", leased_until=None)
             )
 
     def ensure_active(self, identifier):
@@ -261,32 +309,28 @@ class SQLReviewWork:
             )
             if result.rowcount == 1:
                 connection.execute(
-                    update(parts)
+                    update(chunks)
                     .where(
-                        parts.c.run_id == identifier,
-                        parts.c.state.in_(("queued", "running")),
+                        chunks.c.review_id == identifier,
+                        chunks.c.status.in_(("pending", "running")),
                     )
-                    .values(state="failed", leased_until=None)
+                    .values(status="failed", leased_until=None)
                 )
 
     def complete(self, identifier):
         with self.engine.begin() as connection:
+            unfinished = (
+                select(chunks.c.id)
+                .where(chunks.c.review_id == identifier, chunks.c.status != "done")
+                .exists()
+            )
             result = connection.execute(
                 update(runs)
-                .where(runs.c.id == identifier, runs.c.state == "running")
+                .where(
+                    runs.c.id == identifier,
+                    runs.c.state == "running",
+                    ~unfinished,
+                )
                 .values(state="done")
             )
-            if result.rowcount == 1:
-                connection.execute(
-                    update(parts)
-                    .where(
-                        parts.c.run_id == identifier,
-                        parts.c.state.in_(("queued", "running")),
-                    )
-                    .values(
-                        state="done",
-                        answer=json.dumps({"review": None, "coverage": []}),
-                        leased_until=None,
-                    )
-                )
             return result.rowcount == 1

@@ -127,6 +127,7 @@ __all__ = [
     "ReviewPartitionSource",
     "ReviewPartition",
     "ReviewChunk",
+    "PlannedReviewChunk",
     "ArtifactTarget",
     "DefaultReviewPartitionSource",
     "partition_source",
@@ -176,8 +177,10 @@ __all__ = [
 
 from .partitioning import (
     ReviewPartition,
-    ReviewChunk,
+    PlannedReviewChunk,
     ArtifactTarget,
     DefaultReviewPartitionSource,
     partition_source,
 )
+
+from .chunks import ReviewChunk

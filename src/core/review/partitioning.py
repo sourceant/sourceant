@@ -7,7 +7,7 @@ from src.utils.diff_parser import parse_diff
 
 
 @dataclass(frozen=True)
-class ReviewChunk:
+class PlannedReviewChunk:
     id: str
     files: tuple
     input_tokens: int
@@ -22,7 +22,7 @@ class ArtifactTarget:
 
 @dataclass(frozen=True)
 class ReviewPartition:
-    chunks: tuple[ReviewChunk, ...]
+    chunks: tuple[PlannedReviewChunk, ...]
     artifacts: tuple[ArtifactTarget, ...]
     manifest: tuple[str, ...]
     digest: str
@@ -111,7 +111,7 @@ def partition(
             "The change needs more investigations to fit the reading budget than the configured partition capacity allows"
         )
     chunks = tuple(
-        ReviewChunk(
+        PlannedReviewChunk(
             sha256("\n".join(file.diff_text for file in batch).encode()).hexdigest(),
             tuple(batch),
             size,

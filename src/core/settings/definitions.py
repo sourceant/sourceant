@@ -213,7 +213,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         key="review.maximum_model_calls",
         label="Model calls per review",
-        description="Maximum model requests across all readings and evaluations. Reaching the limit stops the review without publishing a partial result.",
+        description="Model-call allowance for a standard review or each planned source chunk in a large review. The large-PR ceiling still caps total spending.",
         type=ConfigType.INT,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
         default=64,
@@ -312,7 +312,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         key="review.concurrency",
         label="Parallel review participants",
-        description="Maximum concurrent participants in each review stage.",
+        description="Maximum concurrent model requests across the whole review, including summaries, discovery, evaluations and retries.",
         type=ConfigType.INT,
         scopes=(USER, REPOSITORY, WORKSPACE, ORGANIZATION),
         default=6,

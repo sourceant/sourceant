@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import json
 import os
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Barrier, Lock, Event, BoundedSemaphore
@@ -135,6 +136,9 @@ class WebhookDeliveryTests(unittest.TestCase):
     def test_large_webhook_review_uses_twenty_shared_slots(self):
         self._webhook_delivery("", 0, capacity=20)
 
+    def test_large_webhook_review_shares_three_slots_across_nested_batches(self):
+        self._webhook_delivery("", 0, capacity=20, review_capacity=3)
+
     def test_webhook_exclusions_and_posting_retry_do_not_regenerate(self):
         for experts, count in (("auto", 2), ("contracts", 1), ("", 0)):
             with self.subTest(experts=experts):
@@ -143,7 +147,9 @@ class WebhookDeliveryTests(unittest.TestCase):
     def test_lookup_failure_retries_native_posting(self):
         self._webhook_delivery("", 0, rejected=False)
 
-    def _webhook_delivery(self, experts, expert_count, rejected=True, capacity=None):
+    def _webhook_delivery(
+        self, experts, expert_count, rejected=True, capacity=None, review_capacity=None
+    ):
         with ExitStack() as stack:
             if capacity is not None:
                 stack.enter_context(
@@ -247,6 +253,7 @@ class WebhookDeliveryTests(unittest.TestCase):
             services.register(SkillLibrary, library, "test")
             barrier = Barrier(2 + expert_count)
             prompts = []
+            target_capacity = review_capacity or capacity
             active = peak = 0
             lock, admitted = Lock(), Event()
 
@@ -255,13 +262,18 @@ class WebhookDeliveryTests(unittest.TestCase):
                 prompts.append(json.dumps(kwargs["messages"]))
                 if capacity is None:
                     barrier.wait(timeout=10)
-                elif '"CodeReviewFindings"' in kwargs["messages"][-1]["content"]:
+                elif (
+                    review_capacity is not None
+                    or '"CodeReviewFindings"' in kwargs["messages"][-1]["content"]
+                ):
                     with lock:
                         active += 1
                         peak = max(peak, active)
-                        if active == capacity:
+                        if active == target_capacity:
                             admitted.set()
                     self.assertTrue(admitted.wait(timeout=10))
+                    if review_capacity is not None:
+                        time.sleep(0.05)
                     with lock:
                         active -= 1
                 return captures[
@@ -290,8 +302,8 @@ class WebhookDeliveryTests(unittest.TestCase):
             for key, value in [
                 ("review.plan", "standard"),
                 ("review.maximum_model_calls", 1000),
+                ("review.concurrency", review_capacity or capacity or 6),
                 ("review.large_change_maximum_model_calls", 1000),
-                ("review.concurrency", capacity or 6),
                 ("model.name", "deepseek/deepseek-v4-flash"),
                 ("model.api_key", "your-api-key-here"),
                 ("review.exclude_patterns", "src/migrations/*"),
@@ -320,12 +332,21 @@ class WebhookDeliveryTests(unittest.TestCase):
             if capacity is None:
                 self.assertEqual(calls, 2 + expert_count)
             else:
-                self.assertEqual(peak, capacity)
+                self.assertEqual(peak, target_capacity)
                 review_prompts = [
                     prompt for prompt in prompts if "CodeReviewFindings" in prompt
                 ]
                 self.assertGreater(len(review_prompts), capacity)
                 self.assertLessEqual(calls, 1000)
+                from src.core.review.partition_store import runs
+
+                with engine.connect() as connection:
+                    review_id = connection.execute(select(runs.c.id)).scalar_one()
+                saved_chunks = SQLReviewWork(engine).chunks(review_id)
+                self.assertTrue(saved_chunks)
+                self.assertTrue(all(chunk.status == "done" for chunk in saved_chunks))
+                self.assertTrue(all(chunk.attempts == 1 for chunk in saved_chunks))
+                self.assertTrue(all(chunk.result is not None for chunk in saved_chunks))
             self.assertTrue(
                 all("create_requirement_tables.py" not in prompt for prompt in prompts)
             )
