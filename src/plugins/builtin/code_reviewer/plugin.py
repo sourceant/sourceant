@@ -655,9 +655,7 @@ class CodeReviewerPlugin(BasePlugin):
                     ),
                 ),
             )
-            artifacts = tuple(
-                file for file in parse_diff(raw_diff) if artifact_file(file)
-            )
+            artifacts = tuple(file for file in parsed_files if artifact_file(file))
             artifact_paths = {file.file_path for file in artifacts}
             overview_diff = "\n".join(
                 one.diff_text
