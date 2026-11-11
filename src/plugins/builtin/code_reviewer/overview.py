@@ -2,13 +2,12 @@ import json
 
 from src.core.parallel import parallel_map
 from src.core.review.exclusions import review_diff
+from src.core.review.planning import build_chunks, reading_budget
 
 from src.core.settings.configuration import Configuration
 from src.core.services import service_registry
 from src.plugins.builtin.code_reviewer.reviewing import (
-    CodeReviewer,
     MAX_AT_ONCE,
-    _batched,
 )
 from src.utils.diff_parser import parse_diff
 from src.models.code_review import CodeReviewSummary, summary_from
@@ -43,14 +42,22 @@ def _parts(diff, provider, configuration, services):
     diff, omitted = review_diff(diff, configuration)
     parsed = shared(("parsed-diff", diff), lambda: parse_diff(diff))
     model = getattr(provider, "model", id(provider))
-    budget = CodeReviewer._budget(configuration)
+    budget = reading_budget(configuration, provider)
 
     def cost(text):
         return shared(("diff-tokens", model, text), lambda: provider.count_tokens(text))
 
     batches = shared(
         ("batches", model, budget, tuple(one.diff_text for one in parsed)),
-        lambda: _batched(parsed, budget, cost),
+        lambda: [
+            list(chunk.parsed_files)
+            for chunk in build_chunks(
+                diff,
+                cost=cost,
+                input_budget=budget,
+                maximum_parts=int(configuration.value("review.maximum_parts") or 64),
+            )
+        ],
     )
     return provider, batches
 
@@ -107,19 +114,18 @@ def summarize_changes(
         else _descriptions(batches, provider, configuration, metadata, suggestions)
     )
     while len(descriptions) > 1:
+        groups = _summary_groups(
+            descriptions, provider, reading_budget(configuration, provider)
+        )
         descriptions = [
             _describe(
                 provider,
                 configuration,
                 metadata,
-                {
-                    "parts_of_the_same_pull_request": [
-                        item.model_dump() for item in descriptions[start : start + 10]
-                    ]
-                },
-                suggestions if len(descriptions) <= 10 else (),
+                {"parts_of_the_same_pull_request": group},
+                suggestions if len(groups) == 1 else (),
             )
-            for start in range(0, len(descriptions), 10)
+            for group in groups
         ]
     summary = summary_from(list(suggestions), descriptions[0])
     changed = {one.file_path for one in parse_diff(diff) if one.file_path}
@@ -134,3 +140,37 @@ def summarize_changes(
             anchored.append(behavior.model_copy(update={"locations": located}))
     summary.behaviors = anchored
     return summary
+
+
+def _summary_groups(descriptions, provider, budget):
+    from src.core.review.planning import ReviewCapacityError
+
+    groups, current = [], []
+    for description in descriptions:
+        record = description.model_dump(mode="json")
+        limit = max(32, budget // 3)
+        if provider.count_tokens(json.dumps(record)) > limit:
+            record = {"overview": "", "omitted_summary_details": True}
+            if provider.count_tokens(json.dumps(record)) > limit:
+                raise ReviewCapacityError("A summary cannot fit the reduction budget")
+            low, high = 0, len(description.overview)
+            while low <= high:
+                middle = (low + high) // 2
+                candidate = {**record, "overview": description.overview[:middle]}
+                if provider.count_tokens(json.dumps(candidate)) <= limit:
+                    record = candidate
+                    low = middle + 1
+                else:
+                    high = middle - 1
+        combined = {"parts_of_the_same_pull_request": [*current, record]}
+        if current and provider.count_tokens(json.dumps(combined)) > budget:
+            groups.append(current)
+            current = []
+        current.append(record)
+    if current:
+        groups.append(current)
+    if len(groups) >= len(descriptions):
+        raise ReviewCapacityError(
+            "Summary reduction cannot make progress within its budget"
+        )
+    return groups

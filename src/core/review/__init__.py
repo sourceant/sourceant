@@ -123,6 +123,7 @@ __all__ = [
     "ReviewPlan",
     "review_orchestrator",
     "ReviewPlanSource",
+    "ReviewChunk",
     "SettingsReviewPlanSource",
     "review_plan_source",
     "EvaluationParticipant",
@@ -166,3 +167,5 @@ __all__ = [
     "reviewer",
     "working_tree_reviewer",
 ]
+
+from .chunks import ReviewChunk

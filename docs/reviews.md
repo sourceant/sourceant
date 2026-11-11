@@ -44,6 +44,10 @@ With the database queue, generation and posting are separate jobs. Rate limits d
 | Already said | A suggestion matching one SourceAnt already posted on the pull request is dropped, and the verdict is recalculated from what survives |
 | Repeat approval | A second approval on a pull request SourceAnt has already approved is downgraded to a comment |
 
+### Large pull requests
+
+Large changes are planned before paid review and continue within a shared allowance. See [Large pull requests](large-reviews.md) for chunk planning, continuation, artifact checks and deployment requirements.
+
 ### Expert passes
 
 `review.expert_passes` controls which expert reviews run. Its default, `auto`, keeps automatic skill selection. Set exact skill IDs, one per line, to run only those passes; set an empty string to disable expert passes. The general review and guidance still run. Named passes are not restricted by the automatic selector's five-skill limit, but their file patterns still apply. Unknown IDs fail the review with an error naming them.
@@ -53,6 +57,8 @@ The setting supports repository, workspace, organization, and user scopes. A mor
 Built-in skills have the origin `system`; this describes who supplies the skill, not membership in a software system. The built-in contract consistency and duplicate implementation passes also apply to standalone repositories. Connected-system context depends on the available graph and source evidence, not a parent requirement in skill selection.
 
 ### Large pull requests
+
+Truncated review responses are retried in smaller chunks. Completed chunks are kept. Recovery stops after 15 chunk attempts per original batch or six levels of splitting. Any remaining gaps identify the affected files and prevent approval.
 
 `review.reading_budget` controls the token budget per batch. General and specialist passes run concurrently; specialist passes with explicit skill path patterns read only matching files, and an overview is prepared alongside PR review. All model calls in a process share `REVIEW_MODEL_CONCURRENCY` slots (default 6). Batch readers follow that capacity; participant concurrency remains a separate control. Multiple worker processes each have their own limit.
 

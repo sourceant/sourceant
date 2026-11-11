@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, Sequence, runtime_checkable
+from typing import Any, Callable, Protocol, Sequence, runtime_checkable, TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from .chunks import ReviewChunk
 
 from src.core.analysis import Analysis
 from src.core.review_coverage import Coverage
@@ -29,6 +32,7 @@ from src.models.code_review import CodeSuggestion
 
 @runtime_checkable
 class ReviewPlan(Protocol):
+    chunks: Sequence[ReviewChunk]
     reviewers: Sequence[ReviewParticipant]
     evaluators: Sequence[EvaluationParticipant]
     concurrency: int

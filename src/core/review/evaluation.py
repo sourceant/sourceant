@@ -105,7 +105,11 @@ class ModelReviewEvaluator:
             if current and len(current) + len(indices) > limit:
                 groups.append(tuple(current))
                 current = []
-            current.extend(indices)
+            for index in indices:
+                if len(current) >= limit:
+                    groups.append(tuple(current))
+                    current = []
+                current.append(index)
         if current:
             groups.append(tuple(current))
         if len(groups) == 1:
@@ -139,10 +143,67 @@ class ModelReviewEvaluator:
                     and ".." not in PurePosixPath(path).parts
                 ):
                     source[path] = request.read_content(path)
+        from src.core.review.planning import (
+            build_chunks,
+            reading_budget as model_reading_budget,
+        )
+
+        cost = getattr(self.provider, "count_tokens", len)
+        selected = [candidates[index] for index in indices]
+        paths = {candidate.file_name for candidate in selected}
+        relevant = "\n".join(
+            file.diff_text
+            for file in parse_diff(request.changes.diff)
+            if file.file_path in paths
+        )
+        reading_budget = model_reading_budget(
+            request.changes.configuration, self.provider
+        )
+        evidence_budget = max(256, reading_budget // max(2, 2 * len(selected)))
+        pieces = build_chunks(
+            relevant,
+            cost=cost,
+            input_budget=evidence_budget,
+            maximum_parts=10000,
+        )
+        evidence = []
+        for chunk in pieces:
+            for file in chunk.parsed_files:
+                if any(
+                    candidate.file_name == file.file_path
+                    and any(
+                        side == candidate.side.value
+                        and candidate.start_line - 30 <= line <= candidate.end_line + 30
+                        for line, side in file.commentable_lines
+                    )
+                    for candidate in selected
+                ):
+                    evidence.append(file.diff_text)
+        bounded_diff = _bounded_evidence(evidence, cost, reading_budget // 2)
+        if cost(json.dumps(source)) > reading_budget // 2:
+            source = {
+                path: (
+                    "\n".join(
+                        f"{number}: {line}"
+                        for number, line in enumerate(content.splitlines(), 1)
+                        if any(
+                            candidate.file_name == path
+                            and candidate.start_line - 30
+                            <= number
+                            <= candidate.end_line + 30
+                            for candidate in selected
+                        )
+                    )
+                    if isinstance(content, str)
+                    else content
+                )
+                for path, content in source.items()
+            }
         payload = {
             "title": request.changes.title,
             "description": request.changes.description,
-            "diff": request.changes.diff,
+            "diff": bounded_diff,
+            "omitted_diff": "Only finding-adjacent changed ranges are included; other ranges require source lookup",
             "source": source,
             "analysis": (
                 request.analysis.rendered() if request.analysis is not None else None
@@ -483,3 +544,12 @@ class DeterministicReviewEvaluator:
                 analysis, touched_lines(parse_diff(request.changes.diff))
             )
         return ReviewEvaluation(analysis=analysis)
+
+
+def _bounded_evidence(pieces, cost, budget):
+    result = ""
+    for piece in pieces:
+        candidate = "\n".join(filter(None, (result, piece)))
+        if cost(json.dumps(candidate)) <= budget:
+            result = candidate
+    return result

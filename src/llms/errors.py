@@ -13,3 +13,7 @@ class LLMError(Exception):
     @classmethod
     def wrapping(cls, action: str, cause: BaseException) -> "LLMError":
         return cls(f"{action} failed: {type(cause).__name__}: {cause}", cause)
+
+
+class OutputTruncated(LLMError):
+    pass

@@ -25,6 +25,7 @@ from src.core.review_performance import (
 )
 from src.core.model import purpose_provider
 from src.core.review.exclusions import review_diff
+from src.core.review.planning import build_chunks, review_cost, reading_budget
 from src.core.skills.matching import matches
 from src.core.skills.selection import for_review, said_here
 from src.core.analysis import Analysis, also_reported
@@ -169,6 +170,39 @@ class CodeReviewer:
 
         if _stopped(changes, options.get("metadata"), options.get("revision", "")):
             return None
+        from src.core.review.planning import artifact_file, artifact_checks
+
+        original = parse_diff(changes.diff)
+        artifacts = artifact_checks(changes.diff)
+        if artifacts:
+            kept = [file for file in original if not artifact_file(file)]
+            removed = {entry["path"] for entry in artifacts}
+            coverage = options.get("coverage")
+            if coverage is not None:
+                for entry in artifacts:
+                    coverage.record(
+                        "artifact checks",
+                        "deterministic artifact inspection",
+                        answered=False,
+                        target=entry["path"],
+                        reason="; ".join(entry["gaps"]),
+                    )
+            if not kept:
+                return CodeReview(
+                    verdict=Verdict.COMMENT,
+                    code_suggestions=[],
+                    summary=CodeReviewSummary(
+                        overview="Only artifacts changed. Provenance and loader checks remain incomplete.",
+                        minor_suggestions=[],
+                        critical_issues=[],
+                    ),
+                    execution={"artifacts": artifacts},
+                )
+            changes = replace(
+                changes,
+                diff="\n".join(file.diff_text for file in kept),
+                files=tuple(file for file in changes.files if file.path not in removed),
+            )
         request = ReviewInput(
             changes,
             require_complete_discovery=options.get("require_complete_discovery", False),
@@ -197,7 +231,7 @@ class CodeReviewer:
             task = options.pop("analysis_task", None)
             if task is not None and options.get("analysis") is None:
                 options["analysis"] = task.result()
-            return self._review_once(
+            answer = self._review_once(
                 changes,
                 provider=provider,
                 **{
@@ -206,6 +240,11 @@ class CodeReviewer:
                     if key not in {"root", "require_complete_discovery"}
                 },
             )
+            if artifacts and answer is not None:
+                answer.execution = {**(answer.execution or {}), "artifacts": artifacts}
+                if answer.verdict == Verdict.APPROVE:
+                    answer.verdict = Verdict.COMMENT
+            return answer
         execution = review_orchestrator(self.services).review(request, plan)
         if _stopped(changes, options.get("metadata"), options.get("revision", "")):
             return None
@@ -271,6 +310,13 @@ class CodeReviewer:
                     one.model_dump(mode="json") for one in execution.candidates
                 ],
             }
+        if artifacts and execution.review is not None:
+            execution.review.execution = {
+                **(execution.review.execution or {}),
+                "artifacts": artifacts,
+            }
+            if execution.review.verdict == Verdict.APPROVE:
+                execution.review.verdict = Verdict.COMMENT
         return execution.review
 
     def _review_once(
@@ -338,7 +384,11 @@ class CodeReviewer:
         context_changes = changes
         if investigation is not None:
             paths = {target.path for target in investigation.targets}
-            parsed_files = [one for one in parsed_files if one.file_path in paths]
+            parsed_files = (
+                parse_diff(investigation.diff)
+                if investigation.diff
+                else [one for one in parsed_files if one.file_path in paths]
+            )
             if not parsed_files:
                 raise ValueError("The investigation has no reviewable targets")
             changes = replace(
@@ -660,7 +710,7 @@ class CodeReviewer:
         metadata = metadata or self._metadata(changes)
 
         readers = (durable_code, local_code)
-        budget = self._budget(configuration)
+        budget = reading_budget(configuration, provider)
 
         # Most skills are a pointer at the page that holds the rule, and a
         # change judged against a pointer is judged against nothing.
@@ -711,11 +761,11 @@ class CodeReviewer:
 
             def cost(text):
                 return shared(
-                    ("diff-tokens", provider.model, text),
-                    lambda: provider.count_tokens(text),
+                    ("review-input-tokens", provider.model, text),
+                    lambda: review_cost(provider)(text),
                 )
 
-            total = sum(cost(one.diff_text) for one in pass_files)
+            total = cost("\n".join(one.diff_text for one in pass_files))
             if total <= budget:
                 logger.info("The whole change fits in one reading.")
                 return self._in_one_pass(
@@ -732,6 +782,7 @@ class CodeReviewer:
                     read_content,
                     file_limit,
                     code_scope,
+                    coverage=coverage,
                 )
 
             batches = shared(
@@ -741,7 +792,14 @@ class CodeReviewer:
                     budget,
                     tuple(one.diff_text for one in pass_files),
                 ),
-                lambda: _batched(pass_files, budget, cost),
+                lambda: [
+                    list(chunk.parsed_files)
+                    for chunk in build_chunks(
+                        "\n".join(one.diff_text for one in pass_files),
+                        cost=cost,
+                        input_budget=budget,
+                    )
+                ],
             )
             logger.info(f"Reading {len(pass_files)} files in {len(batches)} passes.")
             return self._in_batches(
@@ -760,6 +818,7 @@ class CodeReviewer:
                 file_limit,
                 code_scope,
                 revision=revision,
+                coverage=coverage,
             )
 
         focused = [skill for skill in selected if skill.type == SkillType.REVIEW_PASS]
@@ -865,7 +924,19 @@ class CodeReviewer:
             code_suggestions=unique,
             scores=answer.scores,
         )
-        return also_reported(review, analysis)
+        review = also_reported(review, analysis)
+        gaps = [
+            attempt.reason
+            for attempt in coverage.attempts
+            if attempt.method == "batch recovery" and not attempt.answered
+        ]
+        if gaps:
+            if review.verdict == Verdict.APPROVE:
+                review.verdict = Verdict.COMMENT
+            review.summary.minor_suggestions.append(
+                "Review coverage is incomplete: " + "; ".join(dict.fromkeys(gaps))
+            )
+        return review
 
     @staticmethod
     def _beyond(analysis, suggestions):
@@ -1052,59 +1123,26 @@ class CodeReviewer:
         read_content,
         file_limit,
         code_scope,
+        coverage=None,
     ) -> CodeReview:
-        suggestion_filter = SuggestionFilter()
-        code_context = self._context(
+        return self._in_batches(
+            provider,
             changes,
+            parsed_files,
+            [parsed_files],
+            line_mapper,
             readers,
-            [one.file_path for one in parsed_files],
+            evidence,
+            metadata,
+            existing_comments,
+            previous_summary,
+            sections,
             read_content,
             file_limit,
             code_scope,
+            coverage=coverage,
+            revision=changes.revision,
         )
-
-        full_review = provider.generate_code_review(
-            diff=changes.diff,
-            parsed_files=parsed_files,
-            pr_metadata=metadata,
-            existing_comments=list(existing_comments or []) or None,
-            previous_summary=previous_summary,
-            code_context=code_context,
-            requirements=sections.requirements,
-            knowledge=sections.knowledge,
-            impact=sections.impact,
-            related_code=sections.related_code,
-            analysis=sections.analysis,
-        )
-
-        suggestions: List = []
-        rejections: List[str] = []
-        if full_review and full_review.code_suggestions:
-            for suggestion in full_review.code_suggestions:
-                trace_finding("discovery", "raw", suggestion)
-            suggestions = self.process(
-                full_review.code_suggestions,
-                suggestion_filter,
-                line_mapper,
-                evidence=evidence,
-                evidence_rejections=rejections,
-                read_content=(
-                    read_content
-                    if changes.configuration.value("review.finding_scope")
-                    == "repository"
-                    else None
-                ),
-            )
-
-        verdict = verdict_from(suggestions)
-        if full_review:
-            return CodeReview(
-                summary=summary_from(suggestions, full_review.summary),
-                verdict=verdict,
-                code_suggestions=suggestions,
-                scores=full_review.scores,
-            )
-        return CodeReview(summary=None, verdict=verdict, code_suggestions=suggestions)
 
     def _in_batches(
         self,
@@ -1123,6 +1161,7 @@ class CodeReviewer:
         file_limit,
         code_scope,
         revision="",
+        coverage=None,
     ) -> CodeReview | None:
         """Read the change in parts and put what each said together.
 
@@ -1183,10 +1222,34 @@ class CodeReviewer:
                 )
             return answer
 
-        answers = parallel_map(read, batches, MAX_AT_ONCE)
+        from src.core.review.batch_recovery import recover_batch
+
+        outcomes = parallel_map(
+            lambda batch: recover_batch(
+                read, batch, stopped=lambda: _stopped(changes, metadata, revision)
+            ),
+            batches,
+            MAX_AT_ONCE,
+        )
+        gaps = [gap for outcome in outcomes for gap in outcome.gaps]
+        for gap in gaps:
+            if coverage is not None:
+                coverage.record(
+                    "investigation", "batch recovery", answered=False, reason=gap
+                )
+            logger.warning(
+                "review_batch_incomplete session=%s reason=%s", session_id(), gap
+            )
+        answers = [answer for outcome in outcomes for answer in outcome.answers]
 
         if _stopped(changes, metadata, revision):
             return None
+
+        if not answers:
+            errors = [error for outcome in outcomes for error in outcome.errors]
+            if errors:
+                raise errors[0]
+            raise RuntimeError("No review batches completed: " + "; ".join(gaps))
 
         for answer in answers:
             if answer and answer.code_suggestions:
@@ -1209,9 +1272,16 @@ class CodeReviewer:
                 )
 
         return CodeReview(
-            summary=summary_from(suggestions),
-            verdict=verdict_from(suggestions),
+            summary=summary_from(
+                suggestions, answers[0].summary if len(answers) == 1 else None
+            ),
+            verdict=(
+                Verdict.COMMENT
+                if gaps and not suggestions
+                else verdict_from(suggestions)
+            ),
             code_suggestions=suggestions,
+            scores=answers[0].scores if len(answers) == 1 else None,
         )
 
     @staticmethod

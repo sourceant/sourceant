@@ -1,7 +1,7 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextvars import copy_context
 from threading import BoundedSemaphore, Lock
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from time import monotonic
 
 from src.config.settings import whole_number
@@ -14,6 +14,16 @@ _active_calls = 0
 
 @contextmanager
 def model_call(model):
+    from src.core.review_performance import current_budget
+
+    budget = current_budget()
+    with budget.model_slot() if budget else nullcontext():
+        with _model_call(model):
+            yield
+
+
+@contextmanager
+def _model_call(model):
     from src.core.review_performance import call_purpose, session_id, current_budget
     from src.utils.logger import logger
 

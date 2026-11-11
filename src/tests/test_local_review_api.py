@@ -105,6 +105,92 @@ def _review(verdict=Verdict.COMMENT, suggestions=()):
 class TestLocalReview(BaseTestCase):
     """Drives /api/local/reviews the way the local UI does."""
 
+    @pytest.mark.parametrize("unrecoverable", [False, True])
+    def test_snapshot_http_recovers_truncated_batches(self, monkeypatch, unrecoverable):
+        from pathlib import Path
+        from threading import Lock
+        from contextvars import ContextVar
+        import time
+        import jwt
+        from litellm import ModelResponse
+        from src.core.review import snapshot
+        from src.core.settings.configuration import Configuration
+        from src.core.settings.definitions import get
+        from src.llms.litellm_provider import LiteLLMProvider
+
+        fixtures = Path(__file__).parent / "fixtures"
+        body = json.loads(
+            (fixtures / "review-contracts/node-cited-evidence.json").read_text()
+        )["snapshot"]
+        body["configuration"].update(
+            {
+                "split-large-changes": "false",
+                "discovery-passes": "1",
+                "expert-execution": "guidance",
+                "reading-budget": "200000",
+                "reuse-responses-days": "0",
+            }
+        )
+        success = json.loads((fixtures / "deepseek/review.json").read_text())
+        exhausted = json.loads(
+            (fixtures / "deepseek/output-budget-exhausted.json").read_text()
+        )
+        calls = []
+        lock = Lock()
+        fail = ContextVar("fail", default=False)
+        provider = LiteLLMProvider("deepseek/deepseek-flash", 1000000)
+
+        def completion(**kwargs):
+            with lock:
+                calls.append(kwargs)
+                first = len(calls) == 1
+            return ModelResponse(**(exhausted if first or fail.get() else success))
+
+        class Model(FakeModel):
+            def generate_code_review(self, **kwargs):
+                self.told.append(kwargs)
+                paths = [one.file_path for one in kwargs["parsed_files"]]
+                token = fail.set(
+                    len(self.told) == 1 or unrecoverable and failed_path in paths
+                )
+                try:
+                    return provider.generate_code_review(**kwargs)
+                finally:
+                    fail.reset(token)
+
+        from src.utils.diff_parser import parse_diff
+
+        failed_path = parse_diff(body["diff"])[0].file_path
+        model = Model({"findings": []})
+        monkeypatch.setattr("src.llms.litellm_provider.litellm.completion", completion)
+        monkeypatch.setenv("JWT_SECRET", "test-signing-secret-for-review")
+        monkeypatch.setattr(Configuration, "value", lambda self, key: get(key).default)
+        monkeypatch.setattr(snapshot, "provider_for", lambda *_, **__: model)
+        token = jwt.encode(
+            {
+                "sub": "reviewer",
+                "exp": int(time.time()) + 60,
+                "scope": {"workspace_id": "benchmark"},
+            },
+            "test-signing-secret-for-review",
+            algorithm="HS256",
+        )
+        response = self.client.post(
+            "/api/reviews/snapshots",
+            json=body,
+            headers={"Authorization": "Bearer " + token},
+        )
+        assert response.status_code == 200, response.text
+        assert len(model.told) > 1
+        assert len(model.told[0]["parsed_files"]) > len(model.told[-1]["parsed_files"])
+        review = response.json()["data"]["review"]["review"]
+        assert bool(review["execution"]["investigation_gaps"]) is unrecoverable
+        if unrecoverable:
+            assert review["verdict"] != "APPROVE"
+            assert failed_path in str(review["execution"]["investigation_gaps"])
+        else:
+            assert all(not one["error"] for one in review["execution"]["reviews"])
+
     @pytest.fixture(autouse=True)
     def machine(self, tmp_path, monkeypatch):
         monkeypatch.setenv("SOURCEANT_HOME", str(tmp_path / "home"))
@@ -647,8 +733,10 @@ class TestLocalReview(BaseTestCase):
             tasks = response.json()["data"]["review"]["review"]["execution"][
                 "investigations"
             ]
-            assert len(model.told) == len(tasks) > 1
-            for call in model.told:
+            discovery_calls = [call for call in model.told if call.get("parsed_files")]
+            assert len(discovery_calls) == len(tasks) > 1
+            assert len(model.told) == len(discovery_calls) + 1
+            for call in discovery_calls:
                 files = call["parsed_files"]
                 assert (
                     len(files) == 1

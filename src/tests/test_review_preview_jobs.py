@@ -324,3 +324,122 @@ def test_review_status_and_cancellation_are_scoped_to_the_workspace(preview_api)
         )
     assert ask(client, lambda: headers(allowed=False)).status_code == 403
     assert store.read(job_id).state == "queued"
+
+
+def test_partition_progress_and_cancellation_use_authorized_run_api(preview_api):
+    from src.config.db import get_engine
+    from src.core.cache import cache, Owner
+    from src.core.review.work_store import SQLReviewWork
+
+    client, store, plugin, headers = preview_api
+    job_id = ask(client, headers).json()["data"]["job_id"]
+    journal = SQLReviewWork(get_engine(), create_schema=True)
+    journal.open(
+        "run",
+        workspace="one",
+        repository=REPOSITORY["full_name"],
+        revision=PR["head"]["sha"],
+        plan={"parts": [{"id": "chunk"}]},
+        maximum_calls=8,
+    )
+    lease = journal.claim("run", "chunk")
+    journal.reserve_call("run")
+    cache().set(
+        "review.run",
+        str(job_id),
+        "run",
+        ttl=60,
+        scope=Owner("workspace", "one"),
+    )
+    response = client.get(f"/api/reviews/runs/{job_id}", headers=headers())
+    assert response.json()["data"]["progress"]["model_calls"] == 1
+    assert response.json()["data"]["progress"]["chunks"]["running"] == 1
+    assert (
+        client.get(f"/api/reviews/runs/{job_id}", headers=headers("two")).status_code
+        == 404
+    )
+    assert (
+        client.delete(f"/api/reviews/runs/{job_id}", headers=headers()).status_code
+        == 200
+    )
+    assert journal.progress("run")["state"] == "cancelled"
+    assert not journal.finish("run", "chunk", lease, {"review": None})
+
+
+def test_worker_requeues_continuation_without_publishing_partial_review(preview_api):
+    client, store, plugin, headers = preview_api
+    plugin.generate_review.return_value = {"status": "pending", "continuation": True}
+    job_id = ask(client, headers).json()["data"]["job_id"]
+    services = ServiceRegistry()
+    services.contribute(JobHandler, ReviewPreviews(plugin), "test")
+    Worker(store, INTERACTIVE, services=services).work(max_jobs=1)
+    response = client.get(f"/api/reviews/runs/{job_id}", headers=headers())
+    assert response.json()["data"]["status"] == "queued"
+    assert "review" not in response.json()["data"]
+    assert store.read(job_id).attempt == 1
+
+
+def test_waiting_delivery_yields_worker_without_generating_review_twice(preview_api):
+    from src.core.cache import cache
+    from src.core.jobs import JobOutcome
+    from src.events.review_posting import queue_review
+    from src.models.code_review import CodeReview, Verdict
+    from src.models.pull_request import PullRequest
+    from src.core.settings.configuration import Configuration
+    from datetime import datetime, timedelta
+
+    client, store, plugin, headers = preview_api
+    job_id = ask(client, headers, post=True).json()["data"]["job_id"]
+    delivery = queue_review(
+        Repository(owner=REPOSITORY["owner"]["login"], name=REPOSITORY["name"]),
+        PullRequest(
+            number=PR["number"], head_sha=PR["head"]["sha"], base_sha=PR["base"]["sha"]
+        ),
+        CodeReview(verdict=Verdict.COMMENT, code_suggestions=[]),
+        "",
+        Configuration(workspace="one"),
+        ServiceRegistry(),
+    )
+    plugin.generate_review.return_value = {
+        "status": "pending",
+        "posting_job_id": delivery,
+    }
+    services = ServiceRegistry()
+    services.contribute(JobHandler, ReviewPreviews(plugin), "test")
+    worker = Worker(store, INTERACTIVE, services=services)
+    worker.work(max_jobs=1)
+    assert store.read(job_id).state == "queued"
+    assert plugin.generate_review.call_count == 1
+    lease = store.claim(INTERACTIVE, "delivery-worker", 1)[0]
+    cache().set("review.post-result", str(delivery), json.dumps(RESULT), ttl=60)
+    store.finish(lease, JobOutcome.ok())
+    store._now = lambda: datetime.utcnow() + timedelta(seconds=16)
+    worker.work(max_jobs=1)
+    assert plugin.generate_review.call_count == 1
+    assert (
+        client.get(f"/api/reviews/runs/{job_id}", headers=headers()).json()["data"][
+            "review"
+        ]
+        == RESULT["review"]
+    )
+
+
+def test_explicit_revisions_do_not_coalesce():
+    from src.events.review_previews import request_for
+    from src.models.pull_request import PullRequest
+
+    pull_request = PullRequest(
+        number=PR["number"], head_sha=PR["head"]["sha"], base_sha=PR["base"]["sha"]
+    )
+    head = request_for(REPOSITORY["full_name"], pull_request, {}, "one", "1")
+    base = request_for(
+        REPOSITORY["full_name"],
+        pull_request,
+        {},
+        "one",
+        "1",
+        revision=PR["base"]["sha"],
+    )
+    assert head.dedupe_slot != base.dedupe_slot
+    assert head.exclusive_key != base.exclusive_key
+    assert base.payload["revision"] == PR["base"]["sha"]

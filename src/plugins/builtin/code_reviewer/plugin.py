@@ -552,6 +552,15 @@ class CodeReviewerPlugin(BasePlugin):
                     "error_type": "no_diff",
                 }
 
+            expected_files = pull_request.changed_files
+            if (
+                isinstance(expected_files, int)
+                and expected_files > 0
+                and len(parse_diff(full_diff)) != expected_files
+            ):
+                raise ValueError(
+                    "The pull request diff is incomplete. No review was started."
+                )
             raw_diff = raw_diff or full_diff
 
             from src.core.workspace import workspace_holding
@@ -587,6 +596,173 @@ class CodeReviewerPlugin(BasePlugin):
                     missing,
                     str(configuration.value("model.name") or ""),
                 )
+
+            from src.core.review.planning import (
+                build_chunks,
+                artifact_file,
+                relationships,
+                review_cost,
+                reading_budget,
+            )
+            from src.core.review_performance import current_budget
+
+            from src.core.review.planning import discovery_models
+
+            import hashlib
+            import json
+            from uuid import uuid4
+            from src.events.review_previews import review_run_key
+
+            logical_run_key = review_run_key.get() or uuid4().hex
+            identity = json.dumps(
+                [
+                    logical_run_key,
+                    workspace or "",
+                    repo_full_name,
+                    pull_request.base_sha,
+                    pull_request.head_sha,
+                ]
+            )
+            run_id = hashlib.sha256(identity.encode()).hexdigest()
+
+            planned_models = (
+                discovery_models(configuration, self.services, llm_instance)
+                if configuration.value("review.plan") == "premium"
+                else (llm_instance,)
+            )
+            if not planned_models or any(
+                model.missing_credentials() for model in planned_models
+            ):
+                raise ValueError(
+                    "A planned review participant has no configured credentials"
+                )
+            costs = tuple(review_cost(model) for model in planned_models)
+            preflight = build_chunks(
+                raw_diff,
+                review_id=run_id,
+                cost=lambda text: max(cost(text) for cost in costs),
+                input_budget=min(
+                    reading_budget(configuration, model) for model in planned_models
+                ),
+                maximum_parts=int(configuration.value("review.maximum_parts") or 64),
+                adjacency=relationships(
+                    self.services,
+                    Scope.from_mapping(
+                        {
+                            "repository": repo_full_name,
+                            "revision": pull_request.head_sha or "",
+                        }
+                    ),
+                ),
+            )
+            artifacts = tuple(file for file in parsed_files if artifact_file(file))
+            artifact_paths = {file.file_path for file in artifacts}
+            overview_diff = "\n".join(
+                one.diff_text
+                for one in parse_diff(full_diff)
+                if one.file_path not in artifact_paths
+            )
+            from src.core.model import purpose_provider
+
+            summary_model = purpose_provider(
+                configuration, self.services, "review-overview", llm_instance
+            )
+            if summary_model is None or summary_model.missing_credentials():
+                raise ValueError(
+                    "The planned overview model has no configured credentials"
+                )
+            summary_plan = build_chunks(
+                overview_diff,
+                review_id=run_id,
+                cost=summary_model.count_tokens,
+                input_budget=reading_budget(configuration, summary_model),
+                maximum_parts=int(configuration.value("review.maximum_parts") or 64),
+            )
+            large_review = len(preflight) > 1 or len(summary_plan) > 1
+            active_budget = current_budget()
+            if active_budget is not None and large_review:
+                active_budget.stopped = lambda: abandoned(
+                    repo_full_name, pull_request.number, revision
+                )
+                active_budget.check_current()
+                calls_per_part = 1
+                if configuration.value("review.plan") == "premium":
+                    from src.core.model import providers_for
+
+                    evaluations = int(
+                        configuration.value("review.evaluation_passes") or 0
+                    )
+                    evaluation_models = (
+                        providers_for(configuration, "review-evaluation", self.services)
+                        if evaluations
+                        else ()
+                    )
+                    if any(model.missing_credentials() for model in evaluation_models):
+                        raise ValueError(
+                            "A planned evaluator has no configured credentials"
+                        )
+                    calls_per_part = max(
+                        1,
+                        len(planned_models) + len(evaluation_models) * evaluations,
+                    )
+                active_budget.plan_parts(
+                    max(1, len(preflight)),
+                    configuration,
+                    calls_per_part=calls_per_part,
+                    extra_calls=max(0, 2 * len(summary_plan) - 1),
+                )
+            if active_budget is not None and large_review:
+                import hashlib
+                import json
+                from src.config.db import get_engine
+                from src.core.review.work_store import SQLReviewWork
+                from src.core.settings.definitions import SETTINGS
+
+                settings_digest = hashlib.sha256(
+                    json.dumps(
+                        {
+                            setting.key: configuration.value(setting.key)
+                            for setting in SETTINGS
+                        },
+                        sort_keys=True,
+                        default=str,
+                    ).encode()
+                ).hexdigest()
+                work = SQLReviewWork(get_engine())
+                work.open(
+                    run_id,
+                    workspace=workspace or "",
+                    repository=repo_full_name,
+                    revision=pull_request.head_sha or "",
+                    maximum_calls=active_budget.maximum_calls,
+                    chunks=preflight,
+                    plan={
+                        "output_tokens": active_budget.output_tokens,
+                        "intent": hashlib.sha256(
+                            json.dumps(
+                                [pull_request.title, pull_request.body, pr_metadata],
+                                sort_keys=True,
+                                default=str,
+                            ).encode()
+                        ).hexdigest(),
+                        "base": pull_request.base_sha,
+                        "digest": hashlib.sha256(raw_diff.encode()).hexdigest(),
+                        "settings": settings_digest,
+                    },
+                )
+                active_budget.work, active_budget.run_id = work, run_id
+                from src.events.review_previews import running_preview
+
+                if running_preview.get():
+                    from src.core.cache import cache, Owner
+
+                    cache().set(
+                        "review.run",
+                        str(running_preview.get()),
+                        run_id,
+                        ttl=86400,
+                        scope=Owner("workspace", workspace or ""),
+                    )
 
             total_tokens = sum(
                 llm_instance.count_tokens(pf.diff_text) for pf in parsed_files
@@ -630,6 +806,14 @@ class CodeReviewerPlugin(BasePlugin):
                 review_skills = skill_library.all(workspace or "", repo_full_name)
 
             coverage = Coverage()
+            for artifact in artifacts:
+                coverage.record(
+                    "artifact integrity and provenance",
+                    "artifact disposition",
+                    answered=False,
+                    target=artifact.file_path,
+                    reason="Artifact contents require provenance and loader checks; excluded from model source reading",
+                )
             for path in omitted:
                 coverage.record(
                     "changed file",
@@ -644,7 +828,10 @@ class CodeReviewerPlugin(BasePlugin):
             gate = int(configuration.value("review.analysis_gate_errors") or 0)
             analysis = None
             if configuration.value("review.plan") != "premium" or gate:
-                with written_out([one.path for one in changed], read_changed_file) as (
+                with written_out(
+                    [one.path for one in changed if one.path not in artifact_paths],
+                    read_changed_file,
+                ) as (
                     analysis_root,
                     analysis_paths,
                 ):
@@ -683,15 +870,41 @@ class CodeReviewerPlugin(BasePlugin):
                     reason=("nothing said which graph to read for this repository"),
                 )
             with ThreadPoolExecutor(max_workers=1) as overview_pool:
-                overview = submit(
-                    overview_pool,
-                    summarize_changes,
-                    full_diff,
-                    llm_instance,
-                    configuration,
-                    pr_metadata,
-                    services=self.services,
-                )
+                if overview_diff.strip():
+                    overview = submit(
+                        overview_pool,
+                        summarize_changes,
+                        overview_diff,
+                        llm_instance,
+                        configuration,
+                        pr_metadata,
+                        services=self.services,
+                    )
+                else:
+                    from concurrent.futures import Future
+                    from src.models.code_review import CodeReviewSummary
+
+                    overview = Future()
+                    overview.set_result(
+                        CodeReviewSummary(
+                            overview="Only artifacts changed. Provenance and loader checks remain incomplete.",
+                            minor_suggestions=[],
+                            critical_issues=[],
+                        )
+                    )
+                change_guidance = ()
+                if large_review:
+                    import json
+                    from src.core.review.models import Told
+
+                    change_guidance = (
+                        Told(
+                            "Whole pull request context",
+                            json.dumps(overview.result().model_dump(mode="json"))[
+                                :16000
+                            ],
+                        ),
+                    )
                 final_review = CodeReviewer(services=self.services).review(
                     ChangeSet(
                         scope=Scope.from_mapping({"repository": repo_full_name}),
@@ -739,6 +952,7 @@ class CodeReviewerPlugin(BasePlugin):
                         ),
                     ),
                     provider=llm_instance,
+                    told=change_guidance,
                     skills=review_skills,
                     read_content=read_changed_file,
                     existing_comments=existing_comments,
@@ -793,6 +1007,10 @@ class CodeReviewerPlugin(BasePlugin):
                         ]
                     )
                 )
+            if active_budget is not None and active_budget.continuation:
+                from src.core.review_budget import ReviewContinuation
+
+                raise ReviewContinuation("The review will continue automatically")
             also_reported(final_review, analysis)
             if final_review.summary is not None:
                 final_review.summary.systems = systems_read(
@@ -809,6 +1027,13 @@ class CodeReviewerPlugin(BasePlugin):
                     )
             logger.info("Review coverage: %s", coverage.as_dict())
 
+            if artifacts and final_review.verdict == Verdict.APPROVE:
+                final_review.verdict = Verdict.COMMENT
+
+            if active_budget is not None and active_budget.work is not None:
+                active_budget.check_current()
+                active_budget.work.ensure_active(active_budget.run_id)
+
             # Apply review guards
             guards = [DuplicateApprovalGuard()]
             for guard in guards:
@@ -823,6 +1048,10 @@ class CodeReviewerPlugin(BasePlugin):
                 if result.review:
                     final_review = result.review
                     logger.info(f"Review modified by guard: {result.reason}")
+
+            if active_budget is not None and active_budget.work is not None:
+                if not active_budget.work.complete(active_budget.run_id):
+                    raise RuntimeError("The review run was stopped before publication")
 
             # Post review to GitHub, unless this is a preview run
             post_result = None
@@ -899,6 +1128,61 @@ class CodeReviewerPlugin(BasePlugin):
             }
 
         except Exception as e:
+            from src.core.review_budget import ReviewContinuation
+            from src.core.review_performance import current_budget
+
+            pending_budget = current_budget()
+            if pending_budget and pending_budget.cancelled:
+                return {
+                    "status": "skipped",
+                    "message": "Review stopped",
+                    "error_type": "review_cancelled",
+                }
+            if isinstance(e, ReviewContinuation) or (
+                pending_budget and pending_budget.continuation
+            ):
+                from src.events.review_previews import running_preview, request_for
+                from src.core.jobs import job_store
+
+                response = {
+                    "status": "pending",
+                    "continuation": True,
+                    "run_id": pending_budget.run_id,
+                    "progress": pending_budget.work.progress(pending_budget.run_id),
+                }
+                if not running_preview.get():
+                    queued = job_store().enqueue(
+                        request_for(
+                            repo_full_name,
+                            pull_request,
+                            pr_metadata,
+                            workspace,
+                            user,
+                            post,
+                            run_key=logical_run_key,
+                            event_type=event_type,
+                            completion_event=completion_event,
+                            revision=revision,
+                        )
+                    )
+                    response["job_id"] = queued
+                    response["status"] = "queued"
+                return response
+            if pending_budget and pending_budget.work is not None:
+                progress = pending_budget.work.progress(pending_budget.run_id)
+                if progress and progress["state"] == "cancelled":
+                    return {
+                        "status": "skipped",
+                        "message": "Review stopped",
+                        "error_type": "review_cancelled",
+                    }
+                pending_budget.work.fail(pending_budget.run_id)
+            try:
+                from src.core.notifications import report_failure
+            except ImportError:
+                pass
+            else:
+                report_failure(e, workspace=workspace, repository=repository_full_name)
             logger.error(f"Error generating/posting review: {e}", exc_info=True)
             return {
                 "status": "error",
