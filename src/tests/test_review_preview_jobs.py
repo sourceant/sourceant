@@ -329,7 +329,7 @@ def test_review_status_and_cancellation_are_scoped_to_the_workspace(preview_api)
 def test_partition_progress_and_cancellation_use_authorized_run_api(preview_api):
     from src.config.db import get_engine
     from src.core.cache import cache, Owner
-    from src.core.review.partition_store import SQLReviewWork
+    from src.core.review.work_store import SQLReviewWork
 
     client, store, plugin, headers = preview_api
     job_id = ask(client, headers).json()["data"]["job_id"]
@@ -345,7 +345,7 @@ def test_partition_progress_and_cancellation_use_authorized_run_api(preview_api)
     lease = journal.claim("run", "chunk")
     journal.reserve_call("run")
     cache().set(
-        "review.partition-run",
+        "review.run",
         str(job_id),
         "run",
         ttl=60,

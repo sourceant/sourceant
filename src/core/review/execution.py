@@ -13,6 +13,7 @@ from src.models.code_review import CodeReview, CodeSuggestion
 if TYPE_CHECKING:
     from src.llms.llm_interface import LLMInterface
     from .interfaces import Reviewer, ReviewEvaluator
+    from .chunks import ReviewChunk
 
 
 class EvaluationStatus(str, Enum):
@@ -111,6 +112,7 @@ class ParallelReviewPlan:
     minimum_support: int = 0
     maximum_rejections: int = 0
     integration_provider: Any = None
+    chunks: tuple[ReviewChunk, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.reviewers:

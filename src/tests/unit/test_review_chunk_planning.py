@@ -1,5 +1,5 @@
 import pytest
-from src.core.review.partitioning import partition, PartitionCapacityError
+from src.core.review.planning import build_chunks, ReviewCapacityError
 
 
 def added(path, lines):
@@ -10,33 +10,32 @@ def added(path, lines):
 
 
 def test_large_single_hunk_is_split_before_any_model_request():
-    result = partition(
+    result = build_chunks(
         added("main.py", ["value = 1"] * 300), cost=len, input_budget=400
     )
-    assert len(result.chunks) > 1
-    assert all(chunk.input_tokens <= 400 for chunk in result.chunks)
+    assert len(result) > 1
+    assert all(chunk.input_tokens <= 400 for chunk in result)
     assert (
-        sum(file._patched_file.added for chunk in result.chunks for file in chunk.files)
+        sum(file._patched_file.added for chunk in result for file in chunk.parsed_files)
         == 300
     )
 
 
 def test_model_data_has_explicit_artifact_disposition():
-    result = partition(
+    result = build_chunks(
         added("data.tiktoken", ["token value"] * 1000)
         + added("loader.py", ["load_tokens()"]),
         cost=len,
         input_budget=400,
     )
-    assert [artifact.path for artifact in result.artifacts] == ["data.tiktoken"]
     assert all(
-        file.file_path == "loader.py" for chunk in result.chunks for file in chunk.files
+        file.file_path == "loader.py" for chunk in result for file in chunk.parsed_files
     )
 
 
 def test_impossible_capacity_fails_without_model_calls():
-    with pytest.raises(PartitionCapacityError):
-        partition(
+    with pytest.raises(ReviewCapacityError):
+        build_chunks(
             added("main.py", ["value = 1"] * 300),
             cost=len,
             input_budget=400,
@@ -44,26 +43,28 @@ def test_impossible_capacity_fails_without_model_calls():
         )
 
 
-def test_many_small_files_can_share_a_partition():
+def test_many_small_files_can_share_a_chunk():
     diff = "".join(added(f"file{index}.py", ["value = 1"]) for index in range(246))
-    result = partition(diff, cost=len, input_budget=4000, maximum_parts=20)
-    assert len(result.chunks) <= 20
-    assert len(result.manifest) == 246
-    assert sum(len(chunk.files) for chunk in result.chunks) == 246
+    result = build_chunks(diff, cost=len, input_budget=4000, maximum_parts=20)
+    assert len(result) <= 20
+    assert (
+        len({file.file_path for chunk in result for file in chunk.parsed_files}) == 246
+    )
+    assert sum(len(chunk.parsed_files) for chunk in result) == 246
 
 
 def test_dependency_neighbours_are_packed_together():
     diff = (
         added("a.py", ["a = 1"]) + added("b.py", ["b = 1"]) + added("z.py", ["z = 1"])
     )
-    result = partition(
+    result = build_chunks(
         diff, cost=len, input_budget=250, adjacency={"a.py": {"z.py"}, "z.py": {"a.py"}}
     )
-    assert [file.file_path for file in result.chunks[0].files] == ["a.py", "z.py"]
+    assert [file.file_path for file in result[0].parsed_files] == ["a.py", "z.py"]
 
 
 def test_artifact_checks_validate_token_table_and_report_provenance_gap():
-    from src.core.review.partitioning import artifact_checks
+    from src.core.review.planning import artifact_checks
 
     check = artifact_checks(
         added("table.tiktoken", ["YQ== 0", "Yg== 1"])
@@ -91,11 +92,11 @@ def test_exact_chunk_context_does_not_repeat_already_supplied_changed_lines():
     from src.core.review.investigations import target_source
 
     source = "value = 1\n" * 300
-    result = partition(
+    result = build_chunks(
         added("main.py", source.splitlines()), cost=len, input_budget=400
     )
-    chunk = result.chunks[0]
-    file = chunk.files[0]
+    chunk = result[0]
+    file = chunk.parsed_files[0]
     task = ReviewInvestigation(
         "first",
         (ReviewTarget(file.file_path, tuple(file.hunk_ranges)),),
@@ -132,9 +133,9 @@ def test_summary_reduction_compacts_large_records_before_model_calls():
     )
 
 
-def test_unavailable_optional_graph_falls_back_to_path_partitioning():
+def test_unavailable_optional_graph_falls_back_to_path_chunk_planning():
     from src.core.code_index import CodeIndexReader
-    from src.core.review.partitioning import relationships
+    from src.core.review.planning import relationships
     from src.core.scope import Scope
     from src.core.services import ServiceRegistry
 
@@ -168,3 +169,42 @@ def test_combined_evaluation_evidence_respects_serialized_budget():
     assert result
     assert len(json.dumps(result)) <= 1000
     assert len(result) < len("\n".join(pieces))
+
+
+def test_planner_returns_full_chunks_that_persist_without_a_second_model(tmp_path):
+    from dataclasses import replace
+    from sqlalchemy import create_engine
+    from src.core.review import ReviewChunk
+    from src.core.review.work_store import SQLReviewWork
+
+    chunks = build_chunks(
+        added("auth/session.py", ["value = 1"] * 100),
+        review_id="review",
+        cost=len,
+        input_budget=400,
+    )
+    chunks = tuple(replace(chunk, group="auth/session") for chunk in chunks)
+    assert chunks and all(type(chunk) is ReviewChunk for chunk in chunks)
+    store = SQLReviewWork(
+        create_engine("sqlite:///" + str(tmp_path / "chunks.sqlite")),
+        create_schema=True,
+    )
+    store.open(
+        "review",
+        workspace="ours",
+        repository="owner/repo",
+        revision="head",
+        plan={},
+        maximum_calls=64,
+        chunks=chunks,
+    )
+    planned = {chunk.id: chunk for chunk in chunks}
+    assert {chunk.id: chunk for chunk in store.chunks("review")} == planned
+    for chunk in chunks:
+        lease = store.claim("review", chunk.id)
+        assert store.finish("review", chunk.id, lease, {"review": None, "coverage": []})
+    assert all(
+        chunk.status == "done" and chunk.attempts == 1
+        for chunk in store.chunks("review")
+    )
+    assert store.complete("review")

@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy import create_engine
-from src.core.review.partition_store import SQLReviewWork
+from src.core.review.work_store import SQLReviewWork
 
 
 def test_finished_parts_survive_reopening_and_calls_are_shared(tmp_path):
@@ -160,19 +160,20 @@ def test_json_migration_round_trip_preserves_progress_and_saved_responses(
     from pathlib import Path
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
-    from src.migrations.versions import review_chunks
-    from src.core.review.partitioning import partition
+    from src.migrations.versions import review_chunks, review_chunk_names
+    from src.core.review.planning import build_chunks
 
     fixtures = Path(__file__).parents[1] / "fixtures"
     captured = json.loads((fixtures / "deepseek/review.json").read_text())
-    split = partition(
+    split = build_chunks(
         (fixtures / "review-overview/full.diff").read_text(),
         cost=len,
         input_budget=2000,
     )
-    chunk = split.chunks[0]
+    chunk = split[0]
     targets = [
-        {"path": file.file_path, "ranges": file.hunk_ranges} for file in chunk.files
+        {"path": file.file_path, "ranges": file.hunk_ranges}
+        for file in chunk.parsed_files
     ]
     plan = {"parts": [{"id": chunk.id, "targets": targets}]}
     engine = create_engine("sqlite:///" + str(tmp_path / "migration.sqlite"))
@@ -190,12 +191,24 @@ def test_json_migration_round_trip_preserves_progress_and_saved_responses(
     lease = store.claim("run", chunk.id)
     assert store.finish("run", chunk.id, lease, {"review": captured, "coverage": []})
     before = store.chunks("run")
+    from src.core.cache import SQLCache
+    from src.models.cache_entry import CacheEntry
+
+    CacheEntry.__table__.create(engine)
+    monkeypatch.setattr("src.config.db.engine", engine)
+    cache = SQLCache()
+    cache.set("review.run", "job", "run", ttl=86400)
     with engine.begin() as connection:
         monkeypatch.setattr(
             review_chunks, "op", Operations(MigrationContext.configure(connection))
         )
+        monkeypatch.setattr(
+            review_chunk_names, "op", Operations(MigrationContext.configure(connection))
+        )
+        review_chunk_names.downgrade()
         review_chunks.downgrade()
         review_chunks.upgrade()
+        review_chunk_names.upgrade()
     reopened = SQLReviewWork(engine)
     reopened.open(
         "run",
@@ -205,6 +218,8 @@ def test_json_migration_round_trip_preserves_progress_and_saved_responses(
         plan=plan,
         maximum_calls=8,
     )
+    assert cache.get("review.run", "job") == "run"
+    assert cache.get("review.partition-run", "job") is None
     assert reopened.chunks("run") == before
     assert reopened.progress("run")["model_calls"] == 1
     assert reopened.response("run", "request") == captured

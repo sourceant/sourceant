@@ -88,7 +88,12 @@ class ParallelReviewOrchestrator:
                     from hashlib import sha256
 
                     investigation = participant.investigations[repetition - 1]
-                    part_id = sha256(investigation.diff.encode()).hexdigest()
+                    chunks = getattr(plan, "chunks", ())
+                    part_id = (
+                        chunks[repetition - 1].id
+                        if chunks
+                        else sha256(investigation.diff.encode()).hexdigest()
+                    )
                     saved = journal.answer(active_budget.run_id, part_id)
                     if saved is not None:
                         for attempt in saved["coverage"]:
@@ -253,7 +258,7 @@ class ParallelReviewOrchestrator:
             outcome.error for outcome in reviews
         ):
             try:
-                from .partitioning import integration_packet
+                from .planning import integration_packet
 
                 from .contracts import review_context_provider
                 from src.core.services import service_registry

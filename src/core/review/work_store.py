@@ -9,6 +9,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     JSON,
     and_,
     insert,
@@ -20,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 metadata = MetaData()
 runs = Table(
-    "review_partition_runs",
+    "review_runs",
     metadata,
     Column("id", String(64), primary_key=True),
     Column("workspace", String(255), nullable=False),
@@ -31,7 +32,7 @@ runs = Table(
     Column("calls", Integer, nullable=False),
     Column("state", String(32), nullable=False),
 )
-chunks = Table(
+chunk_table = Table(
     "review_chunks",
     metadata,
     Column("review_id", String(64), primary_key=True),
@@ -43,10 +44,12 @@ chunks = Table(
     Column("group", String(500), nullable=False),
     Column("files", JSON, nullable=False),
     Column("attempts", Integer, nullable=False),
+    Column("diff", Text, nullable=False),
+    Column("input_tokens", Integer, nullable=False),
 )
 
 responses = Table(
-    "review_partition_responses",
+    "review_responses",
     metadata,
     Column("run_id", String(64), primary_key=True),
     Column("id", String(64), primary_key=True),
@@ -60,10 +63,30 @@ class SQLReviewWork:
         if create_schema:
             metadata.create_all(engine)
 
-    def open(self, identifier, *, workspace, repository, revision, plan, maximum_calls):
+    def open(
+        self,
+        identifier,
+        *,
+        workspace,
+        repository,
+        revision,
+        plan,
+        maximum_calls,
+        chunks=(),
+    ):
         from .chunks import group_for
 
+        planned = {chunk.id: chunk for chunk in chunks}
         plan = json.loads(json.dumps(plan))
+        if planned:
+            if any(chunk.review_id != identifier for chunk in planned.values()):
+                raise ValueError("Planned chunks must belong to this review")
+            definitions = json.loads(
+                json.dumps([chunk.definition() for chunk in chunks])
+            )
+            if "parts" in plan and plan["parts"] != definitions:
+                raise ValueError("Planned chunks must match the review plan")
+            plan = {**plan, "parts": definitions}
         with self.engine.begin() as connection:
             try:
                 with connection.begin_nested():
@@ -81,15 +104,25 @@ class SQLReviewWork:
                     )
                     for part in plan["parts"]:
                         connection.execute(
-                            insert(chunks).values(
+                            insert(chunk_table).values(
                                 review_id=identifier,
                                 id=part["id"],
                                 status="pending",
-                                group=part.get(
-                                    "group", group_for(part.get("targets", []))
+                                group=(
+                                    planned[part["id"]].group
+                                    if part["id"] in planned
+                                    else part.get(
+                                        "group", group_for(part.get("targets", []))
+                                    )
                                 ),
                                 files=part.get("targets", []),
                                 attempts=0,
+                                diff=(
+                                    planned[part["id"]].diff
+                                    if part["id"] in planned
+                                    else ""
+                                ),
+                                input_tokens=part.get("input_tokens", 0),
                                 lease="",
                             )
                         )
@@ -111,6 +144,16 @@ class SQLReviewWork:
                     plan,
                 ):
                     raise ValueError("A persisted review plan cannot change identity")
+                for chunk in planned.values():
+                    connection.execute(
+                        update(chunk_table)
+                        .where(
+                            chunk_table.c.review_id == identifier,
+                            chunk_table.c.id == chunk.id,
+                            chunk_table.c.diff == "",
+                        )
+                        .values(diff=chunk.diff)
+                    )
 
     def reserve_call(self, identifier):
         with self.engine.begin() as connection:
@@ -135,22 +178,22 @@ class SQLReviewWork:
                 .exists()
             )
             result = connection.execute(
-                update(chunks)
+                update(chunk_table)
                 .where(
-                    chunks.c.review_id == identifier,
-                    chunks.c.id == part_id,
+                    chunk_table.c.review_id == identifier,
+                    chunk_table.c.id == part_id,
                     active,
                     or_(
-                        chunks.c.status == "pending",
+                        chunk_table.c.status == "pending",
                         and_(
-                            chunks.c.status == "running",
-                            chunks.c.leased_until < datetime.utcnow(),
+                            chunk_table.c.status == "running",
+                            chunk_table.c.leased_until < datetime.utcnow(),
                         ),
                     ),
                 )
                 .values(
                     status="running",
-                    attempts=chunks.c.attempts + 1,
+                    attempts=chunk_table.c.attempts + 1,
                     lease=lease,
                     leased_until=datetime.utcnow() + timedelta(seconds=seconds),
                 )
@@ -160,15 +203,15 @@ class SQLReviewWork:
     def finish(self, identifier, part_id, lease, answer):
         with self.engine.begin() as connection:
             result = connection.execute(
-                update(chunks)
+                update(chunk_table)
                 .where(
-                    chunks.c.review_id == identifier,
-                    chunks.c.id == part_id,
+                    chunk_table.c.review_id == identifier,
+                    chunk_table.c.id == part_id,
                     select(runs.c.id)
                     .where(runs.c.id == identifier, runs.c.state == "running")
                     .exists(),
-                    chunks.c.lease == lease,
-                    chunks.c.status == "running",
+                    chunk_table.c.lease == lease,
+                    chunk_table.c.status == "running",
                 )
                 .values(status="done", result=answer, leased_until=None)
             )
@@ -178,10 +221,10 @@ class SQLReviewWork:
         self.ensure_active(identifier)
         with self.engine.connect() as connection:
             return connection.execute(
-                select(chunks.c.result).where(
-                    chunks.c.review_id == identifier,
-                    chunks.c.id == chunk_id,
-                    chunks.c.status == "done",
+                select(chunk_table.c.result).where(
+                    chunk_table.c.review_id == identifier,
+                    chunk_table.c.id == chunk_id,
+                    chunk_table.c.status == "done",
                 )
             ).scalar_one_or_none()
 
@@ -190,8 +233,9 @@ class SQLReviewWork:
             return {
                 row["id"]: row["result"]
                 for row in connection.execute(
-                    select(chunks).where(
-                        chunks.c.review_id == identifier, chunks.c.status == "done"
+                    select(chunk_table).where(
+                        chunk_table.c.review_id == identifier,
+                        chunk_table.c.status == "done",
                     )
                 ).mappings()
             }
@@ -216,9 +260,11 @@ class SQLReviewWork:
                     status=row["status"],
                     attempts=row["attempts"],
                     result=row["result"],
+                    diff=row["diff"],
+                    input_tokens=row["input_tokens"],
                 )
                 for row in connection.execute(
-                    select(chunks).where(chunks.c.review_id == identifier)
+                    select(chunk_table).where(chunk_table.c.review_id == identifier)
                 ).mappings()
             )
 
@@ -266,7 +312,9 @@ class SQLReviewWork:
                 return None
             states = list(
                 connection.execute(
-                    select(chunks.c.status).where(chunks.c.review_id == identifier)
+                    select(chunk_table.c.status).where(
+                        chunk_table.c.review_id == identifier
+                    )
                 ).scalars()
             )
             return {
@@ -283,12 +331,12 @@ class SQLReviewWork:
     def release(self, identifier, part_id, lease):
         with self.engine.begin() as connection:
             connection.execute(
-                update(chunks)
+                update(chunk_table)
                 .where(
-                    chunks.c.review_id == identifier,
-                    chunks.c.id == part_id,
-                    chunks.c.status == "running",
-                    chunks.c.lease == lease,
+                    chunk_table.c.review_id == identifier,
+                    chunk_table.c.id == part_id,
+                    chunk_table.c.status == "running",
+                    chunk_table.c.lease == lease,
                 )
                 .values(status="pending", lease="", leased_until=None)
             )
@@ -310,10 +358,10 @@ class SQLReviewWork:
             )
             if result.rowcount == 1:
                 connection.execute(
-                    update(chunks)
+                    update(chunk_table)
                     .where(
-                        chunks.c.review_id == identifier,
-                        chunks.c.status.in_(("pending", "running")),
+                        chunk_table.c.review_id == identifier,
+                        chunk_table.c.status.in_(("pending", "running")),
                     )
                     .values(status="failed", leased_until=None)
                 )
@@ -321,8 +369,11 @@ class SQLReviewWork:
     def complete(self, identifier):
         with self.engine.begin() as connection:
             unfinished = (
-                select(chunks.c.id)
-                .where(chunks.c.review_id == identifier, chunks.c.status != "done")
+                select(chunk_table.c.id)
+                .where(
+                    chunk_table.c.review_id == identifier,
+                    chunk_table.c.status != "done",
+                )
                 .exists()
             )
             result = connection.execute(

@@ -597,8 +597,9 @@ class CodeReviewerPlugin(BasePlugin):
                     str(configuration.value("model.name") or ""),
                 )
 
-            from src.core.review.partitioning import (
-                partition_source,
+            from src.core.review.planning import (
+                build_chunks,
+                artifact_file,
                 relationships,
                 review_cost,
                 reading_budget,
@@ -606,6 +607,23 @@ class CodeReviewerPlugin(BasePlugin):
             from src.core.review_performance import current_budget
 
             from src.core.review.planning import discovery_models
+
+            import hashlib
+            import json
+            from uuid import uuid4
+            from src.events.review_previews import review_run_key
+
+            logical_run_key = review_run_key.get() or uuid4().hex
+            identity = json.dumps(
+                [
+                    logical_run_key,
+                    workspace or "",
+                    repo_full_name,
+                    pull_request.base_sha,
+                    pull_request.head_sha,
+                ]
+            )
+            run_id = hashlib.sha256(identity.encode()).hexdigest()
 
             planned_models = (
                 discovery_models(configuration, self.services, llm_instance)
@@ -619,8 +637,9 @@ class CodeReviewerPlugin(BasePlugin):
                     "A planned review participant has no configured credentials"
                 )
             costs = tuple(review_cost(model) for model in planned_models)
-            preflight = partition_source(self.services).partition(
+            preflight = build_chunks(
                 raw_diff,
+                review_id=run_id,
                 cost=lambda text: max(cost(text) for cost in costs),
                 input_budget=min(
                     reading_budget(configuration, model) for model in planned_models
@@ -636,7 +655,10 @@ class CodeReviewerPlugin(BasePlugin):
                     ),
                 ),
             )
-            artifact_paths = {one.path for one in preflight.artifacts}
+            artifacts = tuple(
+                file for file in parse_diff(raw_diff) if artifact_file(file)
+            )
+            artifact_paths = {file.file_path for file in artifacts}
             overview_diff = "\n".join(
                 one.diff_text
                 for one in parse_diff(full_diff)
@@ -651,13 +673,14 @@ class CodeReviewerPlugin(BasePlugin):
                 raise ValueError(
                     "The planned overview model has no configured credentials"
                 )
-            summary_plan = partition_source(self.services).partition(
+            summary_plan = build_chunks(
                 overview_diff,
+                review_id=run_id,
                 cost=summary_model.count_tokens,
                 input_budget=reading_budget(configuration, summary_model),
                 maximum_parts=int(configuration.value("review.maximum_parts") or 64),
             )
-            large_review = len(preflight.chunks) > 1 or len(summary_plan.chunks) > 1
+            large_review = len(preflight) > 1 or len(summary_plan) > 1
             active_budget = current_budget()
             if active_budget is not None and large_review:
                 active_budget.stopped = lambda: abandoned(
@@ -685,22 +708,18 @@ class CodeReviewerPlugin(BasePlugin):
                         len(planned_models) + len(evaluation_models) * evaluations,
                     )
                 active_budget.plan_parts(
-                    max(1, len(preflight.chunks)),
+                    max(1, len(preflight)),
                     configuration,
                     calls_per_part=calls_per_part,
-                    extra_calls=max(0, 2 * len(summary_plan.chunks) - 1),
+                    extra_calls=max(0, 2 * len(summary_plan) - 1),
                 )
             if active_budget is not None and large_review:
                 import hashlib
                 import json
                 from src.config.db import get_engine
-                from src.core.review.partition_store import SQLReviewWork
+                from src.core.review.work_store import SQLReviewWork
                 from src.core.settings.definitions import SETTINGS
 
-                from uuid import uuid4
-                from src.events.review_previews import review_run_key
-
-                logical_run_key = review_run_key.get() or uuid4().hex
                 settings_digest = hashlib.sha256(
                     json.dumps(
                         {
@@ -711,16 +730,6 @@ class CodeReviewerPlugin(BasePlugin):
                         default=str,
                     ).encode()
                 ).hexdigest()
-                identity = json.dumps(
-                    [
-                        logical_run_key,
-                        workspace or "",
-                        repo_full_name,
-                        pull_request.base_sha,
-                        pull_request.head_sha,
-                    ]
-                )
-                run_id = hashlib.sha256(identity.encode()).hexdigest()
                 work = SQLReviewWork(get_engine())
                 work.open(
                     run_id,
@@ -728,18 +737,8 @@ class CodeReviewerPlugin(BasePlugin):
                     repository=repo_full_name,
                     revision=pull_request.head_sha or "",
                     maximum_calls=active_budget.maximum_calls,
+                    chunks=preflight,
                     plan={
-                        "parts": [
-                            {
-                                "id": chunk.id,
-                                "input_tokens": chunk.input_tokens,
-                                "targets": [
-                                    {"path": file.file_path, "ranges": file.hunk_ranges}
-                                    for file in chunk.files
-                                ],
-                            }
-                            for chunk in preflight.chunks
-                        ],
                         "output_tokens": active_budget.output_tokens,
                         "intent": hashlib.sha256(
                             json.dumps(
@@ -749,7 +748,7 @@ class CodeReviewerPlugin(BasePlugin):
                             ).encode()
                         ).hexdigest(),
                         "base": pull_request.base_sha,
-                        "digest": preflight.digest,
+                        "digest": hashlib.sha256(raw_diff.encode()).hexdigest(),
                         "settings": settings_digest,
                     },
                 )
@@ -760,7 +759,7 @@ class CodeReviewerPlugin(BasePlugin):
                     from src.core.cache import cache, Owner
 
                     cache().set(
-                        "review.partition-run",
+                        "review.run",
                         str(running_preview.get()),
                         run_id,
                         ttl=86400,
@@ -809,12 +808,12 @@ class CodeReviewerPlugin(BasePlugin):
                 review_skills = skill_library.all(workspace or "", repo_full_name)
 
             coverage = Coverage()
-            for artifact in preflight.artifacts:
+            for artifact in artifacts:
                 coverage.record(
                     "artifact integrity and provenance",
                     "artifact disposition",
                     answered=False,
-                    target=artifact.path,
+                    target=artifact.file_path,
                     reason="Artifact contents require provenance and loader checks; excluded from model source reading",
                 )
             for path in omitted:
@@ -1030,7 +1029,7 @@ class CodeReviewerPlugin(BasePlugin):
                     )
             logger.info("Review coverage: %s", coverage.as_dict())
 
-            if preflight.artifacts and final_review.verdict == Verdict.APPROVE:
+            if artifacts and final_review.verdict == Verdict.APPROVE:
                 final_review.verdict = Verdict.COMMENT
 
             if active_budget is not None and active_budget.work is not None:

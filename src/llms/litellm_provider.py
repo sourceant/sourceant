@@ -189,9 +189,9 @@ class LiteLLMProvider(LLMInterface):
                 or budget.output_tokens
             )
             if prompt_tokens + reserve > self.token_limit:
-                from src.core.review.partitioning import PartitionCapacityError
+                from src.core.review.planning import ReviewCapacityError
 
-                raise PartitionCapacityError(
+                raise ReviewCapacityError(
                     "The complete model prompt and output reserve exceed the model context window"
                 )
         with model_call(self.model):

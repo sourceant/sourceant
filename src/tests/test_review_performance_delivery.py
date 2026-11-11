@@ -165,7 +165,7 @@ class WebhookDeliveryTests(unittest.TestCase):
             for model in (Config, RepositoryEvent, ReviewRecord):
                 model.__table__.create(engine)
             store = SQLJobStore(engine, create_schema=True)
-            from src.core.review.partition_store import SQLReviewWork
+            from src.core.review.work_store import SQLReviewWork
 
             SQLReviewWork(engine, create_schema=True)
             replacements = {
@@ -338,7 +338,7 @@ class WebhookDeliveryTests(unittest.TestCase):
                 ]
                 self.assertGreater(len(review_prompts), capacity)
                 self.assertLessEqual(calls, 1000)
-                from src.core.review.partition_store import runs
+                from src.core.review.work_store import runs
 
                 with engine.connect() as connection:
                     review_id = connection.execute(select(runs.c.id)).scalar_one()

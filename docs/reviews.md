@@ -46,7 +46,7 @@ With the database queue, generation and posting are separate jobs. Rate limits d
 
 ### Large pull requests
 
-Large changes are planned before paid review and continue within a shared allowance. See [Large pull requests](large-reviews.md) for partitioning, continuation, artifact checks and deployment requirements.
+Large changes are planned before paid review and continue within a shared allowance. See [Large pull requests](large-reviews.md) for chunk planning, continuation, artifact checks and deployment requirements.
 
 ### Expert passes
 

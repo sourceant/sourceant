@@ -25,7 +25,7 @@ from src.core.review_performance import (
 )
 from src.core.model import purpose_provider
 from src.core.review.exclusions import review_diff
-from src.core.review.partitioning import partition, review_cost, reading_budget
+from src.core.review.planning import build_chunks, review_cost, reading_budget
 from src.core.skills.matching import matches
 from src.core.skills.selection import for_review, said_here
 from src.core.analysis import Analysis, also_reported
@@ -170,7 +170,7 @@ class CodeReviewer:
 
         if _stopped(changes, options.get("metadata"), options.get("revision", "")):
             return None
-        from src.core.review.partitioning import artifact_file, artifact_checks
+        from src.core.review.planning import artifact_file, artifact_checks
 
         original = parse_diff(changes.diff)
         artifacts = artifact_checks(changes.diff)
@@ -793,12 +793,12 @@ class CodeReviewer:
                     tuple(one.diff_text for one in pass_files),
                 ),
                 lambda: [
-                    list(chunk.files)
-                    for chunk in partition(
+                    list(chunk.parsed_files)
+                    for chunk in build_chunks(
                         "\n".join(one.diff_text for one in pass_files),
                         cost=cost,
                         input_budget=budget,
-                    ).chunks
+                    )
                 ],
             )
             logger.info(f"Reading {len(pass_files)} files in {len(batches)} passes.")

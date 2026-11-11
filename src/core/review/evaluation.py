@@ -143,8 +143,8 @@ class ModelReviewEvaluator:
                     and ".." not in PurePosixPath(path).parts
                 ):
                     source[path] = request.read_content(path)
-        from src.core.review.partitioning import (
-            partition,
+        from src.core.review.planning import (
+            build_chunks,
             reading_budget as model_reading_budget,
         )
 
@@ -160,15 +160,15 @@ class ModelReviewEvaluator:
             request.changes.configuration, self.provider
         )
         evidence_budget = max(256, reading_budget // max(2, 2 * len(selected)))
-        pieces = partition(
+        pieces = build_chunks(
             relevant,
             cost=cost,
             input_budget=evidence_budget,
             maximum_parts=10000,
         )
         evidence = []
-        for chunk in pieces.chunks:
-            for file in chunk.files:
+        for chunk in pieces:
+            for file in chunk.parsed_files:
                 if any(
                     candidate.file_name == file.file_path
                     and any(

@@ -124,7 +124,7 @@ def test_http_preview_overview_reads_all_pr_changes(
     monkeypatch.setattr(
         reviewer_plugin, "provider_for", lambda *args, **kwargs: provider
     )
-    from src.core.review.partition_store import SQLReviewWork
+    from src.core.review.work_store import SQLReviewWork
 
     SQLReviewWork(engine, create_schema=True)
     configured_budget = client.put(

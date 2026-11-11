@@ -2,7 +2,7 @@ import json
 
 from src.core.parallel import parallel_map
 from src.core.review.exclusions import review_diff
-from src.core.review.partitioning import partition, reading_budget
+from src.core.review.planning import build_chunks, reading_budget
 
 from src.core.settings.configuration import Configuration
 from src.core.services import service_registry
@@ -50,13 +50,13 @@ def _parts(diff, provider, configuration, services):
     batches = shared(
         ("batches", model, budget, tuple(one.diff_text for one in parsed)),
         lambda: [
-            list(chunk.files)
-            for chunk in partition(
+            list(chunk.parsed_files)
+            for chunk in build_chunks(
                 diff,
                 cost=cost,
                 input_budget=budget,
                 maximum_parts=int(configuration.value("review.maximum_parts") or 64),
-            ).chunks
+            )
         ],
     )
     return provider, batches
@@ -143,7 +143,7 @@ def summarize_changes(
 
 
 def _summary_groups(descriptions, provider, budget):
-    from src.core.review.partitioning import PartitionCapacityError
+    from src.core.review.planning import ReviewCapacityError
 
     groups, current = [], []
     for description in descriptions:
@@ -152,9 +152,7 @@ def _summary_groups(descriptions, provider, budget):
         if provider.count_tokens(json.dumps(record)) > limit:
             record = {"overview": "", "omitted_summary_details": True}
             if provider.count_tokens(json.dumps(record)) > limit:
-                raise PartitionCapacityError(
-                    "A summary cannot fit the reduction budget"
-                )
+                raise ReviewCapacityError("A summary cannot fit the reduction budget")
             low, high = 0, len(description.overview)
             while low <= high:
                 middle = (low + high) // 2
@@ -172,7 +170,7 @@ def _summary_groups(descriptions, provider, budget):
     if current:
         groups.append(current)
     if len(groups) >= len(descriptions):
-        raise PartitionCapacityError(
+        raise ReviewCapacityError(
             "Summary reduction cannot make progress within its budget"
         )
     return groups

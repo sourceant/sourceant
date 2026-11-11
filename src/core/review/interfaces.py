@@ -4,7 +4,7 @@ from typing import Any, Callable, Protocol, Sequence, runtime_checkable, TYPE_CH
 from pathlib import Path
 
 if TYPE_CHECKING:
-    from .partitioning import ReviewPartition
+    from .chunks import ReviewChunk
 
 from src.core.analysis import Analysis
 from src.core.review_coverage import Coverage
@@ -32,6 +32,7 @@ from src.models.code_review import CodeSuggestion
 
 @runtime_checkable
 class ReviewPlan(Protocol):
+    chunks: Sequence[ReviewChunk]
     reviewers: Sequence[ReviewParticipant]
     evaluators: Sequence[EvaluationParticipant]
     concurrency: int
@@ -168,16 +169,3 @@ class FindingStore(FindingReader, FindingWriter, Protocol):
     Registered by whoever can keep them. Unregistered, a review still runs and
     simply forgets, which is what it did before this existed.
     """
-
-
-@runtime_checkable
-class ReviewPartitionSource(Protocol):
-    def partition(
-        self,
-        diff: str,
-        *,
-        cost: Callable[[str], int],
-        input_budget: int,
-        maximum_parts: int = 200,
-        adjacency=None,
-    ) -> ReviewPartition: ...

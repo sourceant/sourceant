@@ -7,8 +7,8 @@ import litellm
 import pytest
 from sqlalchemy import create_engine
 
-from src.core.review.partition_store import SQLReviewWork
-from src.core.review.partitioning import PartitionCapacityError
+from src.core.review.work_store import SQLReviewWork
+from src.core.review.planning import ReviewCapacityError
 from src.core.review_budget import ReviewContinuation
 from src.core.review_performance import current_budget, review_session
 from src.llms.litellm_provider import LiteLLMProvider
@@ -79,7 +79,7 @@ def test_complete_prompt_overflow_fails_before_paid_request(monkeypatch):
                 messages=[{"role": "user", "content": "Review this change"}],
             )
 
-    with pytest.raises(PartitionCapacityError, match="complete model prompt"):
+    with pytest.raises(ReviewCapacityError, match="complete model prompt"):
         Reviewer().review(configuration())
     completion.assert_not_called()
 
