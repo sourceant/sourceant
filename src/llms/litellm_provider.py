@@ -43,6 +43,7 @@ RESPONSES = "model-response"
 # raises for it is its own, and there is one of those for every provider.
 CACHE_REFUSALS = ("cache", "cached_content", "cachedcontents", "ephemeral")
 _output_budget = ContextVar("model_output_budget", default=0)
+_validation_attempt = ContextVar("model_validation_attempt", default=0)
 
 
 def _escape_json_controls(written: str) -> str:
@@ -150,6 +151,7 @@ class LiteLLMProvider(LLMInterface):
                         reading_identity.get(),
                         expert_identity.get(),
                         call_purpose.get(),
+                        _validation_attempt.get(),
                     ],
                     sort_keys=True,
                     default=lambda value: (
@@ -488,9 +490,11 @@ class LiteLLMProvider(LLMInterface):
         )
         for attempt in range(2):
             token = _output_budget.set(budget)
+            attempt_token = _validation_attempt.set(attempt)
             try:
                 response = ask()
             finally:
+                _validation_attempt.reset(attempt_token)
                 _output_budget.reset(token)
             self._spent(response, purpose)
             written = response.choices[0].message.content

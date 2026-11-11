@@ -151,3 +151,50 @@ def test_superseded_run_stops_cached_replay_before_model_request(tmp_path, monke
         Reviewer().review(configuration())
     assert completion.call_count == 1
     assert store.progress("run")["state"] == "cancelled"
+
+
+def test_validation_retry_is_fresh_and_both_attempts_survive_continuation(
+    tmp_path, monkeypatch
+):
+    from src.models.code_review import CodeReview
+
+    fixtures = Path(__file__).parents[1] / "fixtures/deepseek"
+    completion = Mock(
+        side_effect=[
+            litellm.ModelResponse(**json.loads((fixtures / name).read_text()))
+            for name in ("overview.json", "review.json")
+        ]
+    )
+    usage = Mock()
+    monkeypatch.setattr(litellm, "completion", completion)
+    monkeypatch.setattr("src.core.usage.record_completion", usage)
+    engine = create_engine("sqlite:///" + str(tmp_path / "validation-retry.sqlite"))
+    store = SQLReviewWork(engine, create_schema=True)
+    store.open(
+        "run",
+        workspace="ours",
+        repository="owner/repo",
+        revision="head",
+        plan={"parts": []},
+        maximum_calls=8,
+    )
+
+    class Reviewer:
+        @review_session
+        def review(self, request):
+            budget = current_budget()
+            budget.work, budget.run_id = SQLReviewWork(engine), "run"
+            provider = LiteLLMProvider("deepseek/deepseek-chat", 131072)
+            return provider._validated_response(
+                lambda: provider._completion(
+                    model=provider.model,
+                    messages=[{"role": "user", "content": "Inspect this change"}],
+                ),
+                CodeReview,
+                "review",
+            )
+
+    assert Reviewer().review(configuration()) == Reviewer().review(configuration())
+    assert completion.call_count == 2
+    assert usage.call_count == 2
+    assert store.progress("run")["model_calls"] == 2
