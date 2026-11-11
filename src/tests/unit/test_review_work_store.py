@@ -153,77 +153,73 @@ def test_chunks_keep_scope_attempts_and_results_without_parent_recursion(tmp_pat
     assert chunks["first"].result == {"review": None, "coverage": []}
 
 
-def test_json_migration_round_trip_preserves_progress_and_saved_responses(
+def test_chunk_migration_creates_the_final_schema_and_supports_the_store(
     tmp_path, monkeypatch
 ):
     import json
     from pathlib import Path
+    from sqlalchemy import inspect, JSON
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
-    from src.migrations.versions import review_chunks, review_chunk_names
+    from src.migrations.versions import review_chunks
     from src.core.review.planning import build_chunks
+    from src.core.review.work_store import metadata
 
     fixtures = Path(__file__).parents[1] / "fixtures"
     captured = json.loads((fixtures / "deepseek/review.json").read_text())
-    split = build_chunks(
+    chunks = build_chunks(
         (fixtures / "review-overview/full.diff").read_text(),
+        review_id="run",
         cost=len,
         input_budget=2000,
     )
-    chunk = split[0]
-    targets = [
-        {"path": file.file_path, "ranges": file.hunk_ranges}
-        for file in chunk.parsed_files
-    ]
-    plan = {"parts": [{"id": chunk.id, "targets": targets}]}
     engine = create_engine("sqlite:///" + str(tmp_path / "migration.sqlite"))
-    store = SQLReviewWork(engine, create_schema=True)
+    with engine.begin() as connection:
+        monkeypatch.setattr(
+            review_chunks, "op", Operations(MigrationContext.configure(connection))
+        )
+        review_chunks.upgrade()
+    schema = inspect(engine)
+    assert set(schema.get_table_names()) == set(metadata.tables)
+    for table in metadata.tables.values():
+        columns = {column["name"]: column for column in schema.get_columns(table.name)}
+        assert set(columns) == set(table.c.keys())
+        for column in table.c:
+            assert columns[column.name]["nullable"] == column.nullable
+            if isinstance(column.type, JSON):
+                assert isinstance(columns[column.name]["type"], JSON)
+        assert schema.get_pk_constraint(table.name)["constrained_columns"] == list(
+            table.primary_key.columns.keys()
+        )
+    store = SQLReviewWork(engine)
     store.open(
         "run",
         workspace="ours",
         repository="owner/repo",
         revision="head",
-        plan=plan,
+        plan={},
+        chunks=chunks,
         maximum_calls=8,
     )
     store.reserve_call("run")
     store.save_response("run", "request", captured)
+    chunk = chunks[0]
     lease = store.claim("run", chunk.id)
     assert store.finish("run", chunk.id, lease, {"review": captured, "coverage": []})
-    before = store.chunks("run")
-    from src.core.cache import SQLCache
-    from src.models.cache_entry import CacheEntry
-
-    CacheEntry.__table__.create(engine)
-    monkeypatch.setattr("src.config.db.engine", engine)
-    cache = SQLCache()
-    cache.set("review.run", "job", "run", ttl=86400)
+    assert store.progress("run")["model_calls"] == 1
+    assert store.response("run", "request") == captured
+    assert store.answer("run", chunk.id)["review"] == captured
+    saved = {chunk.id: chunk for chunk in store.chunks("run")}[chunk.id]
+    assert saved.diff == chunk.diff
+    assert saved.files == chunk.files
     with engine.begin() as connection:
         monkeypatch.setattr(
             review_chunks, "op", Operations(MigrationContext.configure(connection))
         )
-        monkeypatch.setattr(
-            review_chunk_names, "op", Operations(MigrationContext.configure(connection))
-        )
-        review_chunk_names.downgrade()
         review_chunks.downgrade()
+        assert inspect(connection).get_table_names() == []
         review_chunks.upgrade()
-        review_chunk_names.upgrade()
-    reopened = SQLReviewWork(engine)
-    reopened.open(
-        "run",
-        workspace="ours",
-        repository="owner/repo",
-        revision="head",
-        plan=plan,
-        maximum_calls=8,
-    )
-    assert cache.get("review.run", "job") == "run"
-    assert cache.get("review.partition-run", "job") is None
-    assert reopened.chunks("run") == before
-    assert reopened.progress("run")["model_calls"] == 1
-    assert reopened.response("run", "request") == captured
-    assert reopened.answers("run")[chunk.id]["review"] == captured
+    assert set(inspect(engine).get_table_names()) == set(metadata.tables)
 
 
 def test_cancelled_review_cannot_replay_a_completed_chunk(tmp_path):

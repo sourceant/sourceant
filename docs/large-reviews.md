@@ -18,7 +18,7 @@ The planned allowance grows with the chunk count until it reaches the configured
 
 ## Continuation and cancellation
 
-Background PR reviews persist their plan, review chunks and provider responses. Each chunk records its review, explanatory group, exact files and hunk ranges, status, claim attempts and result. Groups do not affect scheduling. Plan, file scopes and result documents use JSON storage. The active tables are review_runs, review_chunks and review_responses. Earlier table names remain only in upgrade and downgrade migrations. Background reviews continue automatically in another worker window when needed. Saved responses are reused without recording usage twice. Review-run progress includes chunk states and the shared call count. Cancelling a run blocks new model calls, cached-response replay and late chunk completion.
+Background PR reviews persist their plan, review chunks and provider responses. Each chunk records its review, explanatory group, exact files and hunk ranges, status, claim attempts and result. Groups do not affect scheduling. Plan, file scopes and result documents use JSON storage. The active tables are review_runs, review_chunks and review_responses. A single review-chunks migration creates this schema directly. Background reviews continue automatically in another worker window when needed. Saved responses are reused without recording usage twice. Review-run progress includes chunk states and the shared call count. Cancelling a run blocks new model calls, cached-response replay and late chunk completion.
 
 If a provider finishes just before a process fails and its response has not been saved, that request may need to run again. A provider request and a database write cannot form one atomic transaction.
 
