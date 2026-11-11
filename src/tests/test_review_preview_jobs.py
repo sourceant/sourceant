@@ -422,3 +422,24 @@ def test_waiting_delivery_yields_worker_without_generating_review_twice(preview_
         ]
         == RESULT["review"]
     )
+
+
+def test_explicit_revisions_do_not_coalesce():
+    from src.events.review_previews import request_for
+    from src.models.pull_request import PullRequest
+
+    pull_request = PullRequest(
+        number=PR["number"], head_sha=PR["head"]["sha"], base_sha=PR["base"]["sha"]
+    )
+    head = request_for(REPOSITORY["full_name"], pull_request, {}, "one", "1")
+    base = request_for(
+        REPOSITORY["full_name"],
+        pull_request,
+        {},
+        "one",
+        "1",
+        revision=PR["base"]["sha"],
+    )
+    assert head.dedupe_slot != base.dedupe_slot
+    assert head.exclusive_key != base.exclusive_key
+    assert base.payload["revision"] == PR["base"]["sha"]

@@ -36,7 +36,8 @@ def request_for(
     completion_event=None,
     revision=None,
 ):
-    key = key_for(workspace, repo, pull_request.number, pull_request.head_sha, post)
+    effective_revision = pull_request.head_sha if revision is None else revision
+    key = key_for(workspace, repo, pull_request.number, effective_revision, post)
     return JobRequest(
         lane=INTERACTIVE,
         kind=KIND,
@@ -50,7 +51,7 @@ def request_for(
             "request_id": run_key or uuid4().hex,
             "event_type": event_type,
             "completion_event": completion_event,
-            "revision": pull_request.head_sha if revision is None else revision,
+            "revision": effective_revision,
         },
         deadline_seconds=1800,
         max_attempts=1000,

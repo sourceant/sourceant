@@ -179,7 +179,7 @@ class ModelReviewEvaluator:
                     for candidate in selected
                 ):
                     evidence.append(file.diff_text)
-        bounded_diff = "\n".join(evidence)
+        bounded_diff = _bounded_evidence(evidence, cost, reading_budget // 2)
         if cost(json.dumps(source)) > reading_budget // 2:
             source = {
                 path: (
@@ -544,3 +544,12 @@ class DeterministicReviewEvaluator:
                 analysis, touched_lines(parse_diff(request.changes.diff))
             )
         return ReviewEvaluation(analysis=analysis)
+
+
+def _bounded_evidence(pieces, cost, budget):
+    result = ""
+    for piece in pieces:
+        candidate = "\n".join(filter(None, (result, piece)))
+        if cost(json.dumps(candidate)) <= budget:
+            result = candidate
+    return result

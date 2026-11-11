@@ -157,3 +157,14 @@ def test_unavailable_optional_graph_falls_back_to_path_partitioning():
         )
         == {}
     )
+
+
+def test_combined_evaluation_evidence_respects_serialized_budget():
+    import json
+    from src.core.review.evaluation import _bounded_evidence
+
+    pieces = [added(f"file{index}.py", ["value = 1"] * 10) for index in range(20)]
+    result = _bounded_evidence(pieces, len, 1000)
+    assert result
+    assert len(json.dumps(result)) <= 1000
+    assert len(result) < len("\n".join(pieces))
