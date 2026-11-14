@@ -164,6 +164,7 @@ def test_chunk_migration_creates_the_final_schema_and_supports_the_store(
     from src.migrations.versions import review_chunks
     from src.core.review.planning import build_chunks
     from src.core.review.work_store import metadata
+    from src.core.execution_attempts import metadata as execution_metadata
 
     fixtures = Path(__file__).parents[1] / "fixtures"
     captured = json.loads((fixtures / "deepseek/review.json").read_text())
@@ -180,8 +181,15 @@ def test_chunk_migration_creates_the_final_schema_and_supports_the_store(
         )
         review_chunks.upgrade()
     schema = inspect(engine)
-    assert set(schema.get_table_names()) == set(metadata.tables)
-    for table in metadata.tables.values():
+    tables = {**metadata.tables, **execution_metadata.tables}
+    assert set(schema.get_table_names()) == set(tables)
+    assert "lease" not in {
+        column["name"] for column in schema.get_columns("review_chunks")
+    }
+    assert "leased_until" not in {
+        column["name"] for column in schema.get_columns("review_chunks")
+    }
+    for table in tables.values():
         columns = {column["name"]: column for column in schema.get_columns(table.name)}
         assert set(columns) == set(table.c.keys())
         for column in table.c:
@@ -219,7 +227,7 @@ def test_chunk_migration_creates_the_final_schema_and_supports_the_store(
         review_chunks.downgrade()
         assert inspect(connection).get_table_names() == []
         review_chunks.upgrade()
-    assert set(inspect(engine).get_table_names()) == set(metadata.tables)
+    assert set(inspect(engine).get_table_names()) == set(tables)
 
 
 def test_cancelled_review_cannot_replay_a_completed_chunk(tmp_path):
@@ -243,3 +251,86 @@ def test_cancelled_review_cannot_replay_a_completed_chunk(tmp_path):
     store.cancel("run")
     with pytest.raises(RuntimeError, match="no longer active"):
         store.answer("run", "first")
+
+
+def test_execution_attempt_history_keeps_failures_and_retries_separate(tmp_path):
+    from src.core.execution_attempts import ExecutionAttempt
+
+    store = SQLReviewWork(
+        create_engine("sqlite:///" + str(tmp_path / "history.sqlite")),
+        create_schema=True,
+    )
+    store.open(
+        "run",
+        workspace="ours",
+        repository="owner/repo",
+        revision="head",
+        plan={"parts": [{"id": "chunk"}]},
+        maximum_calls=8,
+    )
+    first = store.claim("run", "chunk")
+    assert isinstance(first, ExecutionAttempt)
+    assert store.release("run", "chunk", first, error="ValueError")
+    second = store.claim("run", "chunk")
+    assert second.attempt == 2
+    assert not store.finish("run", "chunk", first, {"findings": ["stale"]})
+    assert store.finish("run", "chunk", second, {"findings": []})
+    history = store.attempt_history("run", "chunk")
+    assert [
+        (attempt.attempt, attempt.status, attempt.error) for attempt in history
+    ] == [(1, "failed", "ValueError"), (2, "succeeded", "")]
+    assert all(
+        attempt.finished_at is not None and attempt.finished_at >= attempt.started_at
+        for attempt in history
+    )
+    assert store.chunks("run")[0].attempts == 2
+
+
+def test_expired_execution_cannot_publish_without_a_replacement(tmp_path):
+    store = SQLReviewWork(
+        create_engine("sqlite:///" + str(tmp_path / "expired.sqlite")),
+        create_schema=True,
+    )
+    store.open(
+        "run",
+        workspace="ours",
+        repository="owner/repo",
+        revision="head",
+        plan={"parts": [{"id": "chunk"}]},
+        maximum_calls=8,
+    )
+    expired = store.claim("run", "chunk", seconds=-1)
+    assert not store.finish("run", "chunk", expired, {"findings": ["late"]})
+    current = store.claim("run", "chunk")
+    assert current and current.attempt == 2
+    assert store.attempt_history("run", "chunk")[0].status == "expired"
+    store.cancel("run")
+    assert not store.finish("run", "chunk", current, {"findings": []})
+    assert [attempt.status for attempt in store.attempt_history("run", "chunk")] == [
+        "expired",
+        "cancelled",
+    ]
+    assert store.chunks("run")[0].status == "failed"
+
+
+def test_concurrent_claims_create_only_one_execution_attempt(tmp_path):
+    store = SQLReviewWork(
+        create_engine(
+            "sqlite:///" + str(tmp_path / "claims.sqlite"),
+            connect_args={"check_same_thread": False},
+        ),
+        create_schema=True,
+    )
+    store.open(
+        "run",
+        workspace="ours",
+        repository="owner/repo",
+        revision="head",
+        plan={"parts": [{"id": "chunk"}]},
+        maximum_calls=8,
+    )
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        claims = list(pool.map(lambda _: store.claim("run", "chunk"), range(8)))
+    assert sum(attempt is not None for attempt in claims) == 1
+    assert len(store.attempt_history("run", "chunk")) == 1
+    assert store.chunks("run")[0].attempts == 1

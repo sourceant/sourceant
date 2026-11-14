@@ -347,6 +347,13 @@ class WebhookDeliveryTests(unittest.TestCase):
                 self.assertTrue(all(chunk.status == "done" for chunk in saved_chunks))
                 self.assertTrue(all(chunk.attempts == 1 for chunk in saved_chunks))
                 self.assertTrue(all(chunk.result is not None for chunk in saved_chunks))
+                for chunk in saved_chunks:
+                    attempts = SQLReviewWork(engine).attempt_history(
+                        review_id, chunk.id
+                    )
+                    self.assertEqual(len(attempts), 1)
+                    self.assertEqual(attempts[0].status, "succeeded")
+                    self.assertIsNotNone(attempts[0].finished_at)
             self.assertTrue(
                 all("create_requirement_tables.py" not in prompt for prompt in prompts)
             )

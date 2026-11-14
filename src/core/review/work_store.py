@@ -1,23 +1,23 @@
 import json
-from datetime import datetime, timedelta
-from secrets import token_hex
 
 from sqlalchemy import (
     Column,
-    DateTime,
     Integer,
     MetaData,
     String,
     Table,
     Text,
     JSON,
-    and_,
     insert,
-    or_,
     select,
     update,
 )
 from sqlalchemy.exc import IntegrityError
+from src.core.execution_attempts import (
+    ExecutionAttempt,
+    SQLExecutionAttempts,
+    metadata as execution_metadata,
+)
 
 metadata = MetaData()
 runs = Table(
@@ -38,8 +38,6 @@ chunk_table = Table(
     Column("review_id", String(64), primary_key=True),
     Column("id", String(128), primary_key=True),
     Column("status", String(32), nullable=False),
-    Column("lease", String(64), nullable=False),
-    Column("leased_until", DateTime, nullable=True),
     Column("result", JSON, nullable=True),
     Column("group", String(500), nullable=False),
     Column("files", JSON, nullable=False),
@@ -60,8 +58,10 @@ responses = Table(
 class SQLReviewWork:
     def __init__(self, engine, *, create_schema=False):
         self.engine = engine
+        self.executions = SQLExecutionAttempts()
         if create_schema:
             metadata.create_all(engine)
+            execution_metadata.create_all(engine)
 
     def open(
         self,
@@ -123,7 +123,6 @@ class SQLReviewWork:
                                     else ""
                                 ),
                                 input_tokens=part.get("input_tokens", 0),
-                                lease="",
                             )
                         )
             except IntegrityError:
@@ -169,53 +168,84 @@ class SQLReviewWork:
             if result.rowcount != 1:
                 raise RuntimeError("The review has no remaining model-call allowance")
 
-    def claim(self, identifier, part_id, *, seconds=900):
-        lease = token_hex(24)
+    @staticmethod
+    def _resource(identifier, chunk_id):
+        return f"review:{identifier}:chunk:{chunk_id}"
+
+    def claim(self, identifier, chunk_id, *, seconds=900):
+        resource = self._resource(identifier, chunk_id)
         with self.engine.begin() as connection:
-            active = (
+            now = self.executions.now(connection)
+            row = (
+                connection.execute(
+                    select(chunk_table).where(
+                        chunk_table.c.review_id == identifier,
+                        chunk_table.c.id == chunk_id,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None or row["status"] not in {"pending", "running"}:
+                return None
+            active_run = (
                 select(runs.c.id)
-                .where(runs.c.id == identifier, runs.c.state == "running")
+                .where(
+                    runs.c.id == identifier,
+                    runs.c.state == "running",
+                )
                 .exists()
             )
             result = connection.execute(
                 update(chunk_table)
                 .where(
                     chunk_table.c.review_id == identifier,
-                    chunk_table.c.id == part_id,
-                    active,
-                    or_(
-                        chunk_table.c.status == "pending",
-                        and_(
-                            chunk_table.c.status == "running",
-                            chunk_table.c.leased_until < datetime.utcnow(),
-                        ),
-                    ),
+                    chunk_table.c.id == chunk_id,
+                    chunk_table.c.attempts == row["attempts"],
+                    chunk_table.c.status.in_(("pending", "running")),
+                    active_run,
+                    ~self.executions.active(resource, now),
                 )
-                .values(
-                    status="running",
-                    attempts=chunk_table.c.attempts + 1,
-                    lease=lease,
-                    leased_until=datetime.utcnow() + timedelta(seconds=seconds),
-                )
+                .values(status="running", attempts=chunk_table.c.attempts + 1)
             )
-            return lease if result.rowcount == 1 else None
+            if result.rowcount != 1:
+                return None
+            return self.executions.start(
+                connection, resource, row["attempts"] + 1, seconds=seconds, now=now
+            )
 
-    def finish(self, identifier, part_id, lease, answer):
+    def finish(self, identifier, chunk_id, attempt: ExecutionAttempt, answer):
+        if attempt.resource != self._resource(identifier, chunk_id):
+            return False
         with self.engine.begin() as connection:
+            now = self.executions.now(connection)
             result = connection.execute(
                 update(chunk_table)
                 .where(
                     chunk_table.c.review_id == identifier,
-                    chunk_table.c.id == part_id,
+                    chunk_table.c.id == chunk_id,
+                    chunk_table.c.attempts == attempt.attempt,
                     select(runs.c.id)
                     .where(runs.c.id == identifier, runs.c.state == "running")
                     .exists(),
-                    chunk_table.c.lease == lease,
+                    self.executions.owns(attempt, now),
                     chunk_table.c.status == "running",
                 )
-                .values(status="done", result=answer, leased_until=None)
+                .values(status="done", result=answer)
             )
-            return result.rowcount == 1
+            if result.rowcount != 1:
+                return False
+            if not self.executions.finish(
+                connection, attempt, status="succeeded", now=now
+            ):
+                raise RuntimeError("The execution attempt is no longer active")
+            return True
+
+    def attempt_history(self, identifier, chunk_id):
+        with self.engine.connect() as connection:
+            return self.executions.history(
+                connection, self._resource(identifier, chunk_id)
+            )
 
     def answer(self, identifier, chunk_id):
         self.ensure_active(identifier)
@@ -269,10 +299,7 @@ class SQLReviewWork:
             )
 
     def cancel(self, identifier):
-        with self.engine.begin() as connection:
-            connection.execute(
-                update(runs).where(runs.c.id == identifier).values(state="cancelled")
-            )
+        self._stop(identifier, "cancelled")
 
     def response(self, identifier, key):
         self.ensure_active(identifier)
@@ -328,18 +355,34 @@ class SQLReviewWork:
                 },
             }
 
-    def release(self, identifier, part_id, lease):
+    def release(self, identifier, chunk_id, attempt: ExecutionAttempt, *, error=""):
+        if attempt.resource != self._resource(identifier, chunk_id):
+            return False
         with self.engine.begin() as connection:
-            connection.execute(
+            now = self.executions.now(connection)
+            self.executions.expire(connection, [attempt.resource], now)
+            result = connection.execute(
                 update(chunk_table)
                 .where(
                     chunk_table.c.review_id == identifier,
-                    chunk_table.c.id == part_id,
+                    chunk_table.c.id == chunk_id,
+                    chunk_table.c.attempts == attempt.attempt,
                     chunk_table.c.status == "running",
-                    chunk_table.c.lease == lease,
+                    self.executions.owns(attempt, now),
                 )
-                .values(status="pending", lease="", leased_until=None)
+                .values(status="pending")
             )
+            if result.rowcount != 1:
+                return False
+            if not self.executions.finish(
+                connection,
+                attempt,
+                status="failed" if error else "released",
+                now=now,
+                error=error,
+            ):
+                raise RuntimeError("The execution attempt is no longer active")
+            return True
 
     def ensure_active(self, identifier):
         with self.engine.connect() as connection:
@@ -350,21 +393,43 @@ class SQLReviewWork:
             raise RuntimeError("The review run is no longer active")
 
     def fail(self, identifier):
+        self._stop(identifier, "failed")
+
+    def _stop(self, identifier, state):
         with self.engine.begin() as connection:
-            result = connection.execute(
+            changed = connection.execute(
                 update(runs)
-                .where(runs.c.id == identifier, runs.c.state == "running")
-                .values(state="failed")
-            )
-            if result.rowcount == 1:
-                connection.execute(
-                    update(chunk_table)
-                    .where(
-                        chunk_table.c.review_id == identifier,
-                        chunk_table.c.status.in_(("pending", "running")),
-                    )
-                    .values(status="failed", leased_until=None)
+                .where(
+                    runs.c.id == identifier,
+                    runs.c.state == "running",
                 )
+                .values(state=state)
+            )
+            if changed.rowcount != 1:
+                return
+            connection.execute(
+                update(chunk_table)
+                .where(
+                    chunk_table.c.review_id == identifier,
+                    chunk_table.c.status.in_(("pending", "running")),
+                )
+                .values(status="failed")
+            )
+            resources = [
+                self._resource(identifier, chunk_id)
+                for chunk_id in connection.execute(
+                    select(chunk_table.c.id).where(
+                        chunk_table.c.review_id == identifier
+                    )
+                ).scalars()
+            ]
+            self.executions.stop(
+                connection,
+                resources,
+                status=state,
+                now=self.executions.now(connection),
+                error=f"Review {state}",
+            )
 
     def complete(self, identifier):
         with self.engine.begin() as connection:

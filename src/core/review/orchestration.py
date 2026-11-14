@@ -73,7 +73,7 @@ class ParallelReviewOrchestrator:
         def read(task):
             participant, repetition = task
             identity = f"{participant.name}:{repetition}"
-            lease = part_id = None
+            execution_attempt = part_id = None
             from src.core.review_performance import current_budget
 
             active_budget = current_budget()
@@ -109,13 +109,17 @@ class ParallelReviewOrchestrator:
                             else None
                         )
                         return ParticipantOutcome(participant.name, repetition, answer)
-                    lease = journal.claim(active_budget.run_id, part_id)
-                    if lease is None:
+                    execution_attempt = journal.claim(
+                        active_budget.run_id,
+                        part_id,
+                        seconds=max(1, int(active_budget.remaining())) + 60,
+                    )
+                    if execution_attempt is None:
                         from src.core.review_budget import ReviewContinuation
 
                         active_budget.continuation = True
                         raise ReviewContinuation(
-                            "Another worker owns this review chunk"
+                            "Another execution owns this review chunk"
                         )
                 options = dict(request.options)
                 if participant.investigations:
@@ -168,13 +172,13 @@ class ParallelReviewOrchestrator:
                     )
                 if answer is not None and not isinstance(answer, CodeReview):
                     raise ValueError("A reviewer must return CodeReview or None")
-                if lease:
+                if execution_attempt:
                     from dataclasses import asdict
 
                     persisted = journal.finish(
                         active_budget.run_id,
                         part_id,
-                        lease,
+                        execution_attempt,
                         {
                             "review": (
                                 answer.model_dump(mode="json") if answer else None
@@ -186,11 +190,24 @@ class ParallelReviewOrchestrator:
                         },
                     )
                     if not persisted:
-                        raise RuntimeError("The review chunk lease is no longer active")
+                        raise RuntimeError(
+                            "The chunk execution attempt is no longer active"
+                        )
                 return ParticipantOutcome(participant.name, repetition, answer)
             except Exception as error:
-                if lease:
-                    journal.release(active_budget.run_id, part_id, lease)
+                if execution_attempt:
+                    from src.core.review_budget import ReviewContinuation, ReviewStopped
+
+                    journal.release(
+                        active_budget.run_id,
+                        part_id,
+                        execution_attempt,
+                        error=(
+                            ""
+                            if isinstance(error, (ReviewContinuation, ReviewStopped))
+                            else type(error).__name__
+                        ),
+                    )
                 logger.warning(
                     "review_participant_failed session=%s stage=discovery participant=%s repetition=%s error=%s reason=%s",
                     session_id(),

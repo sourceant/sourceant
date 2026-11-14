@@ -30,8 +30,6 @@ def upgrade():
         sa.Column("result", sa.JSON(), nullable=True),
         sa.Column("diff", sa.Text(), nullable=False),
         sa.Column("input_tokens", sa.Integer(), nullable=False),
-        sa.Column("lease", sa.String(64), nullable=False),
-        sa.Column("leased_until", sa.DateTime(), nullable=True),
     )
     op.create_table(
         "review_responses",
@@ -39,9 +37,28 @@ def upgrade():
         sa.Column("id", sa.String(64), primary_key=True),
         sa.Column("answer", sa.JSON(), nullable=False),
     )
+    op.create_table(
+        "execution_attempts",
+        sa.Column("claim_token", sa.String(64), primary_key=True),
+        sa.Column("resource", sa.String(255), nullable=False),
+        sa.Column("attempt", sa.Integer(), nullable=False),
+        sa.Column("status", sa.String(32), nullable=False),
+        sa.Column("started_at", sa.DateTime(), nullable=False),
+        sa.Column("claim_expires_at", sa.DateTime(), nullable=False),
+        sa.Column("finished_at", sa.DateTime(), nullable=True),
+        sa.Column("error", sa.Text(), nullable=False),
+        sa.UniqueConstraint("resource", "attempt", name="uq_execution_attempt_number"),
+    )
+    op.create_index(
+        "ix_execution_attempt_resource",
+        "execution_attempts",
+        ["resource", "status", "claim_expires_at"],
+    )
 
 
 def downgrade():
+    op.drop_index("ix_execution_attempt_resource", table_name="execution_attempts")
+    op.drop_table("execution_attempts")
     op.drop_table("review_responses")
     op.drop_table("review_chunks")
     op.drop_table("review_runs")
