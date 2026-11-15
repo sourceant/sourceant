@@ -1055,13 +1055,17 @@ class CodeReviewerPlugin(BasePlugin):
 
             def completed(connection=None):
                 if incomplete:
-                    from src.core.domain_events import emit
+                    from src.core.events import emit
 
                     emit(
                         type="review.coverage_incomplete",
                         workspace=workspace,
-                        repository=repo_full_name,
-                        review=active_budget.run_id if active_budget else "",
+                        data={
+                            "repository": repo_full_name,
+                            "review": active_budget.run_id if active_budget else "",
+                            "provider": "",
+                            "model": "",
+                        },
                         session=connection,
                     )
 
@@ -1196,7 +1200,7 @@ class CodeReviewerPlugin(BasePlugin):
                         "message": "Review stopped",
                         "error_type": "review_cancelled",
                     }
-                from src.core.domain_events import report_failure
+                from src.core.review.events import report_failure
 
                 pending_budget.work.fail(
                     pending_budget.run_id,
@@ -1209,7 +1213,7 @@ class CodeReviewerPlugin(BasePlugin):
                     ),
                 )
             else:
-                from src.core.domain_events import report_failure
+                from src.core.review.events import report_failure
 
                 report_failure(
                     e,

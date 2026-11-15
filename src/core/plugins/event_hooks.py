@@ -30,6 +30,7 @@ class HookRegistration:
     callback: Callable
     priority: HookPriority
     async_callback: bool
+    transactional: bool = False
 
     def __lt__(self, other):
         """Sort by priority (lower number = higher priority)."""
@@ -304,6 +305,8 @@ class EventHooks:
         callback: Callable,
         event_types: List[str],
         priority: HookPriority = HookPriority.NORMAL,
+        *,
+        transactional: bool = False,
     ) -> bool:
         """
         Subscribe a plugin to specific event types for broadcasting.
@@ -325,6 +328,7 @@ class EventHooks:
             callback=callback,
             priority=priority,
             async_callback=is_async,
+            transactional=transactional,
         )
 
         # Subscribe to each event type
@@ -338,6 +342,21 @@ class EventHooks:
             logger.info(f"Subscribed plugin {plugin_name} to event {event_type}")
 
         return True
+
+    def dispatch_event(
+        self, event_type: str, event_data: Dict[str, Any], *, session=None
+    ):
+        subscribers = list(self._event_subscribers.get(event_type, []))
+        if any(registration.async_callback for registration in subscribers):
+            raise TypeError("Synchronous event dispatch requires synchronous listeners")
+        results = {}
+        for registration in subscribers:
+            if registration.transactional:
+                result = registration.callback(event_type, event_data, session=session)
+            else:
+                result = registration.callback(event_type, event_data)
+            results[registration.plugin_name] = result
+        return results
 
     async def broadcast_event(
         self,
@@ -376,10 +395,13 @@ class EventHooks:
                     f"Executing {event_type} handler for plugin {registration.plugin_name}"
                 )
 
+                context = {"session": None} if registration.transactional else {}
                 if registration.async_callback:
-                    result = await registration.callback(event_type, event_data)
+                    result = await registration.callback(
+                        event_type, event_data, **context
+                    )
                 else:
-                    result = registration.callback(event_type, event_data)
+                    result = registration.callback(event_type, event_data, **context)
 
                 results[registration.plugin_name] = result
 
