@@ -10,6 +10,7 @@ from enum import IntEnum
 from typing import Dict, List, Callable, Any, Optional, Union
 from dataclasses import dataclass
 from src.utils.logger import logger
+from sourceant_events import Event, EventBus
 
 
 class HookPriority(IntEnum):
@@ -109,8 +110,9 @@ class EventHooks:
                 f"Invalid hook name: {hook_name}. Valid hooks: {self.HOOK_POINTS}"
             )
 
-        # Determine if callback is async
-        is_async = asyncio.iscoroutinefunction(callback)
+        is_async = asyncio.iscoroutinefunction(callback) or asyncio.iscoroutinefunction(
+            getattr(callback, "__call__", None)
+        )
 
         registration = HookRegistration(
             plugin_name=plugin_name,
@@ -320,8 +322,9 @@ class EventHooks:
         Returns:
             True if subscription successful
         """
-        # Determine if callback is async
-        is_async = asyncio.iscoroutinefunction(callback)
+        is_async = asyncio.iscoroutinefunction(callback) or asyncio.iscoroutinefunction(
+            getattr(callback, "__call__", None)
+        )
 
         registration = HookRegistration(
             plugin_name=plugin_name,
@@ -343,20 +346,36 @@ class EventHooks:
 
         return True
 
+    def _event_bus(self, event_type, event_data):
+        bus = EventBus()
+        registrations = {}
+        for registration in list(self._event_subscribers.get(event_type, [])):
+
+            def invoke(event, context, registration=registration):
+                kwargs = {"session": context} if registration.transactional else {}
+                return registration.callback(event.type, event_data, **kwargs)
+
+            async def invoke_async(event, context, registration=registration):
+                kwargs = {"session": context} if registration.transactional else {}
+                return await registration.callback(event.type, event_data, **kwargs)
+
+            subscription = bus.listen(
+                event_type,
+                invoke_async if registration.async_callback else invoke,
+                priority=int(registration.priority),
+                with_context=True,
+            )
+            registrations[subscription] = registration
+        return bus, Event(type=event_type, data=event_data), registrations
+
     def dispatch_event(
         self, event_type: str, event_data: Dict[str, Any], *, session=None
     ):
-        subscribers = list(self._event_subscribers.get(event_type, []))
-        if any(registration.async_callback for registration in subscribers):
-            raise TypeError("Synchronous event dispatch requires synchronous listeners")
-        results = {}
-        for registration in subscribers:
-            if registration.transactional:
-                result = registration.callback(event_type, event_data, session=session)
-            else:
-                result = registration.callback(event_type, event_data)
-            results[registration.plugin_name] = result
-        return results
+        bus, event, registrations = self._event_bus(event_type, event_data)
+        return {
+            registrations[result.subscription].plugin_name: result.value
+            for result in bus.dispatch(event, context=session)
+        }
 
     async def broadcast_event(
         self,
@@ -364,65 +383,26 @@ class EventHooks:
         event_data: Dict[str, Any],
         source_plugin: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Broadcast an event to all subscribed plugins.
+        bus, event, registrations = self._event_bus(event_type, event_data)
+        failed = set()
 
-        Args:
-            event_type: Type of event to broadcast
-            event_data: Event data to pass to subscribers
-            source_plugin: Plugin that triggered the event
-
-        Returns:
-            Dictionary with results from all subscribers
-        """
-        logger.debug(
-            f"Broadcasting event {event_type} from {source_plugin or 'system'}"
-        )
+        def on_error(subscription, error):
+            registration = registrations[subscription]
+            failed.add(subscription)
+            logger.error(
+                f"Error executing {event_type} handler for plugin {registration.plugin_name}: {error}"
+            )
+            return {"error": str(error)}
 
         results = {}
-
-        # Get subscribers for this event type
-        subscribers = self._event_subscribers.get(event_type, [])
-
-        if not subscribers:
-            logger.debug(f"No subscribers for event {event_type}")
-            return results
-
-        # Execute all subscribers
-        for registration in subscribers:
-            try:
-                logger.debug(
-                    f"Executing {event_type} handler for plugin {registration.plugin_name}"
+        for result in await bus.dispatch_async(event, on_error=on_error):
+            registration = registrations[result.subscription]
+            results[registration.plugin_name] = result.value
+            if result.subscription not in failed:
+                stats = self._hook_stats.setdefault(event_type, {})
+                stats[registration.plugin_name] = (
+                    stats.get(registration.plugin_name, 0) + 1
                 )
-
-                context = {"session": None} if registration.transactional else {}
-                if registration.async_callback:
-                    result = await registration.callback(
-                        event_type, event_data, **context
-                    )
-                else:
-                    result = registration.callback(event_type, event_data, **context)
-
-                results[registration.plugin_name] = result
-
-                # Update statistics
-                if event_type not in self._hook_stats:
-                    self._hook_stats[event_type] = {}
-
-                plugin_stats = self._hook_stats[event_type]
-                plugin_stats[registration.plugin_name] = (
-                    plugin_stats.get(registration.plugin_name, 0) + 1
-                )
-
-            except Exception as e:
-                logger.error(
-                    f"Error executing {event_type} handler for plugin {registration.plugin_name}: {e}"
-                )
-                results[registration.plugin_name] = {"error": str(e)}
-
-        logger.debug(
-            f"Event {event_type} broadcast completed with {len(results)} responses"
-        )
         return results
 
 

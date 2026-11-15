@@ -1,12 +1,8 @@
-from __future__ import annotations
-
-import hashlib
-import hmac
-import json
 import os
-import time
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+from sourceant_events import Event
+from sourceant_events.http import SignedHTTP
+from sourceant_events.jobs import EventHandler, QueuedListener
 
 from src.core.jobs import BACKGROUND, JobOutcome, JobRequest, enqueue
 
@@ -23,16 +19,27 @@ def forward(event_type, event, *, session=None):
         return None
     if not os.getenv("EVENTS_SECRET"):
         raise ValueError("Event delivery requires a signing secret")
-    return enqueue(
-        JobRequest(
+    queued = QueuedListener(
+        enqueue,
+        lambda occurrence: JobRequest(
             BACKGROUND,
             EventDelivery.type,
-            payload=event,
             max_attempts=12,
             deadline_seconds=30,
         ).for_(event["workspace"]),
-        session=session,
     )
+    payload = dict(event)
+    payload["metadata"] = {
+        **event.get("metadata", {}),
+        "workspace": str(event["workspace"]),
+    }
+    return queued(Event.from_dict(payload), session)
+
+
+def gateway_payload(event):
+    payload = event.to_dict()
+    payload["workspace"] = event.metadata.get("workspace", "")
+    return payload
 
 
 class EventDelivery:
@@ -43,25 +50,17 @@ class EventDelivery:
         secret = os.getenv("EVENTS_SECRET")
         if not url or not secret:
             return JobOutcome.failed("Event destination is unavailable", retry=True)
-        body = json.dumps(dict(job.payload), separators=(",", ":")).encode()
-        timestamp = str(int(time.time()))
-        signature = hmac.new(
-            secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
-        ).hexdigest()
-        request = Request(
+        delivery = SignedHTTP(
             url,
-            data=body,
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "X-Sourceant-Timestamp": timestamp,
-                "X-Sourceant-Signature": signature,
-            },
+            secret,
+            timestamp_header="X-Sourceant-Timestamp",
+            signature_header="X-Sourceant-Signature",
+            encode=gateway_payload,
         )
-        try:
-            with urlopen(request, timeout=15) as response:
-                if 200 <= response.status < 300:
-                    return JobOutcome.ok()
-        except (HTTPError, URLError, TimeoutError, OSError):
-            return JobOutcome.failed("Event delivery was not acknowledged", retry=True)
-        return JobOutcome.failed("Event delivery was not acknowledged", retry=True)
+        outcome = EventHandler(self.type, delivery).run(job)
+        return JobOutcome(
+            succeeded=outcome.succeeded,
+            error=outcome.error,
+            retry=outcome.retry,
+            retry_in=outcome.retry_in,
+        )
