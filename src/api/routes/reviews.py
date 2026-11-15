@@ -84,6 +84,8 @@ async def rerun_review(
     pull_request = PullRequest(
         number=pr["number"],
         title=pr.get("title"),
+        body=pr.get("body"),
+        changed_files=pr.get("changed_files", 0),
         draft=pr.get("draft", False),
         merged=pr.get("merged", False),
         base_sha=(pr.get("base") or {}).get("sha"),
@@ -164,10 +166,17 @@ def _preview_result(job):
     from src.core.cache import cache
     from src.events.review_previews import RESULTS
 
+    progress = {}
+    run_id = cache().get("review.run", str(job.id))
+    if run_id:
+        from src.config.db import get_engine
+        from src.core.review.work_store import SQLReviewWork
+
+        progress = {"progress": SQLReviewWork(get_engine()).progress(run_id)}
     if job.state == "succeeded":
         result = cache().get(RESULTS, str(job.id))
         if result:
-            return {**json.loads(result), "job_id": job.id, "cached": False}
+            return {**json.loads(result), "job_id": job.id, "cached": False, **progress}
         return {
             "status": "error",
             "message": "The review result has expired. Request a new review.",
@@ -176,13 +185,14 @@ def _preview_result(job):
         return {
             "status": job.state,
             "job_id": job.id,
+            **progress,
             "message": (
                 "Review stopped"
                 if job.state == "cancelled"
                 else job.error or "Review failed"
             ),
         }
-    return {"status": job.state, "job_id": job.id}
+    return {"status": job.state, "job_id": job.id, **progress}
 
 
 @router.get("/result")
@@ -218,6 +228,12 @@ async def stop_review_run(job_id: int, user: dict = Depends(get_current_user)):
 
     job = _preview_job(job_id, user)
     job_store().cancel(job.id)
+    run_id = cache().get("review.run", str(job.id))
+    if run_id:
+        from src.config.db import get_engine
+        from src.core.review.work_store import SQLReviewWork
+
+        SQLReviewWork(get_engine()).cancel(run_id)
     delivery = cache().get("review.preview-delivery", str(job.id))
     if delivery:
         job_store().cancel(int(delivery))

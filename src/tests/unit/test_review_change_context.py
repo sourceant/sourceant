@@ -600,7 +600,9 @@ def test_a_change_with_nothing_readable_still_reviews(
     )
 
     assert result["status"] == "success"
-    assert instance.generate_code_review.call_args.kwargs["requirements"] is None
+    instance.generate_code_review.assert_not_called()
+    assert result["verdict"] == "COMMENT"
+    assert result["review"]["execution"]["artifacts"]
 
 
 @patch("src.plugins.builtin.code_reviewer.plugin.save_review_record")

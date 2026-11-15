@@ -26,7 +26,7 @@ from src.tests.test_dashboard_backend_api import api as api
 FIXTURES = Path(__file__).parent / "fixtures/review-overview"
 
 
-@pytest.mark.parametrize("budget", [100000, 1])
+@pytest.mark.parametrize("budget", [100000, 2000])
 @pytest.mark.parametrize("with_findings", [False, True])
 @pytest.mark.parametrize("include_nitpicks", [False, True])
 def test_http_preview_overview_reads_all_pr_changes(
@@ -62,6 +62,13 @@ def test_http_preview_overview_reads_all_pr_changes(
     github.get_diff.return_value = (FIXTURES / "full.diff").read_text()
     github.get_existing_bot_review_comments.return_value = []
     github.get_previous_review_summary.return_value = "Only changes priority."
+    source = json.loads((FIXTURES / "head-files.json").read_text())
+    github.get_file_content.side_effect = lambda owner, repo, path, sha: source.get(
+        path
+    )
+    from src.core.analysis import Analysis
+
+    monkeypatch.setattr(reviewer_plugin, "examine", lambda *args, **kwargs: Analysis())
     monkeypatch.setattr(reviewer_plugin, "GitHub", lambda: github)
     provider = MagicMock()
     provider.count_tokens.side_effect = len
@@ -117,10 +124,15 @@ def test_http_preview_overview_reads_all_pr_changes(
     monkeypatch.setattr(
         reviewer_plugin, "provider_for", lambda *args, **kwargs: provider
     )
-    monkeypatch.setattr(
-        "src.plugins.builtin.code_reviewer.reviewing.CodeReviewer._budget",
-        staticmethod(lambda configuration: budget),
+    from src.core.review.work_store import SQLReviewWork
+
+    SQLReviewWork(engine, create_schema=True)
+    configured_budget = client.put(
+        "/api/settings/user/1/review.reading_budget",
+        headers=headers(),
+        json={"value": budget},
     )
+    assert configured_budget.status_code == 200, configured_budget.text
     credentials = headers()
     claims = jwt.decode(
         credentials["Authorization"][7:],
@@ -182,7 +194,10 @@ def test_http_preview_overview_reads_all_pr_changes(
         assert (finding.comment in rendered) == (
             include_nitpicks or finding.category == SuggestionCategory.BUG
         )
-    assert provider.generate_summary.call_count == (3 if budget == 1 else 1)
+    if budget == 100000:
+        assert provider.generate_summary.call_count == 1
+    else:
+        assert provider.generate_summary.call_count > 1
     assert all(
         call.kwargs["include_nitpicks"] is include_nitpicks
         for call in provider.generate_summary.call_args_list
@@ -491,3 +506,69 @@ def test_http_file_reads_one_whole_file_at_the_head_of_the_change(api, monkeypat
     assert body["truncated"] is False
     assert missing.status_code == 404
     assert asked == [metadata["head"]["sha"], metadata["base"]["sha"]]
+
+
+def test_infeasible_allowance_rejects_http_review_before_any_model_call(
+    api, monkeypatch
+):
+    client, headers, _, engine = api
+    Config.__table__.create(engine, checkfirst=True)
+    monkeypatch.setattr("src.config.db.engine", engine)
+    client.app.include_router(settings.router, prefix="/api/settings")
+    client.app.include_router(reviews.router, prefix="/api/reviews")
+    for scope, identifier, key, value in (
+        ("user", "1", "review.reading_budget", 2000),
+        ("workspace", "one", "review.large_change_maximum_model_calls", 1),
+    ):
+        response = client.put(
+            f"/api/settings/{scope}/{identifier}/{key}",
+            headers=headers(),
+            json={"value": value},
+        )
+        assert response.status_code == 200, response.text
+    monkeypatch.setattr(
+        "src.api.routes.requirements.connected_names",
+        lambda user: ["sourceant/sourceant"],
+    )
+    metadata = json.loads((FIXTURES / "pull.json").read_text())
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "get",
+        AsyncMock(return_value=httpx.Response(200, json=metadata)),
+    )
+    monkeypatch.setattr(
+        plugin_registry, "get_plugin", lambda name: reviewer_plugin.CodeReviewerPlugin()
+    )
+    github = MagicMock()
+    github.get_diff.return_value = (FIXTURES / "full.diff").read_text()
+    monkeypatch.setattr(reviewer_plugin, "GitHub", lambda: github)
+    provider = MagicMock()
+    provider.count_tokens.side_effect = len
+    provider.missing_credentials.return_value = []
+    monkeypatch.setattr(
+        reviewer_plugin, "provider_for", lambda *args, **kwargs: provider
+    )
+    credentials = headers()
+    claims = jwt.decode(
+        credentials["Authorization"][7:],
+        "dashboard-backend-test-secret",
+        algorithms=["HS256"],
+    )
+    claims["github_token"] = "your-api-key-here"
+    credentials["Authorization"] = "Bearer " + jwt.encode(
+        claims, "dashboard-backend-test-secret", algorithm="HS256"
+    )
+    result = client.post(
+        "/api/reviews/rerun",
+        headers=credentials,
+        json={
+            "repo": "sourceant/sourceant",
+            "number": metadata["number"],
+            "refresh": True,
+        },
+    )
+    assert result.status_code == 200
+    assert result.json()["data"]["status"] == "error"
+    assert "before discovery" in result.json()["data"]["message"]
+    provider.generate_code_review.assert_not_called()
+    provider.generate_summary.assert_not_called()

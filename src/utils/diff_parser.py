@@ -215,7 +215,6 @@ class ParsedDiff:
 
         if patched_file.is_removed_file:
             parts.append("[file deleted]")
-            return "\n".join(parts)
 
         if patched_file.is_rename:
             parts.append(

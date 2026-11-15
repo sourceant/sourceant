@@ -102,10 +102,21 @@ def target_source(
 ) -> tuple[str, tuple[str, ...]]:
     excerpts, omitted = [], []
     remaining = max_chars
+    removed = (
+        {
+            file.file_path
+            for file in parse_diff(task.diff)
+            if file._patched_file.is_removed_file
+        }
+        if task.diff
+        else set()
+    )
     for target in task.targets:
         path = PurePosixPath(target.path)
         if path.is_absolute() or ".." in path.parts or ".git" in path.parts:
             raise ValueError("Investigation source must be repository relative")
+        if target.path in removed:
+            continue
         source = read_content(target.path) if read_content else None
         if not isinstance(source, str):
             omitted.append(
@@ -122,6 +133,12 @@ def target_source(
                 )
             }
         )
+        if task.diff:
+            wanted = [
+                line
+                for line in wanted
+                if not any(start <= line <= end for _, _, start, end in target.ranges)
+            ]
         header = (
             "\n" if excerpts else ""
         ) + f"Investigation head source: {target.path}\n"

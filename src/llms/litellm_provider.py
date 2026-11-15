@@ -6,7 +6,7 @@ import litellm
 from litellm.exceptions import BadRequestError
 from pydantic import ValidationError
 
-from src.llms.errors import LLMError
+from src.llms.errors import LLMError, OutputTruncated
 from src.llms.llm_interface import LLMInterface
 from src.prompts.prompts import Prompts
 from src.utils.diff_parser import ParsedDiff
@@ -43,6 +43,7 @@ RESPONSES = "model-response"
 # raises for it is its own, and there is one of those for every provider.
 CACHE_REFUSALS = ("cache", "cached_content", "cachedcontents", "ephemeral")
 _output_budget = ContextVar("model_output_budget", default=0)
+_validation_attempt = ContextVar("model_validation_attempt", default=0)
 
 
 def _escape_json_controls(written: str) -> str:
@@ -134,6 +135,65 @@ class LiteLLMProvider(LLMInterface):
                         **kwargs.get("extra_body", {}),
                         "reasoning_effort": self._reasoning_effort,
                     }
+        response_key = None
+        if budget and budget.work is not None:
+            budget.check_current()
+            from hashlib import sha256
+            from src.core.review_performance import reading_identity, expert_identity
+
+            response_key = sha256(
+                json.dumps(
+                    [
+                        kwargs,
+                        self.model,
+                        self._api_key,
+                        self._api_base,
+                        reading_identity.get(),
+                        expert_identity.get(),
+                        call_purpose.get(),
+                        _validation_attempt.get(),
+                    ],
+                    sort_keys=True,
+                    default=lambda value: (
+                        value.model_json_schema()
+                        if hasattr(value, "model_json_schema")
+                        else str(value)
+                    ),
+                ).encode()
+            ).hexdigest()
+            budget.work.ensure_active(budget.run_id)
+            cached = budget.work.response(budget.run_id, response_key)
+            if cached is not None:
+                replayed = litellm.ModelResponse(**cached)
+                replayed._hidden_params["sourceant_replayed"] = True
+                return replayed
+        if budget:
+            prompt_tokens = litellm.token_counter(
+                model=self.model,
+                messages=kwargs.get("messages", ()),
+                tools=kwargs.get("tools"),
+                tool_choice=kwargs.get("tool_choice"),
+            )
+            response_format = kwargs.get("response_format")
+            if response_format is not None:
+                schema = (
+                    response_format.model_json_schema()
+                    if hasattr(response_format, "model_json_schema")
+                    else response_format
+                )
+                prompt_tokens += self.count_tokens(json.dumps(schema, sort_keys=True))
+            reserve = int(
+                kwargs.get("max_tokens")
+                or kwargs.get("max_completion_tokens")
+                or output_limit
+                or budget.output_tokens
+            )
+            if prompt_tokens + reserve > self.token_limit:
+                from src.core.review.planning import ReviewCapacityError
+
+                raise ReviewCapacityError(
+                    "The complete model prompt and output reserve exceed the model context window"
+                )
         with model_call(self.model):
             if budget:
                 kwargs["timeout"] = min(
@@ -142,7 +202,12 @@ class LiteLLMProvider(LLMInterface):
                 )
             trace_request(kwargs, call_purpose.get())
             try:
-                return litellm.completion(**kwargs)
+                response = litellm.completion(**kwargs)
+                if response_key is not None:
+                    budget.work.save_response(
+                        budget.run_id, response_key, response.model_dump(mode="json")
+                    )
+                return response
             except Exception as error:
                 trace_emit(
                     TraceKind.EXCHANGE,
@@ -159,6 +224,9 @@ class LiteLLMProvider(LLMInterface):
         taken from the prompt here would see neither the system prompt nor the
         answer, and the answer is the expensive half.
         """
+        hidden = getattr(response, "_hidden_params", {})
+        if isinstance(hidden, dict) and hidden.get("sourceant_replayed"):
+            return
         from src.core.usage import record_completion
 
         trace_exchange(response, purpose)
@@ -222,6 +290,11 @@ class LiteLLMProvider(LLMInterface):
 
     def count_tokens(self, text: str) -> int:
         return litellm.token_counter(model=self.model, text=text)
+
+    def review_input_tokens(self, diff: str) -> int:
+        from src.utils.diff_parser import parse_diff
+
+        return self.count_tokens(self._build_decoupled_diff(parse_diff(diff)))
 
     def _caches_prompts(self) -> bool:
         """Whether this model can be told which part of a prompt to keep."""
@@ -417,9 +490,11 @@ class LiteLLMProvider(LLMInterface):
         )
         for attempt in range(2):
             token = _output_budget.set(budget)
+            attempt_token = _validation_attempt.set(attempt)
             try:
                 response = ask()
             finally:
+                _validation_attempt.reset(attempt_token)
                 _output_budget.reset(token)
             self._spent(response, purpose)
             written = response.choices[0].message.content
@@ -433,7 +508,7 @@ class LiteLLMProvider(LLMInterface):
                         budget,
                     )
                     continue
-                raise LLMError.wrapping(
+                raise OutputTruncated.wrapping(
                     f"{purpose} output budget exhausted before a valid response",
                     ValueError("Truncated model response"),
                 )
