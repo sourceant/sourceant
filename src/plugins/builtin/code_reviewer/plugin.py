@@ -1184,6 +1184,9 @@ class CodeReviewerPlugin(BasePlugin):
             else:
                 report_failure(e, workspace=workspace, repository=repository_full_name)
             logger.error(f"Error generating/posting review: {e}", exc_info=True)
+            from src.core.notifications import report_failure
+
+            report_failure(e, workspace=workspace, repository=repository.full_name)
             return {
                 "status": "error",
                 "message": str(e),

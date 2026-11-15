@@ -175,6 +175,19 @@ class EventDispatcher:
             )
 
             logger.debug(f"Event broadcast results: {list(broadcast_results.keys())}")
+            failures = [
+                str(answer["error"])
+                for answer in broadcast_results.values()
+                if isinstance(answer, dict) and answer.get("error")
+            ]
+            if failures and repository_event.type == "pull_request":
+                from src.core.notifications import report_failure
+
+                report_failure(
+                    RuntimeError("; ".join(failures)),
+                    workspace=repository_event.payload.get("sourceant_workspace_id"),
+                    repository=repository_event.repository_full_name,
+                )
             return broadcast_results
 
         except Exception as e:
