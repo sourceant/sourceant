@@ -137,3 +137,29 @@ def test_failed_review_state_and_outbound_event_commit_together(monkeypatch):
     assert work.progress("run")["state"] == "failed"
     assert jobs.read(sent[0]).payload["data"]["review"] == "run"
     engine.dispose()
+
+
+def test_completion_rolls_back_when_its_coverage_event_cannot_be_saved(monkeypatch):
+    import pytest
+    from sqlalchemy import create_engine
+    from src.core.review.work_store import SQLReviewWork
+
+    engine = create_engine("sqlite://")
+    work = SQLReviewWork(engine, create_schema=True)
+    work.open(
+        "run",
+        workspace="1",
+        repository="owner/repo",
+        revision="head",
+        plan={"parts": []},
+        maximum_calls=3,
+    )
+
+    def unavailable(connection):
+        raise RuntimeError("Outbox unavailable")
+
+    with pytest.raises(RuntimeError, match="Outbox unavailable"):
+        work.complete("run", on_completed=unavailable)
+    assert work.progress("run")["state"] == "running"
+    assert work.complete("run")
+    engine.dispose()

@@ -433,7 +433,7 @@ class SQLReviewWork:
             if on_failed is not None:
                 on_failed(connection)
 
-    def complete(self, identifier):
+    def complete(self, identifier, *, on_completed=None):
         with self.engine.begin() as connection:
             unfinished = (
                 select(chunk_table.c.id)
@@ -452,4 +452,6 @@ class SQLReviewWork:
                 )
                 .values(state="done")
             )
+            if result.rowcount == 1 and on_completed is not None:
+                on_completed(connection)
             return result.rowcount == 1

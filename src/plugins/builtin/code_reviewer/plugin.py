@@ -1049,24 +1049,29 @@ class CodeReviewerPlugin(BasePlugin):
                     final_review = result.review
                     logger.info(f"Review modified by guard: {result.reason}")
 
-            if active_budget is not None and active_budget.work is not None:
-                if not active_budget.work.complete(active_budget.run_id):
-                    raise RuntimeError("The review run was stopped before publication")
+            incomplete = bool(
+                not final_review.coverage_complete or coverage.unread or artifacts
+            )
 
-            if not final_review.coverage_complete or coverage.unread or artifacts:
-                from src.core.domain_events import emit
+            def completed(connection=None):
+                if incomplete:
+                    from src.core.domain_events import emit
 
-                try:
                     emit(
                         type="review.coverage_incomplete",
                         workspace=workspace,
                         repository=repo_full_name,
                         review=active_budget.run_id if active_budget else "",
+                        session=connection,
                     )
-                except Exception:
-                    logger.error(
-                        "Could not persist review coverage event", exc_info=True
-                    )
+
+            if active_budget is not None and active_budget.work is not None:
+                if not active_budget.work.complete(
+                    active_budget.run_id, on_completed=completed
+                ):
+                    raise RuntimeError("The review run was stopped before publication")
+            else:
+                completed()
 
             # Post review to GitHub, unless this is a preview run
             post_result = None
