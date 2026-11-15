@@ -1053,6 +1053,21 @@ class CodeReviewerPlugin(BasePlugin):
                 if not active_budget.work.complete(active_budget.run_id):
                     raise RuntimeError("The review run was stopped before publication")
 
+            if not final_review.coverage_complete or coverage.unread or artifacts:
+                from src.core.domain_events import emit
+
+                try:
+                    emit(
+                        type="review.coverage_incomplete",
+                        workspace=workspace,
+                        repository=repo_full_name,
+                        review=active_budget.run_id if active_budget else "",
+                    )
+                except Exception:
+                    logger.error(
+                        "Could not persist review coverage event", exc_info=True
+                    )
+
             # Post review to GitHub, unless this is a preview run
             post_result = None
             if post:
@@ -1176,13 +1191,27 @@ class CodeReviewerPlugin(BasePlugin):
                         "message": "Review stopped",
                         "error_type": "review_cancelled",
                     }
-                pending_budget.work.fail(pending_budget.run_id)
-            try:
-                from src.core.notifications import report_failure
-            except ImportError:
-                pass
+                from src.core.domain_events import report_failure
+
+                pending_budget.work.fail(
+                    pending_budget.run_id,
+                    on_failed=lambda connection: report_failure(
+                        e,
+                        workspace=workspace,
+                        repository=repository_full_name,
+                        review=pending_budget.run_id,
+                        session=connection,
+                    ),
+                )
             else:
-                report_failure(e, workspace=workspace, repository=repository_full_name)
+                from src.core.domain_events import report_failure
+
+                report_failure(
+                    e,
+                    workspace=workspace,
+                    repository=repository_full_name,
+                    review=pending_budget.run_id if pending_budget else "",
+                )
             logger.error(f"Error generating/posting review: {e}", exc_info=True)
             return {
                 "status": "error",

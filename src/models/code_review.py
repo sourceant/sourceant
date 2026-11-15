@@ -432,6 +432,7 @@ class CodeReviewSummary(CodeReviewOverview):
 
 
 class CodeReview(BaseModel):
+    coverage_complete: bool = True
     execution: Optional[dict] = None
     """Represents a comprehensive code review with various feedback categories."""
 

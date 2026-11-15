@@ -120,7 +120,7 @@ def handler_for(
 ) -> Optional[JobHandler]:
     """The handler for one kind of work, or None when nothing claims it."""
     for handler in handlers(services):
-        if getattr(handler, "kind", None) == kind:
+        if (getattr(handler, "type", None) or getattr(handler, "kind", None)) == kind:
             return handler
     return None
 

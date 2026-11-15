@@ -208,7 +208,9 @@ class SQLJobStore:
         """
         if session is not None:
             connection = (
-                session.connection() if hasattr(session, "connection") else session
+                session.connection()
+                if callable(getattr(session, "connection", None))
+                else session
             )
             return self._insert(connection, request)
         with self._engine.begin() as connection:
