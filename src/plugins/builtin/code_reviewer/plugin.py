@@ -1049,9 +1049,33 @@ class CodeReviewerPlugin(BasePlugin):
                     final_review = result.review
                     logger.info(f"Review modified by guard: {result.reason}")
 
+            incomplete = bool(
+                not final_review.coverage_complete or coverage.unread or artifacts
+            )
+
+            def completed(connection=None):
+                if incomplete:
+                    from src.core.events import emit
+
+                    emit(
+                        type="review.coverage_incomplete",
+                        workspace=workspace,
+                        data={
+                            "repository": repo_full_name,
+                            "review": active_budget.run_id if active_budget else "",
+                            "provider": "",
+                            "model": "",
+                        },
+                        session=connection,
+                    )
+
             if active_budget is not None and active_budget.work is not None:
-                if not active_budget.work.complete(active_budget.run_id):
+                if not active_budget.work.complete(
+                    active_budget.run_id, on_completed=completed
+                ):
                     raise RuntimeError("The review run was stopped before publication")
+            else:
+                completed()
 
             # Post review to GitHub, unless this is a preview run
             post_result = None
@@ -1176,13 +1200,27 @@ class CodeReviewerPlugin(BasePlugin):
                         "message": "Review stopped",
                         "error_type": "review_cancelled",
                     }
-                pending_budget.work.fail(pending_budget.run_id)
-            try:
-                from src.core.notifications import report_failure
-            except ImportError:
-                pass
+                from src.core.review.events import report_failure
+
+                pending_budget.work.fail(
+                    pending_budget.run_id,
+                    on_failed=lambda connection: report_failure(
+                        e,
+                        workspace=workspace,
+                        repository=repository_full_name,
+                        review=pending_budget.run_id,
+                        session=connection,
+                    ),
+                )
             else:
-                report_failure(e, workspace=workspace, repository=repository_full_name)
+                from src.core.review.events import report_failure
+
+                report_failure(
+                    e,
+                    workspace=workspace,
+                    repository=repository_full_name,
+                    review=pending_budget.run_id if pending_budget else "",
+                )
             logger.error(f"Error generating/posting review: {e}", exc_info=True)
             return {
                 "status": "error",

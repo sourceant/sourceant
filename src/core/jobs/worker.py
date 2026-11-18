@@ -232,7 +232,9 @@ class Worker:
 
     def _handler(self, kind: str) -> Optional[JobHandler]:
         for handler in self._services.contributions(JobHandler):
-            if getattr(handler, "kind", None) == kind:
+            if (
+                getattr(handler, "type", None) or getattr(handler, "kind", None)
+            ) == kind:
                 return handler
         return None
 

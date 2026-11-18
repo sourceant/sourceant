@@ -1,0 +1,12 @@
+{
+  "message": "litellm.BadRequestError: DeepseekException - {\"error\":{\"message\":\"Insufficient Balance (request_id: dd66c266-5cbf-4baf-b6dd-877e03bb753d)\",\"type\":\"insufficient_balance_error\",\"param\":null,\"code\":\"invalid_request_error\"}}",
+  "reported_error": "code_reviewer: Premium discovery failed: LLMError; memory: litellm.BadRequestError: DeepseekException - {\"error\":{\"message\":\"Insufficient Balance (request_id: dd66c266-5cbf-4baf-b6dd-877e03bb753d)\",\"type\":\"insufficient_balance_error\",\"param\":null,\"code\":\"invalid_request_error\"}}",
+  "body": {
+    "error": {
+      "message": "Insufficient Balance (request_id: dd66c266-5cbf-4baf-b6dd-877e03bb753d)",
+      "type": "insufficient_balance_error",
+      "param": null,
+      "code": "invalid_request_error"
+    }
+  }
+}

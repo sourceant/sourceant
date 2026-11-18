@@ -559,6 +559,7 @@ class ParallelReviewOrchestrator:
                 analysis,
             )
             if incomplete:
+                review.coverage_complete = False
                 review.summary.minor_suggestions.append(
                     "Review coverage is incomplete. Inspect the execution details before approving."
                 )

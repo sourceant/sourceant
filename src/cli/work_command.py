@@ -78,6 +78,9 @@ def work_command(lane, name, poll, max_jobs, max_time):
 
     sweeper = Sweeper(store)
     service_registry.contribute(JobHandler, sweeper, "sourceant_core")
+    from src.core.event_delivery import EventDelivery
+
+    service_registry.contribute(JobHandler, EventDelivery(), "sourceant_core")
     service_registry.contribute(JobHandler, Deliveries(), "sourceant_core")
     service_registry.contribute(JobHandler, ReviewPosting(), "sourceant_core")
     service_registry.contribute(JobHandler, ReviewPreviews(), "sourceant_core")
