@@ -4,7 +4,7 @@ Core reports review failures and incomplete coverage as events. User-facing noti
 
 Set `EVENTS_URL` to the gateway's internal event endpoint and `EVENTS_SECRET` to the signing secret shared with the gateway's `CORE_EVENTS_SECRET`. Leave the URL unset for standalone Core deployments.
 
-The reusable event primitive, listener dispatch, queued delivery adapter, and signed HTTP sender come from [sourceant/events](https://github.com/sourceant/events). Its core has no runtime dependencies or application ownership model. Other applications can use `Event` and `EventBus` directly; Core adapts its existing plugin subscriber interface to that bus.
+The reusable event primitive, listener dispatch, queued delivery adapter, and signed HTTP sender come from [sourceant/events](https://github.com/sourceant/events). Its core has no runtime dependencies or application ownership model. Install the distribution as `sourceant-events` and import `Event` and `EventBus` from `sourceant.events`. Other applications can use those primitives directly; Core adapts its existing plugin subscriber interface to that bus.
 
 Events use the existing Core subscriber registry. Subscribe with `event_hooks.subscribe_to_events` and emit with `src.core.events.emit(type="worker.started", data={"worker": "background"})`. Local listeners do not require a gateway or a workspace. Synchronous dispatch propagates listener failures and rejects asynchronous listeners before invoking any subscriber. The existing asynchronous `broadcast_event` path remains available for plugin broadcasts.
 

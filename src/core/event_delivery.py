@@ -1,8 +1,8 @@
 import os
 
-from sourceant_events import Event
-from sourceant_events.http import SignedHTTP
-from sourceant_events.jobs import EventHandler, QueuedListener
+from sourceant.events import Event
+from sourceant.events.http import SignedHTTP
+from sourceant.events.jobs import EventHandler, QueuedListener
 
 from src.core.jobs import BACKGROUND, JobOutcome, JobRequest, enqueue
 

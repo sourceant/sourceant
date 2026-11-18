@@ -1,4 +1,4 @@
-from sourceant_events import Event
+from sourceant.events import Event
 
 from src.core.event_delivery import FORWARDED_TYPES, forward
 from src.core.plugins.event_hooks import event_hooks

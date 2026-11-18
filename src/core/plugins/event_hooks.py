@@ -10,7 +10,7 @@ from enum import IntEnum
 from typing import Dict, List, Callable, Any, Optional, Union
 from dataclasses import dataclass
 from src.utils.logger import logger
-from sourceant_events import Event, EventBus
+from sourceant.events import Event, EventBus
 
 
 class HookPriority(IntEnum):

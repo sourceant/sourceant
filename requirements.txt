@@ -25,4 +25,4 @@ vaderSentiment==3.3.2
 uvicorn==0.52.4
 PyYAML==6.0.3
 gherkin-official==42.0.1
-sourceant-events[jobs] @ git+https://github.com/sourceant/events.git@6c8de0303048075d0506554c19c07b249bf20b0f
+sourceant-events[jobs] @ git+https://github.com/sourceant/events.git@92e17f33f2bff4eba51cd6dca4efe064b0c99527
