@@ -75,6 +75,8 @@ followed by repository names. Repeating a replay preserves existing events.
 
 ### Building your own image
 
+Pull requests build and test the compiled production image without publishing it. Main builds, releases, and manual runs retain image publishing. The builder includes Git so repository dependencies can be resolved before the application is compiled.
+
 ```bash
 make prod-build
 make prod-build IMAGE_TAG=v1.0.0
